@@ -669,8 +669,11 @@ function escapeHtml(s) {
   try {
     const m = await fetch('/api/member/me', { credentials: 'same-origin' }).then(r => r.json());
     if (m.logged_in && m.member) {
-      const display = m.member.display_name || m.member.phone;
-      renderPill(display, 'สมาชิก ' + m.member.phone, '/', async () => {
+      // Priority: display_name > email > phone
+      const display = m.member.display_name || m.member.email || m.member.phone;
+      const tooltip = 'สมาชิก ' + m.member.phone +
+        (m.member.email ? ' · ' + m.member.email : '');
+      renderPill(display, tooltip, '/profile', async () => {
         await fetch('/api/member/logout', { method: 'POST', credentials: 'same-origin' });
       });
       return;

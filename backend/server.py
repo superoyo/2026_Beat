@@ -183,6 +183,23 @@ def init_db() -> None:
             if col_name not in existing_cols:
                 conn.execute(f"ALTER TABLE snapshots ADD COLUMN {col_name} {col_def}")
 
+        # members table — เพิ่มคอลัมน์ email + password เพื่อให้ login ได้สองวิธี
+        member_cols = {
+            row["name"] for row in conn.execute("PRAGMA table_info(members)").fetchall()
+        }
+        for col_name, col_def in [
+            ("email",   "TEXT"),
+            ("pw_hash", "TEXT"),
+            ("pw_salt", "TEXT"),
+        ]:
+            if col_name not in member_cols:
+                conn.execute(f"ALTER TABLE members ADD COLUMN {col_name} {col_def}")
+        # Email ต้องไม่ซ้ำ (ใช้ partial unique index — เฉพาะ row ที่ email ไม่ NULL)
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_members_email "
+            "ON members(email) WHERE email IS NOT NULL"
+        )
+
         # ---- 3. indexes ที่ขึ้นกับคอลัมน์ใหม่ (สร้างหลัง migration)
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_snapshots_profile ON snapshots(profile_name)"
@@ -1004,6 +1021,45 @@ class MemberVerifyIn(BaseModel):
     id_token: str = Field(..., min_length=20)
 
 
+class MemberLoginIn(BaseModel):
+    email: str = Field(..., min_length=3, max_length=200)
+    password: str = Field(..., min_length=1, max_length=200)
+
+
+class MemberProfileIn(BaseModel):
+    display_name: Optional[str] = Field(None, max_length=120)
+    email: Optional[str] = Field(None, max_length=200)
+    password: Optional[str] = Field(None, min_length=6, max_length=200)
+
+
+def _require_member_session(token: Optional[str]) -> dict[str, Any]:
+    sess = get_member_session(token)
+    if not sess:
+        raise HTTPException(status_code=401, detail="ไม่ได้เข้าสู่ระบบ")
+    return sess
+
+
+def _member_row_to_profile(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "phone": row["phone"],
+        "email": row["email"],
+        "display_name": row["display_name"],
+        "has_password": bool(row["pw_hash"]),
+        "created_at": row["created_at"],
+        "last_login_at": row["last_login_at"],
+    }
+
+
+def _set_member_cookie(response: Response, member_id: int, phone: str) -> None:
+    token = create_member_session(member_id, phone)
+    response.set_cookie(
+        MEMBER_COOKIE, token, max_age=SESSION_TTL_SECONDS,
+        httponly=True, samesite="lax", path="/",
+        secure=IS_PUBLIC_DEPLOY,
+    )
+
+
 @app.get("/api/firebase/config")
 def firebase_config_endpoint() -> dict[str, Any]:
     """Public web config — embedded in client JS"""
@@ -1049,13 +1105,75 @@ def member_verify(payload: MemberVerifyIn, response: Response) -> dict[str, Any]
             member_id = cur.lastrowid
             is_new = True
 
-    token = create_member_session(member_id, phone)
-    response.set_cookie(
-        MEMBER_COOKIE, token, max_age=SESSION_TTL_SECONDS,
-        httponly=True, samesite="lax", path="/",
-        secure=IS_PUBLIC_DEPLOY,
-    )
+    _set_member_cookie(response, member_id, phone)
     return {"ok": True, "member_id": member_id, "phone": phone, "is_new": is_new}
+
+
+@app.post("/api/member/login")
+def member_login(payload: MemberLoginIn, response: Response) -> dict[str, Any]:
+    """Login ด้วย email + password (เลือกใช้แทน OTP สำหรับคนที่ตั้งรหัสไว้แล้ว)"""
+    email = payload.email.strip().lower()
+    with db_conn() as conn:
+        row = conn.execute(
+            "SELECT id, phone, email, pw_hash, pw_salt FROM members WHERE LOWER(email) = ?",
+            (email,),
+        ).fetchone()
+    if not row or not row["pw_hash"]:
+        raise HTTPException(status_code=401, detail="email หรือ password ไม่ถูกต้อง")
+    if not verify_password(payload.password, row["pw_hash"], row["pw_salt"]):
+        raise HTTPException(status_code=401, detail="email หรือ password ไม่ถูกต้อง")
+
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        conn.execute(
+            "UPDATE members SET last_login_at = ? WHERE id = ?", (now, row["id"])
+        )
+    _set_member_cookie(response, row["id"], row["phone"])
+    return {"ok": True, "member_id": row["id"]}
+
+
+@app.patch("/api/member/profile")
+def member_update_profile(
+    payload: MemberProfileIn,
+    fct_member_session: Optional[str] = Cookie(default=None),
+) -> dict[str, Any]:
+    """Update display_name / email / password — ต้อง login member อยู่"""
+    sess = _require_member_session(fct_member_session)
+    member_id = sess["member_id"]
+
+    updates: dict[str, Any] = {}
+    if payload.display_name is not None:
+        # อนุญาตให้ลบชื่อด้วย empty string
+        v = payload.display_name.strip()
+        updates["display_name"] = v or None
+    if payload.email is not None:
+        v = payload.email.strip().lower()
+        if v and not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", v):
+            raise HTTPException(status_code=400, detail="รูปแบบอีเมลไม่ถูกต้อง")
+        updates["email"] = v or None
+    if payload.password is not None:
+        pw_hash, pw_salt = hash_password(payload.password)
+        updates["pw_hash"] = pw_hash
+        updates["pw_salt"] = pw_salt
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="ไม่มีอะไรให้บันทึก")
+
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [member_id]
+    try:
+        with db_conn() as conn:
+            conn.execute(f"UPDATE members SET {set_clause} WHERE id = ?", values)
+            row = conn.execute(
+                "SELECT id, phone, email, display_name, pw_hash, created_at, last_login_at "
+                "FROM members WHERE id = ?",
+                (member_id,),
+            ).fetchone()
+    except sqlite3.IntegrityError as e:
+        # email ซ้ำ
+        raise HTTPException(status_code=409, detail="อีเมลนี้ถูกใช้แล้ว") from e
+
+    return {"ok": True, "member": _member_row_to_profile(row)}
 
 
 @app.post("/api/member/logout")
@@ -1078,28 +1196,20 @@ def member_me(
         return {"logged_in": False}
     with db_conn() as conn:
         row = conn.execute(
-            "SELECT id, phone, display_name, created_at, last_login_at "
+            "SELECT id, phone, email, display_name, pw_hash, created_at, last_login_at "
             "FROM members WHERE id = ?",
             (sess["member_id"],),
         ).fetchone()
     if not row:
         return {"logged_in": False}
-    return {
-        "logged_in": True,
-        "member": {
-            "id": row["id"],
-            "phone": row["phone"],
-            "display_name": row["display_name"],
-            "created_at": row["created_at"],
-            "last_login_at": row["last_login_at"],
-        },
-    }
+    return {"logged_in": True, "member": _member_row_to_profile(row)}
 
 
 # ===========================================================================
-# Member login page (HTML)
+# Member pages (HTML)
 # ===========================================================================
 LOGIN_PATH = BASE_DIR / "login.html"
+PROFILE_PATH = BASE_DIR / "profile.html"
 
 
 @app.get("/login", include_in_schema=False)
@@ -1107,6 +1217,14 @@ def serve_member_login() -> FileResponse:
     if not LOGIN_PATH.exists():
         raise HTTPException(status_code=404, detail="login.html missing")
     return FileResponse(LOGIN_PATH, media_type="text/html; charset=utf-8",
+                        headers={"Cache-Control": "no-store"})
+
+
+@app.get("/profile", include_in_schema=False)
+def serve_profile() -> FileResponse:
+    if not PROFILE_PATH.exists():
+        raise HTTPException(status_code=404, detail="profile.html missing")
+    return FileResponse(PROFILE_PATH, media_type="text/html; charset=utf-8",
                         headers={"Cache-Control": "no-store"})
 
 
