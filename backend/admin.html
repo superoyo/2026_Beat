@@ -1367,16 +1367,35 @@ async function renderMemberAccountPage() {
   });
 }
 
-function renderExtensionPage() {
+async function renderExtensionPage() {
+  const backendUrl = location.origin;
+
+  // ดึง API Key ถ้าเป็น admin (member ดูไม่ได้)
+  let apiKey = null;
+  let apiKeyError = null;
+  if (currentRole === 'admin') {
+    try {
+      const r = await fetchJson('/api/admin/api-key');
+      apiKey = r.api_key;
+    } catch (e) { apiKeyError = e.message; }
+  }
+
   $('main').innerHTML = `
-    <div class="page-head"><h2 class="page-title">🧩 Extension</h2></div>
-    <div class="card" style="display:block">
-      <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">วิธีติดตั้ง FEFL Beat Extension</h3>
-      <ol style="line-height:1.85;color:var(--text);font-size:13.5px;padding-left:20px;margin:0">
+    <div class="page-head">
+      <h2 class="page-title">🧩 Extension</h2>
+    </div>
+
+    <!-- Step 1: ติดตั้ง -->
+    <div class="card" style="display:block;margin-bottom:14px">
+      <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">
+        <span style="display:inline-block;width:24px;height:24px;background:var(--primary);color:#fff;border-radius:50%;text-align:center;line-height:24px;font-size:12px;margin-right:8px">1</span>
+        ติดตั้ง Extension เข้า Chrome
+      </h3>
+      <ol style="line-height:1.85;color:var(--text);font-size:13.5px;padding-left:20px;margin:0 0 12px">
         <li>เปิด Chrome พิมพ์ <code style="background:var(--bg-soft);padding:1px 6px;border-radius:4px">chrome://extensions</code> ใน address bar</li>
         <li>เปิดสวิตช์ <strong>Developer mode</strong> (มุมขวาบน)</li>
         <li>กด <strong>Load unpacked</strong> (มุมซ้ายบน)</li>
-        <li>เลือก folder:
+        <li>เลือก folder ของ extension:
           <div style="margin-top:6px;padding:10px;background:var(--bg-soft);border-radius:6px;font-family:ui-monospace,Menlo,monospace;font-size:12px;border:1px solid var(--border)">
             ~/Desktop/ClaudeCode/freepik-credit-tracker/extension
           </div>
@@ -1384,17 +1403,119 @@ function renderExtensionPage() {
         <li>Extension "FEFL Beat" จะปรากฏใน toolbar — pin ไว้ใช้สะดวกกว่า</li>
       </ol>
     </div>
-    <div class="card" style="display:block;margin-top:14px">
+
+    <!-- Step 2: ตั้งค่า extension (สำคัญ!) -->
+    <div class="card" style="display:block;margin-bottom:14px;border-color:var(--warning);background:rgba(245,158,11,.04)">
+      <h3 style="margin:0 0 8px;font-size:15px;font-weight:600">
+        <span style="display:inline-block;width:24px;height:24px;background:var(--warning);color:#fff;border-radius:50%;text-align:center;line-height:24px;font-size:12px;margin-right:8px">2</span>
+        ⚠️ ตั้งค่า extension (สำคัญที่สุด — ขาดข้อใดข้อหนึ่ง = extension ใช้ไม่ได้)
+      </h3>
+      <p style="margin:0 0 14px;color:var(--text-muted);font-size:13px">
+        กดไอคอน FEFL Beat บน Chrome toolbar → เลือก <strong>"ตั้งค่า"</strong> → กรอก 2 ฟิลด์ด้านล่าง → กดบันทึก
+      </p>
+
+      <div style="margin-bottom:14px">
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:6px;color:var(--text)">2.1) Backend URL</div>
+        <div class="key-block">
+          <span class="val" style="font-size:12.5px">${escapeHtml(backendUrl)}</span>
+          <button class="btn" data-copy="${escapeHtml(backendUrl)}" style="white-space:nowrap;font-size:12px;padding:5px 10px">📋 คัดลอก</button>
+        </div>
+        <div class="hint" style="margin-top:6px;font-size:12px;color:var(--text-muted)">
+          วางใน extension options ช่อง "Backend URL"
+        </div>
+      </div>
+
       <div>
-        <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">หลังติดตั้ง</h3>
-        <ul style="line-height:1.85;color:var(--text);font-size:13.5px;padding-left:20px;margin:0">
-          <li><strong>เมื่อยังไม่ได้ login</strong> — extension จะแสดงปุ่ม <strong>🔑 FEFL Beat : Sign On</strong> บนหน้า login พร้อมรายชื่อบัญชีที่บันทึกไว้</li>
-          <li><strong>เมื่อ login แล้ว (Freepik)</strong> — extension จะติดตามยอดเครดิตอัตโนมัติ ส่งข้อมูลไป Dashboard</li>
-          <li><strong>เพิ่มเว็บอื่น</strong> — กลับไปหน้า Website แล้วกด "+ เพิ่มเว็บใหม่"</li>
-        </ul>
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:6px;color:var(--text)">2.2) API Key</div>
+        ${currentRole === 'admin' ? `
+          <div class="key-block">
+            <span class="val" id="ext-apikey" style="font-size:12.5px">${escapeHtml(apiKey || apiKeyError || '...')}</span>
+            <button class="btn" id="ext-copy-apikey" style="white-space:nowrap;font-size:12px;padding:5px 10px" ${apiKey ? '' : 'disabled'}>📋 คัดลอก</button>
+          </div>
+          <div class="hint" style="margin-top:6px;font-size:12px;color:var(--text-muted)">
+            วางใน extension options ช่อง "API Key" — ดูเพิ่มที่เมนู <a href="#/security" style="color:var(--primary)">🔑 API Key</a>
+          </div>
+        ` : `
+          <div class="hint" style="padding:10px;background:var(--bg-soft);border-radius:6px;border:1px solid var(--border);font-size:12.5px">
+            ขอ API Key จาก admin — admin เห็นได้ที่เมนู 🔑 API Key
+          </div>
+        `}
+      </div>
+    </div>
+
+    <!-- Step 3: Reload + ทดสอบ -->
+    <div class="card" style="display:block;margin-bottom:14px">
+      <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">
+        <span style="display:inline-block;width:24px;height:24px;background:var(--primary);color:#fff;border-radius:50%;text-align:center;line-height:24px;font-size:12px;margin-right:8px">3</span>
+        Reload + ทดสอบ
+      </h3>
+      <ol style="line-height:1.85;color:var(--text);font-size:13.5px;padding-left:20px;margin:0">
+        <li>กลับ <code style="background:var(--bg-soft);padding:1px 6px;border-radius:4px">chrome://extensions</code> → กด <strong>🔄 Reload</strong> บน card "FEFL Beat" — สำคัญหลังเปลี่ยน config!</li>
+        <li>เปิด tab ใหม่ไปที่ <a href="https://www.freepik.com/log-in" target="_blank" style="color:var(--primary)">freepik.com/log-in</a></li>
+        <li>มุมขวาล่างของหน้าจอควรเห็นปุ่ม <strong>🔑 FEFL Beat : Sign On</strong></li>
+        <li>คลิก → เลือก credential → form login จะถูกกรอกให้</li>
+      </ol>
+    </div>
+
+    <!-- การใช้งาน -->
+    <div class="card" style="display:block;margin-bottom:14px">
+      <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">วิธีใช้งานสองโหมด</h3>
+      <ul style="line-height:1.85;color:var(--text);font-size:13.5px;padding-left:20px;margin:0">
+        <li><strong>เมื่อยังไม่ได้ login (เช่น freepik.com/log-in)</strong> — extension แสดงปุ่ม "🔑 FEFL Beat : Sign On" พร้อมรายชื่อบัญชี</li>
+        <li><strong>เมื่อ login แล้ว (อยู่ในหน้า freepik.com/app)</strong> — extension ติดตามยอดเครดิตอัตโนมัติ ส่งไป Dashboard</li>
+        <li><strong>เพิ่มเว็บอื่น</strong> — admin ไปที่เมนู <a href="#/sites" style="color:var(--primary)">🛠 Config</a> → "+ เพิ่มเว็บใหม่"</li>
+      </ul>
+    </div>
+
+    <!-- Troubleshooting -->
+    <div class="card" style="display:block">
+      <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">🔧 Troubleshooting</h3>
+      <div style="line-height:1.7;font-size:13px;color:var(--text)">
+
+        <div style="margin-bottom:14px">
+          <div style="font-weight:600;margin-bottom:4px">❌ Console: <code style="background:var(--bg-soft);padding:1px 5px;border-radius:4px">[FCT] prefill: backend unreachable, hiding widget: Failed to fetch</code></div>
+          <div style="color:var(--text-muted);padding-left:14px">→ Backend URL ใน extension options ผิด หรือยังเป็น <code>localhost:8765</code> — แก้เป็น URL ด้านบนใน step 2.1 + reload extension</div>
+        </div>
+
+        <div style="margin-bottom:14px">
+          <div style="font-weight:600;margin-bottom:4px">❌ ปุ่ม Prefill ไม่โผล่บนหน้า login</div>
+          <div style="color:var(--text-muted);padding-left:14px">→ เช็ค (1) extension reload หลัง config ใหม่แล้วหรือยัง (2) URL ของหน้านี้ตรง pattern ที่ตั้งไว้ใน Config หรือเปล่า (3) F12 → Console → filter "FCT" ดู error</div>
+        </div>
+
+        <div style="margin-bottom:14px">
+          <div style="font-weight:600;margin-bottom:4px">❌ คลิก Prefill แล้ว HTTP 401</div>
+          <div style="color:var(--text-muted);padding-left:14px">→ API Key ไม่ตรง — copy จาก step 2.2 ใหม่ → วางใน extension options → reload extension</div>
+        </div>
+
+        <div>
+          <div style="font-weight:600;margin-bottom:4px">❌ Service worker ค้าง</div>
+          <div style="color:var(--text-muted);padding-left:14px">→ chrome://extensions → กดลิงก์ "service worker" สีน้ำเงินใน card → DevTools เปิด → ดู error / กด reload extension</div>
+        </div>
+
       </div>
     </div>
   `;
+
+  // wire copy buttons
+  document.querySelectorAll('button[data-copy]').forEach(b => {
+    b.addEventListener('click', () => {
+      navigator.clipboard.writeText(b.dataset.copy);
+      const orig = b.textContent;
+      b.textContent = '✓ คัดลอกแล้ว';
+      setTimeout(() => { b.textContent = orig; }, 1200);
+    });
+  });
+  if (apiKey) {
+    const btn = $('ext-copy-apikey');
+    if (btn) {
+      btn.addEventListener('click', () => {
+        navigator.clipboard.writeText(apiKey);
+        const orig = btn.textContent;
+        btn.textContent = '✓ คัดลอกแล้ว';
+        setTimeout(() => { btn.textContent = orig; }, 1200);
+      });
+    }
+  }
 }
 
 // ---------- modal helper ----------
