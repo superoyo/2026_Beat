@@ -376,6 +376,8 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+let currentRole = null;  // 'admin' | 'member' | null
+
 async function fetchJson(path, opts = {}) {
   const res = await fetch(API + path, {
     credentials: 'same-origin',
@@ -383,8 +385,11 @@ async function fetchJson(path, opts = {}) {
     ...opts,
   });
   if (res.status === 401) {
-    location.replace('/admin/login');
+    location.replace('/login');
     throw new Error('unauthorized');
+  }
+  if (res.status === 403) {
+    throw new Error('คุณไม่มีสิทธิ์ทำรายการนี้');
   }
   if (!res.ok) {
     const j = await res.json().catch(() => ({}));
@@ -392,6 +397,8 @@ async function fetchJson(path, opts = {}) {
   }
   return res.json();
 }
+
+const ADMIN_ONLY_ROUTES = new Set(['security', 'account']);
 
 // ---------- routing ----------
 const routes = {
@@ -413,6 +420,12 @@ async function navigate() {
   const hash = location.hash.replace(/^#\/?/, '') || 'dashboard';
   const parts = hash.split('/');
   const route = parts[0];
+
+  // Member ห้ามเข้า admin-only routes
+  if (currentRole === 'member' && ADMIN_ONLY_ROUTES.has(route)) {
+    location.hash = '#/dashboard';
+    return;
+  }
 
   resetMainPadding();
   if (route === 'sites' && parts[1]) {
@@ -861,18 +874,54 @@ function showModal({ title, body, onSubmit }) {
   });
 })();
 
-$('logout-btn').addEventListener('click', async () => {
-  await fetchJson('/api/admin/logout', { method: 'POST' });
-  location.replace('/admin/login');
-});
-
 (async () => {
-  const state = await fetch('/api/admin/state').then(r => r.json());
-  if (!state.logged_in) {
-    location.replace('/admin/login');
+  // 1. ตรวจ role: admin first → member fallback
+  let label = null;
+  let logoutPath = null;
+
+  try {
+    const adminState = await fetch('/api/admin/state', { credentials: 'same-origin' }).then(r => r.json());
+    if (adminState.logged_in) {
+      currentRole = 'admin';
+      label = '👤 ' + adminState.username + ' (admin)';
+      logoutPath = '/api/admin/logout';
+    }
+  } catch {}
+
+  if (!currentRole) {
+    try {
+      const memberState = await fetch('/api/member/me', { credentials: 'same-origin' }).then(r => r.json());
+      if (memberState.logged_in) {
+        currentRole = 'member';
+        const m = memberState.member;
+        const display = m.display_name || m.email || m.phone;
+        label = '👤 ' + display;
+        logoutPath = '/api/member/logout';
+      }
+    } catch {}
+  }
+
+  if (!currentRole) {
+    location.replace('/login');
     return;
   }
-  $('who').textContent = '👤 ' + state.username;
+
+  $('who').textContent = label;
+
+  // 2. ซ่อน admin-only tabs ถ้าเป็น member
+  if (currentRole === 'member') {
+    document.querySelectorAll('.nav a[data-route]').forEach(a => {
+      if (ADMIN_ONLY_ROUTES.has(a.dataset.route)) a.style.display = 'none';
+    });
+  }
+
+  // 3. logout button — เลือก endpoint ตาม role
+  $('logout-btn').addEventListener('click', async () => {
+    try { await fetch(logoutPath, { method: 'POST', credentials: 'same-origin' }); } catch {}
+    location.replace('/');
+  });
+
+  // 4. Default route → dashboard
   if (!location.hash) location.hash = '#/dashboard';
   await navigate();
 })();

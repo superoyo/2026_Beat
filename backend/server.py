@@ -320,6 +320,36 @@ def require_admin_or_api_key(
     raise HTTPException(status_code=401, detail="authentication required")
 
 
+def require_admin_or_member(
+    fct_session: Optional[str] = Cookie(default=None),
+    fct_member_session: Optional[str] = Cookie(default=None),
+) -> dict[str, Any]:
+    """ผ่านถ้า login admin หรือ member ก็ได้ — คืน {role, ...}"""
+    sess = get_session(fct_session)
+    if sess:
+        return {"role": "admin", **sess}
+    msess = get_member_session(fct_member_session)
+    if msess:
+        return {"role": "member", **msess}
+    raise HTTPException(status_code=401, detail="ไม่ได้เข้าสู่ระบบ")
+
+
+def require_any_auth(
+    fct_session: Optional[str] = Cookie(default=None),
+    fct_member_session: Optional[str] = Cookie(default=None),
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+) -> str:
+    """admin / member / API key — สำหรับ dashboard read endpoints"""
+    if get_session(fct_session):
+        return "admin"
+    if get_member_session(fct_member_session):
+        return "member"
+    expected = get_extension_api_key()
+    if expected and x_api_key and secrets.compare_digest(x_api_key, expected):
+        return "api_key"
+    raise HTTPException(status_code=401, detail="ไม่ได้เข้าสู่ระบบ")
+
+
 # ---------------------------------------------------------------------------
 # Member sessions (Firebase Phone Auth)
 # ---------------------------------------------------------------------------
@@ -590,7 +620,7 @@ def post_snapshot(
 # History
 # ---------------------------------------------------------------------------
 @app.get("/api/history")
-def get_history(days: int = 30, _auth: str = Depends(require_admin_or_api_key)) -> dict[str, Any]:
+def get_history(days: int = 30, _auth: str = Depends(require_any_auth)) -> dict[str, Any]:
     days = max(1, min(365, days))
     cutoff = (utc_now() - timedelta(days=days)).isoformat()
 
@@ -627,7 +657,7 @@ def get_history(days: int = 30, _auth: str = Depends(require_admin_or_api_key)) 
 @app.get("/api/snapshots")
 def list_snapshots(
     limit: int = 20,
-    _auth: str = Depends(require_admin_or_api_key),
+    _auth: str = Depends(require_any_auth),
 ) -> dict[str, Any]:
     limit = max(1, min(500, limit))
     with db_conn() as conn:
@@ -683,7 +713,7 @@ def _daily_usage_series(days_back: int) -> list[tuple[str, float]]:
 
 
 @app.get("/api/summary")
-def get_summary(_auth: str = Depends(require_admin_or_api_key)) -> dict[str, Any]:
+def get_summary(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
     cfg = get_config()
     quota = float(cfg.get("monthly_quota", DEFAULT_CONFIG["monthly_quota"]))
     cycle_day = int(cfg.get("billing_cycle_day", DEFAULT_CONFIG["billing_cycle_day"]))
@@ -772,7 +802,7 @@ def get_summary(_auth: str = Depends(require_admin_or_api_key)) -> dict[str, Any
 # Config GET / PATCH
 # ---------------------------------------------------------------------------
 @app.get("/api/config")
-def get_config_endpoint(_auth: str = Depends(require_admin_or_api_key)) -> dict[str, Any]:
+def get_config_endpoint(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
     cfg = get_config()
     return {
         "monthly_quota": float(cfg["monthly_quota"]),
@@ -783,7 +813,7 @@ def get_config_endpoint(_auth: str = Depends(require_admin_or_api_key)) -> dict[
 @app.patch("/api/config")
 def patch_config(
     patch: ConfigPatch,
-    _auth: str = Depends(require_admin_or_api_key),
+    _auth: str = Depends(require_admin_or_member),
 ) -> dict[str, Any]:
     updates: dict[str, str] = {}
     if patch.monthly_quota is not None:
@@ -938,7 +968,7 @@ class CredentialIn(BaseModel):
 
 
 @app.get("/api/admin/sites")
-def list_sites(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
+def list_sites(_sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
     with db_conn() as conn:
         sites = conn.execute(
             "SELECT s.id, s.name, s.url_pattern, s.created_at, "
@@ -949,7 +979,7 @@ def list_sites(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
 
 
 @app.post("/api/admin/sites")
-def create_site(payload: SiteIn, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+def create_site(payload: SiteIn, _sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
     with db_conn() as conn:
         cur = conn.execute(
             "INSERT INTO sites(name, url_pattern, created_at) VALUES (?, ?, ?)",
@@ -960,7 +990,7 @@ def create_site(payload: SiteIn, _sess: dict = Depends(require_admin)) -> dict[s
 
 
 @app.get("/api/admin/sites/{site_id}")
-def get_site(site_id: int, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+def get_site(site_id: int, _sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
     with db_conn() as conn:
         site = conn.execute("SELECT * FROM sites WHERE id = ?", (site_id,)).fetchone()
         if not site:
@@ -977,7 +1007,7 @@ def get_site(site_id: int, _sess: dict = Depends(require_admin)) -> dict[str, An
 
 
 @app.delete("/api/admin/sites/{site_id}")
-def delete_site(site_id: int, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+def delete_site(site_id: int, _sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
     with db_conn() as conn:
         # foreign key cascade จะลบ credentials ให้
         conn.execute("PRAGMA foreign_keys = ON")
@@ -992,7 +1022,7 @@ def delete_site(site_id: int, _sess: dict = Depends(require_admin)) -> dict[str,
 def add_credential(
     site_id: int,
     payload: CredentialIn,
-    _sess: dict = Depends(require_admin),
+    _sess: dict = Depends(require_admin_or_member),
 ) -> dict[str, Any]:
     with db_conn() as conn:
         site = conn.execute("SELECT 1 FROM sites WHERE id = ?", (site_id,)).fetchone()
@@ -1008,7 +1038,7 @@ def add_credential(
 
 
 @app.delete("/api/admin/credentials/{cred_id}")
-def delete_credential(cred_id: int, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+def delete_credential(cred_id: int, _sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
     with db_conn() as conn:
         cur = conn.execute("DELETE FROM credentials WHERE id = ?", (cred_id,))
         if cur.rowcount == 0:

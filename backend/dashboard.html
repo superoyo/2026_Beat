@@ -434,7 +434,8 @@ async function fetchJson(path) {
     credentials: 'same-origin',
   });
   if (res.status === 401) {
-    location.replace('/admin/login');
+    // ยังไม่ login (admin หรือ member) → พาไป /login
+    location.replace('/login');
     throw new Error('unauthorized');
   }
   if (!res.ok) throw new Error('HTTP ' + res.status);
