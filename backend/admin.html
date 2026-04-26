@@ -623,6 +623,11 @@ async function navigate() {
     return;
   }
 
+  // ออกจากหน้า extension → หยุด polling status
+  if (route !== 'extension' && typeof stopExtStatusPolling === 'function') {
+    stopExtStatusPolling();
+  }
+
   resetMainPadding();
   if (route === 'sites' && parts[1]) {
     setActive('sites');
@@ -1367,6 +1372,78 @@ async function renderMemberAccountPage() {
   });
 }
 
+// Polling reference สำหรับ extension status (ต้อง stop ตอนนำทางออก)
+let _extStatusTimer = null;
+function stopExtStatusPolling() {
+  if (_extStatusTimer) { clearInterval(_extStatusTimer); _extStatusTimer = null; }
+}
+
+function fmtRelativeTh(iso) {
+  if (!iso) return '—';
+  const sec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (sec < 0) return 'อนาคต';
+  if (sec < 5) return 'เมื่อสักครู่';
+  if (sec < 60) return sec + ' วินาทีที่แล้ว';
+  if (sec < 3600) return Math.floor(sec/60) + ' นาทีที่แล้ว';
+  if (sec < 86400) return Math.floor(sec/3600) + ' ชั่วโมงที่แล้ว';
+  return Math.floor(sec/86400) + ' วันที่แล้ว';
+}
+
+async function loadExtensionStatus() {
+  let s;
+  try {
+    s = await fetchJson('/api/admin/extension/status');
+  } catch { return; }
+
+  const dot = document.getElementById('ext-status-dot');
+  const text = document.getElementById('ext-status-text');
+  const sub = document.getElementById('ext-status-sub');
+  const meta = document.getElementById('ext-status-meta');
+  if (!dot) return;  // หน้าเปลี่ยนแล้ว
+
+  if (s.connected) {
+    dot.style.background = 'var(--green)';
+    dot.style.boxShadow = '0 0 0 6px rgba(16,185,129,.15)';
+    text.textContent = '✓ Extension เชื่อมต่อแล้ว';
+    text.style.color = 'var(--green)';
+    sub.textContent = `เห็นล่าสุด ${fmtRelativeTh(s.last_seen)}`;
+  } else if (s.last_seen) {
+    dot.style.background = 'var(--warning)';
+    dot.style.boxShadow = '0 0 0 6px rgba(245,158,11,.15)';
+    text.textContent = '⚠️ เคยเชื่อมต่อแต่หายไปสักพัก';
+    text.style.color = '#b45309';
+    sub.textContent = `เห็นล่าสุด ${fmtRelativeTh(s.last_seen)} — ลอง reload extension`;
+  } else {
+    dot.style.background = 'var(--critical)';
+    dot.style.boxShadow = '0 0 0 6px rgba(220,38,38,.12)';
+    text.textContent = '❌ ยังไม่เคยเห็น Extension';
+    text.style.color = 'var(--critical)';
+    sub.textContent = 'ติดตั้ง extension + ตั้งค่า Backend URL + API Key ตามขั้นตอนด้านล่าง';
+  }
+
+  // metadata
+  const parts = [];
+  if (s.call_count > 0) parts.push(`<strong>${s.call_count.toLocaleString('th-TH')}</strong> request`);
+  if (s.last_snapshot) {
+    const snap = s.last_snapshot;
+    if (snap.host_name) parts.push(`💻 ${escapeHtml(snap.host_name)}`);
+    if (snap.host_ip)   parts.push(`📡 ${escapeHtml(snap.host_ip)}`);
+    if (snap.user_agent) {
+      // ตัด user-agent ให้สั้นลง — เอาเฉพาะส่วน Chrome/xxx
+      const ua = snap.user_agent;
+      const m = ua.match(/Chrome\/[\d.]+/);
+      if (m) parts.push(`🌐 ${m[0]}`);
+    }
+  }
+  meta.innerHTML = parts.length ? parts.join(' &nbsp;·&nbsp; ') : '';
+}
+
+function startExtStatusPolling() {
+  stopExtStatusPolling();
+  loadExtensionStatus();
+  _extStatusTimer = setInterval(loadExtensionStatus, 5000);
+}
+
 async function renderExtensionPage() {
   const backendUrl = location.origin;
 
@@ -1383,7 +1460,22 @@ async function renderExtensionPage() {
   $('main').innerHTML = `
     <div class="page-head">
       <h2 class="page-title">🧩 Extension</h2>
+      <button class="btn" id="ext-refresh" style="font-size:12px;padding:6px 12px">🔄 รีเฟรช status</button>
     </div>
+
+    <!-- Status widget (admin only) -->
+    ${currentRole === 'admin' ? `
+    <div class="card" style="display:block;margin-bottom:14px;padding:18px 22px">
+      <div style="display:flex;align-items:center;gap:18px">
+        <span id="ext-status-dot" style="width:14px;height:14px;border-radius:50%;background:#94a3b8;flex-shrink:0;transition:all .25s"></span>
+        <div style="flex:1;min-width:0">
+          <div id="ext-status-text" style="font-size:15px;font-weight:600;color:var(--text-muted)">กำลังตรวจสอบ…</div>
+          <div id="ext-status-sub" style="font-size:12.5px;color:var(--text-muted);margin-top:3px">—</div>
+          <div id="ext-status-meta" style="font-size:11.5px;color:var(--text-soft);margin-top:6px"></div>
+        </div>
+      </div>
+    </div>
+    ` : ''}
 
     <!-- Step 1: ติดตั้ง -->
     <div class="card" style="display:block;margin-bottom:14px">
@@ -1515,6 +1607,13 @@ async function renderExtensionPage() {
         setTimeout(() => { btn.textContent = orig; }, 1200);
       });
     }
+  }
+
+  // Start polling status (admin only)
+  if (currentRole === 'admin') {
+    startExtStatusPolling();
+    const refreshBtn = $('ext-refresh');
+    if (refreshBtn) refreshBtn.addEventListener('click', loadExtensionStatus);
   }
 }
 

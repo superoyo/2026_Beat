@@ -307,6 +307,25 @@ def get_extension_api_key() -> Optional[str]:
     return new_key
 
 
+def update_extension_heartbeat() -> None:
+    """อัพเดท timestamp ทุกครั้งที่ extension เรียก API ด้วย API key ที่ถูกต้อง"""
+    try:
+        with db_conn() as conn:
+            now = utc_now().isoformat()
+            conn.execute(
+                "INSERT INTO config(key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                ("extension_last_seen", now),
+            )
+            conn.execute(
+                "INSERT INTO config(key, value) VALUES ('extension_call_count', '1') "
+                "ON CONFLICT(key) DO UPDATE SET value = "
+                "CAST(CAST(value AS INTEGER) + 1 AS TEXT)"
+            )
+    except Exception:
+        pass  # heartbeat fail ห้ามกระทบ business logic
+
+
 def require_admin_or_api_key(
     fct_session: Optional[str] = Cookie(default=None),
     x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
@@ -316,6 +335,7 @@ def require_admin_or_api_key(
         return "session"
     expected = get_extension_api_key()
     if expected and x_api_key and secrets.compare_digest(x_api_key, expected):
+        update_extension_heartbeat()
         return "api_key"
     raise HTTPException(status_code=401, detail="authentication required")
 
@@ -346,6 +366,7 @@ def require_any_auth(
         return "member"
     expected = get_extension_api_key()
     if expected and x_api_key and secrets.compare_digest(x_api_key, expected):
+        update_extension_heartbeat()
         return "api_key"
     raise HTTPException(status_code=401, detail="ไม่ได้เข้าสู่ระบบ")
 
@@ -970,6 +991,52 @@ def update_admin_credentials(
 @app.get("/api/admin/api-key")
 def get_api_key(_sess: dict = Depends(require_admin)) -> dict[str, str]:
     return {"api_key": get_extension_api_key()}
+
+
+@app.get("/api/admin/extension/status")
+def admin_extension_status(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    """ดู status การเชื่อมต่อ extension จาก heartbeat ที่ track ไว้"""
+    cfg = get_config()
+    last_seen = cfg.get("extension_last_seen")
+    try:
+        call_count = int(cfg.get("extension_call_count", "0"))
+    except (TypeError, ValueError):
+        call_count = 0
+
+    # snapshot ล่าสุด — เอา user_agent + host info จาก extension มาแสดง
+    with db_conn() as conn:
+        last_snap = conn.execute(
+            "SELECT user_agent, host_name, host_ip, source_url, timestamp "
+            "FROM snapshots ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+
+    connected = False
+    age_seconds: Optional[int] = None
+    if last_seen:
+        try:
+            then = parse_iso(last_seen)
+            age_seconds = int((utc_now() - then).total_seconds())
+            connected = age_seconds < 300  # 5 นาที
+        except Exception:
+            pass
+
+    return {
+        "connected": connected,
+        "last_seen": last_seen,
+        "age_seconds": age_seconds,
+        "call_count": call_count,
+        "last_snapshot": (
+            {
+                "timestamp": last_snap["timestamp"],
+                "user_agent": last_snap["user_agent"],
+                "host_name": last_snap["host_name"],
+                "host_ip": last_snap["host_ip"],
+                "source_url": last_snap["source_url"],
+            }
+            if last_snap
+            else None
+        ),
+    }
 
 
 @app.post("/api/admin/api-key/regenerate")
