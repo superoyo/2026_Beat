@@ -4,183 +4,286 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>FEFL Beat · Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg: #0b0f17; --bg-card: #131a26; --bg-card-2: #1b2433;
-      --border: #243044; --text: #e6ebf3; --text-muted: #8b95a8;
-      --accent: #4f8cff; --ok: #10b981; --warning: #f59e0b; --critical: #dc2626;
+      --bg: #ffffff;
+      --bg-soft: #f6f9ff;
+      --bg-card: #ffffff;
+      --bg-input: #ffffff;
+      --bg-hover: #f1f5fd;
+      --border: #e3eaf5;
+      --border-strong: #c8d4ec;
+      --text: #0f172a;
+      --text-muted: #5b6b85;
+      --text-soft: #8895ab;
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --primary-soft: #dbeafe;
+      --accent: #7c3aed;
+      --green: #10b981;
+      --warning: #f59e0b;
+      --critical: #dc2626;
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, .05);
+      --shadow-md: 0 4px 16px rgba(37, 99, 235, .08);
+      --shadow-lg: 0 12px 40px rgba(37, 99, 235, .12);
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; height: 100%; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Thai", system-ui, sans-serif;
-      background: var(--bg); color: var(--text);
+      font-family: 'Inter', 'Noto Sans Thai', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      background: var(--bg-soft);
+      color: var(--text);
       display: flex; min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
     }
-    a { color: var(--accent); text-decoration: none; }
+    a { color: var(--primary); text-decoration: none; }
     a:hover { text-decoration: underline; }
 
     /* Sidebar */
     aside {
-      width: 220px;
+      width: 240px;
       background: var(--bg-card);
       border-right: 1px solid var(--border);
-      padding: 20px 0;
+      padding: 22px 0;
       display: flex; flex-direction: column;
+      box-shadow: var(--shadow-sm);
     }
     .brand {
-      padding: 0 20px 16px;
+      padding: 0 22px 18px;
       border-bottom: 1px solid var(--border);
-      margin-bottom: 12px;
+      margin-bottom: 14px;
+      display: flex; align-items: center; gap: 10px;
     }
-    .brand h1 { margin: 0; font-size: 14px; font-weight: 600; }
-    .brand .sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .brand-logo {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, #2563eb 0%, #7c3aed 50%, #06b6d4 100%);
+      border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-weight: 800; font-size: 14px;
+      box-shadow: 0 4px 10px rgba(37, 99, 235, .25);
+    }
+    .brand .info h1 { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: -0.01em; }
+    .brand .info .sub { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
 
-    .nav { flex: 1; padding: 0 8px; }
+    .nav { flex: 1; padding: 0 12px; }
     .nav a {
-      display: flex; align-items: center; gap: 8px;
-      padding: 9px 12px;
-      border-radius: 6px;
-      color: var(--text);
-      font-size: 13px;
-      margin-bottom: 2px;
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 13px;
+      border-radius: 8px;
+      color: var(--text-muted);
+      font-size: 13.5px;
+      font-weight: 500;
+      margin-bottom: 3px;
+      transition: all .12s;
     }
-    .nav a:hover { background: var(--bg-card-2); text-decoration: none; }
-    .nav a.active { background: var(--bg-card-2); color: var(--accent); }
+    .nav a:hover { background: var(--bg-hover); color: var(--text); text-decoration: none; }
+    .nav a.active {
+      background: var(--primary-soft);
+      color: var(--primary-dark);
+      font-weight: 600;
+    }
 
     .sidebar-footer {
-      padding: 12px 20px;
+      padding: 14px 22px;
       border-top: 1px solid var(--border);
       font-size: 12px;
       color: var(--text-muted);
     }
     .sidebar-footer button {
-      background: none; border: none; color: var(--text-muted);
+      background: transparent; border: none; color: var(--text-muted);
       padding: 0; cursor: pointer; font-family: inherit; font-size: 12px;
-      margin-top: 6px;
+      margin-top: 8px;
     }
-    .sidebar-footer button:hover { color: var(--text); }
+    .sidebar-footer button:hover { color: var(--critical); }
 
     /* Main */
-    main { flex: 1; padding: 28px 32px; overflow-y: auto; }
+    main { flex: 1; padding: 32px 36px; overflow-y: auto; }
     main.no-pad { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
     main.no-pad iframe { flex: 1; width: 100%; border: 0; background: var(--bg); }
+
     .page-head {
       display: flex; justify-content: space-between; align-items: center;
-      margin-bottom: 18px;
+      margin-bottom: 22px;
     }
-    h2.page-title { margin: 0; font-size: 20px; font-weight: 600; }
-    .crumb { color: var(--text-muted); font-size: 13px; margin-bottom: 6px; }
+    h2.page-title {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .crumb { color: var(--text-muted); font-size: 13px; margin-bottom: 8px; }
     .crumb a { color: var(--text-muted); }
 
     button.btn, .btn {
-      background: var(--bg-card-2);
+      background: var(--bg-card);
       color: var(--text);
       border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 7px 12px;
+      border-radius: 8px;
+      padding: 8px 14px;
       font-size: 13px;
+      font-weight: 500;
       cursor: pointer;
       font-family: inherit;
+      transition: all .12s;
     }
-    button.btn:hover { background: #232f44; }
-    button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-    button.btn.primary:hover { background: #3b78eb; }
-    button.btn.danger { background: transparent; color: var(--critical); border-color: rgba(220,38,38,.3); }
-    button.btn.danger:hover { background: rgba(220,38,38,.1); }
+    button.btn:hover {
+      background: var(--bg-hover); border-color: var(--border-strong);
+    }
+    button.btn.primary {
+      background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
+      border-color: transparent;
+      color: #fff;
+      box-shadow: var(--shadow-md);
+    }
+    button.btn.primary:hover {
+      background: linear-gradient(135deg, #1d4ed8 0%, #4338ca 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(37, 99, 235, .3);
+    }
+    button.btn.danger {
+      background: transparent; color: var(--critical);
+      border-color: rgba(220, 38, 38, .25);
+    }
+    button.btn.danger:hover { background: rgba(220, 38, 38, .06); border-color: var(--critical); }
 
-    /* Cards / lists */
+    /* Cards */
     .card {
       background: var(--bg-card);
       border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 14px 18px;
+      border-radius: 12px;
+      padding: 16px 20px;
       margin-bottom: 12px;
       display: flex; justify-content: space-between; align-items: center;
-      transition: border .15s;
+      transition: all .15s;
+      box-shadow: var(--shadow-sm);
     }
-    .card:hover { border-color: var(--accent); }
+    .card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
     .card-clickable { cursor: pointer; }
-    .card-title { font-size: 14px; font-weight: 500; }
-    .card-sub { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+    .card-clickable:hover { border-color: var(--primary); }
+    .card-title { font-size: 15px; font-weight: 600; }
+    .card-sub { color: var(--text-muted); font-size: 12.5px; margin-top: 3px; }
+    .card-sub code {
+      background: var(--bg-soft);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
 
     .empty {
-      padding: 40px 20px;
+      padding: 48px 20px;
       text-align: center;
       color: var(--text-muted);
       font-size: 14px;
+      background: var(--bg-card);
+      border: 1px dashed var(--border);
+      border-radius: 12px;
     }
 
     /* Modal */
     .modal-bg {
       position: fixed; inset: 0;
-      background: rgba(0,0,0,.6);
+      background: rgba(15, 23, 42, .35);
+      backdrop-filter: blur(4px);
       display: flex; align-items: center; justify-content: center;
       z-index: 1000;
     }
     .modal {
       background: var(--bg-card);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 22px;
-      width: 420px;
+      border-radius: 16px;
+      padding: 26px;
+      width: 440px;
       max-width: 92vw;
+      box-shadow: 0 24px 60px rgba(15, 23, 42, .25);
     }
-    .modal h3 { margin: 0 0 12px; font-size: 16px; font-weight: 600; }
+    .modal h3 { margin: 0 0 14px; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
     .modal-actions {
       display: flex; justify-content: flex-end; gap: 8px;
-      margin-top: 16px;
+      margin-top: 18px;
     }
 
-    .field { margin-bottom: 10px; }
-    .field label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+    .field { margin-bottom: 12px; }
+    .field label { display: block; font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 5px; }
     .field input, .field textarea {
       width: 100%;
-      background: var(--bg-card-2); color: var(--text);
-      border: 1px solid var(--border); border-radius: 6px;
-      padding: 8px 10px; font-size: 13px; font-family: inherit;
+      background: var(--bg-input); color: var(--text);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 9px 12px; font-size: 13px; font-family: inherit;
+      transition: border .15s, box-shadow .15s;
     }
-    .hint { color: var(--text-muted); font-size: 11px; margin-top: 4px; }
+    .field input:focus, .field textarea:focus {
+      outline: none; border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
+    }
+    .hint { color: var(--text-muted); font-size: 11.5px; margin-top: 4px; line-height: 1.5; }
+    .hint code {
+      background: var(--bg-soft); padding: 1px 5px; border-radius: 4px; font-size: 11px;
+    }
 
     /* Credentials list */
     .cred-row {
       background: var(--bg-card);
       border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 12px 14px;
+      border-radius: 10px;
+      padding: 14px 16px;
       margin-bottom: 8px;
       display: grid;
       grid-template-columns: 1fr 1fr 1fr auto;
-      gap: 12px;
+      gap: 14px;
       align-items: center;
       font-size: 13px;
+      box-shadow: var(--shadow-sm);
     }
-    .cred-row .col-label { font-weight: 500; }
+    .cred-row:hover { border-color: var(--border-strong); }
+    .cred-row .col-label { font-weight: 600; }
     .cred-row .col-pw { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     .pw-mask { color: var(--text-muted); }
     .pw-show { color: var(--text); user-select: all; }
     .copy-btn {
-      background: none; border: none; color: var(--text-muted);
-      cursor: pointer; font-size: 12px; padding: 2px 4px;
+      background: transparent; border: none; color: var(--text-muted);
+      cursor: pointer; font-size: 13px; padding: 3px 5px;
+      border-radius: 4px;
     }
-    .copy-btn:hover { color: var(--accent); }
+    .copy-btn:hover { color: var(--primary); background: var(--bg-hover); }
 
     .warning-box {
-      background: rgba(245, 158, 11, .1);
-      border: 1px solid rgba(245, 158, 11, .3);
-      color: #fbbf24;
-      padding: 10px 14px;
-      border-radius: 8px;
+      background: linear-gradient(135deg, rgba(245, 158, 11, .06), rgba(245, 158, 11, .12));
+      border: 1px solid rgba(245, 158, 11, .35);
+      color: #92400e;
+      padding: 12px 16px;
+      border-radius: 10px;
       font-size: 13px;
-      margin-bottom: 16px;
+      margin-bottom: 18px;
+    }
+    .warning-box code {
+      background: rgba(146, 64, 14, .12); padding: 1px 5px; border-radius: 4px;
+    }
+
+    /* Code/key display block */
+    .key-block {
+      display: flex; gap: 8px; align-items: center;
+      font-family: ui-monospace, Menlo, monospace; font-size: 13px;
+      background: var(--bg-soft);
+      border: 1px solid var(--border);
+      padding: 13px 14px;
+      border-radius: 10px;
+    }
+    .key-block .val {
+      flex: 1; word-break: break-all; user-select: all; color: var(--text);
     }
   </style>
 </head>
 <body>
   <aside>
     <div class="brand">
-      <h1>FEFL Beat</h1>
-      <div class="sub">Admin · จัดการ Website / Credentials</div>
+      <span class="brand-logo">F</span>
+      <div class="info">
+        <h1>FEFL Beat</h1>
+        <div class="sub">Admin Console</div>
+      </div>
     </div>
     <nav class="nav">
       <a href="#/dashboard" data-route="dashboard">📊 Dashboard</a>
@@ -235,10 +338,7 @@ function setActive(route) {
     a.classList.toggle('active', a.dataset.route === route);
   });
 }
-
-function resetMainPadding() {
-  $('main').classList.remove('no-pad');
-}
+function resetMainPadding() { $('main').classList.remove('no-pad'); }
 
 async function navigate() {
   const hash = location.hash.replace(/^#\/?/, '') || 'dashboard';
@@ -257,14 +357,13 @@ async function navigate() {
   }
 }
 
+window.addEventListener('hashchange', navigate);
+
 function renderDashboardEmbed() {
   const m = $('main');
   m.classList.add('no-pad');
-  // ใช้ iframe ดึง /dashboard เข้ามา — sidebar ของ admin ยังเห็นด้านซ้าย
   m.innerHTML = `<iframe src="/dashboard" title="FEFL Beat Dashboard"></iframe>`;
 }
-
-window.addEventListener('hashchange', navigate);
 
 // ---------- pages ----------
 async function renderSitesList() {
@@ -293,7 +392,7 @@ async function loadSites() {
         <div class="card-title">${escapeHtml(s.name)}</div>
         <div class="card-sub">URL pattern: <code>${escapeHtml(s.url_pattern)}</code> · ${s.cred_count} credentials</div>
       </div>
-      <div>→</div>
+      <div style="color:var(--text-muted)">→</div>
     </div>
   `).join('');
   list.querySelectorAll('.card[data-id]').forEach(card => {
@@ -335,7 +434,7 @@ async function renderSiteDetail(siteId) {
     <div class="crumb"><a href="#/sites">← Websites</a></div>
     <div class="page-head">
       <h2 class="page-title" id="site-name">…</h2>
-      <div>
+      <div style="display:flex;gap:8px">
         <button class="btn primary" id="add-cred-btn">+ เพิ่ม Credential</button>
         <button class="btn danger" id="delete-site-btn">ลบเว็บนี้</button>
       </div>
@@ -345,7 +444,7 @@ async function renderSiteDetail(siteId) {
       ใครเข้าถึงไฟล์ <code>freepik_tracker.db</code> ในเครื่องนี้ก็เห็นได้ทั้งหมด
     </div>
     <div id="site-meta"></div>
-    <h3 style="margin-top:18px;font-size:14px">Credentials</h3>
+    <h3 style="margin-top:22px;font-size:14px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.05em">Credentials</h3>
     <div id="creds-list"></div>
   `;
   await loadSite(siteId);
@@ -379,15 +478,19 @@ async function loadSite(siteId) {
     <div class="cred-row" data-id="${c.id}">
       <div class="col-label">${escapeHtml(c.label || '(ไม่มีชื่อ)')}</div>
       <div>
-        <span style="color:var(--text-muted);font-size:11px">user: </span>
-        <span>${escapeHtml(c.username)}</span>
-        <button class="copy-btn" data-copy="${escapeHtml(c.username)}" title="คัดลอก">📋</button>
+        <span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.04em">user</span>
+        <div style="margin-top:2px">
+          ${escapeHtml(c.username)}
+          <button class="copy-btn" data-copy="${escapeHtml(c.username)}" title="คัดลอก">📋</button>
+        </div>
       </div>
       <div class="col-pw">
-        <span style="color:var(--text-muted);font-size:11px">pw: </span>
-        <span class="pw-mask" data-pw="${escapeHtml(c.password)}" data-shown="false">••••••••</span>
-        <button class="copy-btn pw-toggle" data-id="${c.id}" title="show/hide">👁</button>
-        <button class="copy-btn" data-copy="${escapeHtml(c.password)}" title="คัดลอก">📋</button>
+        <span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.04em">password</span>
+        <div style="margin-top:2px">
+          <span class="pw-mask" data-pw="${escapeHtml(c.password)}" data-shown="false">••••••••</span>
+          <button class="copy-btn pw-toggle" data-id="${c.id}" title="show/hide">👁</button>
+          <button class="copy-btn" data-copy="${escapeHtml(c.password)}" title="คัดลอก">📋</button>
+        </div>
       </div>
       <div>
         <button class="btn danger" data-del="${c.id}">ลบ</button>
@@ -468,19 +571,21 @@ async function renderSecurityPage() {
       ถ้าหลุด → กด <strong>Regenerate</strong> เพื่อสร้างใหม่ทันที (extension ของทุกเครื่องต้องอัพเดท key ใหม่)
     </div>
     <div class="card" style="display:block">
-      <div class="card-sub" style="margin-bottom:6px">API Key ปัจจุบัน</div>
-      <div style="display:flex;gap:8px;align-items:center;font-family:ui-monospace,Menlo,monospace;font-size:13px;background:var(--bg-card-2);padding:12px;border-radius:6px;border:1px solid var(--border)">
-        <span id="api-key-value" style="flex:1;word-break:break-all;user-select:all">…</span>
+      <div class="card-sub" style="margin-bottom:8px">API Key ปัจจุบัน</div>
+      <div class="key-block">
+        <span id="api-key-value" class="val">…</span>
         <button class="btn" id="copy-key-btn" style="white-space:nowrap">📋 คัดลอก</button>
       </div>
     </div>
-    <div class="card" style="display:block;margin-top:12px">
-      <div class="card-title" style="margin-bottom:6px">วิธีใช้</div>
-      <ol style="line-height:1.8;color:var(--text);font-size:13px;padding-left:20px;margin:0">
-        <li>กดไอคอน FEFL Beat extension บน Chrome toolbar → <strong>ตั้งค่า</strong></li>
-        <li>วาง API key ลงในช่อง <strong>API Key</strong></li>
-        <li>กด <strong>บันทึก</strong> → Extension จะส่ง key นี้ไปกับทุก request</li>
-      </ol>
+    <div class="card" style="display:block;margin-top:14px">
+      <div>
+        <div class="card-title" style="margin-bottom:8px">วิธีใช้</div>
+        <ol style="line-height:1.8;color:var(--text);font-size:13.5px;padding-left:20px;margin:0">
+          <li>กดไอคอน FEFL Beat extension บน Chrome toolbar → <strong>ตั้งค่า</strong></li>
+          <li>วาง API key ลงในช่อง <strong>API Key</strong></li>
+          <li>กด <strong>บันทึก</strong> → Extension จะส่ง key นี้ไปกับทุก request</li>
+        </ol>
+      </div>
     </div>
   `;
 
@@ -514,26 +619,28 @@ function renderExtensionPage() {
   $('main').innerHTML = `
     <div class="page-head"><h2 class="page-title">🧩 Extension</h2></div>
     <div class="card" style="display:block">
-      <h3 style="margin:0 0 8px">วิธีติดตั้ง FEFL Beat Extension</h3>
-      <ol style="line-height:1.8;color:var(--text);font-size:13px">
-        <li>เปิด Chrome พิมพ์ <code>chrome://extensions</code> ใน address bar</li>
+      <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">วิธีติดตั้ง FEFL Beat Extension</h3>
+      <ol style="line-height:1.85;color:var(--text);font-size:13.5px;padding-left:20px;margin:0">
+        <li>เปิด Chrome พิมพ์ <code style="background:var(--bg-soft);padding:1px 6px;border-radius:4px">chrome://extensions</code> ใน address bar</li>
         <li>เปิดสวิตช์ <strong>Developer mode</strong> (มุมขวาบน)</li>
         <li>กด <strong>Load unpacked</strong> (มุมซ้ายบน)</li>
         <li>เลือก folder:
-          <div style="margin-top:6px;padding:8px;background:var(--bg-card-2);border-radius:6px;font-family:ui-monospace,Menlo,monospace;font-size:12px">
+          <div style="margin-top:6px;padding:10px;background:var(--bg-soft);border-radius:6px;font-family:ui-monospace,Menlo,monospace;font-size:12px;border:1px solid var(--border)">
             ~/Desktop/ClaudeCode/freepik-credit-tracker/extension
           </div>
         </li>
         <li>Extension "FEFL Beat" จะปรากฏใน toolbar — pin ไว้ใช้สะดวกกว่า</li>
       </ol>
     </div>
-    <div class="card" style="display:block">
-      <h3 style="margin:0 0 8px">หลังติดตั้ง</h3>
-      <ul style="line-height:1.8;color:var(--text);font-size:13px">
-        <li><strong>เมื่อยังไม่ได้ login</strong> — extension จะแสดงปุ่ม <strong>🔑 FEFL Beat : Sign On</strong> บนหน้า login พร้อมรายชื่อบัญชีที่บันทึกไว้</li>
-        <li><strong>เมื่อ login แล้ว (Freepik)</strong> — extension จะติดตามยอดเครดิตอัตโนมัติ ส่งข้อมูลไป Dashboard</li>
-        <li><strong>เพิ่มเว็บอื่น</strong> — กลับไปหน้า Website แล้วกด "+ เพิ่มเว็บใหม่"</li>
-      </ul>
+    <div class="card" style="display:block;margin-top:14px">
+      <div>
+        <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">หลังติดตั้ง</h3>
+        <ul style="line-height:1.85;color:var(--text);font-size:13.5px;padding-left:20px;margin:0">
+          <li><strong>เมื่อยังไม่ได้ login</strong> — extension จะแสดงปุ่ม <strong>🔑 FEFL Beat : Sign On</strong> บนหน้า login พร้อมรายชื่อบัญชีที่บันทึกไว้</li>
+          <li><strong>เมื่อ login แล้ว (Freepik)</strong> — extension จะติดตามยอดเครดิตอัตโนมัติ ส่งข้อมูลไป Dashboard</li>
+          <li><strong>เพิ่มเว็บอื่น</strong> — กลับไปหน้า Website แล้วกด "+ เพิ่มเว็บใหม่"</li>
+        </ul>
+      </div>
     </div>
   `;
 }
@@ -584,7 +691,6 @@ $('logout-btn').addEventListener('click', async () => {
     return;
   }
   $('who').textContent = '👤 ' + state.username;
-  // Default route → dashboard
   if (!location.hash) location.hash = '#/dashboard';
   await navigate();
 })();

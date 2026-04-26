@@ -4,84 +4,136 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>FEFL Beat · Admin Login</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg: #0b0f17; --bg-card: #131a26; --bg-card-2: #1b2433;
-      --border: #243044; --text: #e6ebf3; --text-muted: #8b95a8;
-      --accent: #4f8cff; --critical: #dc2626;
+      --bg: #ffffff;
+      --bg-soft: #f6f9ff;
+      --bg-card: #ffffff;
+      --border: #e3eaf5;
+      --border-strong: #c8d4ec;
+      --text: #0f172a;
+      --text-muted: #5b6b85;
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --critical: #dc2626;
+      --green: #10b981;
+      --shadow-md: 0 10px 40px rgba(37, 99, 235, .12);
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; height: 100%; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Thai", system-ui, sans-serif;
-      background: var(--bg); color: var(--text);
+      font-family: 'Inter', 'Noto Sans Thai', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      color: var(--text);
       display: flex; align-items: center; justify-content: center;
       min-height: 100vh;
+      background:
+        radial-gradient(900px 400px at 80% -10%, rgba(124, 58, 237, .08), transparent 60%),
+        radial-gradient(700px 350px at 10% 110%, rgba(37, 99, 235, .10), transparent 60%),
+        var(--bg);
+      -webkit-font-smoothing: antialiased;
     }
     .card {
       background: var(--bg-card);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 28px;
-      width: 360px;
+      border-radius: 16px;
+      padding: 32px;
+      width: 380px;
       max-width: 92vw;
+      box-shadow: var(--shadow-md);
     }
-    h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
-    .sub { color: var(--text-muted); font-size: 13px; margin-bottom: 20px; }
-    .field { margin-bottom: 12px; }
-    .field label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+    .brand {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 22px;
+    }
+    .brand-logo {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, #2563eb 0%, #7c3aed 50%, #06b6d4 100%);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-weight: 800; font-size: 16px;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, .3);
+    }
+    .brand-text { font-weight: 700; font-size: 17px; letter-spacing: -0.01em; }
+
+    h1 { margin: 0 0 6px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+    .sub { color: var(--text-muted); font-size: 14px; margin-bottom: 24px; }
+
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 6px; }
     .field input {
       width: 100%;
-      background: var(--bg-card-2);
+      background: #fff;
       color: var(--text);
       border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 9px 10px;
+      border-radius: 8px;
+      padding: 11px 12px;
       font-size: 14px;
       font-family: inherit;
+      transition: border .15s, box-shadow .15s;
     }
+    .field input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, .15);
+    }
+
     button {
       width: 100%;
-      background: var(--accent);
+      background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
       color: #fff;
       border: none;
-      border-radius: 6px;
-      padding: 10px;
-      font-size: 14px;
-      font-weight: 500;
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 14.5px;
+      font-weight: 600;
       cursor: pointer;
       font-family: inherit;
-      margin-top: 6px;
+      margin-top: 8px;
+      transition: transform .1s, box-shadow .15s;
     }
-    button:hover { background: #3b78eb; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(37, 99, 235, .3); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
     .err {
-      background: rgba(220, 38, 38, .15);
-      border: 1px solid var(--critical);
-      color: #fca5a5;
-      padding: 8px 10px;
-      border-radius: 6px;
+      background: rgba(220, 38, 38, .08);
+      border: 1px solid rgba(220, 38, 38, .25);
+      color: var(--critical);
+      padding: 10px 12px;
+      border-radius: 8px;
       font-size: 13px;
-      margin-bottom: 12px;
+      margin-bottom: 14px;
       display: none;
     }
     .ok-msg {
-      background: rgba(16, 185, 129, .12);
-      border: 1px solid #10b981;
-      color: #6ee7b7;
-      padding: 8px 10px;
-      border-radius: 6px;
+      background: rgba(16, 185, 129, .08);
+      border: 1px solid rgba(16, 185, 129, .25);
+      color: var(--green);
+      padding: 10px 12px;
+      border-radius: 8px;
       font-size: 13px;
-      margin-bottom: 12px;
+      margin-bottom: 14px;
       display: none;
     }
-    .footer-link { text-align: center; margin-top: 14px; font-size: 12px; color: var(--text-muted); }
-    .footer-link a { color: var(--accent); text-decoration: none; }
+
+    .footer-link {
+      text-align: center; margin-top: 18px;
+      font-size: 13px; color: var(--text-muted);
+    }
+    .footer-link a { color: var(--primary); text-decoration: none; }
+    .footer-link a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
   <div class="card">
-    <h1 id="title">FEFL Beat · Admin</h1>
+    <div class="brand">
+      <span class="brand-logo">F</span>
+      <span class="brand-text">FEFL Beat</span>
+    </div>
+
+    <h1 id="title">Admin Login</h1>
     <div class="sub" id="subtitle">เข้าสู่ระบบเพื่อจัดการ Website / Credentials</div>
 
     <div class="err" id="err"></div>
@@ -104,13 +156,13 @@
     </form>
 
     <div class="footer-link">
-      <a href="/">← กลับ Dashboard</a>
+      <a href="/">← กลับหน้าแรก</a>
     </div>
   </div>
 
 <script>
 const $ = id => document.getElementById(id);
-let mode = 'login';   // 'login' | 'setup'
+let mode = 'login';
 
 function showErr(msg) { $('err').textContent = msg; $('err').style.display = ''; $('ok').style.display = 'none'; }
 function showOk(msg)  { $('ok').textContent = msg; $('ok').style.display = ''; $('err').style.display = 'none'; }
@@ -124,7 +176,7 @@ async function init() {
   }
   if (!r.has_admin) {
     mode = 'setup';
-    $('title').textContent = 'FEFL Beat · ตั้งค่าครั้งแรก';
+    $('title').textContent = 'ตั้งค่าครั้งแรก';
     $('subtitle').textContent = 'สร้าง username / password สำหรับ admin (ครั้งแรกเท่านั้น)';
     $('confirm-field').style.display = '';
     $('submit').textContent = 'สร้างบัญชี';
@@ -143,14 +195,8 @@ $('form').addEventListener('submit', async (e) => {
 
   try {
     if (mode === 'setup') {
-      if (password.length < 6) {
-        showErr('Password ต้องมี 6 ตัวอักษรขึ้นไป');
-        return;
-      }
-      if (password !== $('confirm').value) {
-        showErr('Password ไม่ตรงกัน');
-        return;
-      }
+      if (password.length < 6) { showErr('Password ต้องมี 6 ตัวอักษรขึ้นไป'); return; }
+      if (password !== $('confirm').value) { showErr('Password ไม่ตรงกัน'); return; }
       const res = await fetch('/api/admin/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
