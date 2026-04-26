@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FEFL Beat · Admin Login</title>
+  <style>
+    :root {
+      --bg: #0b0f17; --bg-card: #131a26; --bg-card-2: #1b2433;
+      --border: #243044; --text: #e6ebf3; --text-muted: #8b95a8;
+      --accent: #4f8cff; --critical: #dc2626;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Thai", system-ui, sans-serif;
+      background: var(--bg); color: var(--text);
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh;
+    }
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px;
+      width: 360px;
+      max-width: 92vw;
+    }
+    h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+    .sub { color: var(--text-muted); font-size: 13px; margin-bottom: 20px; }
+    .field { margin-bottom: 12px; }
+    .field label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+    .field input {
+      width: 100%;
+      background: var(--bg-card-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 9px 10px;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    button {
+      width: 100%;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+      margin-top: 6px;
+    }
+    button:hover { background: #3b78eb; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .err {
+      background: rgba(220, 38, 38, .15);
+      border: 1px solid var(--critical);
+      color: #fca5a5;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      margin-bottom: 12px;
+      display: none;
+    }
+    .ok-msg {
+      background: rgba(16, 185, 129, .12);
+      border: 1px solid #10b981;
+      color: #6ee7b7;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      margin-bottom: 12px;
+      display: none;
+    }
+    .footer-link { text-align: center; margin-top: 14px; font-size: 12px; color: var(--text-muted); }
+    .footer-link a { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1 id="title">FEFL Beat · Admin</h1>
+    <div class="sub" id="subtitle">เข้าสู่ระบบเพื่อจัดการ Website / Credentials</div>
+
+    <div class="err" id="err"></div>
+    <div class="ok-msg" id="ok"></div>
+
+    <form id="form">
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" type="text" required autocomplete="username" />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" type="password" required autocomplete="current-password" />
+      </div>
+      <div class="field" id="confirm-field" style="display:none">
+        <label for="confirm">ยืนยัน Password</label>
+        <input id="confirm" type="password" autocomplete="new-password" />
+      </div>
+      <button type="submit" id="submit">เข้าสู่ระบบ</button>
+    </form>
+
+    <div class="footer-link">
+      <a href="/">← กลับ Dashboard</a>
+    </div>
+  </div>
+
+<script>
+const $ = id => document.getElementById(id);
+let mode = 'login';   // 'login' | 'setup'
+
+function showErr(msg) { $('err').textContent = msg; $('err').style.display = ''; $('ok').style.display = 'none'; }
+function showOk(msg)  { $('ok').textContent = msg; $('ok').style.display = ''; $('err').style.display = 'none'; }
+function clearMsg()   { $('err').style.display = 'none'; $('ok').style.display = 'none'; }
+
+async function init() {
+  const r = await fetch('/api/admin/state').then(r => r.json());
+  if (r.logged_in) {
+    location.replace('/admin');
+    return;
+  }
+  if (!r.has_admin) {
+    mode = 'setup';
+    $('title').textContent = 'FEFL Beat · ตั้งค่าครั้งแรก';
+    $('subtitle').textContent = 'สร้าง username / password สำหรับ admin (ครั้งแรกเท่านั้น)';
+    $('confirm-field').style.display = '';
+    $('submit').textContent = 'สร้างบัญชี';
+    $('password').setAttribute('autocomplete', 'new-password');
+    showOk('ยังไม่มี admin ในระบบ — กรอกข้อมูลด้านล่างเพื่อสร้างบัญชีแรก');
+  }
+}
+
+$('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearMsg();
+  $('submit').disabled = true;
+
+  const username = $('username').value.trim();
+  const password = $('password').value;
+
+  try {
+    if (mode === 'setup') {
+      if (password.length < 6) {
+        showErr('Password ต้องมี 6 ตัวอักษรขึ้นไป');
+        return;
+      }
+      if (password !== $('confirm').value) {
+        showErr('Password ไม่ตรงกัน');
+        return;
+      }
+      const res = await fetch('/api/admin/setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        showErr('สร้างบัญชีไม่สำเร็จ: ' + (j.detail || res.status));
+        return;
+      }
+    } else {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        showErr('เข้าสู่ระบบไม่สำเร็จ: ' + (j.detail || res.status));
+        return;
+      }
+    }
+    location.replace('/admin');
+  } finally {
+    $('submit').disabled = false;
+  }
+});
+
+init();
+</script>
+</body>
+</html>

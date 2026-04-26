@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="head">
+      <div class="title">FEFL Beat</div>
+      <div class="updated" id="updated">—</div>
+    </div>
+
+    <div class="profile" id="profile" style="display:none">
+      <span class="profile-icon">👤</span>
+      <span class="profile-name" id="profile-name"></span>
+    </div>
+
+    <div class="balance">
+      <div class="balance-num" id="balance">—</div>
+      <div class="balance-label">เครดิตคงเหลือ</div>
+      <div class="balance-time" id="balance-time"></div>
+    </div>
+
+    <div class="status-row">
+      <span class="dot" id="alert-dot"></span>
+      <span id="alert-text">รอข้อมูล…</span>
+    </div>
+
+    <div class="actions">
+      <button class="primary" id="dashboard-btn">เปิด Dashboard</button>
+      <button id="options-btn">ตั้งค่า</button>
+    </div>
+
+    <div class="footer">
+      <span class="dot" id="conn-dot"></span>
+      <span id="conn-text">กำลังตรวจสอบ…</span>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

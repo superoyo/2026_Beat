@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FEFL Beat — Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+  <style>
+    :root {
+      --bg: #0b0f17;
+      --bg-card: #131a26;
+      --bg-card-2: #1b2433;
+      --border: #243044;
+      --text: #e6ebf3;
+      --text-muted: #8b95a8;
+      --accent: #4f8cff;
+      --ok: #10b981;
+      --warning: #f59e0b;
+      --critical: #dc2626;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Thai", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+    h1 { margin: 0; font-size: 20px; font-weight: 600; }
+    .subtitle { color: var(--text-muted); font-size: 13px; margin-top: 2px; }
+    .profile-line {
+      display: flex; align-items: center; gap: 6px;
+      color: var(--text); font-size: 13px; margin-top: 4px;
+    }
+    .header-actions { display: flex; align-items: center; gap: 8px; }
+    button, .btn {
+      background: var(--bg-card-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    button:hover { background: #232f44; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.primary:hover { background: #3b78eb; }
+
+    .grid-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 18px;
+    }
+    .card-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 6px;
+    }
+    .card-value { font-size: 28px; font-weight: 600; line-height: 1.2; }
+    .card-sub { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+
+    .progress { height: 6px; background: var(--bg-card-2); border-radius: 4px; margin-top: 12px; overflow: hidden; }
+    .progress > div { height: 100%; background: var(--accent); transition: width .4s ease; }
+
+    .alert-ok       { color: var(--ok); }
+    .alert-warning  { color: var(--warning); }
+    .alert-critical { color: var(--critical); }
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+    .dot-ok       { background: var(--ok); }
+    .dot-warning  { background: var(--warning); }
+    .dot-critical { background: var(--critical); }
+
+    section.panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 20px;
+      margin-bottom: 24px;
+    }
+    section.panel h2 {
+      margin: 0 0 12px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .chart-wrap { position: relative; height: 280px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+    th { color: var(--text-muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .delta-down { color: var(--critical); }
+    .delta-up   { color: var(--ok); }
+    .delta-zero { color: var(--text-muted); }
+
+    .empty {
+      padding: 48px 16px;
+      text-align: center;
+      color: var(--text-muted);
+    }
+
+    details > summary {
+      cursor: pointer;
+      list-style: none;
+      font-weight: 600;
+      font-size: 15px;
+    }
+    details > summary::-webkit-details-marker { display: none; }
+    details[open] > summary { margin-bottom: 12px; }
+
+    .form-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .form-row label {
+      flex: 0 0 200px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .form-row input {
+      flex: 1;
+      max-width: 200px;
+      background: var(--bg-card-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 10px;
+      font-size: 13px;
+      font-family: inherit;
+    }
+    .save-status { margin-left: 12px; font-size: 12px; color: var(--text-muted); }
+
+    footer {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 12px;
+      margin: 32px 0 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>FEFL Beat <span style="color:var(--text-muted);font-weight:400;font-size:14px">· Credit Dashboard</span></h1>
+        <div class="subtitle" id="subtitle">กำลังโหลดข้อมูล…</div>
+        <div class="profile-line" id="profile-line" style="display:none">
+          <span style="font-size:14px">👤</span>
+          <span id="profile-line-name"></span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <span id="status-pill"><span class="dot dot-ok"></span><span id="status-text">เชื่อมต่อแล้ว</span></span>
+        <button id="refresh-btn">รีเฟรช</button>
+      </div>
+    </header>
+
+    <div id="empty-state" class="empty" style="display:none">
+      <div style="font-size: 18px; margin-bottom: 8px;">ยังไม่มีข้อมูลเครดิต</div>
+      <div>เปิด <a href="https://www.freepik.com" target="_blank" style="color:var(--accent)">freepik.com</a> เพื่อให้ extension เริ่มเก็บข้อมูล</div>
+    </div>
+
+    <div id="main-view">
+      <div class="grid-cards" id="cards">
+        <div class="card">
+          <div class="card-label">เครดิตคงเหลือ</div>
+          <div class="card-value" id="card-balance">—</div>
+          <div class="card-sub" id="card-balance-sub">ยังไม่มีข้อมูล</div>
+          <div class="progress"><div id="balance-progress" style="width:0%"></div></div>
+        </div>
+        <div class="card">
+          <div class="card-label">เหลือใช้ได้อีก (วัน)</div>
+          <div class="card-value" id="card-days"><span class="alert-ok">—</span></div>
+          <div class="card-sub" id="card-days-sub">รอข้อมูล burn rate</div>
+        </div>
+        <div class="card">
+          <div class="card-label">อัตราใช้งาน (7 วัน)</div>
+          <div class="card-value" id="card-burn">—</div>
+          <div class="card-sub">เครดิต / วัน เฉลี่ย 7 วัน</div>
+        </div>
+        <div class="card">
+          <div class="card-label">คาดว่าหมดวันที่</div>
+          <div class="card-value" id="card-projection">—</div>
+          <div class="card-sub" id="card-projection-sub">ที่อัตราใช้งานปัจจุบัน</div>
+        </div>
+      </div>
+
+      <section class="panel">
+        <h2>การใช้งานรายวัน (30 วันล่าสุด)</h2>
+        <div class="chart-wrap"><canvas id="usage-chart"></canvas></div>
+      </section>
+
+      <section class="panel">
+        <h2>Snapshot ล่าสุด</h2>
+        <table id="snapshots-table">
+          <thead>
+            <tr>
+              <th>วันที่ / เวลา</th>
+              <th>บัญชี</th>
+              <th>เครื่อง</th>
+              <th>คงเหลือ</th>
+              <th>เปลี่ยนแปลง</th>
+              <th>หน้า</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <section class="panel">
+        <details>
+          <summary>ตั้งค่า</summary>
+          <div class="form-row">
+            <label for="monthly-quota">โควต้ารายเดือน (เครดิต)</label>
+            <input type="number" id="monthly-quota" min="0" step="100" />
+          </div>
+          <div class="form-row">
+            <label for="billing-cycle-day">วันที่รอบบิลเริ่ม (1-31)</label>
+            <input type="number" id="billing-cycle-day" min="1" max="31" step="1" />
+          </div>
+          <div class="form-row">
+            <button class="primary" id="save-config">บันทึก</button>
+            <span class="save-status" id="save-status"></span>
+          </div>
+        </details>
+      </section>
+    </div>
+
+    <footer>FEFL Beat · เก็บข้อมูลแบบ local เท่านั้น</footer>
+  </div>
+
+<script>
+const API = '';   // same origin (localhost:8765)
+let chart = null;
+
+// --- helpers -----------------------------------------------------------
+const fmt = new Intl.NumberFormat('th-TH');
+function fmtInt(n) { return n == null ? '—' : fmt.format(Math.round(n)); }
+function fmtNum(n, digits = 1) {
+  if (n == null) return '—';
+  return n.toLocaleString('th-TH', { maximumFractionDigits: digits });
+}
+function fmtRelative(iso) {
+  if (!iso) return 'ยังไม่มี';
+  const then = new Date(iso);
+  const diffMs = Date.now() - then.getTime();
+  const sec = Math.floor(diffMs / 1000);
+  if (sec < 60) return 'เมื่อสักครู่';
+  if (sec < 3600) return Math.floor(sec / 60) + ' นาทีที่แล้ว';
+  if (sec < 86400) return Math.floor(sec / 3600) + ' ชั่วโมงที่แล้ว';
+  return then.toLocaleString('th-TH');
+}
+function fmtThaiDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso + 'T00:00:00').toLocaleDateString('th-TH', {
+    day: 'numeric', month: 'short', year: '2-digit',
+  });
+}
+function fmtDateTime(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('th-TH', {
+    day: '2-digit', month: '2-digit', year: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+function alertClass(level) {
+  return level === 'critical' ? 'alert-critical'
+       : level === 'warning'  ? 'alert-warning'
+       : 'alert-ok';
+}
+function dotClass(level) {
+  return level === 'critical' ? 'dot-critical'
+       : level === 'warning'  ? 'dot-warning'
+       : 'dot-ok';
+}
+
+// --- API ---------------------------------------------------------------
+async function fetchJson(path) {
+  const res = await fetch(API + path, { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+// --- render ------------------------------------------------------------
+function renderEmpty() {
+  document.getElementById('empty-state').style.display = '';
+  document.getElementById('main-view').style.display = 'none';
+}
+function renderMain() {
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('main-view').style.display = '';
+}
+
+function renderSummary(s) {
+  document.getElementById('subtitle').textContent =
+    'อัพเดทล่าสุด: ' + fmtRelative(s.last_snapshot_at) +
+    (s.last_snapshot_at ? ' · ' + new Date(s.last_snapshot_at).toLocaleString('th-TH') : '');
+
+  const profileLine = document.getElementById('profile-line');
+  if (s.profile_name) {
+    profileLine.style.display = '';
+    document.getElementById('profile-line-name').textContent = s.profile_name;
+  } else {
+    profileLine.style.display = 'none';
+  }
+
+  document.getElementById('card-balance').textContent = fmtInt(s.current_balance);
+  const usedTxt = s.credits_used_this_cycle != null
+    ? `ใช้ไปแล้ว ${fmtInt(s.credits_used_this_cycle)} / ${fmtInt(s.monthly_quota)} (${fmtNum(s.usage_percent)}%)`
+    : '—';
+  document.getElementById('card-balance-sub').textContent = usedTxt;
+  const pct = Math.max(0, Math.min(100, s.usage_percent || 0));
+  document.getElementById('balance-progress').style.width = pct + '%';
+
+  const daysEl = document.getElementById('card-days');
+  if (s.days_until_empty == null) {
+    daysEl.innerHTML = '<span class="alert-ok">—</span>';
+    document.getElementById('card-days-sub').textContent = 'ยังไม่มี burn rate';
+  } else {
+    daysEl.innerHTML = `<span class="${alertClass(s.alert_level)}">${s.days_until_empty} วัน</span>`;
+    const remaining = s.days_in_cycle_remaining ?? 0;
+    document.getElementById('card-days-sub').textContent =
+      `รอบบิลเหลืออีก ${remaining} วัน`;
+  }
+
+  document.getElementById('card-burn').textContent = fmtInt(s.burn_rate_7day);
+  document.getElementById('card-projection').textContent = fmtThaiDate(s.projected_zero_date);
+  document.getElementById('card-projection-sub').textContent =
+    s.avg_daily_usage != null ? `เฉลี่ยทั้งรอบ: ${fmtInt(s.avg_daily_usage)} เครดิต/วัน` : '—';
+
+  const dot = document.querySelector('#status-pill .dot');
+  dot.className = 'dot ' + dotClass(s.alert_level);
+  const labels = { ok: 'ปกติ', warning: 'ใกล้หมด', critical: 'วิกฤต' };
+  document.getElementById('status-text').textContent =
+    'สถานะ: ' + (labels[s.alert_level] || 'ปกติ');
+}
+
+function renderChart(history, summary) {
+  // history is newest-first; reverse for chart
+  const days = history.days.slice().reverse();
+
+  // Convert balances → daily-usage deltas
+  const labels = [];
+  const values = [];
+  for (let i = 1; i < days.length; i++) {
+    const used = Math.max(0, days[i - 1].balance - days[i].balance);
+    labels.push(days[i].date);
+    values.push(used);
+  }
+
+  const avg = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+  const colors = values.map(v =>
+    v > avg * 1.5 ? 'rgba(245, 158, 11, .85)' : 'rgba(79, 140, 255, .75)'
+  );
+
+  const ctx = document.getElementById('usage-chart').getContext('2d');
+  if (chart) chart.destroy();
+
+  if (values.length === 0) {
+    ctx.fillStyle = '#8b95a8';
+    ctx.font = '14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('ยังไม่มีข้อมูลย้อนหลังเพียงพอ — ต้องการอย่างน้อย 2 วัน',
+      ctx.canvas.width / 2 / window.devicePixelRatio,
+      80);
+    return;
+  }
+
+  chart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels.map(d => fmtThaiDate(d)),
+      datasets: [{
+        label: 'เครดิตที่ใช้',
+        data: values,
+        backgroundColor: colors,
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label(ctx) {
+              const v = ctx.parsed.y;
+              const pctOfAvg = avg > 0 ? Math.round(v / avg * 100) : 0;
+              return ` ${fmtInt(v)} เครดิต  (${pctOfAvg}% ของค่าเฉลี่ย)`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { color: '#8b95a8' }, grid: { color: '#1b2433' } },
+        y: { ticks: { color: '#8b95a8' }, grid: { color: '#1b2433' }, beginAtZero: true },
+      },
+    },
+  });
+}
+
+function renderSnapshots(snapshots) {
+  const tbody = document.querySelector('#snapshots-table tbody');
+  tbody.innerHTML = '';
+  const list = snapshots.snapshots || [];
+  if (list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted)">ยังไม่มี snapshot</td></tr>';
+    return;
+  }
+  list.forEach((s, i) => {
+    const prev = list[i + 1];
+    let delta = '—';
+    let cls = 'delta-zero';
+    if (prev) {
+      const d = s.balance - prev.balance;
+      if (d < 0) { delta = fmtInt(d); cls = 'delta-down'; }
+      else if (d > 0) { delta = '+' + fmtInt(d); cls = 'delta-up'; }
+      else { delta = '0'; }
+    }
+    const tr = document.createElement('tr');
+    const profileCell = s.profile_name
+      ? `<span title="${escapeHtml(s.profile_name)}">${escapeHtml(s.profile_name)}</span>`
+      : '<span style="color:var(--text-muted)">—</span>';
+    const hostLabel = s.host_name || '—';
+    const hostTitle = s.host_name
+      ? `${s.host_name}${s.host_ip ? ' · ' + s.host_ip : ''}`
+      : '';
+    const hostCell = s.host_name
+      ? `<span title="${escapeHtml(hostTitle)}">${escapeHtml(hostLabel)}</span>`
+      : '<span style="color:var(--text-muted)">—</span>';
+    tr.innerHTML = `
+      <td>${fmtDateTime(s.timestamp)}</td>
+      <td style="font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${profileCell}</td>
+      <td style="font-size:12px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted)">${hostCell}</td>
+      <td class="num">${fmtInt(s.balance)}</td>
+      <td class="num ${cls}">${delta}</td>
+      <td style="color:var(--text-muted);font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(s.source_url || '')}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+async function loadConfig() {
+  const cfg = await fetchJson('/api/config');
+  document.getElementById('monthly-quota').value = cfg.monthly_quota;
+  document.getElementById('billing-cycle-day').value = cfg.billing_cycle_day;
+}
+
+async function saveConfig() {
+  const status = document.getElementById('save-status');
+  status.textContent = 'กำลังบันทึก…';
+  try {
+    await fetch('/api/config', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        monthly_quota: parseFloat(document.getElementById('monthly-quota').value),
+        billing_cycle_day: parseInt(document.getElementById('billing-cycle-day').value, 10),
+      }),
+    }).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); });
+    status.textContent = 'บันทึกแล้ว';
+    await refresh();
+    setTimeout(() => { status.textContent = ''; }, 2500);
+  } catch (e) {
+    status.textContent = 'เกิดข้อผิดพลาด: ' + e.message;
+  }
+}
+
+async function refresh() {
+  try {
+    const [summary, history, snaps] = await Promise.all([
+      fetchJson('/api/summary'),
+      fetchJson('/api/history?days=30'),
+      fetchJson('/api/snapshots?limit=20'),
+    ]);
+    if (summary.current_balance == null) {
+      renderEmpty();
+      return;
+    }
+    renderMain();
+    renderSummary(summary);
+    renderChart(history, summary);
+    renderSnapshots(snaps);
+  } catch (err) {
+    document.getElementById('subtitle').textContent =
+      'เกิดข้อผิดพลาด: ' + err.message;
+  }
+}
+
+document.getElementById('refresh-btn').addEventListener('click', refresh);
+document.getElementById('save-config').addEventListener('click', saveConfig);
+
+(async () => {
+  await loadConfig();
+  await refresh();
+  setInterval(refresh, 60_000);
+})();
+</script>
+</body>
+</html>

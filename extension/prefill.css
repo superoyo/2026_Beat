@@ -1,0 +1,74 @@
+/* Prefill widget — ลอย bottom-right ของหน้า login */
+#fct-prefill-widget {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 2147483647;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+  color: #e6ebf3;
+  max-width: 320px;
+}
+
+#fct-prefill-widget * { box-sizing: border-box; }
+
+.fct-trigger {
+  background: #4f8cff;
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .35);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
+}
+.fct-trigger:hover { background: #3b78eb; }
+
+.fct-panel {
+  background: #131a26;
+  border: 1px solid #243044;
+  border-radius: 12px;
+  padding: 12px;
+  width: 320px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .5);
+  margin-bottom: 10px;
+}
+.fct-panel-head {
+  display: flex; justify-content: space-between; align-items: center;
+  font-weight: 600; margin-bottom: 8px;
+}
+.fct-panel-head .fct-close {
+  background: none; border: none; color: #8b95a8;
+  cursor: pointer; font-size: 16px; padding: 0 4px;
+}
+.fct-panel-head .fct-close:hover { color: #e6ebf3; }
+.fct-panel-sub { color: #8b95a8; font-size: 11px; margin-bottom: 8px; }
+
+.fct-cred {
+  background: #1b2433;
+  border: 1px solid #243044;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: border .15s;
+}
+.fct-cred:hover { border-color: #4f8cff; background: #232f44; }
+.fct-cred-label { font-size: 12px; color: #8b95a8; }
+.fct-cred-username {
+  font-size: 13px; font-weight: 500; color: #e6ebf3;
+  word-break: break-all;
+}
+
+.fct-empty {
+  color: #8b95a8;
+  font-size: 12px;
+  text-align: center;
+  padding: 14px;
+}
+.fct-empty a { color: #4f8cff; }

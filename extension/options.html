@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <title>FEFL Beat — ตั้งค่า</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Thai", system-ui, sans-serif;
+      background: #0b0f17;
+      color: #e6ebf3;
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 24px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    h1 { font-size: 20px; margin-bottom: 4px; }
+    .sub { color: #8b95a8; font-size: 13px; margin-bottom: 24px; }
+
+    .field { margin-bottom: 18px; }
+    .field label { display: block; font-weight: 500; margin-bottom: 4px; }
+    .field .hint { color: #8b95a8; font-size: 12px; margin-bottom: 6px; }
+    .field input {
+      width: 100%;
+      background: #131a26;
+      color: #e6ebf3;
+      border: 1px solid #243044;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px;
+    }
+
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    button {
+      background: #1b2433;
+      color: #e6ebf3;
+      border: 1px solid #243044;
+      border-radius: 6px;
+      padding: 8px 14px;
+      font-family: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    button.primary { background: #4f8cff; border-color: #4f8cff; color: #fff; }
+    button:hover { background: #232f44; }
+    button.primary:hover { background: #3b78eb; }
+
+    .status { margin-left: 12px; color: #8b95a8; font-size: 13px; }
+
+    .test-result {
+      margin-top: 10px;
+      padding: 10px;
+      background: #131a26;
+      border: 1px solid #243044;
+      border-radius: 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      max-height: 200px;
+      overflow: auto;
+    }
+    .test-result.ok    { border-color: #10b981; }
+    .test-result.warn  { border-color: #f59e0b; }
+    .test-result.error { border-color: #dc2626; }
+  </style>
+</head>
+<body>
+  <h1>FEFL Beat</h1>
+  <div class="sub">ตั้งค่า extension — ทุกค่าจะถูกเก็บใน Chrome sync storage ของคุณเอง</div>
+
+  <div class="field">
+    <label for="customSelector">CSS Selector ที่กำหนดเอง (optional)</label>
+    <div class="hint">
+      ใช้เมื่อ extension หาเลขเครดิตอัตโนมัติไม่เจอ —
+      ลอง inspect element บน freepik.com แล้ววาง CSS selector ของ element ที่มีเลขเครดิต
+      <br />ตัวอย่าง: <code>[data-testid="user-credits"]</code> หรือ <code>.header-credits .number</code>
+    </div>
+    <input id="customSelector" type="text" placeholder="เว้นว่างไว้เพื่อใช้ pattern matching อัตโนมัติ" />
+  </div>
+
+  <div class="row">
+    <button id="testBtn">ทดสอบ Selector</button>
+    <span class="status" id="testHint">เปิดแท็บ freepik.com แล้วกดปุ่มนี้เพื่อทดสอบ</span>
+  </div>
+  <div id="testResult" class="test-result" style="display:none"></div>
+
+  <hr style="border:0;border-top:1px solid #243044;margin:24px 0" />
+
+  <div class="field">
+    <label for="backendUrl">Backend URL</label>
+    <div class="hint">
+      ตำแหน่งของ FastAPI backend — ปกติไม่ต้องเปลี่ยน
+    </div>
+    <input id="backendUrl" type="text" placeholder="http://localhost:8765" />
+  </div>
+
+  <div class="row">
+    <button class="primary" id="saveBtn">บันทึก</button>
+    <span class="status" id="saveStatus"></span>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

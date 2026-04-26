@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FEFL Beat · Admin</title>
+  <style>
+    :root {
+      --bg: #0b0f17; --bg-card: #131a26; --bg-card-2: #1b2433;
+      --border: #243044; --text: #e6ebf3; --text-muted: #8b95a8;
+      --accent: #4f8cff; --ok: #10b981; --warning: #f59e0b; --critical: #dc2626;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Thai", system-ui, sans-serif;
+      background: var(--bg); color: var(--text);
+      display: flex; min-height: 100vh;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* Sidebar */
+    aside {
+      width: 220px;
+      background: var(--bg-card);
+      border-right: 1px solid var(--border);
+      padding: 20px 0;
+      display: flex; flex-direction: column;
+    }
+    .brand {
+      padding: 0 20px 16px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 12px;
+    }
+    .brand h1 { margin: 0; font-size: 14px; font-weight: 600; }
+    .brand .sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+    .nav { flex: 1; padding: 0 8px; }
+    .nav a {
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 12px;
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+      margin-bottom: 2px;
+    }
+    .nav a:hover { background: var(--bg-card-2); text-decoration: none; }
+    .nav a.active { background: var(--bg-card-2); color: var(--accent); }
+
+    .sidebar-footer {
+      padding: 12px 20px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .sidebar-footer button {
+      background: none; border: none; color: var(--text-muted);
+      padding: 0; cursor: pointer; font-family: inherit; font-size: 12px;
+      margin-top: 6px;
+    }
+    .sidebar-footer button:hover { color: var(--text); }
+
+    /* Main */
+    main { flex: 1; padding: 28px 32px; overflow-y: auto; }
+    main.no-pad { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+    main.no-pad iframe { flex: 1; width: 100%; border: 0; background: var(--bg); }
+    .page-head {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 18px;
+    }
+    h2.page-title { margin: 0; font-size: 20px; font-weight: 600; }
+    .crumb { color: var(--text-muted); font-size: 13px; margin-bottom: 6px; }
+    .crumb a { color: var(--text-muted); }
+
+    button.btn, .btn {
+      background: var(--bg-card-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    button.btn:hover { background: #232f44; }
+    button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.btn.primary:hover { background: #3b78eb; }
+    button.btn.danger { background: transparent; color: var(--critical); border-color: rgba(220,38,38,.3); }
+    button.btn.danger:hover { background: rgba(220,38,38,.1); }
+
+    /* Cards / lists */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      margin-bottom: 12px;
+      display: flex; justify-content: space-between; align-items: center;
+      transition: border .15s;
+    }
+    .card:hover { border-color: var(--accent); }
+    .card-clickable { cursor: pointer; }
+    .card-title { font-size: 14px; font-weight: 500; }
+    .card-sub { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+
+    .empty {
+      padding: 40px 20px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    /* Modal */
+    .modal-bg {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.6);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000;
+    }
+    .modal {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px;
+      width: 420px;
+      max-width: 92vw;
+    }
+    .modal h3 { margin: 0 0 12px; font-size: 16px; font-weight: 600; }
+    .modal-actions {
+      display: flex; justify-content: flex-end; gap: 8px;
+      margin-top: 16px;
+    }
+
+    .field { margin-bottom: 10px; }
+    .field label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+    .field input, .field textarea {
+      width: 100%;
+      background: var(--bg-card-2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 8px 10px; font-size: 13px; font-family: inherit;
+    }
+    .hint { color: var(--text-muted); font-size: 11px; margin-top: 4px; }
+
+    /* Credentials list */
+    .cred-row {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 8px;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr auto;
+      gap: 12px;
+      align-items: center;
+      font-size: 13px;
+    }
+    .cred-row .col-label { font-weight: 500; }
+    .cred-row .col-pw { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .pw-mask { color: var(--text-muted); }
+    .pw-show { color: var(--text); user-select: all; }
+    .copy-btn {
+      background: none; border: none; color: var(--text-muted);
+      cursor: pointer; font-size: 12px; padding: 2px 4px;
+    }
+    .copy-btn:hover { color: var(--accent); }
+
+    .warning-box {
+      background: rgba(245, 158, 11, .1);
+      border: 1px solid rgba(245, 158, 11, .3);
+      color: #fbbf24;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+  <aside>
+    <div class="brand">
+      <h1>FEFL Beat</h1>
+      <div class="sub">Admin · จัดการ Website / Credentials</div>
+    </div>
+    <nav class="nav">
+      <a href="#/dashboard" data-route="dashboard">📊 Dashboard</a>
+      <a href="#/sites" data-route="sites">🌐 Website</a>
+      <a href="#/extension" data-route="extension">🧩 Extension</a>
+      <a href="/" target="_blank">🏠 หน้าแรก ↗</a>
+    </nav>
+    <div class="sidebar-footer">
+      <div id="who">—</div>
+      <button id="logout-btn">ออกจากระบบ</button>
+    </div>
+  </aside>
+
+  <main id="main"></main>
+
+<script>
+const $ = id => document.getElementById(id);
+const API = '';
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function fetchJson(path, opts = {}) {
+  const res = await fetch(API + path, {
+    credentials: 'same-origin',
+    headers: opts.body ? { 'Content-Type': 'application/json' } : {},
+    ...opts,
+  });
+  if (res.status === 401) {
+    location.replace('/admin/login');
+    throw new Error('unauthorized');
+  }
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error(j.detail || ('HTTP ' + res.status));
+  }
+  return res.json();
+}
+
+// ---------- routing ----------
+const routes = {
+  'dashboard': renderDashboardEmbed,
+  'sites':     renderSitesList,
+  'extension': renderExtensionPage,
+};
+
+function setActive(route) {
+  document.querySelectorAll('.nav a[data-route]').forEach(a => {
+    a.classList.toggle('active', a.dataset.route === route);
+  });
+}
+
+function resetMainPadding() {
+  $('main').classList.remove('no-pad');
+}
+
+async function navigate() {
+  const hash = location.hash.replace(/^#\/?/, '') || 'dashboard';
+  const parts = hash.split('/');
+  const route = parts[0];
+
+  resetMainPadding();
+  if (route === 'sites' && parts[1]) {
+    setActive('sites');
+    await renderSiteDetail(parseInt(parts[1], 10));
+  } else if (routes[route]) {
+    setActive(route);
+    await routes[route]();
+  } else {
+    location.hash = '#/dashboard';
+  }
+}
+
+function renderDashboardEmbed() {
+  const m = $('main');
+  m.classList.add('no-pad');
+  // ใช้ iframe ดึง /dashboard เข้ามา — sidebar ของ admin ยังเห็นด้านซ้าย
+  m.innerHTML = `<iframe src="/dashboard" title="FEFL Beat Dashboard"></iframe>`;
+}
+
+window.addEventListener('hashchange', navigate);
+
+// ---------- pages ----------
+async function renderSitesList() {
+  $('main').innerHTML = `
+    <div class="page-head">
+      <h2 class="page-title">🌐 Websites</h2>
+      <button class="btn primary" id="add-site-btn">+ เพิ่มเว็บใหม่</button>
+    </div>
+    <div id="sites-list"></div>
+  `;
+  $('add-site-btn').addEventListener('click', showAddSiteModal);
+  await loadSites();
+}
+
+async function loadSites() {
+  const list = $('sites-list');
+  list.innerHTML = '<div class="empty">กำลังโหลด…</div>';
+  const { sites } = await fetchJson('/api/admin/sites');
+  if (sites.length === 0) {
+    list.innerHTML = '<div class="empty">ยังไม่มีเว็บ — กด <strong>+ เพิ่มเว็บใหม่</strong> ด้านบน</div>';
+    return;
+  }
+  list.innerHTML = sites.map(s => `
+    <div class="card card-clickable" data-id="${s.id}">
+      <div>
+        <div class="card-title">${escapeHtml(s.name)}</div>
+        <div class="card-sub">URL pattern: <code>${escapeHtml(s.url_pattern)}</code> · ${s.cred_count} credentials</div>
+      </div>
+      <div>→</div>
+    </div>
+  `).join('');
+  list.querySelectorAll('.card[data-id]').forEach(card => {
+    card.addEventListener('click', () => {
+      location.hash = '#/sites/' + card.dataset.id;
+    });
+  });
+}
+
+function showAddSiteModal() {
+  showModal({
+    title: 'เพิ่มเว็บใหม่',
+    body: `
+      <div class="field">
+        <label>ชื่อเว็บ</label>
+        <input id="m-name" type="text" placeholder="เช่น Behance, Adobe Stock" />
+      </div>
+      <div class="field">
+        <label>URL pattern (ใช้ * เป็น wildcard)</label>
+        <input id="m-pattern" type="text" placeholder="*.example.com/*" />
+        <div class="hint">เช่น <code>*.freepik.com/*</code> หรือ <code>app.example.com/login</code></div>
+      </div>
+    `,
+    onSubmit: async () => {
+      const name = $('m-name').value.trim();
+      const url_pattern = $('m-pattern').value.trim();
+      if (!name || !url_pattern) throw new Error('กรอกชื่อและ URL pattern');
+      await fetchJson('/api/admin/sites', {
+        method: 'POST',
+        body: JSON.stringify({ name, url_pattern }),
+      });
+      await loadSites();
+    },
+  });
+}
+
+async function renderSiteDetail(siteId) {
+  $('main').innerHTML = `
+    <div class="crumb"><a href="#/sites">← Websites</a></div>
+    <div class="page-head">
+      <h2 class="page-title" id="site-name">…</h2>
+      <div>
+        <button class="btn primary" id="add-cred-btn">+ เพิ่ม Credential</button>
+        <button class="btn danger" id="delete-site-btn">ลบเว็บนี้</button>
+      </div>
+    </div>
+    <div class="warning-box">
+      ⚠️ <strong>หมายเหตุ:</strong> Password ถูกเก็บแบบ plaintext ใน SQLite (จำเป็นเพื่อ prefill) —
+      ใครเข้าถึงไฟล์ <code>freepik_tracker.db</code> ในเครื่องนี้ก็เห็นได้ทั้งหมด
+    </div>
+    <div id="site-meta"></div>
+    <h3 style="margin-top:18px;font-size:14px">Credentials</h3>
+    <div id="creds-list"></div>
+  `;
+  await loadSite(siteId);
+
+  $('add-cred-btn').addEventListener('click', () => showAddCredModal(siteId));
+  $('delete-site-btn').addEventListener('click', async () => {
+    if (!confirm('ลบเว็บนี้และ credentials ทั้งหมด?')) return;
+    await fetchJson('/api/admin/sites/' + siteId, { method: 'DELETE' });
+    location.hash = '#/sites';
+  });
+}
+
+async function loadSite(siteId) {
+  const { site, credentials } = await fetchJson('/api/admin/sites/' + siteId);
+  $('site-name').textContent = site.name;
+  $('site-meta').innerHTML = `
+    <div class="card">
+      <div>
+        <div class="card-sub">URL pattern</div>
+        <div class="card-title"><code>${escapeHtml(site.url_pattern)}</code></div>
+      </div>
+    </div>
+  `;
+
+  const list = $('creds-list');
+  if (credentials.length === 0) {
+    list.innerHTML = '<div class="empty">ยังไม่มี credential — กด <strong>+ เพิ่ม Credential</strong> ด้านบน</div>';
+    return;
+  }
+  list.innerHTML = credentials.map(c => `
+    <div class="cred-row" data-id="${c.id}">
+      <div class="col-label">${escapeHtml(c.label || '(ไม่มีชื่อ)')}</div>
+      <div>
+        <span style="color:var(--text-muted);font-size:11px">user: </span>
+        <span>${escapeHtml(c.username)}</span>
+        <button class="copy-btn" data-copy="${escapeHtml(c.username)}" title="คัดลอก">📋</button>
+      </div>
+      <div class="col-pw">
+        <span style="color:var(--text-muted);font-size:11px">pw: </span>
+        <span class="pw-mask" data-pw="${escapeHtml(c.password)}" data-shown="false">••••••••</span>
+        <button class="copy-btn pw-toggle" data-id="${c.id}" title="show/hide">👁</button>
+        <button class="copy-btn" data-copy="${escapeHtml(c.password)}" title="คัดลอก">📋</button>
+      </div>
+      <div>
+        <button class="btn danger" data-del="${c.id}">ลบ</button>
+      </div>
+    </div>
+  `).join('');
+
+  list.querySelectorAll('.copy-btn[data-copy]').forEach(b => {
+    b.addEventListener('click', () => {
+      navigator.clipboard.writeText(b.dataset.copy);
+      const orig = b.textContent; b.textContent = '✓';
+      setTimeout(() => { b.textContent = orig; }, 800);
+    });
+  });
+  list.querySelectorAll('.pw-toggle').forEach(b => {
+    b.addEventListener('click', () => {
+      const span = b.parentElement.querySelector('.pw-mask');
+      const shown = span.dataset.shown === 'true';
+      if (shown) {
+        span.textContent = '••••••••';
+        span.classList.remove('pw-show'); span.classList.add('pw-mask');
+        span.dataset.shown = 'false';
+      } else {
+        span.textContent = span.dataset.pw;
+        span.classList.add('pw-show'); span.classList.remove('pw-mask');
+        span.dataset.shown = 'true';
+      }
+    });
+  });
+  list.querySelectorAll('button[data-del]').forEach(b => {
+    b.addEventListener('click', async () => {
+      if (!confirm('ลบ credential นี้?')) return;
+      await fetchJson('/api/admin/credentials/' + b.dataset.del, { method: 'DELETE' });
+      await loadSite(siteId);
+    });
+  });
+}
+
+function showAddCredModal(siteId) {
+  showModal({
+    title: 'เพิ่ม Credential',
+    body: `
+      <div class="field">
+        <label>ชื่อย่อ (ไม่บังคับ)</label>
+        <input id="m-label" type="text" placeholder="เช่น account หลัก, สำรอง 1" />
+      </div>
+      <div class="field">
+        <label>Username / Email</label>
+        <input id="m-username" type="text" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input id="m-password" type="password" autocomplete="off" />
+      </div>
+    `,
+    onSubmit: async () => {
+      const label = $('m-label').value.trim() || null;
+      const username = $('m-username').value.trim();
+      const password = $('m-password').value;
+      if (!username || !password) throw new Error('กรอก username และ password');
+      await fetchJson('/api/admin/sites/' + siteId + '/credentials', {
+        method: 'POST',
+        body: JSON.stringify({ label, username, password }),
+      });
+      await loadSite(siteId);
+    },
+  });
+}
+
+function renderExtensionPage() {
+  $('main').innerHTML = `
+    <div class="page-head"><h2 class="page-title">🧩 Extension</h2></div>
+    <div class="card" style="display:block">
+      <h3 style="margin:0 0 8px">วิธีติดตั้ง FEFL Beat Extension</h3>
+      <ol style="line-height:1.8;color:var(--text);font-size:13px">
+        <li>เปิด Chrome พิมพ์ <code>chrome://extensions</code> ใน address bar</li>
+        <li>เปิดสวิตช์ <strong>Developer mode</strong> (มุมขวาบน)</li>
+        <li>กด <strong>Load unpacked</strong> (มุมซ้ายบน)</li>
+        <li>เลือก folder:
+          <div style="margin-top:6px;padding:8px;background:var(--bg-card-2);border-radius:6px;font-family:ui-monospace,Menlo,monospace;font-size:12px">
+            ~/Desktop/ClaudeCode/freepik-credit-tracker/extension
+          </div>
+        </li>
+        <li>Extension "FEFL Beat" จะปรากฏใน toolbar — pin ไว้ใช้สะดวกกว่า</li>
+      </ol>
+    </div>
+    <div class="card" style="display:block">
+      <h3 style="margin:0 0 8px">หลังติดตั้ง</h3>
+      <ul style="line-height:1.8;color:var(--text);font-size:13px">
+        <li><strong>เมื่อยังไม่ได้ login</strong> — extension จะแสดงปุ่ม <strong>🔑 FEFL Beat : Sign On</strong> บนหน้า login พร้อมรายชื่อบัญชีที่บันทึกไว้</li>
+        <li><strong>เมื่อ login แล้ว (Freepik)</strong> — extension จะติดตามยอดเครดิตอัตโนมัติ ส่งข้อมูลไป Dashboard</li>
+        <li><strong>เพิ่มเว็บอื่น</strong> — กลับไปหน้า Website แล้วกด "+ เพิ่มเว็บใหม่"</li>
+      </ul>
+    </div>
+  `;
+}
+
+// ---------- modal helper ----------
+function showModal({ title, body, onSubmit }) {
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>${escapeHtml(title)}</h3>
+      <div id="modal-body">${body}</div>
+      <div class="modal-actions">
+        <button class="btn" id="m-cancel">ยกเลิก</button>
+        <button class="btn primary" id="m-ok">บันทึก</button>
+      </div>
+      <div class="hint" id="m-err" style="color:var(--critical);margin-top:6px;display:none"></div>
+    </div>
+  `;
+  document.body.appendChild(bg);
+
+  const close = () => bg.remove();
+  bg.querySelector('#m-cancel').addEventListener('click', close);
+  bg.addEventListener('click', e => { if (e.target === bg) close(); });
+  bg.querySelector('#m-ok').addEventListener('click', async () => {
+    const errEl = bg.querySelector('#m-err');
+    errEl.style.display = 'none';
+    try {
+      await onSubmit();
+      close();
+    } catch (e) {
+      errEl.textContent = e.message;
+      errEl.style.display = '';
+    }
+  });
+}
+
+// ---------- bootstrap ----------
+$('logout-btn').addEventListener('click', async () => {
+  await fetchJson('/api/admin/logout', { method: 'POST' });
+  location.replace('/admin/login');
+});
+
+(async () => {
+  const state = await fetch('/api/admin/state').then(r => r.json());
+  if (!state.logged_in) {
+    location.replace('/admin/login');
+    return;
+  }
+  $('who').textContent = '👤 ' + state.username;
+  // Default route → dashboard
+  if (!location.hash) location.hash = '#/dashboard';
+  await navigate();
+})();
+</script>
+</body>
+</html>

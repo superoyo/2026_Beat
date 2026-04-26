@@ -1,0 +1,33 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.python-version
+
+# --- Local data (sensitive!) ---
+# SQLite DB เก็บ credentials, sessions, snapshots — ห้าม push
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Environment overrides
+.env
+.env.local
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Backups ---
+*.bak
+*~

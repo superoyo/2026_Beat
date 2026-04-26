@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FEFL Beat — AI Solution Hub for Marketing</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #ffffff;
+      --bg-soft: #f6f9ff;
+      --bg-card: #ffffff;
+      --border: #e3eaf5;
+      --border-strong: #c8d4ec;
+      --text: #0f172a;
+      --text-muted: #5b6b85;
+      --text-soft: #8895ab;
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --primary-soft: #dbeafe;
+      --accent: #7c3aed;
+      --cyan: #06b6d4;
+      --green: #10b981;
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, .06);
+      --shadow-md: 0 4px 16px rgba(37, 99, 235, .08);
+      --shadow-lg: 0 20px 50px rgba(37, 99, 235, .15);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    a { color: var(--primary); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ============== Top Nav ============== */
+    .nav-wrap {
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,.85);
+      backdrop-filter: saturate(180%) blur(16px);
+      position: sticky; top: 0; z-index: 50;
+    }
+    .nav {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 14px 28px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .brand {
+      display: flex; align-items: center; gap: 10px;
+      font-weight: 700; font-size: 17px; letter-spacing: -0.01em;
+      color: var(--text);
+    }
+    .brand:hover { text-decoration: none; }
+    .brand-logo {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, #2563eb 0%, #7c3aed 50%, #06b6d4 100%);
+      border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-weight: 800; font-size: 15px;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, .3);
+    }
+    .nav-links { display: flex; gap: 8px; align-items: center; }
+    .nav a.btn {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13.5px;
+      font-weight: 500;
+      transition: all .15s;
+    }
+    .nav a.btn:hover {
+      background: var(--bg-soft);
+      border-color: var(--border-strong);
+      text-decoration: none;
+    }
+    .nav a.btn.primary {
+      background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
+      border-color: transparent;
+      color: #fff;
+      box-shadow: var(--shadow-md);
+    }
+    .nav a.btn.primary:hover {
+      background: linear-gradient(135deg, #1d4ed8 0%, #4338ca 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(37, 99, 235, .35);
+    }
+
+    /* ============== Hero ============== */
+    .hero {
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute; inset: 0;
+      background:
+        radial-gradient(900px 400px at 80% -10%, rgba(124, 58, 237, .12), transparent 60%),
+        radial-gradient(700px 350px at 10% 10%, rgba(37, 99, 235, .12), transparent 60%),
+        radial-gradient(500px 300px at 50% 110%, rgba(6, 182, 212, .10), transparent 60%);
+      pointer-events: none;
+    }
+    .hero-inner {
+      position: relative;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 96px 28px 72px;
+      text-align: center;
+    }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(37, 99, 235, .08);
+      color: var(--primary-dark);
+      border: 1px solid rgba(37, 99, 235, .25);
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 22px;
+    }
+    .eyebrow .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 0 4px rgba(16, 185, 129, .15);
+    }
+    h1 {
+      font-size: clamp(36px, 6vw, 64px);
+      line-height: 1.05;
+      margin: 0 0 20px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+    h1 .grad {
+      background: linear-gradient(120deg, #2563eb 0%, #7c3aed 50%, #06b6d4 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .lead {
+      max-width: 720px;
+      margin: 0 auto 32px;
+      font-size: 18px;
+      color: var(--text-muted);
+      line-height: 1.65;
+    }
+    .cta-row {
+      display: inline-flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .cta-row a {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 13px 24px;
+      border-radius: 10px;
+      font-size: 14.5px;
+      font-weight: 600;
+      transition: all .15s;
+    }
+    .cta-row a.primary {
+      background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
+      color: #fff;
+      box-shadow: var(--shadow-md);
+    }
+    .cta-row a.primary:hover {
+      background: linear-gradient(135deg, #1d4ed8 0%, #4338ca 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 8px 24px rgba(37, 99, 235, .35);
+      text-decoration: none;
+    }
+    .cta-row a.ghost {
+      background: var(--bg-card);
+      color: var(--text);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+    }
+    .cta-row a.ghost:hover {
+      border-color: var(--border-strong);
+      transform: translateY(-1px);
+      text-decoration: none;
+    }
+
+    .trust-row {
+      max-width: 880px;
+      margin: 48px auto 0;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 14px;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+    .trust-row .item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 14px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: var(--shadow-sm);
+    }
+    .trust-row .item span:first-child { font-size: 16px; }
+
+    /* ============== Sections ============== */
+    section { position: relative; }
+    .section-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 80px 28px;
+    }
+    .section-head {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+    .section-head .label {
+      color: var(--primary);
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-bottom: 10px;
+    }
+    .section-head h2 {
+      margin: 0 0 12px;
+      font-size: clamp(28px, 4vw, 40px);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .section-head p {
+      margin: 0 auto;
+      color: var(--text-muted);
+      max-width: 640px;
+      font-size: 16px;
+    }
+
+    /* ============== Features ============== */
+    .features-bg {
+      background: linear-gradient(180deg, var(--bg) 0%, var(--bg-soft) 100%);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 18px;
+    }
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px;
+      transition: all .2s;
+      position: relative;
+      overflow: hidden;
+    }
+    .feature-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--primary), var(--accent));
+      opacity: 0;
+      transition: opacity .2s;
+    }
+    .feature-card:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--shadow-lg);
+      border-color: rgba(37, 99, 235, .25);
+    }
+    .feature-card:hover::before { opacity: 1; }
+    .feature-card .icon {
+      width: 48px; height: 48px;
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+      margin-bottom: 18px;
+      color: #fff;
+    }
+    .icon.g-blue   { background: linear-gradient(135deg, #2563eb, #4f46e5); }
+    .icon.g-purple { background: linear-gradient(135deg, #7c3aed, #a855f7); }
+    .icon.g-cyan   { background: linear-gradient(135deg, #06b6d4, #0ea5e9); }
+    .icon.g-green  { background: linear-gradient(135deg, #10b981, #059669); }
+    .icon.g-pink   { background: linear-gradient(135deg, #ec4899, #d946ef); }
+    .icon.g-amber  { background: linear-gradient(135deg, #f59e0b, #ef4444); }
+
+    .feature-card h3 {
+      margin: 0 0 8px;
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    .feature-card p {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 14px;
+      line-height: 1.65;
+    }
+
+    /* ============== Spotlight (Key feature) ============== */
+    .spotlight-section {
+      background: var(--bg);
+    }
+    .spotlight {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 28px;
+    }
+    .spotlight-card {
+      background: linear-gradient(135deg, #1e3a8a 0%, #4338ca 50%, #7c3aed 100%);
+      border-radius: 24px;
+      padding: 56px 56px;
+      position: relative;
+      overflow: hidden;
+      color: #fff;
+      box-shadow: 0 25px 60px rgba(37, 99, 235, .25);
+    }
+    .spotlight-card::before {
+      content: '';
+      position: absolute;
+      top: -100px; right: -80px;
+      width: 320px; height: 320px;
+      background: radial-gradient(circle, rgba(6, 182, 212, .35), transparent 70%);
+      pointer-events: none;
+    }
+    .spotlight-card::after {
+      content: '';
+      position: absolute;
+      bottom: -120px; left: -60px;
+      width: 280px; height: 280px;
+      background: radial-gradient(circle, rgba(236, 72, 153, .25), transparent 70%);
+      pointer-events: none;
+    }
+    .spotlight-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+      align-items: center;
+      position: relative;
+    }
+    @media (max-width: 720px) {
+      .spotlight-grid { grid-template-columns: 1fr; }
+      .spotlight-card { padding: 36px 28px; }
+    }
+    .spotlight-grid .small-label {
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      font-weight: 600;
+      color: rgba(255,255,255,.7);
+      margin-bottom: 12px;
+    }
+    .spotlight-grid h2 {
+      margin: 0 0 14px;
+      font-size: clamp(24px, 3vw, 32px);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+    .spotlight-grid p {
+      margin: 0 0 24px;
+      color: rgba(255,255,255,.8);
+      font-size: 15px;
+      line-height: 1.7;
+    }
+    .spotlight-grid a.cta {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: #fff;
+      color: var(--primary-dark);
+      padding: 11px 20px;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .spotlight-grid a.cta:hover { transform: translateY(-1px); text-decoration: none; }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+    }
+    .stat {
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.18);
+      backdrop-filter: blur(10px);
+      border-radius: 12px;
+      padding: 18px;
+    }
+    .stat .num {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .stat .lbl {
+      font-size: 12px;
+      color: rgba(255,255,255,.7);
+      margin-top: 2px;
+    }
+
+    /* ============== How it works ============== */
+    .steps-bg { background: var(--bg-soft); border-top: 1px solid var(--border); }
+    .step-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 16px;
+    }
+    .step {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      position: relative;
+      transition: all .2s;
+    }
+    .step:hover { box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+    .step .num {
+      display: inline-flex;
+      align-items: center; justify-content: center;
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      border-radius: 8px;
+      margin-bottom: 14px;
+    }
+    .step h4 { margin: 0 0 6px; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+    .step p { margin: 0; color: var(--text-muted); font-size: 13.5px; line-height: 1.6; }
+
+    /* ============== Final CTA ============== */
+    .final-cta {
+      text-align: center;
+      padding: 80px 28px;
+    }
+    .final-cta h2 {
+      margin: 0 0 14px;
+      font-size: clamp(26px, 4vw, 38px);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .final-cta p {
+      color: var(--text-muted);
+      margin: 0 auto 26px;
+      max-width: 560px;
+      font-size: 16px;
+    }
+
+    /* ============== Footer ============== */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 28px;
+      background: var(--bg-soft);
+    }
+    .footer-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+      color: var(--text-soft);
+      font-size: 13px;
+    }
+    .footer-brand {
+      display: flex; align-items: center; gap: 8px;
+      font-weight: 600; color: var(--text);
+    }
+    .footer-brand .brand-logo { width: 22px; height: 22px; font-size: 11px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <div class="nav-wrap">
+    <nav class="nav">
+      <a href="/" class="brand">
+        <span class="brand-logo">F</span>
+        <span>FEFL Beat</span>
+      </a>
+      <div class="nav-links">
+        <a href="/dashboard" class="btn">Dashboard</a>
+        <a href="/admin" class="btn primary">Open Admin Console</a>
+      </div>
+    </nav>
+  </div>
+
+  <section class="hero">
+    <div class="hero-inner">
+      <div class="eyebrow"><span class="dot"></span> AI Solution Hub for Marketing</div>
+      <h1>
+        Centralize and govern your<br/>
+        team's <span class="grad">AI resources</span>
+      </h1>
+      <p class="lead">
+        FEFL Beat is the operations layer for marketing teams running on AI tools.
+        One place to manage credentials, monitor credit consumption, and predict
+        when your accounts run dry — all without sending a byte to the cloud.
+      </p>
+      <div class="cta-row">
+        <a href="/admin" class="primary">🚀 Open Admin Console</a>
+        <a href="/dashboard" class="ghost">📊 View Live Dashboard</a>
+      </div>
+
+      <div class="trust-row">
+        <div class="item"><span>🔒</span><span>Local-first architecture</span></div>
+        <div class="item"><span>🧩</span><span>Chrome Extension</span></div>
+        <div class="item"><span>📈</span><span>Burn-rate analytics</span></div>
+        <div class="item"><span>🌐</span><span>Multi-site SSO</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="features-bg">
+    <div class="section-inner">
+      <div class="section-head">
+        <div class="label">Capabilities</div>
+        <h2>Govern AI usage across your organization</h2>
+        <p>From single sign-on to predictive alerting — every tool your marketing operation needs to stay in control.</p>
+      </div>
+
+      <div class="feature-grid">
+        <div class="feature-card">
+          <div class="icon g-blue">🔐</div>
+          <h3>Unified Single Sign-On</h3>
+          <p>Store team credentials per service and inject them into login forms with one click. Stop sharing passwords in chat.</p>
+        </div>
+        <div class="feature-card">
+          <div class="icon g-purple">⚡</div>
+          <h3>Automatic Credit Tracking</h3>
+          <p>Every time a team member opens an AI dashboard, the extension silently records the remaining balance to your private database.</p>
+        </div>
+        <div class="feature-card">
+          <div class="icon g-cyan">📊</div>
+          <h3>Burn-Rate Analytics</h3>
+          <p>Visualize 30-day usage trends, calculate the 7-day rolling consumption rate, and forecast the exact date credits will run out.</p>
+        </div>
+        <div class="feature-card">
+          <div class="icon g-green">🌐</div>
+          <h3>Plug-In Any Service</h3>
+          <p>Add any AI platform by URL pattern. Sign-on works on Freepik out of the box, plus anything else you wire up.</p>
+        </div>
+        <div class="feature-card">
+          <div class="icon g-pink">👥</div>
+          <h3>Multiple Accounts per Service</h3>
+          <p>Keep primary, backup, and team-shared accounts side by side. Pick the right one at sign-on time.</p>
+        </div>
+        <div class="feature-card">
+          <div class="icon g-amber">🛡️</div>
+          <h3>Privacy by Design</h3>
+          <p>Backend binds to 127.0.0.1 only. No cloud sync, no analytics, no telemetry. Your credentials and usage data never leave the machine.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="spotlight-section">
+    <div class="section-inner" style="padding-top:80px; padding-bottom:80px;">
+      <div class="spotlight">
+        <div class="spotlight-card">
+          <div class="spotlight-grid">
+            <div>
+              <div class="small-label">Key feature</div>
+              <h2>Manage AI resource consumption — at the organizational level.</h2>
+              <p>
+                Stop guessing when premium quotas will exhaust. FEFL Beat aggregates
+                usage signals from your team's daily browsing, builds a real-time
+                burn-rate model, and surfaces alerts before plans renew.
+              </p>
+              <a href="/dashboard" class="cta">Explore the Dashboard →</a>
+            </div>
+            <div class="stat-grid">
+              <div class="stat">
+                <div class="num">7-day</div>
+                <div class="lbl">Rolling burn-rate</div>
+              </div>
+              <div class="stat">
+                <div class="num">∞</div>
+                <div class="lbl">Sites supported</div>
+              </div>
+              <div class="stat">
+                <div class="num">100%</div>
+                <div class="lbl">Local data</div>
+              </div>
+              <div class="stat">
+                <div class="num">0</div>
+                <div class="lbl">Cloud dependencies</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="steps-bg">
+    <div class="section-inner">
+      <div class="section-head">
+        <div class="label">Getting started</div>
+        <h2>Operational in four steps</h2>
+        <p>Deploy on your workstation in minutes — no infrastructure, no accounts, no subscriptions.</p>
+      </div>
+      <div class="step-list">
+        <div class="step">
+          <div class="num">01</div>
+          <h4>Install</h4>
+          <p>Run the FastAPI backend locally. SQLite is included — no external database required.</p>
+        </div>
+        <div class="step">
+          <div class="num">02</div>
+          <h4>Connect</h4>
+          <p>Load the Chrome extension via Developer Mode. It auto-discovers the local backend on port 8765.</p>
+        </div>
+        <div class="step">
+          <div class="num">03</div>
+          <h4>Configure</h4>
+          <p>Open the admin console to register sites and add team credentials. Freepik is pre-seeded.</p>
+        </div>
+        <div class="step">
+          <div class="num">04</div>
+          <h4>Operate</h4>
+          <p>Sign on with one click, monitor consumption from the dashboard, and act before quotas run out.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="final-cta">
+    <h2>Ready to govern your AI stack?</h2>
+    <p>Open the admin console and connect your first site in under a minute.</p>
+    <div class="cta-row">
+      <a href="/admin" class="primary">Open Admin Console →</a>
+      <a href="/dashboard" class="ghost">View Dashboard</a>
+    </div>
+  </section>
+
+  <footer>
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <span class="brand-logo">F</span>
+        <span>FEFL Beat</span>
+        <span style="color:var(--text-soft);font-weight:400;margin-left:6px">· AI Solution Hub for Marketing</span>
+      </div>
+      <div>Local-first · No cloud · No telemetry</div>
+    </div>
+  </footer>
+</body>
+</html>
