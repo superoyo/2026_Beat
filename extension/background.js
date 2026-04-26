@@ -164,6 +164,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
+  // FORCE_PING — เรียก backend /api/extension/heartbeat ทันที (active probe)
+  if (msg.type === 'FORCE_PING') {
+    (async () => {
+      const backend = await getBackendUrl();
+      try {
+        const headers = await authHeaders();
+        const res = await fetch(backend + '/api/extension/heartbeat', {
+          method: 'POST', headers,
+        });
+        sendResponse({
+          ok: res.ok,
+          status: res.status,
+          backend,
+        });
+      } catch (e) {
+        sendResponse({ ok: false, status: 0, error: e.message, backend });
+      }
+    })();
+    return true;
+  }
+
   // Proxy fetch สำหรับ content.js — เลี่ยง CORS เพราะ background รันใน extension origin
   if (msg.type === 'BACKEND_FETCH') {
     (async () => {

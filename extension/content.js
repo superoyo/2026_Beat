@@ -9,7 +9,7 @@
 //   - English for technical / library code
 
 const TAG = '[FCT]';
-const SCRIPT_VERSION = 'v8-fefl-beat';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
+const SCRIPT_VERSION = 'v9-active-probe';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
 
 // Hostname ที่ extension จะทำหน้าที่ scrape credit (mode A)
 // เว็บอื่นที่ user เพิ่มใน admin จะได้แค่ prefill (mode B) — ไม่ scrape credit
@@ -516,6 +516,38 @@ function schedulePrefillCheck() {
   if (prefillTimer) clearTimeout(prefillTimer);
   prefillTimer = setTimeout(checkPrefill, 800);
 }
+
+// ============================================================================
+// PAGE BRIDGE — รับคำสั่ง FCT_FORCE_PING จากหน้า admin (postMessage)
+// → ส่งไป background → background fetch backend → ตอบกลับ
+// ใช้เพื่อ "active probe" ในหน้า /admin#/extension status widget
+// ============================================================================
+window.addEventListener('message', (event) => {
+  if (event.source !== window) return;
+  const data = event.data;
+  if (!data || data.type !== 'FCT_FORCE_PING') return;
+  const reqId = data.requestId;
+  try {
+    chrome.runtime.sendMessage({ type: 'FORCE_PING' }, (reply) => {
+      const err = chrome.runtime.lastError ? chrome.runtime.lastError.message : null;
+      window.postMessage({
+        type: 'FCT_PING_RESULT',
+        requestId: reqId,
+        ok: !!(reply && reply.ok),
+        backend: reply && reply.backend,
+        status: reply && reply.status,
+        error: (reply && reply.error) || err || null,
+        version: SCRIPT_VERSION,
+      }, '*');
+    });
+  } catch (e) {
+    window.postMessage({
+      type: 'FCT_PING_RESULT',
+      requestId: reqId,
+      ok: false, error: e.message, version: SCRIPT_VERSION,
+    }, '*');
+  }
+});
 
 // --- bootstrapping --------------------------------------------------------
 console.debug(TAG, SCRIPT_VERSION, 'content script loaded for', location.href);

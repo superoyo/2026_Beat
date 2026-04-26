@@ -1392,6 +1392,12 @@ def extension_match(
     }
 
 
+@app.post("/api/extension/heartbeat")
+def extension_heartbeat(_auth: str = Depends(require_admin_or_api_key)) -> dict[str, Any]:
+    """Endpoint เบาๆ — เรียกเพื่อ bump heartbeat อย่างเดียว (ไม่มี side effect)"""
+    return {"ok": True, "ts": utc_now().isoformat()}
+
+
 @app.post("/api/extension/credentials/{cred_id}/used")
 def mark_used(
     cred_id: int,

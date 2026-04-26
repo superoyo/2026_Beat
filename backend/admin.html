@@ -1444,6 +1444,92 @@ function startExtStatusPolling() {
   _extStatusTimer = setInterval(loadExtensionStatus, 5000);
 }
 
+/**
+ * Active probe — ส่ง postMessage ให้ content.js ของ extension ที่รันบนหน้านี้
+ * extension จะส่งต่อให้ background → fetch backend ทันที → ตอบกลับผ่าน postMessage
+ * Returns: {ok, backend, status, error, reason: 'timeout'|'extension'|'backend'}
+ */
+function activeProbeExtension(timeoutMs = 4000) {
+  return new Promise((resolve) => {
+    const requestId = 'fct_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    const handler = (event) => {
+      if (event.source !== window) return;
+      const d = event.data;
+      if (!d || d.type !== 'FCT_PING_RESULT' || d.requestId !== requestId) return;
+      cleanup();
+      resolve(d);
+    };
+    const cleanup = () => {
+      window.removeEventListener('message', handler);
+      clearTimeout(timer);
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve({ ok: false, reason: 'timeout' });
+    }, timeoutMs);
+    window.addEventListener('message', handler);
+    window.postMessage({ type: 'FCT_FORCE_PING', requestId }, '*');
+  });
+}
+
+async function manualRefreshStatus() {
+  const dot = $('ext-status-dot');
+  const text = $('ext-status-text');
+  const sub = $('ext-status-sub');
+  const meta = $('ext-status-meta');
+  if (!dot) return;
+
+  // Probing state
+  stopExtStatusPolling();
+  dot.style.background = '#94a3b8';
+  dot.style.boxShadow = '0 0 0 6px rgba(148,163,184,.15)';
+  text.textContent = '⏳ กำลัง probe extension…';
+  text.style.color = 'var(--text-muted)';
+  sub.textContent = 'ส่งคำสั่งให้ extension ping backend ตอนนี้';
+  meta.innerHTML = '';
+
+  const result = await activeProbeExtension(4000);
+
+  if (result.ok) {
+    // ปิงสำเร็จ — refresh status จาก backend (heartbeat ใหม่ updated)
+    await loadExtensionStatus();
+    startExtStatusPolling();
+    return;
+  }
+
+  if (result.reason === 'timeout') {
+    dot.style.background = 'var(--critical)';
+    dot.style.boxShadow = '0 0 0 6px rgba(220,38,38,.12)';
+    text.textContent = '❌ Extension ไม่ตอบ';
+    text.style.color = 'var(--critical)';
+    sub.innerHTML = 'ไม่ได้ install หรือ extension ปิดอยู่ — เปิด <code>chrome://extensions</code> เช็คว่า "FEFL Beat" enabled + reload';
+    meta.innerHTML = '';
+  } else {
+    // Extension ตอบกลับ แต่ ping backend ไม่ผ่าน
+    dot.style.background = 'var(--critical)';
+    dot.style.boxShadow = '0 0 0 6px rgba(220,38,38,.12)';
+    text.textContent = '❌ Extension ติดต่อ backend ไม่ได้';
+    text.style.color = 'var(--critical)';
+
+    let reason = '';
+    if (result.status === 401) {
+      reason = 'API Key ใน extension ไม่ตรง — copy ใหม่จาก step 2.2 ด้านล่าง';
+    } else if (result.status === 0 || (result.error || '').toLowerCase().includes('failed to fetch')) {
+      reason = 'Backend URL ใน extension ผิด — ตั้งเป็น URL จาก step 2.1 ด้านล่าง';
+    } else if (result.status) {
+      reason = `Backend ตอบกลับ HTTP ${result.status}`;
+    } else if (result.error) {
+      reason = `Error: ${result.error}`;
+    } else {
+      reason = 'ไม่ทราบสาเหตุ';
+    }
+    sub.textContent = reason;
+    meta.innerHTML = result.backend
+      ? `Backend URL ที่ extension ตั้งไว้: <code style="font-size:11px;background:var(--bg-soft);padding:1px 5px;border-radius:4px">${escapeHtml(result.backend)}</code>`
+      : '';
+  }
+}
+
 async function renderExtensionPage() {
   const backendUrl = location.origin;
 
@@ -1613,7 +1699,7 @@ async function renderExtensionPage() {
   if (currentRole === 'admin') {
     startExtStatusPolling();
     const refreshBtn = $('ext-refresh');
-    if (refreshBtn) refreshBtn.addEventListener('click', loadExtensionStatus);
+    if (refreshBtn) refreshBtn.addEventListener('click', manualRefreshStatus);
   }
 }
 
