@@ -532,6 +532,38 @@ app.add_middleware(
 @app.on_event("startup")
 def _startup() -> None:
     init_db()
+    # Debug log — ช่วย diagnose ปัญหา DB persistence
+    try:
+        with db_conn() as conn:
+            ac = conn.execute("SELECT COUNT(*) FROM admin_users").fetchone()[0]
+            mc = conn.execute("SELECT COUNT(*) FROM members").fetchone()[0]
+    except Exception as e:
+        ac = mc = f"err: {e}"
+    print(f"[FCT] startup — DB={DB_PATH} exists={DB_PATH.exists()} "
+          f"size={DB_PATH.stat().st_size if DB_PATH.exists() else 0}", flush=True)
+    print(f"[FCT] env FCT_DB_PATH={os.environ.get('FCT_DB_PATH', '(unset)')!r}", flush=True)
+    print(f"[FCT] env ADMIN_RESET_ON_BOOT={os.environ.get('ADMIN_RESET_ON_BOOT', '(unset)')!r}", flush=True)
+    print(f"[FCT] admin_users={ac}, members={mc}", flush=True)
+
+
+@app.get("/api/debug/info")
+def debug_info() -> dict[str, Any]:
+    """ดู state ของ DB + env เพื่อ diagnose persistence issue (ลบหลังใช้เสร็จได้)"""
+    with db_conn() as conn:
+        ac = conn.execute("SELECT COUNT(*) FROM admin_users").fetchone()[0]
+        mc = conn.execute("SELECT COUNT(*) FROM members").fetchone()[0]
+        sites = conn.execute("SELECT COUNT(*) FROM sites").fetchone()[0]
+        snaps = conn.execute("SELECT COUNT(*) FROM snapshots").fetchone()[0]
+    return {
+        "db_path": str(DB_PATH),
+        "db_exists": DB_PATH.exists(),
+        "db_size_bytes": DB_PATH.stat().st_size if DB_PATH.exists() else None,
+        "env_FCT_DB_PATH": os.environ.get("FCT_DB_PATH", "(unset)"),
+        "env_ADMIN_RESET_ON_BOOT": os.environ.get("ADMIN_RESET_ON_BOOT", "(unset)"),
+        "is_public_deploy": IS_PUBLIC_DEPLOY,
+        "firebase_enabled": FIREBASE_ENABLED,
+        "counts": {"admin_users": ac, "members": mc, "sites": sites, "snapshots": snaps},
+    }
 
 
 # ---------------------------------------------------------------------------
