@@ -41,35 +41,33 @@
     a { color: var(--primary); text-decoration: none; }
     a:hover { text-decoration: underline; }
 
-    /* ============== Top Nav ============== */
-    .nav-wrap {
+    /* ============== Top Nav (PromptGallery-style) ============== */
+    .navbar {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(255, 255, 255, .88);
+      backdrop-filter: blur(14px);
       border-bottom: 1px solid var(--border);
-      background: rgba(255,255,255,.85);
-      backdrop-filter: saturate(180%) blur(16px);
-      position: sticky; top: 0; z-index: 50;
+      box-shadow: 0 1px 0 rgba(37, 99, 235, .06);
     }
-    .nav {
-      max-width: 1200px;
+    .nav-inner {
+      max-width: 1280px;
       margin: 0 auto;
-      padding: 14px 28px;
-      display: flex; justify-content: space-between; align-items: center;
+      padding: 0 28px;
+      height: 62px;
+      display: flex; align-items: center; justify-content: space-between;
     }
-    .brand {
-      display: flex; align-items: center; gap: 10px;
-      font-weight: 700; font-size: 17px; letter-spacing: -0.01em;
+    .logo {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 1.15rem;
       color: var(--text);
+      text-decoration: none;
+      font-weight: 600;
+      letter-spacing: -0.01em;
     }
-    .brand:hover { text-decoration: none; }
-    .brand-logo {
-      width: 32px; height: 32px;
-      background: linear-gradient(135deg, #2563eb 0%, #7c3aed 50%, #06b6d4 100%);
-      border-radius: 9px;
-      display: flex; align-items: center; justify-content: center;
-      color: #fff; font-weight: 800; font-size: 15px;
-      box-shadow: 0 4px 12px rgba(37, 99, 235, .3);
-    }
+    .logo:hover { text-decoration: none; }
+    .logo strong { color: var(--primary); font-weight: 700; }
     .nav-links { display: flex; gap: 8px; align-items: center; }
-    .nav a.btn {
+    .nav-links a.btn {
       background: transparent;
       color: var(--text);
       border: 1px solid var(--border);
@@ -79,18 +77,18 @@
       font-weight: 500;
       transition: all .15s;
     }
-    .nav a.btn:hover {
+    .nav-links a.btn:hover {
       background: var(--bg-soft);
       border-color: var(--border-strong);
       text-decoration: none;
     }
-    .nav a.btn.primary {
+    .nav-links a.btn.primary {
       background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
       border-color: transparent;
       color: #fff;
       box-shadow: var(--shadow-md);
     }
-    .nav a.btn.primary:hover {
+    .nav-links a.btn.primary:hover {
       background: linear-gradient(135deg, #1d4ed8 0%, #4338ca 100%);
       transform: translateY(-1px);
       box-shadow: 0 6px 20px rgba(37, 99, 235, .35);
@@ -470,24 +468,21 @@
     }
     .footer-brand {
       display: flex; align-items: center; gap: 8px;
-      font-weight: 600; color: var(--text);
+      font-weight: 600; color: var(--text); font-size: 14px;
     }
-    .footer-brand .brand-logo { width: 22px; height: 22px; font-size: 11px; border-radius: 6px; }
+    .footer-brand strong { color: var(--primary); font-weight: 700; }
   </style>
 </head>
 <body>
-  <div class="nav-wrap">
-    <nav class="nav">
-      <a href="/" class="brand">
-        <span class="brand-logo">F</span>
-        <span>FEFL Beat</span>
-      </a>
+  <header class="navbar">
+    <div class="nav-inner">
+      <a href="/" class="logo">FEFL<strong>Beat</strong></a>
       <div class="nav-links">
         <a href="/dashboard" class="btn">Dashboard</a>
         <a href="/admin" class="btn primary">Open Admin Console</a>
       </div>
-    </nav>
-  </div>
+    </div>
+  </header>
 
   <section class="hero">
     <div class="hero-inner">
@@ -641,8 +636,7 @@
   <footer>
     <div class="footer-inner">
       <div class="footer-brand">
-        <span class="brand-logo">F</span>
-        <span>FEFL Beat</span>
+        <span>FEFL<strong>Beat</strong></span>
         <span style="color:var(--text-soft);font-weight:400;margin-left:6px">· AI Solution Hub for Marketing</span>
       </div>
       <div>Local-first · No cloud · No telemetry</div>

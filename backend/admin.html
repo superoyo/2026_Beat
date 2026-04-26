@@ -55,18 +55,19 @@
       padding: 0 22px 18px;
       border-bottom: 1px solid var(--border);
       margin-bottom: 14px;
-      display: flex; align-items: center; gap: 10px;
     }
-    .brand-logo {
-      width: 32px; height: 32px;
-      background: linear-gradient(135deg, #2563eb 0%, #7c3aed 50%, #06b6d4 100%);
-      border-radius: 9px;
-      display: flex; align-items: center; justify-content: center;
-      color: #fff; font-weight: 800; font-size: 14px;
-      box-shadow: 0 4px 10px rgba(37, 99, 235, .25);
+    .brand a.logo {
+      display: inline-block;
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: var(--text);
+      text-decoration: none;
+      letter-spacing: -0.01em;
+      line-height: 1.1;
     }
-    .brand .info h1 { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: -0.01em; }
-    .brand .info .sub { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+    .brand a.logo:hover { text-decoration: none; }
+    .brand a.logo strong { color: var(--primary); font-weight: 700; }
+    .brand .sub { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
 
     .nav { flex: 1; padding: 0 12px; }
     .nav a {
@@ -279,11 +280,8 @@
 <body>
   <aside>
     <div class="brand">
-      <span class="brand-logo">F</span>
-      <div class="info">
-        <h1>FEFL Beat</h1>
-        <div class="sub">Admin Console</div>
-      </div>
+      <a href="/" class="logo">FEFL<strong>Beat</strong></a>
+      <div class="sub">Admin Console</div>
     </div>
     <nav class="nav">
       <a href="#/dashboard" data-route="dashboard">📊 Dashboard</a>
