@@ -125,33 +125,87 @@
       font-size: 11px;
       margin-left: 6px;
     }
-    .nav-links { display: flex; gap: 8px; align-items: center; }
-    .nav-links a.btn {
+    /* ---- Left text-link nav (PromptGallery style) ---- */
+    .nav-links {
+      display: flex; gap: 4px; align-items: center;
+      flex: 1; margin-left: 28px;
+    }
+    .nav-link {
       background: transparent;
       color: var(--text);
-      border: 1px solid var(--border);
-      padding: 8px 16px;
+      border: none;
+      padding: 8px 14px;
       border-radius: 8px;
-      font-size: 13.5px;
+      font-size: 14px;
       font-weight: 500;
-      transition: all .15s;
+      text-decoration: none;
+      cursor: pointer;
+      transition: background .12s, color .12s;
+      font-family: inherit;
     }
-    .nav-links a.btn:hover {
+    .nav-link:hover {
       background: var(--bg-soft);
-      border-color: var(--border-strong);
+      color: var(--primary);
       text-decoration: none;
     }
-    .nav-links a.btn.primary {
+
+    /* ---- Right auth area ---- */
+    .nav-right { display: flex; align-items: center; gap: 8px; }
+    .nav-right a.btn {
       background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
-      border-color: transparent;
       color: #fff;
+      border: none;
+      padding: 9px 18px;
+      border-radius: 8px;
+      font-size: 13.5px;
+      font-weight: 600;
+      text-decoration: none;
       box-shadow: var(--shadow-md);
+      transition: all .15s;
     }
-    .nav-links a.btn.primary:hover {
+    .nav-right a.btn:hover {
       background: linear-gradient(135deg, #1d4ed8 0%, #4338ca 100%);
       transform: translateY(-1px);
       box-shadow: 0 6px 20px rgba(37, 99, 235, .35);
+      text-decoration: none;
     }
+    .user-pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 5px 14px 5px 5px;
+      background: var(--bg-soft);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      text-decoration: none;
+      color: var(--text);
+      font-size: 13.5px;
+      font-weight: 500;
+      transition: all .12s;
+    }
+    .user-pill:hover {
+      background: var(--primary-soft);
+      border-color: var(--primary);
+      text-decoration: none;
+    }
+    .user-avatar {
+      width: 28px; height: 28px;
+      background: linear-gradient(135deg, #2563eb, #7c3aed);
+      border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 12px; font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .user-divider {
+      width: 1px; height: 18px; background: var(--border); margin: 0 4px;
+    }
+    .user-logout {
+      color: var(--text-muted);
+      font-size: 13px;
+      text-decoration: none;
+      padding: 6px 10px;
+      border-radius: 6px;
+      transition: all .12s;
+    }
+    .user-logout:hover { color: var(--critical, #dc2626); background: rgba(220,38,38,.05); text-decoration: none; }
 
     /* ============== Hero ============== */
     .hero {
@@ -556,31 +610,65 @@
         </div>
         <a href="/" class="logo">FEFL<strong>Beat</strong></a>
       </div>
-      <div class="nav-links">
-        <a href="/dashboard" class="btn">Dashboard</a>
-        <a href="/admin" class="btn primary">Open Admin Console</a>
+
+      <nav class="nav-links">
+        <a href="/dashboard" class="nav-link">Dashboard</a>
+      </nav>
+
+      <div class="nav-right">
+        <div id="authArea"></div>
       </div>
     </div>
   </header>
 
 <script>
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Hamburger menu
 (() => {
   const btn = document.getElementById('hamburgerBtn');
   const menu = document.getElementById('brandMenu');
   if (!btn || !menu) return;
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    menu.hidden = !menu.hidden;
-  });
+  btn.addEventListener('click', (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; });
   document.addEventListener('click', (e) => {
-    if (!menu.hidden && !menu.contains(e.target) && !btn.contains(e.target)) {
-      menu.hidden = true;
-    }
+    if (!menu.hidden && !menu.contains(e.target) && !btn.contains(e.target)) menu.hidden = true;
   });
-  // Mark current site
   document.querySelectorAll('.brand-menu-item[data-host]').forEach(a => {
     if (a.dataset.host === location.hostname) a.classList.add('current');
   });
+})();
+
+// Auth area — แสดง username ถ้า login อยู่ ไม่งั้นแสดงปุ่ม login
+(async () => {
+  const area = document.getElementById('authArea');
+  const renderLogin = () => {
+    area.innerHTML = `<a href="/admin/login" class="btn">เข้าสู่ระบบ</a>`;
+  };
+  try {
+    const r = await fetch('/api/admin/state', { credentials: 'same-origin' }).then(r => r.json());
+    if (r.logged_in && r.username) {
+      const initial = r.username.trim().charAt(0).toUpperCase() || '?';
+      area.innerHTML = `
+        <a href="/admin" class="user-pill" title="เปิด Admin Console">
+          <span class="user-avatar">${escapeHtml(initial)}</span>
+          <span>${escapeHtml(r.username)}</span>
+        </a>
+        <span class="user-divider"></span>
+        <a href="#" class="user-logout" id="navLogout">ออกจากระบบ</a>
+      `;
+      document.getElementById('navLogout').addEventListener('click', async (e) => {
+        e.preventDefault();
+        try { await fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin' }); } catch {}
+        location.reload();
+      });
+    } else {
+      renderLogin();
+    }
+  } catch (e) {
+    renderLogin();
+  }
 })();
 </script>
 
