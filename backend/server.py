@@ -1226,7 +1226,7 @@ def list_sites(_sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]
 
 
 @app.post("/api/admin/sites")
-def create_site(payload: SiteIn, _sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+def create_site(payload: SiteIn, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
     with db_conn() as conn:
         cur = conn.execute(
             "INSERT INTO sites(name, url_pattern, created_at) VALUES (?, ?, ?)",
@@ -1237,7 +1237,7 @@ def create_site(payload: SiteIn, _sess: dict = Depends(require_admin_or_member))
 
 
 @app.get("/api/admin/sites/{site_id}")
-def get_site(site_id: int, _sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+def get_site(site_id: int, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
     with db_conn() as conn:
         site = conn.execute("SELECT * FROM sites WHERE id = ?", (site_id,)).fetchone()
         if not site:
@@ -1254,7 +1254,7 @@ def get_site(site_id: int, _sess: dict = Depends(require_admin_or_member)) -> di
 
 
 @app.delete("/api/admin/sites/{site_id}")
-def delete_site(site_id: int, _sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+def delete_site(site_id: int, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
     with db_conn() as conn:
         # foreign key cascade จะลบ credentials ให้
         conn.execute("PRAGMA foreign_keys = ON")
@@ -1269,7 +1269,7 @@ def delete_site(site_id: int, _sess: dict = Depends(require_admin_or_member)) ->
 def add_credential(
     site_id: int,
     payload: CredentialIn,
-    _sess: dict = Depends(require_admin_or_member),
+    _sess: dict = Depends(require_admin),
 ) -> dict[str, Any]:
     with db_conn() as conn:
         site = conn.execute("SELECT 1 FROM sites WHERE id = ?", (site_id,)).fetchone()
@@ -1285,7 +1285,7 @@ def add_credential(
 
 
 @app.delete("/api/admin/credentials/{cred_id}")
-def delete_credential(cred_id: int, _sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+def delete_credential(cred_id: int, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
     with db_conn() as conn:
         cur = conn.execute("DELETE FROM credentials WHERE id = ?", (cred_id,))
         if cur.rowcount == 0:

@@ -418,6 +418,55 @@
       background: rgba(146, 64, 14, .12); padding: 1px 5px; border-radius: 4px;
     }
 
+    /* Platforms grid */
+    .platform-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 14px;
+    }
+    .platform-card {
+      display: block;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+      text-decoration: none;
+      color: var(--text);
+      box-shadow: var(--shadow-sm);
+      transition: all .15s;
+    }
+    .platform-card:hover {
+      border-color: var(--primary);
+      box-shadow: var(--shadow-md);
+      transform: translateY(-2px);
+      text-decoration: none;
+    }
+    .platform-avatar {
+      width: 44px; height: 44px; border-radius: 11px;
+      background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+      color: #fff; font-weight: 700; font-size: 18px;
+      display: inline-flex; align-items: center; justify-content: center;
+      margin-bottom: 12px;
+      box-shadow: 0 4px 10px rgba(37, 99, 235, .25);
+    }
+    .platform-name {
+      font-size: 15.5px; font-weight: 600; letter-spacing: -0.01em;
+    }
+    .platform-url {
+      font-size: 12px; color: var(--text-muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      margin-top: 4px; word-break: break-all;
+    }
+    .platform-meta {
+      font-size: 11.5px; color: var(--text-soft);
+      margin-top: 12px; padding-top: 10px;
+      border-top: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .platform-meta .open {
+      color: var(--primary); font-weight: 500;
+    }
+
     /* Code/key display block */
     .key-block {
       display: flex; gap: 8px; align-items: center;
@@ -462,7 +511,7 @@
       <!-- ส่วนทั่วไป (เมนูใช้งานประจำ) -->
       <div class="nav-section">
         <a href="#/dashboard" data-route="dashboard">📊 Dashboard</a>
-        <a href="#/sites" data-route="sites">🌐 Website</a>
+        <a href="#/platforms" data-route="platforms">🚀 Platforms</a>
         <a href="#/extension" data-route="extension">🧩 Extension</a>
         <a href="#/account" data-route="account">👤 บัญชีของฉัน</a>
         <a href="/" target="_blank">🏠 หน้าแรก ↗</a>
@@ -475,6 +524,7 @@
           <span>ภาพรวมระบบ</span>
         </div>
         <a href="#/members" data-route="members">👥 Members</a>
+        <a href="#/sites" data-route="sites">🛠 Config</a>
         <a href="#/security" data-route="security">🔑 API Key</a>
       </div>
     </nav>
@@ -540,13 +590,14 @@ async function fetchJson(path, opts = {}) {
 }
 
 // admin-only routes — member ห้ามเข้า (bounce ไป default)
-const ADMIN_ONLY_ROUTES = new Set(['security', 'members']);
+const ADMIN_ONLY_ROUTES = new Set(['security', 'members', 'sites']);
 // menu items ที่ซ่อนใน sidebar สำหรับ member
-const HIDE_FROM_MEMBER_NAV = new Set(['dashboard', 'security', 'members']);
+const HIDE_FROM_MEMBER_NAV = new Set(['dashboard', 'security', 'members', 'sites']);
 
 // ---------- routing ----------
 const routes = {
   'dashboard': renderDashboardEmbed,
+  'platforms': renderPlatformsPage,
   'sites':     renderSitesList,
   'members':   renderMembersPage,
   'extension': renderExtensionPage,
@@ -566,9 +617,9 @@ async function navigate() {
   const parts = hash.split('/');
   const route = parts[0];
 
-  // Member ห้ามเข้า admin-only routes (ทั้ง security และ dashboard)
+  // Member ห้ามเข้า admin-only routes
   if (currentRole === 'member' && (ADMIN_ONLY_ROUTES.has(route) || HIDE_FROM_MEMBER_NAV.has(route))) {
-    location.hash = '#/sites';
+    location.hash = '#/platforms';
     return;
   }
 
@@ -840,6 +891,75 @@ async function renderSecurityPage() {
     $('api-key-value').textContent = key;
     alert('สร้าง key ใหม่แล้ว — กรุณาคัดลอกไปวางใน extension options');
   });
+}
+
+/**
+ * แปลง URL pattern (เช่น *.freepik.com/*) → URL ที่กดเข้าได้จริง
+ *  - ตัด protocol ออกก่อน, แทน '*.' ด้วย 'www.', ตัด '/* ' ท้าย
+ *  - แล้วใส่ https:// กลับเข้าไป
+ */
+function patternToUrl(pattern) {
+  if (!pattern) return '';
+  let url = String(pattern).replace(/^https?:\/\//i, '');
+  url = url.replace(/^\*\./, 'www.');     // *.freepik.com → www.freepik.com
+  url = url.replace(/\/\*$|\*$/, '/');    // /* หรือ * ท้าย → /
+  url = url.replace(/\*/g, '');           // ลบ wildcard ที่เหลือ (ถ้ามี)
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  return url;
+}
+
+async function renderPlatformsPage() {
+  $('main').innerHTML = `
+    <div class="page-head">
+      <h2 class="page-title">🚀 Platforms</h2>
+      <span class="card-sub" id="p-count">—</span>
+    </div>
+    <div class="hint" style="margin-bottom:18px;color:var(--text-muted);font-size:13px">
+      เว็บไซต์/แพลตฟอร์มที่พร้อมใช้งานในระบบ — คลิก card เพื่อเปิดเว็บนั้นใน tab ใหม่
+    </div>
+    <div id="p-list">
+      <div class="empty">กำลังโหลด…</div>
+    </div>
+  `;
+
+  let data;
+  try {
+    data = await fetchJson('/api/admin/sites');
+  } catch (e) {
+    $('p-list').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  const sites = data.sites;
+  $('p-count').textContent = `${sites.length} แพลตฟอร์ม`;
+
+  if (sites.length === 0) {
+    $('p-list').innerHTML = `<div class="empty">ยังไม่มีแพลตฟอร์มในระบบ${currentRole === 'admin' ? ' — เพิ่มได้ที่เมนู <strong>🛠 Config</strong>' : ' — แจ้ง admin ให้เพิ่ม'}</div>`;
+    return;
+  }
+
+  $('p-list').innerHTML = `
+    <div class="platform-grid">
+      ${sites.map(s => {
+        const url = patternToUrl(s.url_pattern);
+        const initial = (s.name || '?').trim().charAt(0).toUpperCase();
+        const displayUrl = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+        const credLabel = s.cred_count > 0
+          ? `${s.cred_count} บัญชี`
+          : '<span style="color:var(--warning);">ยังไม่มีบัญชี</span>';
+        return `
+          <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="platform-card">
+            <div class="platform-avatar">${escapeHtml(initial)}</div>
+            <div class="platform-name">${escapeHtml(s.name)}</div>
+            <div class="platform-url">${escapeHtml(displayUrl)}</div>
+            <div class="platform-meta">
+              <span>${credLabel}</span>
+              <span class="open">เปิดเว็บ →</span>
+            </div>
+          </a>
+        `;
+      }).join('')}
+    </div>
+  `;
 }
 
 async function renderMembersPage() {
@@ -1485,9 +1605,9 @@ function attachSidebarHandlers() {
   attachSidebarHandlers();
   renderProfileSwitcherFooter();
 
-  // Default route — admin → dashboard, member → sites
+  // Default route — admin → dashboard, member → platforms
   if (!location.hash) {
-    location.hash = currentRole === 'admin' ? '#/dashboard' : '#/sites';
+    location.hash = currentRole === 'admin' ? '#/dashboard' : '#/platforms';
   }
   await navigate();
 })();
