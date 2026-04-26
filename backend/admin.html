@@ -357,6 +357,7 @@
       <a href="#/sites" data-route="sites">🌐 Website</a>
       <a href="#/extension" data-route="extension">🧩 Extension</a>
       <a href="#/security" data-route="security">🔑 API Key</a>
+      <a href="#/account" data-route="account">👤 บัญชีของฉัน</a>
       <a href="/" target="_blank">🏠 หน้าแรก ↗</a>
     </nav>
     <div class="sidebar-footer">
@@ -398,6 +399,7 @@ const routes = {
   'sites':     renderSitesList,
   'extension': renderExtensionPage,
   'security':  renderSecurityPage,
+  'account':   renderAccountPage,
 };
 
 function setActive(route) {
@@ -679,6 +681,104 @@ async function renderSecurityPage() {
     key = r.api_key;
     $('api-key-value').textContent = key;
     alert('สร้าง key ใหม่แล้ว — กรุณาคัดลอกไปวางใน extension options');
+  });
+}
+
+async function renderAccountPage() {
+  $('main').innerHTML = `
+    <div class="page-head">
+      <h2 class="page-title">👤 บัญชีของฉัน</h2>
+    </div>
+    <div class="warning-box">
+      ⚠️ <strong>คำเตือน:</strong> นี่คือบัญชี <strong>super admin</strong> ที่ใช้จัดการระบบทั้งหมด
+      หากเปลี่ยน username/password แล้วลืม จะ recover ไม่ได้ — ระวังเก็บไว้ดีๆ
+    </div>
+
+    <div class="card" style="display:block;margin-bottom:14px">
+      <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">ข้อมูลปัจจุบัน</h3>
+      <div style="display:grid;grid-template-columns:120px 1fr;gap:8px 16px;font-size:13.5px">
+        <div style="color:var(--text-muted)">Username</div>
+        <div id="cur-username" style="font-weight:500">…</div>
+      </div>
+    </div>
+
+    <div class="card" style="display:block">
+      <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">เปลี่ยน Username / Password</h3>
+      <div class="hint" style="margin-bottom:14px;font-size:12.5px;color:var(--text-muted)">
+        เว้นช่องที่ไม่ต้องการเปลี่ยนได้ (กรอกเฉพาะที่ต้องการแก้ไข)
+      </div>
+
+      <div class="field">
+        <label>Username ใหม่</label>
+        <input id="new-username" type="text" autocomplete="username" placeholder="เช่น admin@gmail.com" />
+      </div>
+      <div class="field">
+        <label>Password ใหม่ (อย่างน้อย 4 ตัว)</label>
+        <input id="new-password" type="password" autocomplete="new-password" placeholder="ปล่อยว่างถ้าไม่เปลี่ยน" />
+      </div>
+      <div class="field">
+        <label>ยืนยัน Password ใหม่</label>
+        <input id="confirm-password" type="password" autocomplete="new-password" />
+      </div>
+
+      <div class="hint" id="acc-msg" style="margin-bottom:10px;display:none"></div>
+      <button class="btn primary" id="save-acc-btn">บันทึก</button>
+    </div>
+  `;
+
+  // โหลด state ปัจจุบัน
+  try {
+    const s = await fetch('/api/admin/state', { credentials: 'same-origin' }).then(r => r.json());
+    $('cur-username').textContent = s.username || '—';
+  } catch {}
+
+  function setMsg(text, isErr) {
+    const el = $('acc-msg');
+    el.textContent = text;
+    el.style.display = '';
+    el.style.color = isErr ? 'var(--critical)' : 'var(--green)';
+  }
+
+  $('save-acc-btn').addEventListener('click', async () => {
+    const username = $('new-username').value.trim();
+    const password = $('new-password').value;
+    const confirm = $('confirm-password').value;
+
+    if (!username && !password) {
+      setMsg('กรอกอย่างน้อย username หรือ password ใหม่', true);
+      return;
+    }
+    if (password && password !== confirm) {
+      setMsg('Password ยืนยันไม่ตรงกัน', true);
+      return;
+    }
+    if (password && password.length < 4) {
+      setMsg('Password ต้องมีอย่างน้อย 4 ตัว', true);
+      return;
+    }
+
+    const body = {};
+    if (username) body.username = username;
+    if (password) body.password = password;
+
+    $('save-acc-btn').disabled = true;
+    try {
+      const res = await fetchJson('/api/admin/credentials', {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      });
+      setMsg('บันทึกสำเร็จ — username ใหม่: ' + res.username, false);
+      $('cur-username').textContent = res.username;
+      $('new-username').value = '';
+      $('new-password').value = '';
+      $('confirm-password').value = '';
+      // อัพเดท sidebar footer ด้วย
+      $('who').textContent = '👤 ' + res.username;
+    } catch (e) {
+      setMsg(e.message, true);
+    } finally {
+      $('save-acc-btn').disabled = false;
+    }
   });
 }
 

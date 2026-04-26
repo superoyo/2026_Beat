@@ -790,13 +790,18 @@ def patch_config(
 # Admin auth: setup → login → logout → session check
 # ===========================================================================
 class AdminSetupIn(BaseModel):
-    username: str = Field(..., min_length=3, max_length=64)
-    password: str = Field(..., min_length=6, max_length=200)
+    username: str = Field(..., min_length=3, max_length=200)
+    password: str = Field(..., min_length=4, max_length=200)
 
 
 class AdminLoginIn(BaseModel):
     username: str
     password: str
+
+
+class AdminCredentialsPatch(BaseModel):
+    username: Optional[str] = Field(None, min_length=3, max_length=200)
+    password: Optional[str] = Field(None, min_length=4, max_length=200)
 
 
 def _has_admin() -> bool:
@@ -853,6 +858,39 @@ def admin_login(payload: AdminLoginIn, response: Response) -> dict[str, Any]:
         secure=IS_PUBLIC_DEPLOY,
     )
     return {"ok": True, "username": row["username"]}
+
+
+@app.patch("/api/admin/credentials")
+def update_admin_credentials(
+    payload: AdminCredentialsPatch,
+    sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """เปลี่ยน username และ/หรือ password ของ admin ที่กำลัง login อยู่"""
+    updates: dict[str, Any] = {}
+    if payload.username is not None:
+        updates["username"] = payload.username.strip()
+    if payload.password is not None:
+        pw_hash, pw_salt = hash_password(payload.password)
+        updates["pw_hash"] = pw_hash
+        updates["pw_salt"] = pw_salt
+    if not updates:
+        raise HTTPException(status_code=400, detail="ไม่มีอะไรให้บันทึก")
+
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [sess["user_id"]]
+    try:
+        with db_conn() as conn:
+            conn.execute(f"UPDATE admin_users SET {set_clause} WHERE id = ?", values)
+            row = conn.execute(
+                "SELECT username FROM admin_users WHERE id = ?", (sess["user_id"],)
+            ).fetchone()
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=409, detail="username นี้ถูกใช้แล้ว")
+
+    # update in-memory session ด้วย — ถ้า username เปลี่ยน
+    if row:
+        sess["username"] = row["username"]
+    return {"ok": True, "username": row["username"] if row else None}
 
 
 @app.get("/api/admin/api-key")
