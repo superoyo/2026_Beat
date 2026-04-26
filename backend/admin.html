@@ -1746,56 +1746,68 @@ async function renderExtensionPage() {
         <span style="display:inline-block;width:24px;height:24px;background:var(--primary);color:#fff;border-radius:50%;text-align:center;line-height:24px;font-size:12px;margin-right:8px">1</span>
         ติดตั้ง Extension เข้า Chrome
       </h3>
+      ${currentRole === 'admin' ? `
+      <div style="margin-bottom:14px">
+        <a href="/api/admin/extension/download" class="btn primary" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none">
+          📥 ดาวน์โหลด Extension (ZIP)
+        </a>
+        <span style="margin-left:10px;color:var(--text-muted);font-size:12px">
+          ได้ไฟล์ zip — แตกออกแล้วเลือก folder ใน step ถัดไป
+        </span>
+      </div>
+      ` : ''}
       <ol style="line-height:1.85;color:var(--text);font-size:13.5px;padding-left:20px;margin:0 0 12px">
         <li>เปิด Chrome พิมพ์ <code style="background:var(--bg-soft);padding:1px 6px;border-radius:4px">chrome://extensions</code> ใน address bar</li>
         <li>เปิดสวิตช์ <strong>Developer mode</strong> (มุมขวาบน)</li>
         <li>กด <strong>Load unpacked</strong> (มุมซ้ายบน)</li>
-        <li>เลือก folder ของ extension:
-          <div style="margin-top:6px;padding:10px;background:var(--bg-soft);border-radius:6px;font-family:ui-monospace,Menlo,monospace;font-size:12px;border:1px solid var(--border)">
-            ~/Desktop/ClaudeCode/freepik-credit-tracker/extension
-          </div>
-        </li>
+        <li>เลือก folder <strong>fefl-beat-extension</strong> ที่แตกออกมาจาก zip</li>
         <li>Extension "FEFL Beat" จะปรากฏใน toolbar — pin ไว้ใช้สะดวกกว่า</li>
       </ol>
     </div>
 
-    <!-- Step 2: ตั้งค่า extension (สำคัญ!) -->
-    <div class="card" style="display:block;margin-bottom:14px;border-color:var(--warning);background:rgba(245,158,11,.04)">
+    <!-- Step 2: เชื่อมบัญชี (1-click) -->
+    <div class="card" style="display:block;margin-bottom:14px;border-color:var(--primary);background:rgba(37,99,235,.04)">
       <h3 style="margin:0 0 8px;font-size:15px;font-weight:600">
-        <span style="display:inline-block;width:24px;height:24px;background:var(--warning);color:#fff;border-radius:50%;text-align:center;line-height:24px;font-size:12px;margin-right:8px">2</span>
-        ⚠️ ตั้งค่า extension (สำคัญที่สุด — ขาดข้อใดข้อหนึ่ง = extension ใช้ไม่ได้)
+        <span style="display:inline-block;width:24px;height:24px;background:var(--primary);color:#fff;border-radius:50%;text-align:center;line-height:24px;font-size:12px;margin-right:8px">2</span>
+        🔗 เชื่อมบัญชีของคุณกับ Extension
       </h3>
       <p style="margin:0 0 14px;color:var(--text-muted);font-size:13px">
-        กดไอคอน FEFL Beat บน Chrome toolbar → เลือก <strong>"ตั้งค่า"</strong> → กรอก 2 ฟิลด์ด้านล่าง → กดบันทึก
+        ${currentRole === 'admin'
+          ? 'กดปุ่มด้านล่างครั้งเดียว — ระบบจะส่ง Backend URL + API Key + ชื่อบัญชีคุณ ไปเก็บใน extension อัตโนมัติ — ไม่ต้องตั้ง options เอง'
+          : 'กดปุ่มด้านล่างเพื่อบอก extension ว่ามี member นี้ใช้งาน — log จะเก็บชื่อคุณทุกครั้งที่ prefill'
+        }
       </p>
 
-      <div style="margin-bottom:14px">
-        <div style="font-size:12.5px;font-weight:600;margin-bottom:6px;color:var(--text)">2.1) Backend URL</div>
-        <div class="key-block">
-          <span class="val" style="font-size:12.5px">${escapeHtml(backendUrl)}</span>
-          <button class="btn" data-copy="${escapeHtml(backendUrl)}" style="white-space:nowrap;font-size:12px;padding:5px 10px">📋 คัดลอก</button>
-        </div>
-        <div class="hint" style="margin-top:6px;font-size:12px;color:var(--text-muted)">
-          วางใน extension options ช่อง "Backend URL"
-        </div>
-      </div>
+      <button class="btn primary" id="pair-btn" style="display:inline-flex;align-items:center;gap:8px">
+        🔗 เชื่อมบัญชีของฉัน
+      </button>
+      <div id="pair-status" style="margin-top:10px;font-size:13px;display:none"></div>
 
-      <div>
-        <div style="font-size:12.5px;font-weight:600;margin-bottom:6px;color:var(--text)">2.2) API Key</div>
-        ${currentRole === 'admin' ? `
-          <div class="key-block">
-            <span class="val" id="ext-apikey" style="font-size:12.5px">${escapeHtml(apiKey || apiKeyError || '...')}</span>
-            <button class="btn" id="ext-copy-apikey" style="white-space:nowrap;font-size:12px;padding:5px 10px" ${apiKey ? '' : 'disabled'}>📋 คัดลอก</button>
+      <details style="margin-top:14px">
+        <summary style="cursor:pointer;font-size:12.5px;color:var(--text-muted)">หรือกรอก config เอง (manual)</summary>
+        <div style="margin-top:10px">
+          <div style="margin-bottom:10px">
+            <div style="font-size:12px;font-weight:600;margin-bottom:4px;color:var(--text-muted)">Backend URL</div>
+            <div class="key-block">
+              <span class="val" style="font-size:12px">${escapeHtml(backendUrl)}</span>
+              <button class="btn" data-copy="${escapeHtml(backendUrl)}" style="white-space:nowrap;font-size:11px;padding:4px 9px">📋 คัดลอก</button>
+            </div>
           </div>
-          <div class="hint" style="margin-top:6px;font-size:12px;color:var(--text-muted)">
-            วางใน extension options ช่อง "API Key" — ดูเพิ่มที่เมนู <a href="#/security" style="color:var(--primary)">🔑 API Key</a>
+          <div>
+            <div style="font-size:12px;font-weight:600;margin-bottom:4px;color:var(--text-muted)">API Key</div>
+            ${currentRole === 'admin' ? `
+              <div class="key-block">
+                <span class="val" id="ext-apikey" style="font-size:12px">${escapeHtml(apiKey || apiKeyError || '...')}</span>
+                <button class="btn" id="ext-copy-apikey" style="white-space:nowrap;font-size:11px;padding:4px 9px" ${apiKey ? '' : 'disabled'}>📋 คัดลอก</button>
+              </div>
+            ` : `
+              <div class="hint" style="padding:8px 10px;background:var(--bg-soft);border-radius:6px;border:1px solid var(--border);font-size:12px">
+                Member ดู API Key ไม่ได้ — ใช้ปุ่ม "🔗 เชื่อมบัญชีของฉัน" แทน (auto)
+              </div>
+            `}
           </div>
-        ` : `
-          <div class="hint" style="padding:10px;background:var(--bg-soft);border-radius:6px;border:1px solid var(--border);font-size:12.5px">
-            ขอ API Key จาก admin — admin เห็นได้ที่เมนู 🔑 API Key
-          </div>
-        `}
-      </div>
+        </div>
+      </details>
     </div>
 
     <!-- Step 3: Reload + ทดสอบ -->
@@ -1850,6 +1862,80 @@ async function renderExtensionPage() {
       </div>
     </div>
   `;
+
+  // pair button → ส่ง config ผ่าน postMessage ไปให้ extension
+  const pairBtn = $('pair-btn');
+  if (pairBtn) {
+    pairBtn.addEventListener('click', async () => {
+      const status = $('pair-status');
+      pairBtn.disabled = true;
+      status.style.display = '';
+      status.style.color = 'var(--text-muted)';
+      status.textContent = '⏳ กำลังเชื่อม...';
+
+      // เก็บ config — admin มี API key, member ไม่มี
+      let myApiKey = apiKey;
+      let pairedUser = null;
+
+      // หา label ของ user ที่ login ปัจจุบัน
+      try {
+        if (currentRole === 'admin') {
+          const s = await fetch('/api/admin/state', { credentials: 'same-origin' }).then(r => r.json());
+          pairedUser = { role: 'admin', label: s.username, member_id: null, paired_at: new Date().toISOString() };
+        } else {
+          const m = await fetch('/api/member/me', { credentials: 'same-origin' }).then(r => r.json());
+          if (m.logged_in && m.member) {
+            const md = m.member;
+            pairedUser = {
+              role: 'member',
+              label: md.display_name || md.email || md.phone,
+              member_id: md.id,
+              paired_at: new Date().toISOString(),
+            };
+          }
+        }
+      } catch {}
+
+      const config = {
+        backendUrl: backendUrl,
+        apiKey: myApiKey || null,    // member อาจไม่มี
+        pairedUser,
+      };
+
+      // ส่ง postMessage รอ reply
+      const requestId = 'fct_pair_' + Date.now();
+      const handler = (ev) => {
+        if (ev.source !== window) return;
+        const d = ev.data;
+        if (!d || d.type !== 'FCT_PAIR_RESULT' || d.requestId !== requestId) return;
+        cleanup();
+        if (d.ok) {
+          status.style.color = 'var(--green)';
+          status.innerHTML = `✓ เชื่อมสำเร็จ — extension รู้แล้วว่าคุณคือ <strong>${escapeHtml(pairedUser?.label || 'unknown')}</strong>` +
+            (myApiKey ? '' : '<br><small style="color:var(--warning)">⚠️ Member ไม่มี API Key — extension ยังต้องอาศัย admin ตั้งให้</small>');
+          // refresh status widget
+          setTimeout(() => loadExtensionStatus(), 500);
+        } else {
+          status.style.color = 'var(--critical)';
+          status.textContent = '❌ เชื่อมไม่สำเร็จ: ' + (d.error || 'extension ไม่ตอบ');
+        }
+        pairBtn.disabled = false;
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        status.style.color = 'var(--critical)';
+        status.innerHTML = '❌ Extension ไม่ตอบใน 4 วินาที — install + reload extension แล้วลองใหม่';
+        pairBtn.disabled = false;
+      }, 4000);
+      const cleanup = () => {
+        window.removeEventListener('message', handler);
+        clearTimeout(timer);
+      };
+
+      window.addEventListener('message', handler);
+      window.postMessage({ type: 'FCT_PAIR', requestId, config }, '*');
+    });
+  }
 
   // wire copy buttons
   document.querySelectorAll('button[data-copy]').forEach(b => {

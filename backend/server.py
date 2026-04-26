@@ -7,6 +7,7 @@ SQLite, and serves analytics + a single-page dashboard. Bind only to
 from __future__ import annotations
 
 import hashlib
+import io
 import json as _json
 import os
 import re
@@ -15,6 +16,7 @@ import socket
 import sqlite3
 import urllib.error
 import urllib.request
+import zipfile
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -22,7 +24,7 @@ from typing import Any, Iterator, Optional
 
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
 VERSION = "1.1.0"
@@ -84,6 +86,7 @@ DB_PATH = Path(os.environ.get("FCT_DB_PATH", BASE_DIR / "freepik_tracker.db"))
 LANDING_PATH = BASE_DIR / "landing.html"
 DASHBOARD_PATH = BASE_DIR / "dashboard.html"
 ADMIN_PATH = BASE_DIR / "admin.html"
+EXTENSION_DIR = BASE_DIR.parent / "extension"   # อยู่นอก backend/
 
 DEFAULT_CONFIG: dict[str, str] = {
     "monthly_quota": "10000",
@@ -1012,6 +1015,58 @@ def get_api_key(_sess: dict = Depends(require_admin)) -> dict[str, str]:
     return {"api_key": get_extension_api_key()}
 
 
+@app.get("/api/admin/extension/download")
+def download_extension(_sess: dict = Depends(require_admin)) -> StreamingResponse:
+    """สร้าง ZIP ของ extension folder เพื่อให้ admin ดาวน์โหลดไป install เอง"""
+    if not EXTENSION_DIR.exists() or not EXTENSION_DIR.is_dir():
+        raise HTTPException(
+            status_code=503,
+            detail=f"extension folder ไม่พบ ({EXTENSION_DIR}) — repo อาจไม่ได้รวม extension/",
+        )
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        # อ่าน manifest version เพื่อใส่ใน filename
+        for path in sorted(EXTENSION_DIR.rglob("*")):
+            if not path.is_file():
+                continue
+            # skip hidden + cache files
+            rel = path.relative_to(EXTENSION_DIR)
+            if any(part.startswith(".") for part in rel.parts):
+                continue
+            if "__pycache__" in rel.parts:
+                continue
+            zf.write(path, arcname=str(Path("fefl-beat-extension") / rel))
+
+        # README.txt อธิบายขั้นตอน
+        zf.writestr(
+            "fefl-beat-extension/README.txt",
+            "FEFL Beat — Chrome Extension\n"
+            "============================\n\n"
+            "วิธีติดตั้ง:\n"
+            "1. แตก zip นี้ออกมาเป็น folder\n"
+            "2. เปิด Chrome → chrome://extensions\n"
+            "3. เปิด 'Developer mode' (มุมขวาบน)\n"
+            "4. กด 'Load unpacked' (มุมซ้ายบน)\n"
+            "5. เลือก folder 'fefl-beat-extension' ที่แตกออกมา\n"
+            "6. Pin extension ไว้บน toolbar\n\n"
+            "หลัง install:\n"
+            "- กลับไปที่ admin panel → เมนู Extension → กดปุ่ม\n"
+            "  '🔗 เชื่อมบัญชีของฉัน' — extension จะรับ Backend URL,\n"
+            "   API Key, และชื่อบัญชีคุณอัตโนมัติ\n",
+        )
+
+    buf.seek(0)
+    ts = utc_now().strftime("%Y%m%d-%H%M")
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="fefl-beat-extension-{ts}.zip"'
+        },
+    )
+
+
 @app.get("/api/admin/extension/status")
 def admin_extension_status(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
     """ดู status การเชื่อมต่อ extension จาก heartbeat ที่ track ไว้"""
@@ -1479,7 +1534,8 @@ def extension_heartbeat(_auth: str = Depends(require_admin_or_api_key)) -> dict[
 
 class CredentialUsedIn(BaseModel):
     source_url: Optional[str] = Field(None, max_length=2000)
-    member_id: Optional[int] = None    # ถ้า extension จะส่ง member context
+    member_id: Optional[int] = None      # ถ้า extension paired กับ member
+    user_label: Optional[str] = Field(None, max_length=200)  # ชื่อ user ที่ pair (admin หรือ member)
 
 
 @app.post("/api/extension/credentials/{cred_id}/used")
@@ -1493,6 +1549,7 @@ def mark_used(
     now = utc_now().isoformat()
     source_url = payload.source_url if payload else None
     member_id = payload.member_id if payload else None
+    user_label_in = payload.user_label if payload else None
     user_agent = request.headers.get("user-agent", "")[:500] if request else ""
     client_ip = (request.client.host if request and request.client else "")[:64]
 
@@ -1507,7 +1564,7 @@ def mark_used(
         if not cred:
             raise HTTPException(status_code=404, detail="credential not found")
 
-        # member snapshot (ถ้ามี)
+        # ลำดับ: lookup จาก member_id → fallback user_label จาก extension config
         member_label = None
         if member_id:
             mrow = conn.execute(
@@ -1516,6 +1573,8 @@ def mark_used(
             ).fetchone()
             if mrow:
                 member_label = mrow["display_name"] or mrow["email"] or mrow["phone"]
+        if not member_label and user_label_in:
+            member_label = user_label_in[:200]
 
         conn.execute(
             "UPDATE credentials SET last_used_at = ? WHERE id = ?",

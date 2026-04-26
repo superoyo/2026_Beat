@@ -9,7 +9,7 @@
 //   - English for technical / library code
 
 const TAG = '[FCT]';
-const SCRIPT_VERSION = 'v10-usage-log';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
+const SCRIPT_VERSION = 'v11-pair';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
 
 // Hostname ที่ extension จะทำหน้าที่ scrape credit (mode A)
 // เว็บอื่นที่ user เพิ่มใน admin จะได้แค่ prefill (mode B) — ไม่ scrape credit
@@ -397,15 +397,29 @@ function setReactInputValue(el, value) {
   el.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-function fillCredential(formInfo, cred) {
+async function fillCredential(formInfo, cred) {
   if (formInfo.userInput) setReactInputValue(formInfo.userInput, cred.username);
   setReactInputValue(formInfo.pwInput, cred.password);
+
+  // ดึง paired user info (ถ้ามี) จาก chrome.storage
+  let pairedUser = null;
+  try {
+    const r = await chrome.storage.sync.get(['pairedUser']);
+    pairedUser = r.pairedUser || null;
+  } catch {}
+
+  const body = { source_url: location.href };
+  if (pairedUser) {
+    if (pairedUser.member_id) body.member_id = pairedUser.member_id;
+    if (pairedUser.label) body.user_label = pairedUser.label;
+  }
   // แจ้ง backend ว่า cred นี้ถูกใช้ (update last_used_at + insert usage log)
   backendFetch('/api/extension/credentials/' + cred.id + '/used', {
     method: 'POST',
-    body: { source_url: location.href },
+    body,
   }).catch(() => {});
-  console.debug(TAG, 'filled credential id=' + cred.id + ' label=' + (cred.label || '-'));
+  console.debug(TAG, 'filled credential id=' + cred.id + ' label=' + (cred.label || '-')
+    + ' as=' + (pairedUser ? pairedUser.label : '(unpaired)'));
 }
 
 let prefillWidget = null;
@@ -520,34 +534,60 @@ function schedulePrefillCheck() {
 }
 
 // ============================================================================
-// PAGE BRIDGE — รับคำสั่ง FCT_FORCE_PING จากหน้า admin (postMessage)
-// → ส่งไป background → background fetch backend → ตอบกลับ
-// ใช้เพื่อ "active probe" ในหน้า /admin#/extension status widget
+// PAGE BRIDGE — รับคำสั่งจากหน้า admin ผ่าน postMessage:
+//   - FCT_FORCE_PING — active probe (ส่งให้ background ping backend)
+//   - FCT_PAIR       — รับ config (Backend URL, API Key, ชื่อ user) มาเก็บ
 // ============================================================================
 window.addEventListener('message', (event) => {
   if (event.source !== window) return;
   const data = event.data;
-  if (!data || data.type !== 'FCT_FORCE_PING') return;
-  const reqId = data.requestId;
-  try {
-    chrome.runtime.sendMessage({ type: 'FORCE_PING' }, (reply) => {
-      const err = chrome.runtime.lastError ? chrome.runtime.lastError.message : null;
+  if (!data || !data.type) return;
+
+  if (data.type === 'FCT_FORCE_PING') {
+    const reqId = data.requestId;
+    try {
+      chrome.runtime.sendMessage({ type: 'FORCE_PING' }, (reply) => {
+        const err = chrome.runtime.lastError ? chrome.runtime.lastError.message : null;
+        window.postMessage({
+          type: 'FCT_PING_RESULT',
+          requestId: reqId,
+          ok: !!(reply && reply.ok),
+          backend: reply && reply.backend,
+          status: reply && reply.status,
+          error: (reply && reply.error) || err || null,
+          version: SCRIPT_VERSION,
+        }, '*');
+      });
+    } catch (e) {
       window.postMessage({
-        type: 'FCT_PING_RESULT',
-        requestId: reqId,
-        ok: !!(reply && reply.ok),
-        backend: reply && reply.backend,
-        status: reply && reply.status,
-        error: (reply && reply.error) || err || null,
-        version: SCRIPT_VERSION,
+        type: 'FCT_PING_RESULT', requestId: reqId,
+        ok: false, error: e.message, version: SCRIPT_VERSION,
       }, '*');
-    });
-  } catch (e) {
-    window.postMessage({
-      type: 'FCT_PING_RESULT',
-      requestId: reqId,
-      ok: false, error: e.message, version: SCRIPT_VERSION,
-    }, '*');
+    }
+    return;
+  }
+
+  if (data.type === 'FCT_PAIR') {
+    const reqId = data.requestId;
+    const cfg = data.config || {};
+    try {
+      chrome.runtime.sendMessage({ type: 'PAIR', config: cfg }, (reply) => {
+        const err = chrome.runtime.lastError ? chrome.runtime.lastError.message : null;
+        window.postMessage({
+          type: 'FCT_PAIR_RESULT',
+          requestId: reqId,
+          ok: !!(reply && reply.ok),
+          error: (reply && reply.error) || err || null,
+          version: SCRIPT_VERSION,
+        }, '*');
+      });
+    } catch (e) {
+      window.postMessage({
+        type: 'FCT_PAIR_RESULT', requestId: reqId,
+        ok: false, error: e.message, version: SCRIPT_VERSION,
+      }, '*');
+    }
+    return;
   }
 });
 

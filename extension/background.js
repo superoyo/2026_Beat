@@ -164,6 +164,26 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
+  // PAIR — รับ config จากหน้า admin → save ลง chrome.storage
+  if (msg.type === 'PAIR') {
+    (async () => {
+      try {
+        const cfg = msg.config || {};
+        const updates = {};
+        if (cfg.backendUrl) updates.backendUrl = cfg.backendUrl;
+        if (cfg.apiKey)     updates.apiKey = cfg.apiKey;
+        // pairedUser: { role, label, member_id, paired_at }
+        if (cfg.pairedUser) updates.pairedUser = cfg.pairedUser;
+        await chrome.storage.sync.set(updates);
+        console.debug(TAG, 'paired with', cfg.pairedUser);
+        sendResponse({ ok: true });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
   // FORCE_PING — เรียก backend /api/extension/heartbeat ทันที (active probe)
   if (msg.type === 'FORCE_PING') {
     (async () => {
