@@ -180,27 +180,37 @@
       <a href="/" class="logo">FEFL<strong>Beat</strong></a>
     </div>
 
-    <h1>เข้าสู่ระบบ</h1>
-    <div class="sub">เลือกวิธี login — ครั้งแรกใช้เบอร์มือถือเพื่อสมัครสมาชิก</div>
+    <h1 id="page-title">เข้าสู่ระบบ</h1>
+    <div class="sub" id="page-sub">ใช้อีเมล + รหัสผ่าน หรือลงทะเบียนด้วยเบอร์มือถือ</div>
 
     <div class="tabs">
-      <button class="tab active" data-tab="email">อีเมล + รหัสผ่าน</button>
+      <button class="tab active" data-tab="email">อีเมล / Username + รหัสผ่าน</button>
       <button class="tab" data-tab="phone">เบอร์มือถือ + OTP</button>
     </div>
 
     <div class="alert err" id="err"></div>
     <div class="alert ok" id="ok"></div>
 
-    <!-- ============== Panel: email + password ============== -->
+    <!-- info banner สำหรับ admin setup mode -->
+    <div class="info-box" id="setup-banner" style="display:none">
+      🛠️ <strong>ตั้งค่า Admin ครั้งแรก</strong> — ระบบยังไม่มี admin กรอก username/password ด้านล่างเพื่อสร้าง
+    </div>
+
+    <!-- ============== Panel: email/username + password ============== -->
     <div class="panel active" id="panel-email">
       <form id="emailForm">
         <div class="field">
-          <label for="email">อีเมล</label>
-          <input id="email" type="email" autocomplete="username" placeholder="you@example.com" />
+          <label for="email">อีเมล หรือ Username</label>
+          <input id="email" type="text" autocomplete="username" placeholder="you@example.com หรือ admin@gmail.com" />
         </div>
         <div class="field">
           <label for="password">รหัสผ่าน</label>
           <input id="password" type="password" autocomplete="current-password" />
+        </div>
+        <!-- ช่องยืนยัน password (โผล่เฉพาะ setup admin mode) -->
+        <div class="field" id="confirm-field" style="display:none">
+          <label for="confirm-password">ยืนยันรหัสผ่าน</label>
+          <input id="confirm-password" type="password" autocomplete="new-password" />
         </div>
         <button type="submit" class="primary-btn" id="emailLoginBtn">เข้าสู่ระบบ</button>
       </form>
@@ -266,27 +276,64 @@
     });
     $('goPhoneBtn').addEventListener('click', (e) => { e.preventDefault(); goTab('phone'); });
 
-    // ============== Email + password login ==============
+    // ============== Detect mode: setup-admin? login? ==============
+    let mode = 'login';   // 'login' | 'setup-admin'
+    try {
+      const adminState = await fetch('/api/admin/state').then(r => r.json());
+      if (!adminState.has_admin) {
+        mode = 'setup-admin';
+        $('setup-banner').style.display = '';
+        $('confirm-field').style.display = '';
+        $('page-title').textContent = 'ตั้งค่า Admin ครั้งแรก';
+        $('page-sub').textContent = 'สร้าง username + รหัสผ่านสำหรับ admin (ครั้งแรกเท่านั้น)';
+        $('emailLoginBtn').textContent = 'สร้างบัญชี Admin';
+        $('password').setAttribute('autocomplete', 'new-password');
+      }
+    } catch {}
+
+    // ============== Email/Username + password (unified) ==============
     $('emailForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       clearMsg();
-      const email = $('email').value.trim();
+      const username = $('email').value.trim();
       const password = $('password').value;
-      if (!email || !password) { showErr('กรุณากรอกอีเมลและรหัสผ่าน'); return; }
+      if (!username || !password) { showErr('กรุณากรอก username/อีเมล และรหัสผ่าน'); return; }
+
       $('emailLoginBtn').disabled = true;
       try {
-        const res = await fetch('/api/member/login', {
+        if (mode === 'setup-admin') {
+          if (password.length < 4) { showErr('รหัสผ่านอย่างน้อย 4 ตัว'); return; }
+          if (password !== $('confirm-password').value) { showErr('รหัสผ่านไม่ตรงกัน'); return; }
+          const res = await fetch('/api/admin/setup', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password }),
+          });
+          if (!res.ok) {
+            const j = await res.json().catch(() => ({}));
+            throw new Error(j.detail || ('HTTP ' + res.status));
+          }
+          showOk('สร้าง admin สำเร็จ — กำลังพาไปหน้า admin…');
+          setTimeout(() => location.replace('/admin'), 600);
+          return;
+        }
+
+        // mode === 'login' — ลอง admin ก่อน ถ้าไม่ใช่ค่อย member (ผ่าน /api/auth/login)
+        const res = await fetch('/api/auth/login', {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password }),
+          body: JSON.stringify({ username, password }),
         });
         if (!res.ok) {
           const j = await res.json().catch(() => ({}));
           throw new Error(j.detail || ('HTTP ' + res.status));
         }
-        showOk('เข้าสู่ระบบสำเร็จ — กำลังพาไปหน้าแรก…');
-        setTimeout(() => location.replace('/'), 600);
+        const data = await res.json();
+        const target = data.role === 'admin' ? '/admin' : '/';
+        showOk(`เข้าสู่ระบบสำเร็จ (${data.role}) — กำลังพาไป…`);
+        setTimeout(() => location.replace(target), 600);
       } catch (e) {
         showErr(e.message);
       } finally {

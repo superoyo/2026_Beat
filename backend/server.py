@@ -84,7 +84,6 @@ DB_PATH = Path(os.environ.get("FCT_DB_PATH", BASE_DIR / "freepik_tracker.db"))
 LANDING_PATH = BASE_DIR / "landing.html"
 DASHBOARD_PATH = BASE_DIR / "dashboard.html"
 ADMIN_PATH = BASE_DIR / "admin.html"
-ADMIN_LOGIN_PATH = BASE_DIR / "admin_login.html"
 
 DEFAULT_CONFIG: dict[str, str] = {
     "monthly_quota": "10000",
@@ -222,7 +221,7 @@ def init_db() -> None:
         if ADMIN_RESET_ON_BOOT:
             n = conn.execute("DELETE FROM admin_users").rowcount
             print(f"⚠️  ADMIN_RESET_ON_BOOT=1 — wiped {n} admin user(s). "
-                  f"Visit /admin/login to set up again. "
+                  f"Visit /login to set up again. "
                   f"REMOVE the env var after setup!")
 
         # ---- 5. seed Freepik site (ครั้งแรกเท่านั้น)
@@ -977,6 +976,55 @@ def regenerate_api_key(_sess: dict = Depends(require_admin)) -> dict[str, str]:
     return {"api_key": new_key}
 
 
+# ===========================================================================
+# Unified login (admin หรือ member ก็ได้ — ลองทั้งคู่)
+# ===========================================================================
+class AuthLoginIn(BaseModel):
+    username: str = Field(..., min_length=1, max_length=200)
+    password: str = Field(..., min_length=1, max_length=200)
+
+
+@app.post("/api/auth/login")
+def auth_login(payload: AuthLoginIn, response: Response) -> dict[str, Any]:
+    """ลอง admin ก่อน ถ้าไม่ผ่าน ค่อยลอง member (treat username เป็น email)"""
+    # 1) ลอง admin
+    with db_conn() as conn:
+        admin_row = conn.execute(
+            "SELECT id, username, pw_hash, pw_salt FROM admin_users WHERE username = ?",
+            (payload.username.strip(),),
+        ).fetchone()
+    if admin_row and verify_password(
+        payload.password, admin_row["pw_hash"], admin_row["pw_salt"]
+    ):
+        token = create_session(admin_row["id"], admin_row["username"])
+        response.set_cookie(
+            SESSION_COOKIE, token, max_age=SESSION_TTL_SECONDS,
+            httponly=True, samesite="lax", path="/",
+            secure=IS_PUBLIC_DEPLOY,
+        )
+        return {"ok": True, "role": "admin", "username": admin_row["username"]}
+
+    # 2) ลอง member (username = email)
+    email = payload.username.strip().lower()
+    with db_conn() as conn:
+        m_row = conn.execute(
+            "SELECT id, phone, email, pw_hash, pw_salt FROM members WHERE LOWER(email) = ?",
+            (email,),
+        ).fetchone()
+    if m_row and m_row["pw_hash"] and verify_password(
+        payload.password, m_row["pw_hash"], m_row["pw_salt"]
+    ):
+        now = utc_now().isoformat()
+        with db_conn() as conn:
+            conn.execute(
+                "UPDATE members SET last_login_at = ? WHERE id = ?", (now, m_row["id"])
+            )
+        _set_member_cookie(response, m_row["id"], m_row["phone"])
+        return {"ok": True, "role": "member", "member_id": m_row["id"]}
+
+    raise HTTPException(status_code=401, detail="username/อีเมล หรือ รหัสผ่าน ไม่ถูกต้อง")
+
+
 @app.post("/api/admin/logout")
 def admin_logout(response: Response, fct_session: Optional[str] = Cookie(default=None)) -> dict[str, Any]:
     if fct_session:
@@ -1348,11 +1396,9 @@ def serve_admin() -> FileResponse:
 
 
 @app.get("/admin/login", include_in_schema=False)
-def serve_admin_login() -> FileResponse:
-    if not ADMIN_LOGIN_PATH.exists():
-        raise HTTPException(status_code=404, detail="admin_login.html missing")
-    return FileResponse(ADMIN_LOGIN_PATH, media_type="text/html; charset=utf-8",
-                        headers={"Cache-Control": "no-store"})
+def serve_admin_login_redirect() -> RedirectResponse:
+    """รวมหน้า login เป็น /login เดียว — ระบบ auto-detect role จาก credential"""
+    return RedirectResponse(url="/login", status_code=302)
 
 
 # ---------------------------------------------------------------------------
