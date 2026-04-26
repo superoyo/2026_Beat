@@ -712,6 +712,8 @@ function showAddSiteModal() {
   });
 }
 
+let _currentSite = null;
+
 async function renderSiteDetail(siteId) {
   $('main').innerHTML = `
     <div class="crumb"><a href="#/sites">← Websites</a></div>
@@ -719,6 +721,7 @@ async function renderSiteDetail(siteId) {
       <h2 class="page-title" id="site-name">…</h2>
       <div style="display:flex;gap:8px">
         <button class="btn primary" id="add-cred-btn">+ เพิ่ม Credential</button>
+        <button class="btn" id="edit-site-btn">✏️ แก้ไขข้อมูลเว็บ</button>
         <button class="btn danger" id="delete-site-btn">ลบเว็บนี้</button>
       </div>
     </div>
@@ -733,6 +736,9 @@ async function renderSiteDetail(siteId) {
   await loadSite(siteId);
 
   $('add-cred-btn').addEventListener('click', () => showAddCredModal(siteId));
+  $('edit-site-btn').addEventListener('click', () => {
+    if (_currentSite) showEditSiteModal(_currentSite, siteId);
+  });
   $('delete-site-btn').addEventListener('click', async () => {
     if (!confirm('ลบเว็บนี้และ credentials ทั้งหมด?')) return;
     await fetchJson('/api/admin/sites/' + siteId, { method: 'DELETE' });
@@ -740,8 +746,36 @@ async function renderSiteDetail(siteId) {
   });
 }
 
+function showEditSiteModal(site, siteId) {
+  showModal({
+    title: 'แก้ไขข้อมูลเว็บ',
+    body: `
+      <div class="field">
+        <label>ชื่อเว็บ</label>
+        <input id="m-name" type="text" value="${escapeHtml(site.name)}" />
+      </div>
+      <div class="field">
+        <label>URL pattern (ใช้ * เป็น wildcard)</label>
+        <input id="m-pattern" type="text" value="${escapeHtml(site.url_pattern)}" />
+        <div class="hint">เช่น <code>*.freepik.com/*</code> หรือ <code>app.example.com/login</code></div>
+      </div>
+    `,
+    onSubmit: async () => {
+      const name = $('m-name').value.trim();
+      const url_pattern = $('m-pattern').value.trim();
+      if (!name || !url_pattern) throw new Error('กรอกชื่อและ URL pattern');
+      await fetchJson('/api/admin/sites/' + siteId, {
+        method: 'PATCH',
+        body: JSON.stringify({ name, url_pattern }),
+      });
+      await loadSite(siteId);
+    },
+  });
+}
+
 async function loadSite(siteId) {
   const { site, credentials } = await fetchJson('/api/admin/sites/' + siteId);
+  _currentSite = site;
   $('site-name').textContent = site.name;
   $('site-meta').innerHTML = `
     <div class="card">
@@ -775,7 +809,8 @@ async function loadSite(siteId) {
           <button class="copy-btn" data-copy="${escapeHtml(c.password)}" title="คัดลอก">📋</button>
         </div>
       </div>
-      <div>
+      <div style="display:flex;gap:6px">
+        <button class="btn" data-edit="${c.id}" style="font-size:12px;padding:5px 10px">✏️ แก้ไข</button>
         <button class="btn danger" data-del="${c.id}">ลบ</button>
       </div>
     </div>
@@ -810,6 +845,59 @@ async function loadSite(siteId) {
       await loadSite(siteId);
     });
   });
+  list.querySelectorAll('button[data-edit]').forEach(b => {
+    b.addEventListener('click', () => {
+      const cid = parseInt(b.dataset.edit, 10);
+      const cred = credentials.find(x => x.id === cid);
+      if (cred) showEditCredModal(cred, siteId);
+    });
+  });
+}
+
+function showEditCredModal(cred, siteId) {
+  showModal({
+    title: 'แก้ไข Credential',
+    body: `
+      <div class="field">
+        <label>ชื่อย่อ (ไม่บังคับ)</label>
+        <input id="m-label" type="text" value="${escapeHtml(cred.label || '')}" placeholder="เช่น account หลัก, สำรอง 1" />
+      </div>
+      <div class="field">
+        <label>Username / Email</label>
+        <input id="m-username" type="text" value="${escapeHtml(cred.username)}" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <div style="display:flex;gap:6px">
+          <input id="m-password" type="password" value="${escapeHtml(cred.password)}" autocomplete="off" style="flex:1" />
+          <button type="button" class="btn" id="m-pw-toggle" style="white-space:nowrap;font-size:12px;padding:5px 10px">👁 แสดง</button>
+        </div>
+        <div class="hint">ค่าที่กรอกจะแทน password เดิม</div>
+      </div>
+    `,
+    onSubmit: async () => {
+      const label = $('m-label').value.trim() || null;
+      const username = $('m-username').value.trim();
+      const password = $('m-password').value;
+      if (!username || !password) throw new Error('กรอก username และ password');
+      await fetchJson('/api/admin/credentials/' + cred.id, {
+        method: 'PATCH',
+        body: JSON.stringify({ label, username, password }),
+      });
+      await loadSite(siteId);
+    },
+  });
+  // toggle show/hide password ใน modal
+  setTimeout(() => {
+    const tgl = document.getElementById('m-pw-toggle');
+    const pw = document.getElementById('m-password');
+    if (tgl && pw) {
+      tgl.addEventListener('click', () => {
+        if (pw.type === 'password') { pw.type = 'text'; tgl.textContent = '🙈 ซ่อน'; }
+        else { pw.type = 'password'; tgl.textContent = '👁 แสดง'; }
+      });
+    }
+  }, 0);
 }
 
 function showAddCredModal(siteId) {

@@ -1275,10 +1275,21 @@ class SiteIn(BaseModel):
     url_pattern: str = Field(..., min_length=1, max_length=500)
 
 
+class SitePatchIn(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=120)
+    url_pattern: Optional[str] = Field(None, min_length=1, max_length=500)
+
+
 class CredentialIn(BaseModel):
     label: Optional[str] = Field(None, max_length=120)
     username: str = Field(..., min_length=1, max_length=200)
     password: str = Field(..., min_length=1, max_length=500)
+
+
+class CredentialPatchIn(BaseModel):
+    label: Optional[str] = Field(None, max_length=120)
+    username: Optional[str] = Field(None, min_length=1, max_length=200)
+    password: Optional[str] = Field(None, min_length=1, max_length=500)
 
 
 @app.get("/api/admin/sites")
@@ -1329,6 +1340,55 @@ def delete_site(site_id: int, _sess: dict = Depends(require_admin)) -> dict[str,
         cur = conn.execute("DELETE FROM sites WHERE id = ?", (site_id,))
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="site not found")
+    return {"ok": True}
+
+
+@app.patch("/api/admin/sites/{site_id}")
+def update_site(
+    site_id: int,
+    payload: SitePatchIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """แก้ไขชื่อ + URL pattern ของ site"""
+    updates: dict[str, Any] = {}
+    if payload.name is not None:
+        updates["name"] = payload.name.strip()
+    if payload.url_pattern is not None:
+        updates["url_pattern"] = payload.url_pattern.strip()
+    if not updates:
+        raise HTTPException(status_code=400, detail="ไม่มีอะไรให้บันทึก")
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [site_id]
+    with db_conn() as conn:
+        cur = conn.execute(f"UPDATE sites SET {set_clause} WHERE id = ?", values)
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="site not found")
+    return {"ok": True}
+
+
+@app.patch("/api/admin/credentials/{cred_id}")
+def update_credential(
+    cred_id: int,
+    payload: CredentialPatchIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """แก้ไข label / username / password ของ credential"""
+    updates: dict[str, Any] = {}
+    if payload.label is not None:
+        v = payload.label.strip()
+        updates["label"] = v or None
+    if payload.username is not None:
+        updates["username"] = payload.username.strip()
+    if payload.password is not None:
+        updates["password"] = payload.password
+    if not updates:
+        raise HTTPException(status_code=400, detail="ไม่มีอะไรให้บันทึก")
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [cred_id]
+    with db_conn() as conn:
+        cur = conn.execute(f"UPDATE credentials SET {set_clause} WHERE id = ?", values)
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="credential not found")
     return {"ok": True}
 
 
