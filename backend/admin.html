@@ -398,7 +398,10 @@ async function fetchJson(path, opts = {}) {
   return res.json();
 }
 
-const ADMIN_ONLY_ROUTES = new Set(['security', 'account']);
+// admin-only routes — member ห้ามเข้า (bounce ไป default)
+const ADMIN_ONLY_ROUTES = new Set(['security']);
+// menu items ที่ซ่อนใน sidebar สำหรับ member
+const HIDE_FROM_MEMBER_NAV = new Set(['dashboard', 'security']);
 
 // ---------- routing ----------
 const routes = {
@@ -421,9 +424,9 @@ async function navigate() {
   const parts = hash.split('/');
   const route = parts[0];
 
-  // Member ห้ามเข้า admin-only routes
-  if (currentRole === 'member' && ADMIN_ONLY_ROUTES.has(route)) {
-    location.hash = '#/dashboard';
+  // Member ห้ามเข้า admin-only routes (ทั้ง security และ dashboard)
+  if (currentRole === 'member' && (ADMIN_ONLY_ROUTES.has(route) || HIDE_FROM_MEMBER_NAV.has(route))) {
+    location.hash = '#/sites';
     return;
   }
 
@@ -698,6 +701,13 @@ async function renderSecurityPage() {
 }
 
 async function renderAccountPage() {
+  if (currentRole === 'member') {
+    return renderMemberAccountPage();
+  }
+  return renderAdminAccountPage();
+}
+
+async function renderAdminAccountPage() {
   $('main').innerHTML = `
     <div class="page-head">
       <h2 class="page-title">👤 บัญชีของฉัน</h2>
@@ -791,6 +801,152 @@ async function renderAccountPage() {
       setMsg(e.message, true);
     } finally {
       $('save-acc-btn').disabled = false;
+    }
+  });
+}
+
+async function renderMemberAccountPage() {
+  $('main').innerHTML = `
+    <div class="page-head">
+      <h2 class="page-title">👤 บัญชีของฉัน</h2>
+    </div>
+
+    <div id="member-loading" style="padding:30px;text-align:center;color:var(--text-muted)">กำลังโหลด…</div>
+
+    <div id="member-content" style="display:none">
+      <div class="card" style="display:block;margin-bottom:14px">
+        <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">ข้อมูลบัญชี</h3>
+        <div style="display:grid;grid-template-columns:140px 1fr;gap:10px 16px;font-size:13.5px">
+          <div style="color:var(--text-muted)">เบอร์มือถือ</div>
+          <div id="m-info-phone" style="font-weight:500">—</div>
+          <div style="color:var(--text-muted)">อีเมล</div>
+          <div id="m-info-email">—</div>
+          <div style="color:var(--text-muted)">รหัสผ่าน</div>
+          <div id="m-info-pw">—</div>
+          <div style="color:var(--text-muted)">สมัครเมื่อ</div>
+          <div id="m-info-created">—</div>
+        </div>
+      </div>
+
+      <div class="card" style="display:block;margin-bottom:14px">
+        <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">แก้ไขข้อมูล</h3>
+        <div class="hint" style="margin-bottom:14px;font-size:12.5px;color:var(--text-muted)">
+          ตั้งชื่อแสดง + อีเมล เพื่อใช้แสดงและใช้ login ครั้งถัดไป
+        </div>
+        <div class="field">
+          <label>ชื่อแสดง</label>
+          <input id="m-display_name" type="text" placeholder="เช่น สมชาย ใจดี" maxlength="120" />
+        </div>
+        <div class="field">
+          <label>อีเมล</label>
+          <input id="m-email" type="email" placeholder="you@example.com" maxlength="200" />
+          <div class="hint">ใช้เป็น username เวลาเข้าระบบด้วยอีเมล + รหัสผ่าน</div>
+        </div>
+        <div class="hint" id="m-profile-msg" style="margin-bottom:10px;display:none"></div>
+        <button class="btn primary" id="m-save-profile">บันทึกข้อมูล</button>
+      </div>
+
+      <div class="card" style="display:block">
+        <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">ตั้ง / เปลี่ยนรหัสผ่าน</h3>
+        <div class="hint" style="margin-bottom:14px;font-size:12.5px;color:var(--text-muted)">
+          รหัสผ่านอย่างน้อย 4 ตัว — ใช้คู่กับอีเมลด้านบนเพื่อ login ครั้งถัดไป
+        </div>
+        <div class="field">
+          <label>รหัสผ่านใหม่</label>
+          <input id="m-password" type="password" placeholder="อย่างน้อย 4 ตัว" autocomplete="new-password" />
+        </div>
+        <div class="field">
+          <label>ยืนยันรหัสผ่าน</label>
+          <input id="m-confirm" type="password" autocomplete="new-password" />
+        </div>
+        <div class="hint" id="m-pw-msg" style="margin-bottom:10px;display:none"></div>
+        <button class="btn primary" id="m-save-password">บันทึกรหัสผ่าน</button>
+      </div>
+    </div>
+  `;
+
+  const fmtDate = iso => iso ? new Date(iso).toLocaleString('th-TH', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  }) : '—';
+
+  const statusPill = set => set
+    ? '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(16,185,129,.12);color:var(--green)">✓ ตั้งแล้ว</span>'
+    : '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(245,158,11,.12);color:#b45309">⚠ ยังไม่ตั้ง</span>';
+
+  let member = null;
+  function renderInfo() {
+    $('m-info-phone').textContent = member.phone;
+    $('m-info-email').innerHTML = member.email
+      ? `<span style="margin-right:8px">${escapeHtml(member.email)}</span>${statusPill(true)}`
+      : statusPill(false);
+    $('m-info-pw').innerHTML = statusPill(member.has_password);
+    $('m-info-created').textContent = fmtDate(member.created_at);
+    $('m-display_name').value = member.display_name || '';
+    $('m-email').value = member.email || '';
+  }
+
+  function setMsg(elId, text, isErr) {
+    const el = $(elId);
+    el.textContent = text;
+    el.style.display = '';
+    el.style.color = isErr ? 'var(--critical)' : 'var(--green)';
+  }
+
+  try {
+    const r = await fetch('/api/member/me', { credentials: 'same-origin' }).then(r => r.json());
+    if (!r.logged_in) { location.replace('/login'); return; }
+    member = r.member;
+    renderInfo();
+    $('member-loading').style.display = 'none';
+    $('member-content').style.display = '';
+  } catch (e) {
+    $('member-loading').textContent = 'โหลดไม่สำเร็จ: ' + e.message;
+    return;
+  }
+
+  $('m-save-profile').addEventListener('click', async () => {
+    const display_name = $('m-display_name').value.trim();
+    const email = $('m-email').value.trim();
+    $('m-save-profile').disabled = true;
+    try {
+      const data = await fetchJson('/api/member/profile', {
+        method: 'PATCH',
+        body: JSON.stringify({ display_name, email }),
+      });
+      member = data.member;
+      renderInfo();
+      setMsg('m-profile-msg', 'บันทึกข้อมูลสำเร็จ', false);
+      // อัพเดท sidebar footer ด้วย
+      const display = member.display_name || member.email || member.phone;
+      $('who').textContent = '👤 ' + display;
+    } catch (e) {
+      setMsg('m-profile-msg', e.message, true);
+    } finally {
+      $('m-save-profile').disabled = false;
+    }
+  });
+
+  $('m-save-password').addEventListener('click', async () => {
+    const password = $('m-password').value;
+    const confirm = $('m-confirm').value;
+    if (password.length < 4) { setMsg('m-pw-msg', 'รหัสผ่านต้องมีอย่างน้อย 4 ตัว', true); return; }
+    if (password !== confirm) { setMsg('m-pw-msg', 'รหัสผ่านยืนยันไม่ตรงกัน', true); return; }
+    $('m-save-password').disabled = true;
+    try {
+      const data = await fetchJson('/api/member/profile', {
+        method: 'PATCH',
+        body: JSON.stringify({ password }),
+      });
+      member = data.member;
+      renderInfo();
+      $('m-password').value = '';
+      $('m-confirm').value = '';
+      setMsg('m-pw-msg', 'ตั้งรหัสผ่านสำเร็จ — ใช้อีเมล + รหัสผ่าน login ครั้งหน้าได้', false);
+    } catch (e) {
+      setMsg('m-pw-msg', e.message, true);
+    } finally {
+      $('m-save-password').disabled = false;
     }
   });
 }
@@ -908,10 +1064,10 @@ function showModal({ title, body, onSubmit }) {
 
   $('who').textContent = label;
 
-  // 2. ซ่อน admin-only tabs ถ้าเป็น member
+  // 2. ซ่อน menu items ที่ admin-only ถ้าเป็น member
   if (currentRole === 'member') {
     document.querySelectorAll('.nav a[data-route]').forEach(a => {
-      if (ADMIN_ONLY_ROUTES.has(a.dataset.route)) a.style.display = 'none';
+      if (HIDE_FROM_MEMBER_NAV.has(a.dataset.route)) a.style.display = 'none';
     });
   }
 
@@ -921,8 +1077,10 @@ function showModal({ title, body, onSubmit }) {
     location.replace('/');
   });
 
-  // 4. Default route → dashboard
-  if (!location.hash) location.hash = '#/dashboard';
+  // 4. Default route — admin → dashboard, member → sites
+  if (!location.hash) {
+    location.hash = currentRole === 'admin' ? '#/dashboard' : '#/sites';
+  }
   await navigate();
 })();
 </script>

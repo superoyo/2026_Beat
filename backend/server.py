@@ -1139,7 +1139,7 @@ class MemberLoginIn(BaseModel):
 class MemberProfileIn(BaseModel):
     display_name: Optional[str] = Field(None, max_length=120)
     email: Optional[str] = Field(None, max_length=200)
-    password: Optional[str] = Field(None, min_length=6, max_length=200)
+    password: Optional[str] = Field(None, min_length=4, max_length=200)
 
 
 def _require_member_session(token: Optional[str]) -> dict[str, Any]:
