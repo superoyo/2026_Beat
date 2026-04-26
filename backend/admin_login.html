@@ -46,6 +46,8 @@
     }
     .brand {
       margin-bottom: 22px;
+      display: flex; align-items: center; gap: 10px;
+      position: relative;
     }
     .brand a.logo {
       display: inline-block;
@@ -57,6 +59,50 @@
     }
     .brand a.logo:hover { text-decoration: none; }
     .brand a.logo strong { color: var(--primary); font-weight: 700; }
+
+    /* Hamburger + sister-sites menu */
+    .hamburger-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      width: 36px; height: 36px;
+      display: inline-flex; align-items: center; justify-content: center;
+      cursor: pointer; color: var(--text-muted);
+      transition: all .12s; padding: 0;
+    }
+    .hamburger-btn:hover {
+      background: rgba(37,99,235,.06); color: var(--primary);
+    }
+    .brand-menu {
+      position: absolute;
+      top: calc(100% + 10px); left: 0;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 12px 40px rgba(15, 23, 42, .15);
+      min-width: 280px;
+      padding: 6px;
+      z-index: 200;
+    }
+    .brand-menu-head {
+      font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--text-muted); font-weight: 600;
+      padding: 10px 12px 6px;
+    }
+    .brand-menu-item {
+      display: block; padding: 10px 12px;
+      border-radius: 8px; text-decoration: none;
+      color: var(--text); transition: background .1s;
+    }
+    .brand-menu-item:hover { background: rgba(37,99,235,.06); text-decoration: none; }
+    .brand-menu-item .name { display: block; font-size: 14px; font-weight: 600; }
+    .brand-menu-item .name strong { color: var(--primary); font-weight: 700; }
+    .brand-menu-item .desc { display: block; font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+    .brand-menu-item.current { background: rgba(37,99,235,.06); }
+    .brand-menu-item.current .name::after {
+      content: '· ปัจจุบัน';
+      color: var(--text-muted); font-weight: 400; font-size: 11px; margin-left: 6px;
+    }
 
     h1 { margin: 0 0 6px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
     .sub { color: var(--text-muted); font-size: 14px; margin-bottom: 24px; }
@@ -129,6 +175,24 @@
 <body>
   <div class="card">
     <div class="brand">
+      <button class="hamburger-btn" id="hamburgerBtn" aria-label="สลับเว็บในเครือ">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+          <line x1="3" y1="6" x2="21" y2="6"/>
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
+      <div class="brand-menu" id="brandMenu" hidden>
+        <div class="brand-menu-head">เว็บในเครือ</div>
+        <a href="https://2026beat-production.up.railway.app" class="brand-menu-item" target="_top" data-host="2026beat-production.up.railway.app">
+          <span class="name">FEFL<strong>Beat</strong></span>
+          <span class="desc">AI Solution Hub for Marketing</span>
+        </a>
+        <a href="https://web-production-8eb90.up.railway.app" class="brand-menu-item" target="_top" data-host="web-production-8eb90.up.railway.app">
+          <span class="name">Prompt<strong>Gallery</strong></span>
+          <span class="desc">AI Image Prompt Knowledge Base</span>
+        </a>
+      </div>
       <a href="/" class="logo">FEFL<strong>Beat</strong></a>
     </div>
 
@@ -162,6 +226,19 @@
 <script>
 const $ = id => document.getElementById(id);
 let mode = 'login';
+
+// Hamburger menu
+(() => {
+  const btn = $('hamburgerBtn'), menu = $('brandMenu');
+  if (!btn || !menu) return;
+  btn.addEventListener('click', (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; });
+  document.addEventListener('click', (e) => {
+    if (!menu.hidden && !menu.contains(e.target) && !btn.contains(e.target)) menu.hidden = true;
+  });
+  document.querySelectorAll('.brand-menu-item[data-host]').forEach(a => {
+    if (a.dataset.host === location.hostname) a.classList.add('current');
+  });
+})();
 
 function showErr(msg) { $('err').textContent = msg; $('err').style.display = ''; $('ok').style.display = 'none'; }
 function showOk(msg)  { $('ok').textContent = msg; $('ok').style.display = ''; $('err').style.display = 'none'; }

@@ -57,6 +57,52 @@
     h1 strong { color: var(--primary); font-weight: 700; }
     h1 a { color: var(--text); text-decoration: none; }
     h1 a:hover { text-decoration: none; }
+
+    /* Brand row with hamburger */
+    .brand-row { display: flex; align-items: center; gap: 10px; position: relative; }
+    .hamburger-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      width: 36px; height: 36px;
+      display: inline-flex; align-items: center; justify-content: center;
+      cursor: pointer; color: var(--text-muted);
+      transition: all .12s; padding: 0;
+    }
+    .hamburger-btn:hover {
+      background: var(--bg-hover); color: var(--primary);
+      border-color: var(--border-strong);
+    }
+    .brand-menu {
+      position: absolute;
+      top: calc(100% + 10px); left: 0;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 12px 40px rgba(15, 23, 42, .15);
+      min-width: 280px;
+      padding: 6px;
+      z-index: 200;
+    }
+    .brand-menu-head {
+      font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--text-muted); font-weight: 600;
+      padding: 10px 12px 6px;
+    }
+    .brand-menu-item {
+      display: block; padding: 10px 12px;
+      border-radius: 8px; text-decoration: none;
+      color: var(--text); transition: background .1s;
+    }
+    .brand-menu-item:hover { background: var(--bg-soft); text-decoration: none; }
+    .brand-menu-item .name { display: block; font-size: 14px; font-weight: 600; }
+    .brand-menu-item .name strong { color: var(--primary); font-weight: 700; }
+    .brand-menu-item .desc { display: block; font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+    .brand-menu-item.current { background: var(--bg-soft); }
+    .brand-menu-item.current .name::after {
+      content: '· ปัจจุบัน';
+      color: var(--text-muted); font-weight: 400; font-size: 11px; margin-left: 6px;
+    }
     .subtitle { color: var(--text-muted); font-size: 13px; margin-top: 3px; }
     .profile-line {
       display: flex; align-items: center; gap: 6px;
@@ -213,7 +259,27 @@
   <div class="container">
     <header>
       <div>
-        <h1><a href="/">FEFL<strong>Beat</strong></a> <span style="color:var(--text-muted);font-weight:400;font-size:14px;margin-left:6px">· Credit Dashboard</span></h1>
+        <div class="brand-row">
+          <button class="hamburger-btn" id="hamburgerBtn" aria-label="สลับเว็บในเครือ">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+              <line x1="3" y1="6" x2="21" y2="6"/>
+              <line x1="3" y1="12" x2="21" y2="12"/>
+              <line x1="3" y1="18" x2="21" y2="18"/>
+            </svg>
+          </button>
+          <div class="brand-menu" id="brandMenu" hidden>
+            <div class="brand-menu-head">เว็บในเครือ</div>
+            <a href="https://2026beat-production.up.railway.app" class="brand-menu-item" target="_top" data-host="2026beat-production.up.railway.app">
+              <span class="name">FEFL<strong>Beat</strong></span>
+              <span class="desc">AI Solution Hub for Marketing</span>
+            </a>
+            <a href="https://web-production-8eb90.up.railway.app" class="brand-menu-item" target="_top" data-host="web-production-8eb90.up.railway.app">
+              <span class="name">Prompt<strong>Gallery</strong></span>
+              <span class="desc">AI Image Prompt Knowledge Base</span>
+            </a>
+          </div>
+          <h1><a href="/">FEFL<strong>Beat</strong></a> <span style="color:var(--text-muted);font-weight:400;font-size:14px;margin-left:6px">· Credit Dashboard</span></h1>
+        </div>
         <div class="subtitle" id="subtitle">กำลังโหลดข้อมูล…</div>
         <div class="profile-line" id="profile-line" style="display:none">
           <span style="font-size:14px">👤</span>
@@ -303,6 +369,22 @@
   </div>
 
 <script>
+// Hamburger menu
+(() => {
+  const btn = document.getElementById('hamburgerBtn');
+  const menu = document.getElementById('brandMenu');
+  if (!btn || !menu) return;
+  btn.addEventListener('click', (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; });
+  document.addEventListener('click', (e) => {
+    if (!menu.hidden && !menu.contains(e.target) && !btn.contains(e.target)) menu.hidden = true;
+  });
+  // Mark current site (skip if dashboard is iframed inside admin SPA)
+  const host = window.top === window.self ? location.hostname : '';
+  document.querySelectorAll('.brand-menu-item[data-host]').forEach(a => {
+    if (a.dataset.host === host) a.classList.add('current');
+  });
+})();
+
 const API = '';
 let chart = null;
 
