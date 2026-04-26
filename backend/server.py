@@ -185,7 +185,7 @@ def init_db() -> None:
             if col_name not in existing_cols:
                 conn.execute(f"ALTER TABLE snapshots ADD COLUMN {col_name} {col_def}")
 
-        # members table — เพิ่มคอลัมน์ email + password เพื่อให้ login ได้สองวิธี
+        # members table — เพิ่มคอลัมน์ email + password + enabled
         member_cols = {
             row["name"] for row in conn.execute("PRAGMA table_info(members)").fetchall()
         }
@@ -193,6 +193,7 @@ def init_db() -> None:
             ("email",   "TEXT"),
             ("pw_hash", "TEXT"),
             ("pw_salt", "TEXT"),
+            ("enabled", "INTEGER NOT NULL DEFAULT 1"),
         ]:
             if col_name not in member_cols:
                 conn.execute(f"ALTER TABLE members ADD COLUMN {col_name} {col_def}")
@@ -1059,9 +1060,11 @@ def auth_login(payload: AuthLoginIn, response: Response) -> dict[str, Any]:
     email = payload.username.strip().lower()
     with db_conn() as conn:
         m_row = conn.execute(
-            "SELECT id, phone, email, pw_hash, pw_salt FROM members WHERE LOWER(email) = ?",
+            "SELECT id, phone, email, pw_hash, pw_salt, enabled FROM members WHERE LOWER(email) = ?",
             (email,),
         ).fetchone()
+    if m_row and _is_member_disabled(m_row):
+        raise HTTPException(status_code=403, detail="บัญชีนี้ถูกระงับการใช้งาน")
     if m_row and m_row["pw_hash"] and verify_password(
         payload.password, m_row["pw_hash"], m_row["pw_salt"]
     ):
@@ -1090,6 +1093,110 @@ def admin_logout(response: Response, fct_session: Optional[str] = Cookie(default
     if fct_session:
         destroy_session(fct_session)
     response.delete_cookie(SESSION_COOKIE, path="/")
+    return {"ok": True}
+
+
+# ===========================================================================
+# Members management (admin-only)
+# ===========================================================================
+class MemberAdminPatch(BaseModel):
+    enabled: Optional[bool] = None
+    password: Optional[str] = Field(None, min_length=4, max_length=200)
+
+
+@app.get("/api/admin/members")
+def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, phone, email, display_name, enabled, "
+            "       (pw_hash IS NOT NULL) AS has_password, "
+            "       created_at, last_login_at "
+            "FROM members ORDER BY created_at DESC"
+        ).fetchall()
+    return {
+        "members": [
+            {
+                "id": r["id"],
+                "phone": r["phone"],
+                "email": r["email"],
+                "display_name": r["display_name"],
+                "enabled": bool(r["enabled"]) if r["enabled"] is not None else True,
+                "has_password": bool(r["has_password"]),
+                "created_at": r["created_at"],
+                "last_login_at": r["last_login_at"],
+            }
+            for r in rows
+        ]
+    }
+
+
+@app.get("/api/admin/members/{member_id}")
+def admin_get_member(member_id: int, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    with db_conn() as conn:
+        row = conn.execute(
+            "SELECT id, phone, email, display_name, enabled, "
+            "       (pw_hash IS NOT NULL) AS has_password, "
+            "       created_at, last_login_at "
+            "FROM members WHERE id = ?",
+            (member_id,),
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="ไม่พบ member")
+    return {
+        "id": row["id"],
+        "phone": row["phone"],
+        "email": row["email"],
+        "display_name": row["display_name"],
+        "enabled": bool(row["enabled"]) if row["enabled"] is not None else True,
+        "has_password": bool(row["has_password"]),
+        "created_at": row["created_at"],
+        "last_login_at": row["last_login_at"],
+    }
+
+
+@app.patch("/api/admin/members/{member_id}")
+def admin_update_member(
+    member_id: int,
+    payload: MemberAdminPatch,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """admin: enable/disable + reset password ของ member"""
+    updates: dict[str, Any] = {}
+    disabled_now = False
+    if payload.enabled is not None:
+        updates["enabled"] = 1 if payload.enabled else 0
+        disabled_now = not payload.enabled
+    if payload.password is not None:
+        pw_hash, pw_salt = hash_password(payload.password)
+        updates["pw_hash"] = pw_hash
+        updates["pw_salt"] = pw_salt
+    if not updates:
+        raise HTTPException(status_code=400, detail="ไม่มีอะไรให้บันทึก")
+
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [member_id]
+    with db_conn() as conn:
+        cur = conn.execute(f"UPDATE members SET {set_clause} WHERE id = ?", values)
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="ไม่พบ member")
+
+    if disabled_now:
+        n = _invalidate_member_sessions(member_id)
+        return {"ok": True, "sessions_killed": n}
+    return {"ok": True}
+
+
+@app.delete("/api/admin/members/{member_id}")
+def admin_delete_member(
+    member_id: int,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """ลบ member ทั้งคน (sessions + record)"""
+    _invalidate_member_sessions(member_id)
+    with db_conn() as conn:
+        cur = conn.execute("DELETE FROM members WHERE id = ?", (member_id,))
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="ไม่พบ member")
     return {"ok": True}
 
 
@@ -1269,6 +1376,25 @@ def _member_row_to_profile(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
+def _is_member_disabled(row: sqlite3.Row) -> bool:
+    """row ต้องมี column 'enabled' (อาจ NULL ใน DB เก่ามากๆ — treat as enabled)"""
+    if row is None:
+        return False
+    try:
+        v = row["enabled"]
+    except (KeyError, IndexError):
+        return False
+    return v == 0
+
+
+def _invalidate_member_sessions(member_id: int) -> int:
+    """ล้าง session ของ member นี้ออกจาก in-memory store"""
+    to_remove = [tok for tok, s in _MEMBER_SESSIONS.items() if s["member_id"] == member_id]
+    for tok in to_remove:
+        _MEMBER_SESSIONS.pop(tok, None)
+    return len(to_remove)
+
+
 def _set_member_cookie(response: Response, member_id: int, phone: str) -> str:
     token = create_member_session(member_id, phone)
     response.set_cookie(
@@ -1305,8 +1431,10 @@ def member_verify(payload: MemberVerifyIn, response: Response) -> dict[str, Any]
 
     with db_conn() as conn:
         existing = conn.execute(
-            "SELECT id FROM members WHERE firebase_uid = ?", (firebase_uid,)
+            "SELECT id, enabled FROM members WHERE firebase_uid = ?", (firebase_uid,)
         ).fetchone()
+        if existing and _is_member_disabled(existing):
+            raise HTTPException(status_code=403, detail="บัญชีนี้ถูกระงับการใช้งาน")
         if existing:
             conn.execute(
                 "UPDATE members SET phone = ?, display_name = COALESCE(?, display_name), "
@@ -1335,11 +1463,13 @@ def member_login(payload: MemberLoginIn, response: Response) -> dict[str, Any]:
     email = payload.email.strip().lower()
     with db_conn() as conn:
         row = conn.execute(
-            "SELECT id, phone, email, pw_hash, pw_salt FROM members WHERE LOWER(email) = ?",
+            "SELECT id, phone, email, pw_hash, pw_salt, enabled FROM members WHERE LOWER(email) = ?",
             (email,),
         ).fetchone()
     if not row or not row["pw_hash"]:
         raise HTTPException(status_code=401, detail="email หรือ password ไม่ถูกต้อง")
+    if _is_member_disabled(row):
+        raise HTTPException(status_code=403, detail="บัญชีนี้ถูกระงับการใช้งาน")
     if not verify_password(payload.password, row["pw_hash"], row["pw_salt"]):
         raise HTTPException(status_code=401, detail="email หรือ password ไม่ถูกต้อง")
 
