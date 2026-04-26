@@ -640,35 +640,56 @@ function escapeHtml(s) {
   });
 })();
 
-// Auth area — แสดง username ถ้า login อยู่ ไม่งั้นแสดงปุ่ม login
+// Auth area — เช็ค member ก่อน (เป็น user หลัก) ถ้าไม่มี ดู admin
+// ถ้าไม่มีเลย → ปุ่มเข้าสู่ระบบ (member)
 (async () => {
   const area = document.getElementById('authArea');
   const renderLogin = () => {
-    area.innerHTML = `<a href="/admin/login" class="btn">เข้าสู่ระบบ</a>`;
+    area.innerHTML = `<a href="/login" class="btn">เข้าสู่ระบบ</a>`;
   };
-  try {
-    const r = await fetch('/api/admin/state', { credentials: 'same-origin' }).then(r => r.json());
-    if (r.logged_in && r.username) {
-      const initial = r.username.trim().charAt(0).toUpperCase() || '?';
-      area.innerHTML = `
-        <a href="/admin" class="user-pill" title="เปิด Admin Console">
-          <span class="user-avatar">${escapeHtml(initial)}</span>
-          <span>${escapeHtml(r.username)}</span>
-        </a>
-        <span class="user-divider"></span>
-        <a href="#" class="user-logout" id="navLogout">ออกจากระบบ</a>
-      `;
-      document.getElementById('navLogout').addEventListener('click', async (e) => {
-        e.preventDefault();
-        try { await fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin' }); } catch {}
-        location.reload();
-      });
-    } else {
-      renderLogin();
-    }
-  } catch (e) {
-    renderLogin();
+
+  function renderPill(name, subtitle, link, logoutFn) {
+    const initial = (name || '?').trim().charAt(0).toUpperCase() || '?';
+    area.innerHTML = `
+      <a href="${escapeHtml(link)}" class="user-pill" title="${escapeHtml(subtitle || '')}">
+        <span class="user-avatar">${escapeHtml(initial)}</span>
+        <span>${escapeHtml(name)}</span>
+      </a>
+      <span class="user-divider"></span>
+      <a href="#" class="user-logout" id="navLogout">ออกจากระบบ</a>
+    `;
+    document.getElementById('navLogout').addEventListener('click', async (e) => {
+      e.preventDefault();
+      try { await logoutFn(); } catch {}
+      location.reload();
+    });
   }
+
+  // 1. ลอง member session ก่อน
+  try {
+    const m = await fetch('/api/member/me', { credentials: 'same-origin' }).then(r => r.json());
+    if (m.logged_in && m.member) {
+      const display = m.member.display_name || m.member.phone;
+      renderPill(display, 'สมาชิก ' + m.member.phone, '/', async () => {
+        await fetch('/api/member/logout', { method: 'POST', credentials: 'same-origin' });
+      });
+      return;
+    }
+  } catch {}
+
+  // 2. ถ้าไม่ใช่ member → ลอง admin
+  try {
+    const a = await fetch('/api/admin/state', { credentials: 'same-origin' }).then(r => r.json());
+    if (a.logged_in && a.username) {
+      renderPill(a.username, 'Admin', '/admin', async () => {
+        await fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin' });
+      });
+      return;
+    }
+  } catch {}
+
+  // 3. ไม่มีใคร login → ปุ่มเข้าสู่ระบบ
+  renderLogin();
 })();
 </script>
 

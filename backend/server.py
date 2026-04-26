@@ -7,11 +7,14 @@ SQLite, and serves analytics + a single-page dashboard. Bind only to
 from __future__ import annotations
 
 import hashlib
+import json as _json
 import os
 import re
 import secrets
 import socket
 import sqlite3
+import urllib.error
+import urllib.request
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -25,9 +28,24 @@ from pydantic import BaseModel, Field, field_validator
 VERSION = "1.1.0"
 
 SESSION_COOKIE = "fct_session"
+MEMBER_COOKIE = "fct_member_session"
 SESSION_TTL_SECONDS = 7 * 24 * 60 * 60   # 7 วัน
 # Session store แบบ in-memory — reset ตอน restart server (ยอมรับได้สำหรับ local tool)
 _SESSIONS: dict[str, dict[str, Any]] = {}
+_MEMBER_SESSIONS: dict[str, dict[str, Any]] = {}
+
+# ---------------------------------------------------------------------------
+# Firebase web config (public — embedded ในหน้าเว็บ ปลอดภัยที่จะ expose)
+# ---------------------------------------------------------------------------
+FIREBASE_CONFIG = {
+    "apiKey": os.environ.get("FIREBASE_WEB_API_KEY", ""),
+    "authDomain": os.environ.get("FIREBASE_AUTH_DOMAIN", ""),
+    "projectId": os.environ.get("FIREBASE_PROJECT_ID", ""),
+    "appId": os.environ.get("FIREBASE_APP_ID", ""),
+    "messagingSenderId": os.environ.get("FIREBASE_MESSAGING_SENDER_ID", ""),
+    "storageBucket": os.environ.get("FIREBASE_STORAGE_BUCKET", ""),
+}
+FIREBASE_ENABLED = bool(FIREBASE_CONFIG["apiKey"] and FIREBASE_CONFIG["projectId"])
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +158,16 @@ def init_db() -> None:
                 created_at   TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_credentials_site ON credentials(site_id);
+
+            CREATE TABLE IF NOT EXISTS members (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                phone         TEXT NOT NULL UNIQUE,
+                firebase_uid  TEXT NOT NULL UNIQUE,
+                display_name  TEXT,
+                created_at    TEXT NOT NULL,
+                last_login_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_members_phone ON members(phone);
             """
         )
 
@@ -263,6 +291,69 @@ def require_admin_or_api_key(
     if expected and x_api_key and secrets.compare_digest(x_api_key, expected):
         return "api_key"
     raise HTTPException(status_code=401, detail="authentication required")
+
+
+# ---------------------------------------------------------------------------
+# Member sessions (Firebase Phone Auth)
+# ---------------------------------------------------------------------------
+def create_member_session(member_id: int, phone: str) -> str:
+    token = secrets.token_urlsafe(32)
+    expires = datetime.now(timezone.utc) + timedelta(seconds=SESSION_TTL_SECONDS)
+    _MEMBER_SESSIONS[token] = {"member_id": member_id, "phone": phone, "expires": expires}
+    return token
+
+
+def get_member_session(token: Optional[str]) -> Optional[dict[str, Any]]:
+    if not token:
+        return None
+    sess = _MEMBER_SESSIONS.get(token)
+    if not sess:
+        return None
+    if datetime.now(timezone.utc) > sess["expires"]:
+        _MEMBER_SESSIONS.pop(token, None)
+        return None
+    return sess
+
+
+def destroy_member_session(token: str) -> None:
+    _MEMBER_SESSIONS.pop(token, None)
+
+
+def verify_firebase_id_token(id_token: str) -> dict[str, Any]:
+    """
+    Verify a Firebase ID token by calling Identity Toolkit's accounts:lookup
+    REST endpoint. Returns the user record (with localId, phoneNumber, ...).
+    Raises ValueError on invalid token / RuntimeError on unconfigured Firebase.
+    """
+    if not FIREBASE_ENABLED:
+        raise RuntimeError("Firebase ไม่ได้ตั้งค่า (FIREBASE_WEB_API_KEY ว่าง)")
+    api_key = FIREBASE_CONFIG["apiKey"]
+    url = f"https://identitytoolkit.googleapis.com/v1/accounts:lookup?key={api_key}"
+    body = _json.dumps({"idToken": id_token}).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=body, headers={"Content-Type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = _json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        try:
+            err = _json.loads(e.read())
+            msg = err.get("error", {}).get("message", str(e))
+        except Exception:
+            msg = str(e)
+        raise ValueError(f"invalid id token: {msg}") from e
+    except (urllib.error.URLError, TimeoutError) as e:
+        raise RuntimeError(f"Firebase unreachable: {e}") from e
+
+    users = data.get("users") or []
+    if not users:
+        raise ValueError("invalid id token (empty users)")
+    user = users[0]
+    # ต้องเป็น phone-auth (มี phoneNumber) — กัน edge case ที่ token เป็น sign-in อื่น
+    if not user.get("phoneNumber"):
+        raise ValueError("token มาจาก sign-in method อื่น (ไม่ใช่ phone)")
+    return user
 
 
 # ---------------------------------------------------------------------------
@@ -904,6 +995,119 @@ def mark_used(
             (utc_now().isoformat(), cred_id),
         )
     return {"ok": True}
+
+
+# ===========================================================================
+# Member: Firebase Phone Auth
+# ===========================================================================
+class MemberVerifyIn(BaseModel):
+    id_token: str = Field(..., min_length=20)
+
+
+@app.get("/api/firebase/config")
+def firebase_config_endpoint() -> dict[str, Any]:
+    """Public web config — embedded in client JS"""
+    return {"enabled": FIREBASE_ENABLED, **FIREBASE_CONFIG}
+
+
+@app.post("/api/member/verify")
+def member_verify(payload: MemberVerifyIn, response: Response) -> dict[str, Any]:
+    """
+    Frontend ทำ Firebase Phone Auth สำเร็จแล้วส่ง ID token มา
+    Backend verify ผ่าน REST → upsert member → set session cookie
+    """
+    try:
+        user = verify_firebase_id_token(payload.id_token)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+    firebase_uid = user["localId"]
+    phone = user["phoneNumber"]
+    display_name = user.get("displayName") or None
+    now = utc_now().isoformat()
+
+    with db_conn() as conn:
+        existing = conn.execute(
+            "SELECT id FROM members WHERE firebase_uid = ?", (firebase_uid,)
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE members SET phone = ?, display_name = COALESCE(?, display_name), "
+                "last_login_at = ? WHERE id = ?",
+                (phone, display_name, now, existing["id"]),
+            )
+            member_id = existing["id"]
+            is_new = False
+        else:
+            cur = conn.execute(
+                "INSERT INTO members(phone, firebase_uid, display_name, created_at, last_login_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (phone, firebase_uid, display_name, now, now),
+            )
+            member_id = cur.lastrowid
+            is_new = True
+
+    token = create_member_session(member_id, phone)
+    response.set_cookie(
+        MEMBER_COOKIE, token, max_age=SESSION_TTL_SECONDS,
+        httponly=True, samesite="lax", path="/",
+        secure=IS_PUBLIC_DEPLOY,
+    )
+    return {"ok": True, "member_id": member_id, "phone": phone, "is_new": is_new}
+
+
+@app.post("/api/member/logout")
+def member_logout(
+    response: Response,
+    fct_member_session: Optional[str] = Cookie(default=None),
+) -> dict[str, Any]:
+    if fct_member_session:
+        destroy_member_session(fct_member_session)
+    response.delete_cookie(MEMBER_COOKIE, path="/")
+    return {"ok": True}
+
+
+@app.get("/api/member/me")
+def member_me(
+    fct_member_session: Optional[str] = Cookie(default=None),
+) -> dict[str, Any]:
+    sess = get_member_session(fct_member_session)
+    if not sess:
+        return {"logged_in": False}
+    with db_conn() as conn:
+        row = conn.execute(
+            "SELECT id, phone, display_name, created_at, last_login_at "
+            "FROM members WHERE id = ?",
+            (sess["member_id"],),
+        ).fetchone()
+    if not row:
+        return {"logged_in": False}
+    return {
+        "logged_in": True,
+        "member": {
+            "id": row["id"],
+            "phone": row["phone"],
+            "display_name": row["display_name"],
+            "created_at": row["created_at"],
+            "last_login_at": row["last_login_at"],
+        },
+    }
+
+
+# ===========================================================================
+# Member login page (HTML)
+# ===========================================================================
+LOGIN_PATH = BASE_DIR / "login.html"
+
+
+@app.get("/login", include_in_schema=False)
+def serve_member_login() -> FileResponse:
+    if not LOGIN_PATH.exists():
+        raise HTTPException(status_code=404, detail="login.html missing")
+    return FileResponse(LOGIN_PATH, media_type="text/html; charset=utf-8",
+                        headers={"Cache-Control": "no-store"})
 
 
 # ===========================================================================
