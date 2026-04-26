@@ -118,7 +118,7 @@
       color: var(--text-muted); font-weight: 400; font-size: 11px; margin-left: 6px;
     }
 
-    .nav { flex: 1; padding: 0 12px; }
+    .nav { flex: 1; padding: 0 12px; overflow-y: auto; }
     .nav a {
       display: flex; align-items: center; gap: 10px;
       padding: 10px 13px;
@@ -135,6 +135,23 @@
       color: var(--primary-dark);
       font-weight: 600;
     }
+
+    /* Sidebar sections */
+    .nav-section + .nav-section {
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+    }
+    .nav-section-label {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-soft);
+      font-weight: 600;
+      padding: 2px 13px 8px;
+    }
+    .nav-section-label .icon { opacity: .7; font-size: 12px; }
 
     .sidebar-footer {
       padding: 12px;
@@ -442,13 +459,24 @@
       <div class="sub">Admin Console</div>
     </div>
     <nav class="nav">
-      <a href="#/dashboard" data-route="dashboard">📊 Dashboard</a>
-      <a href="#/sites" data-route="sites">🌐 Website</a>
-      <a href="#/members" data-route="members">👥 Members</a>
-      <a href="#/extension" data-route="extension">🧩 Extension</a>
-      <a href="#/security" data-route="security">🔑 API Key</a>
-      <a href="#/account" data-route="account">👤 บัญชีของฉัน</a>
-      <a href="/" target="_blank">🏠 หน้าแรก ↗</a>
+      <!-- ส่วนทั่วไป (เมนูใช้งานประจำ) -->
+      <div class="nav-section">
+        <a href="#/dashboard" data-route="dashboard">📊 Dashboard</a>
+        <a href="#/sites" data-route="sites">🌐 Website</a>
+        <a href="#/extension" data-route="extension">🧩 Extension</a>
+        <a href="#/account" data-route="account">👤 บัญชีของฉัน</a>
+        <a href="/" target="_blank">🏠 หน้าแรก ↗</a>
+      </div>
+
+      <!-- ภาพรวมระบบ (admin-only — ซ่อนทั้ง section สำหรับ member) -->
+      <div class="nav-section" data-admin-section="overview">
+        <div class="nav-section-label">
+          <span class="icon">⚙️</span>
+          <span>ภาพรวมระบบ</span>
+        </div>
+        <a href="#/members" data-route="members">👥 Members</a>
+        <a href="#/security" data-route="security">🔑 API Key</a>
+      </div>
     </nav>
     <div class="sidebar-footer">
       <div class="profile-switcher">
@@ -1443,8 +1471,12 @@ function attachSidebarHandlers() {
   currentLabel = session.label;
   currentLogoutPath = session.logoutPath;
 
-  // ซ่อน admin-only tabs ถ้าเป็น member
+  // ซ่อน admin-only ทั้ง section + items ถ้าเป็น member
   if (currentRole === 'member') {
+    document.querySelectorAll('.nav-section[data-admin-section]').forEach(s => {
+      s.style.display = 'none';
+    });
+    // เผื่อ items แต่ละตัวที่ admin-only แต่ดันอยู่ใน section ทั่วไป
     document.querySelectorAll('.nav a[data-route]').forEach(a => {
       if (HIDE_FROM_MEMBER_NAV.has(a.dataset.route)) a.style.display = 'none';
     });
