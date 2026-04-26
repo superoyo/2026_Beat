@@ -673,7 +673,8 @@ function escapeHtml(s) {
       const display = m.member.display_name || m.member.email || m.member.phone;
       const tooltip = 'สมาชิก ' + m.member.phone +
         (m.member.email ? ' · ' + m.member.email : '');
-      renderPill(display, tooltip, '/profile', async () => {
+      // คลิก pill → ไปหน้า admin (sidebar default = sites + เข้า "บัญชีของฉัน" จากใน sidebar)
+      renderPill(display, tooltip, '/admin', async () => {
         await fetch('/api/member/logout', { method: 'POST', credentials: 'same-origin' });
       });
       return;

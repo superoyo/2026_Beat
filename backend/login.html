@@ -381,7 +381,8 @@
         showOk(data.is_new
           ? 'ลงทะเบียนสำเร็จ — กำลังพาไปหน้าโปรไฟล์เพื่อตั้งรหัสผ่าน…'
           : 'เข้าสู่ระบบสำเร็จ — กำลังพาไปหน้าแรก…');
-        setTimeout(() => location.replace(data.is_new ? '/profile' : '/'), 800);
+        // member ใหม่ → หน้า "บัญชีของฉัน" ใน admin SPA
+        setTimeout(() => location.replace(data.is_new ? '/admin#/account' : '/'), 800);
       } catch (e) {
         console.error(e);
         showErr('OTP ไม่ถูกต้อง: ' + (e.message || e.code || 'unknown'));

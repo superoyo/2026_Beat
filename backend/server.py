@@ -1319,7 +1319,6 @@ def member_me(
 # Member pages (HTML)
 # ===========================================================================
 LOGIN_PATH = BASE_DIR / "login.html"
-PROFILE_PATH = BASE_DIR / "profile.html"
 
 
 @app.get("/login", include_in_schema=False)
@@ -1331,11 +1330,9 @@ def serve_member_login() -> FileResponse:
 
 
 @app.get("/profile", include_in_schema=False)
-def serve_profile() -> FileResponse:
-    if not PROFILE_PATH.exists():
-        raise HTTPException(status_code=404, detail="profile.html missing")
-    return FileResponse(PROFILE_PATH, media_type="text/html; charset=utf-8",
-                        headers={"Cache-Control": "no-store"})
+def serve_profile_redirect() -> RedirectResponse:
+    """หน้า /profile เก่าถูกย้ายไปอยู่ใน admin SPA แล้ว — redirect ไป /admin#/account"""
+    return RedirectResponse(url="/admin#/account", status_code=302)
 
 
 # ===========================================================================
