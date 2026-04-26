@@ -525,6 +525,7 @@
         </div>
         <a href="#/members" data-route="members">👥 Members</a>
         <a href="#/sites" data-route="sites">🛠 Config</a>
+        <a href="#/logs" data-route="logs">📜 Logs</a>
         <a href="#/security" data-route="security">🔑 API Key</a>
       </div>
     </nav>
@@ -590,9 +591,9 @@ async function fetchJson(path, opts = {}) {
 }
 
 // admin-only routes — member ห้ามเข้า (bounce ไป default)
-const ADMIN_ONLY_ROUTES = new Set(['security', 'members', 'sites']);
+const ADMIN_ONLY_ROUTES = new Set(['security', 'members', 'sites', 'logs']);
 // menu items ที่ซ่อนใน sidebar สำหรับ member
-const HIDE_FROM_MEMBER_NAV = new Set(['dashboard', 'security', 'members', 'sites']);
+const HIDE_FROM_MEMBER_NAV = new Set(['dashboard', 'security', 'members', 'sites', 'logs']);
 
 // ---------- routing ----------
 const routes = {
@@ -600,6 +601,7 @@ const routes = {
   'platforms': renderPlatformsPage,
   'sites':     renderSitesList,
   'members':   renderMembersPage,
+  'logs':      renderLogsPage,
   'extension': renderExtensionPage,
   'security':  renderSecurityPage,
   'account':   renderAccountPage,
@@ -1051,6 +1053,93 @@ async function renderPlatformsPage() {
           </a>
         `;
       }).join('')}
+    </div>
+  `;
+}
+
+async function renderLogsPage() {
+  $('main').innerHTML = `
+    <div class="page-head">
+      <h2 class="page-title">📜 Logs</h2>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span class="card-sub" id="log-count">—</span>
+        <button class="btn" id="log-refresh" style="font-size:12px;padding:6px 12px">🔄 รีเฟรช</button>
+      </div>
+    </div>
+    <div class="hint" style="margin-bottom:16px;color:var(--text-muted);font-size:13px">
+      บันทึกทุกครั้งที่ user คลิก Prefill — เห็น credential ไหนถูกใช้กับเว็บไหน เมื่อไร จากเครื่องอะไร
+    </div>
+    <div id="log-list">
+      <div class="empty">กำลังโหลด…</div>
+    </div>
+  `;
+  $('log-refresh').addEventListener('click', loadLogsList);
+  await loadLogsList();
+}
+
+function shortUserAgent(ua) {
+  if (!ua) return '—';
+  // Chrome/147.0 (Mac) — สั้นๆ
+  const browser = (ua.match(/(Chrome|Firefox|Safari|Edge)\/[\d.]+/) || ['—'])[0];
+  let os = '';
+  if (/Mac OS|Macintosh/.test(ua)) os = 'Mac';
+  else if (/Windows/.test(ua)) os = 'Win';
+  else if (/Linux/.test(ua)) os = 'Linux';
+  else if (/Android/.test(ua)) os = 'Android';
+  else if (/iPhone|iPad/.test(ua)) os = 'iOS';
+  return browser + (os ? ' · ' + os : '');
+}
+
+async function loadLogsList() {
+  let data;
+  try {
+    data = await fetchJson('/api/admin/logs?limit=200');
+  } catch (e) {
+    $('log-list').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  const logs = data.logs;
+  $('log-count').textContent = `${logs.length} / ${data.total} log`;
+
+  if (logs.length === 0) {
+    $('log-list').innerHTML = `<div class="empty">ยังไม่มี log การใช้งาน — ทดลอง prefill บนเว็บไหนก็จะมี log ขึ้นที่นี่</div>`;
+    return;
+  }
+
+  $('log-list').innerHTML = `
+    <div style="overflow-x:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-sm)">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="background:var(--bg-soft)">
+            <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">เวลา</th>
+            <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">เว็บ</th>
+            <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">บัญชีที่ใช้</th>
+            <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">User</th>
+            <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">หน้า</th>
+            <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">เครื่อง / IP</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${logs.map(l => {
+            const credInfo = l.credential_label
+              ? `${escapeHtml(l.credential_label)} <span style="color:var(--text-muted);font-size:11px">(${escapeHtml(l.credential_username || '—')})</span>`
+              : escapeHtml(l.credential_username || '—');
+            const sourceUrl = l.source_url
+              ? `<a href="${escapeHtml(l.source_url)}" target="_blank" style="color:var(--primary);font-size:12px;text-decoration:none" title="${escapeHtml(l.source_url)}">${escapeHtml(l.source_url.replace(/^https?:\/\//, '').slice(0, 40))}…</a>`
+              : '—';
+            return `
+              <tr style="border-bottom:1px solid var(--border)">
+                <td style="padding:10px 12px;color:var(--text-muted);font-size:12px;white-space:nowrap">${fmtMemberDate(l.timestamp)}</td>
+                <td style="padding:10px 12px;font-weight:500">${escapeHtml(l.site_name || '(ลบแล้ว)')}</td>
+                <td style="padding:10px 12px">${credInfo}</td>
+                <td style="padding:10px 12px;font-size:12.5px">${escapeHtml(l.member_label || '—')}</td>
+                <td style="padding:10px 12px">${sourceUrl}</td>
+                <td style="padding:10px 12px;color:var(--text-muted);font-size:12px;white-space:nowrap" title="${escapeHtml(l.user_agent || '')}">${escapeHtml(shortUserAgent(l.user_agent))}<br><span style="font-size:11px">${escapeHtml(l.client_ip || '')}</span></td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
     </div>
   `;
 }

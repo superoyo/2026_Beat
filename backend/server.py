@@ -170,6 +170,25 @@ def init_db() -> None:
                 last_login_at TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_members_phone ON members(phone);
+
+            CREATE TABLE IF NOT EXISTS usage_logs (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp           TEXT NOT NULL,
+                action              TEXT NOT NULL,
+                site_id             INTEGER REFERENCES sites(id) ON DELETE SET NULL,
+                site_name           TEXT,
+                credential_id       INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
+                credential_label    TEXT,
+                credential_username TEXT,
+                member_id           INTEGER REFERENCES members(id) ON DELETE SET NULL,
+                member_label        TEXT,
+                source_url          TEXT,
+                user_agent          TEXT,
+                client_ip           TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_usage_logs_ts ON usage_logs(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_usage_logs_site ON usage_logs(site_id);
+            CREATE INDEX IF NOT EXISTS idx_usage_logs_member ON usage_logs(member_id);
             """
         )
 
@@ -1458,18 +1477,105 @@ def extension_heartbeat(_auth: str = Depends(require_admin_or_api_key)) -> dict[
     return {"ok": True, "ts": utc_now().isoformat()}
 
 
+class CredentialUsedIn(BaseModel):
+    source_url: Optional[str] = Field(None, max_length=2000)
+    member_id: Optional[int] = None    # ถ้า extension จะส่ง member context
+
+
 @app.post("/api/extension/credentials/{cred_id}/used")
 def mark_used(
     cred_id: int,
+    request: Request,
+    payload: Optional[CredentialUsedIn] = None,
     _auth: str = Depends(require_admin_or_api_key),
 ) -> dict[str, Any]:
-    """แจ้ง backend ว่า credential ถูกใช้ — update last_used_at"""
+    """แจ้ง backend ว่า credential ถูกใช้ — update last_used_at + insert usage log"""
+    now = utc_now().isoformat()
+    source_url = payload.source_url if payload else None
+    member_id = payload.member_id if payload else None
+    user_agent = request.headers.get("user-agent", "")[:500] if request else ""
+    client_ip = (request.client.host if request and request.client else "")[:64]
+
     with db_conn() as conn:
+        cred = conn.execute(
+            "SELECT c.id, c.label, c.username, c.site_id, "
+            "       s.name AS site_name "
+            "FROM credentials c LEFT JOIN sites s ON s.id = c.site_id "
+            "WHERE c.id = ?",
+            (cred_id,),
+        ).fetchone()
+        if not cred:
+            raise HTTPException(status_code=404, detail="credential not found")
+
+        # member snapshot (ถ้ามี)
+        member_label = None
+        if member_id:
+            mrow = conn.execute(
+                "SELECT phone, email, display_name FROM members WHERE id = ?",
+                (member_id,),
+            ).fetchone()
+            if mrow:
+                member_label = mrow["display_name"] or mrow["email"] or mrow["phone"]
+
         conn.execute(
             "UPDATE credentials SET last_used_at = ? WHERE id = ?",
-            (utc_now().isoformat(), cred_id),
+            (now, cred_id),
+        )
+        conn.execute(
+            "INSERT INTO usage_logs(timestamp, action, "
+            "  site_id, site_name, credential_id, credential_label, credential_username, "
+            "  member_id, member_label, source_url, user_agent, client_ip) "
+            "VALUES (?, 'prefill', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                now,
+                cred["site_id"], cred["site_name"],
+                cred_id, cred["label"], cred["username"],
+                member_id, member_label,
+                source_url, user_agent, client_ip,
+            ),
         )
     return {"ok": True}
+
+
+# ===========================================================================
+# Usage logs (admin-only)
+# ===========================================================================
+@app.get("/api/admin/logs")
+def admin_list_logs(
+    limit: int = 100,
+    site_id: Optional[int] = None,
+    credential_id: Optional[int] = None,
+    member_id: Optional[int] = None,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """ดู log การใช้งาน — สามารถ filter ตาม site/credential/member"""
+    limit = max(1, min(1000, limit))
+    where: list[str] = []
+    params: list[Any] = []
+    if site_id is not None:
+        where.append("site_id = ?")
+        params.append(site_id)
+    if credential_id is not None:
+        where.append("credential_id = ?")
+        params.append(credential_id)
+    if member_id is not None:
+        where.append("member_id = ?")
+        params.append(member_id)
+    where_clause = ("WHERE " + " AND ".join(where)) if where else ""
+    sql = (
+        "SELECT id, timestamp, action, "
+        "       site_id, site_name, credential_id, credential_label, credential_username, "
+        "       member_id, member_label, source_url, user_agent, client_ip "
+        f"FROM usage_logs {where_clause} ORDER BY timestamp DESC LIMIT ?"
+    )
+    params.append(limit)
+    with db_conn() as conn:
+        rows = conn.execute(sql, params).fetchall()
+        total = conn.execute("SELECT COUNT(*) FROM usage_logs").fetchone()[0]
+    return {
+        "logs": [dict(r) for r in rows],
+        "total": total,
+    }
 
 
 # ===========================================================================

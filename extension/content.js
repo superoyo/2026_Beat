@@ -9,7 +9,7 @@
 //   - English for technical / library code
 
 const TAG = '[FCT]';
-const SCRIPT_VERSION = 'v9-active-probe';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
+const SCRIPT_VERSION = 'v10-usage-log';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
 
 // Hostname ที่ extension จะทำหน้าที่ scrape credit (mode A)
 // เว็บอื่นที่ user เพิ่มใน admin จะได้แค่ prefill (mode B) — ไม่ scrape credit
@@ -400,9 +400,11 @@ function setReactInputValue(el, value) {
 function fillCredential(formInfo, cred) {
   if (formInfo.userInput) setReactInputValue(formInfo.userInput, cred.username);
   setReactInputValue(formInfo.pwInput, cred.password);
-  // แจ้ง backend ว่า cred นี้ถูกใช้ (update last_used_at)
-  backendFetch('/api/extension/credentials/' + cred.id + '/used', { method: 'POST' })
-    .catch(() => {});
+  // แจ้ง backend ว่า cred นี้ถูกใช้ (update last_used_at + insert usage log)
+  backendFetch('/api/extension/credentials/' + cred.id + '/used', {
+    method: 'POST',
+    body: { source_url: location.href },
+  }).catch(() => {});
   console.debug(TAG, 'filled credential id=' + cred.id + ' label=' + (cred.label || '-'));
 }
 
