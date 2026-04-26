@@ -94,6 +94,9 @@ DEFAULT_CONFIG: dict[str, str] = {
 # Public deployment? เมื่อ True → CORS เปิดกว้างขึ้น + cookie secure
 IS_PUBLIC_DEPLOY = os.environ.get("FCT_PUBLIC_DEPLOY", "").lower() in ("1", "true", "yes")
 
+# Reset admin บน startup (สำหรับ recovery — ลบ env หลังใช้เสร็จ!)
+ADMIN_RESET_ON_BOOT = os.environ.get("ADMIN_RESET_ON_BOOT", "").lower() in ("1", "true", "yes")
+
 
 # ---------------------------------------------------------------------------
 # Database helpers
@@ -214,6 +217,13 @@ def init_db() -> None:
                 "INSERT OR IGNORE INTO config(key, value) VALUES (?, ?)",
                 (key, value),
             )
+
+        # ---- emergency reset (ถ้า user ตั้ง env เอง)
+        if ADMIN_RESET_ON_BOOT:
+            n = conn.execute("DELETE FROM admin_users").rowcount
+            print(f"⚠️  ADMIN_RESET_ON_BOOT=1 — wiped {n} admin user(s). "
+                  f"Visit /admin/login to set up again. "
+                  f"REMOVE the env var after setup!")
 
         # ---- 5. seed Freepik site (ครั้งแรกเท่านั้น)
         existing = conn.execute(
