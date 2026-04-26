@@ -910,7 +910,8 @@ def admin_setup(payload: AdminSetupIn, response: Response) -> dict[str, Any]:
         httponly=True, samesite="lax", path="/",
         secure=IS_PUBLIC_DEPLOY,
     )
-    return {"ok": True, "username": payload.username}
+    return {"ok": True, "role": "admin", "username": payload.username,
+            "token": token, "label": payload.username}
 
 
 @app.post("/api/admin/login")
@@ -928,7 +929,8 @@ def admin_login(payload: AdminLoginIn, response: Response) -> dict[str, Any]:
         httponly=True, samesite="lax", path="/",
         secure=IS_PUBLIC_DEPLOY,
     )
-    return {"ok": True, "username": row["username"]}
+    return {"ok": True, "role": "admin", "username": row["username"],
+            "token": token, "label": row["username"]}
 
 
 @app.patch("/api/admin/credentials")
@@ -984,6 +986,50 @@ class AuthLoginIn(BaseModel):
     password: str = Field(..., min_length=1, max_length=200)
 
 
+class AuthSwitchIn(BaseModel):
+    token: str = Field(..., min_length=10, max_length=200)
+
+
+@app.post("/api/auth/switch")
+def auth_switch(payload: AuthSwitchIn, response: Response) -> dict[str, Any]:
+    """สลับ active session โดย set cookie จาก token ที่ frontend ส่งมา.
+    ใช้กับ multi-profile switcher บน sidebar — frontend เก็บ token ไว้ใน
+    localStorage แล้วเรียกมาเพื่อ activate session ที่ต้องการ.
+    """
+    token = payload.token
+
+    # 1. ลอง admin sessions
+    sess = get_session(token)
+    if sess:
+        response.set_cookie(
+            SESSION_COOKIE, token, max_age=SESSION_TTL_SECONDS,
+            httponly=True, samesite="lax", path="/",
+            secure=IS_PUBLIC_DEPLOY,
+        )
+        # clear member cookie เพื่อไม่ให้ session คาบเกี่ยว
+        response.delete_cookie(MEMBER_COOKIE, path="/")
+        return {"ok": True, "role": "admin", "label": sess["username"]}
+
+    # 2. ลอง member sessions
+    msess = get_member_session(token)
+    if msess:
+        response.set_cookie(
+            MEMBER_COOKIE, token, max_age=SESSION_TTL_SECONDS,
+            httponly=True, samesite="lax", path="/",
+            secure=IS_PUBLIC_DEPLOY,
+        )
+        response.delete_cookie(SESSION_COOKIE, path="/")
+        with db_conn() as conn:
+            row = conn.execute(
+                "SELECT phone, email, display_name FROM members WHERE id = ?",
+                (msess["member_id"],),
+            ).fetchone()
+        label = (row["display_name"] or row["email"] or row["phone"]) if row else "—"
+        return {"ok": True, "role": "member", "label": label}
+
+    raise HTTPException(status_code=401, detail="token หมดอายุหรือไม่ถูกต้อง")
+
+
 @app.post("/api/auth/login")
 def auth_login(payload: AuthLoginIn, response: Response) -> dict[str, Any]:
     """ลอง admin ก่อน ถ้าไม่ผ่าน ค่อยลอง member (treat username เป็น email)"""
@@ -1002,7 +1048,12 @@ def auth_login(payload: AuthLoginIn, response: Response) -> dict[str, Any]:
             httponly=True, samesite="lax", path="/",
             secure=IS_PUBLIC_DEPLOY,
         )
-        return {"ok": True, "role": "admin", "username": admin_row["username"]}
+        return {
+            "ok": True, "role": "admin",
+            "username": admin_row["username"],
+            "token": token,                        # สำหรับ multi-profile localStorage
+            "label": admin_row["username"],
+        }
 
     # 2) ลอง member (username = email)
     email = payload.username.strip().lower()
@@ -1019,8 +1070,17 @@ def auth_login(payload: AuthLoginIn, response: Response) -> dict[str, Any]:
             conn.execute(
                 "UPDATE members SET last_login_at = ? WHERE id = ?", (now, m_row["id"])
             )
-        _set_member_cookie(response, m_row["id"], m_row["phone"])
-        return {"ok": True, "role": "member", "member_id": m_row["id"]}
+            full = conn.execute(
+                "SELECT phone, email, display_name FROM members WHERE id = ?", (m_row["id"],)
+            ).fetchone()
+        token = _set_member_cookie(response, m_row["id"], m_row["phone"])
+        label = (full["display_name"] or full["email"] or full["phone"]) if full else m_row["phone"]
+        return {
+            "ok": True, "role": "member",
+            "member_id": m_row["id"],
+            "token": token,
+            "label": label,
+        }
 
     raise HTTPException(status_code=401, detail="username/อีเมล หรือ รหัสผ่าน ไม่ถูกต้อง")
 
@@ -1209,13 +1269,14 @@ def _member_row_to_profile(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
-def _set_member_cookie(response: Response, member_id: int, phone: str) -> None:
+def _set_member_cookie(response: Response, member_id: int, phone: str) -> str:
     token = create_member_session(member_id, phone)
     response.set_cookie(
         MEMBER_COOKIE, token, max_age=SESSION_TTL_SECONDS,
         httponly=True, samesite="lax", path="/",
         secure=IS_PUBLIC_DEPLOY,
     )
+    return token
 
 
 @app.get("/api/firebase/config")
@@ -1263,8 +1324,9 @@ def member_verify(payload: MemberVerifyIn, response: Response) -> dict[str, Any]
             member_id = cur.lastrowid
             is_new = True
 
-    _set_member_cookie(response, member_id, phone)
-    return {"ok": True, "member_id": member_id, "phone": phone, "is_new": is_new}
+    token = _set_member_cookie(response, member_id, phone)
+    return {"ok": True, "role": "member", "member_id": member_id, "phone": phone,
+            "is_new": is_new, "token": token, "label": display_name or phone}
 
 
 @app.post("/api/member/login")
@@ -1286,8 +1348,9 @@ def member_login(payload: MemberLoginIn, response: Response) -> dict[str, Any]:
         conn.execute(
             "UPDATE members SET last_login_at = ? WHERE id = ?", (now, row["id"])
         )
-    _set_member_cookie(response, row["id"], row["phone"])
-    return {"ok": True, "member_id": row["id"]}
+    token = _set_member_cookie(response, row["id"], row["phone"])
+    return {"ok": True, "role": "member", "member_id": row["id"],
+            "token": token, "label": row["email"]}
 
 
 @app.patch("/api/member/profile")

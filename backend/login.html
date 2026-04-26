@@ -261,6 +261,20 @@
     const showErr = m => { $('err').textContent = m; $('err').style.display = ''; $('ok').style.display = 'none'; };
     const showOk = m => { $('ok').textContent = m; $('ok').style.display = ''; $('err').style.display = 'none'; };
     const clearMsg = () => { $('err').style.display = $('ok').style.display = 'none'; };
+
+    // ===== Multi-profile localStorage helpers =====
+    const PROFILES_KEY = 'fct_profiles';
+    function getProfiles() {
+      try { return JSON.parse(localStorage.getItem(PROFILES_KEY) || '[]'); } catch { return []; }
+    }
+    function saveProfiles(arr) {
+      localStorage.setItem(PROFILES_KEY, JSON.stringify(arr));
+    }
+    function addProfile(p) {
+      const list = getProfiles().filter(x => x.token !== p.token); // dedupe
+      list.push({ ...p, added_at: new Date().toISOString() });
+      saveProfiles(list);
+    }
     const goStep = id => {
       document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
       $(id).classList.add('active');
@@ -314,6 +328,8 @@
             const j = await res.json().catch(() => ({}));
             throw new Error(j.detail || ('HTTP ' + res.status));
           }
+          const data = await res.json();
+          addProfile({ token: data.token, role: data.role, label: data.label });
           showOk('สร้าง admin สำเร็จ — กำลังพาไปหน้า admin…');
           setTimeout(() => location.replace('/admin'), 600);
           return;
@@ -331,6 +347,7 @@
           throw new Error(j.detail || ('HTTP ' + res.status));
         }
         const data = await res.json();
+        addProfile({ token: data.token, role: data.role, label: data.label });
         const target = data.role === 'admin' ? '/admin' : '/';
         showOk(`เข้าสู่ระบบสำเร็จ (${data.role}) — กำลังพาไป…`);
         setTimeout(() => location.replace(target), 600);
@@ -425,6 +442,7 @@
           throw new Error(j.detail || ('HTTP ' + res.status));
         }
         const data = await res.json();
+        addProfile({ token: data.token, role: 'member', label: data.label || data.phone });
         showOk(data.is_new
           ? 'ลงทะเบียนสำเร็จ — กำลังพาไปหน้าโปรไฟล์เพื่อตั้งรหัสผ่าน…'
           : 'เข้าสู่ระบบสำเร็จ — กำลังพาไปหน้าแรก…');

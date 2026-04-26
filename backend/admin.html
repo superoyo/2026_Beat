@@ -137,17 +137,106 @@
     }
 
     .sidebar-footer {
-      padding: 14px 22px;
+      padding: 12px;
       border-top: 1px solid var(--border);
       font-size: 12px;
       color: var(--text-muted);
+      position: relative;
     }
-    .sidebar-footer button {
-      background: transparent; border: none; color: var(--text-muted);
-      padding: 0; cursor: pointer; font-family: inherit; font-size: 12px;
-      margin-top: 8px;
+
+    /* Profile switcher */
+    .profile-switcher { position: relative; }
+    .profile-current {
+      display: flex; align-items: center; gap: 10px;
+      width: 100%; padding: 8px 10px;
+      background: transparent; border: 1px solid transparent;
+      border-radius: 10px;
+      cursor: pointer; font-family: inherit;
+      transition: all .12s;
+      text-align: left;
     }
-    .sidebar-footer button:hover { color: var(--critical); }
+    .profile-current:hover {
+      background: var(--bg-hover);
+      border-color: var(--border);
+    }
+    .profile-avatar {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: linear-gradient(135deg, #2563eb, #7c3aed);
+      color: #fff; font-weight: 700; font-size: 13px;
+      display: inline-flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .profile-info { flex: 1; min-width: 0; }
+    .profile-name {
+      font-size: 13px; font-weight: 500; color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .profile-role {
+      font-size: 11px; color: var(--text-muted);
+      margin-top: 1px;
+    }
+    .profile-caret {
+      color: var(--text-muted); flex-shrink: 0;
+    }
+
+    .profile-menu {
+      position: absolute;
+      bottom: calc(100% + 4px); left: 12px; right: 12px;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 -8px 24px rgba(15, 23, 42, .15);
+      padding: 6px;
+      z-index: 100;
+      max-height: 400px; overflow-y: auto;
+    }
+    .profile-menu-head {
+      font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--text-muted); font-weight: 600;
+      padding: 8px 10px 4px;
+    }
+    .profile-item {
+      display: flex; align-items: center; gap: 10px;
+      width: 100%;
+      padding: 8px 10px;
+      background: transparent; border: none;
+      border-radius: 8px; cursor: pointer;
+      font-family: inherit; text-align: left;
+      transition: background .1s;
+      color: var(--text);
+    }
+    .profile-item:hover { background: var(--bg-hover); }
+    .profile-item.active { background: var(--bg-soft); }
+    .profile-item-info { flex: 1; min-width: 0; }
+    .profile-item-name {
+      font-size: 13px; font-weight: 500;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .profile-item-role { font-size: 11px; color: var(--text-muted); }
+    .profile-item-check { color: var(--green); font-weight: 700; }
+
+    .profile-menu hr {
+      border: none; border-top: 1px solid var(--border);
+      margin: 4px 6px;
+    }
+    .profile-action {
+      display: flex; align-items: center; gap: 10px;
+      width: 100%;
+      padding: 9px 10px;
+      background: transparent; border: none;
+      border-radius: 8px; cursor: pointer;
+      font-family: inherit; text-align: left;
+      font-size: 13px; color: var(--text);
+      transition: background .1s;
+    }
+    .profile-action:hover { background: var(--bg-hover); }
+    .profile-action.danger { color: var(--critical); }
+    .profile-action.danger:hover { background: rgba(220,38,38,.06); }
+    .profile-action-icon {
+      width: 32px; height: 32px;
+      display: inline-flex; align-items: center; justify-content: center;
+      flex-shrink: 0; opacity: .8;
+    }
 
     /* Main */
     main { flex: 1; padding: 32px 36px; overflow-y: auto; }
@@ -361,8 +450,31 @@
       <a href="/" target="_blank">🏠 หน้าแรก ↗</a>
     </nav>
     <div class="sidebar-footer">
-      <div id="who">—</div>
-      <button id="logout-btn">ออกจากระบบ</button>
+      <div class="profile-switcher">
+        <button class="profile-current" id="profile-toggle" type="button">
+          <span class="profile-avatar" id="profile-avatar">?</span>
+          <div class="profile-info">
+            <div class="profile-name" id="who">—</div>
+            <div class="profile-role" id="who-role">—</div>
+          </div>
+          <svg class="profile-caret" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="4 6 8 10 12 6"/>
+          </svg>
+        </button>
+        <div class="profile-menu" id="profile-menu" hidden>
+          <div class="profile-menu-head" id="profile-count">บัญชีในเครื่องนี้</div>
+          <div id="profile-list"></div>
+          <hr/>
+          <button class="profile-action" id="add-profile-btn" type="button">
+            <span class="profile-action-icon">＋</span>
+            <span>เพิ่มบัญชีอื่น</span>
+          </button>
+          <button class="profile-action danger" id="logout-btn" type="button">
+            <span class="profile-action-icon">↪</span>
+            <span>ออกจากบัญชีนี้</span>
+          </button>
+        </div>
+      </div>
     </div>
   </aside>
 
@@ -1030,54 +1142,162 @@ function showModal({ title, body, onSubmit }) {
   });
 })();
 
-(async () => {
-  // 1. ตรวจ role: admin first → member fallback
-  let label = null;
-  let logoutPath = null;
+// ===== Multi-profile localStorage =====
+const PROFILES_KEY = 'fct_profiles';
+function getProfiles() {
+  try { return JSON.parse(localStorage.getItem(PROFILES_KEY) || '[]'); } catch { return []; }
+}
+function saveProfiles(arr) { localStorage.setItem(PROFILES_KEY, JSON.stringify(arr)); }
+function removeProfile(token) { saveProfiles(getProfiles().filter(p => p.token !== token)); }
 
+let currentLabel = null;       // ชื่อ active profile
+let currentLogoutPath = null;  // /api/admin/logout หรือ /api/member/logout
+
+async function detectActiveSession() {
+  // ลอง admin ก่อน
   try {
-    const adminState = await fetch('/api/admin/state', { credentials: 'same-origin' }).then(r => r.json());
-    if (adminState.logged_in) {
-      currentRole = 'admin';
-      label = '👤 ' + adminState.username + ' (admin)';
-      logoutPath = '/api/admin/logout';
+    const a = await fetch('/api/admin/state', { credentials: 'same-origin' }).then(r => r.json());
+    if (a.logged_in) {
+      return { role: 'admin', label: a.username, logoutPath: '/api/admin/logout' };
     }
   } catch {}
+  // member
+  try {
+    const m = await fetch('/api/member/me', { credentials: 'same-origin' }).then(r => r.json());
+    if (m.logged_in) {
+      const md = m.member;
+      const display = md.display_name || md.email || md.phone;
+      return { role: 'member', label: display, logoutPath: '/api/member/logout' };
+    }
+  } catch {}
+  return null;
+}
 
-  if (!currentRole) {
-    try {
-      const memberState = await fetch('/api/member/me', { credentials: 'same-origin' }).then(r => r.json());
-      if (memberState.logged_in) {
-        currentRole = 'member';
-        const m = memberState.member;
-        const display = m.display_name || m.email || m.phone;
-        label = '👤 ' + display;
-        logoutPath = '/api/member/logout';
-      }
-    } catch {}
-  }
+function renderProfileSwitcherFooter() {
+  // current profile pill
+  $('who').textContent = currentLabel || '—';
+  $('who-role').textContent = currentRole === 'admin' ? 'admin' : 'สมาชิก';
+  $('profile-avatar').textContent = (currentLabel || '?').trim().charAt(0).toUpperCase();
 
-  if (!currentRole) {
-    location.replace('/login');
+  // dropdown content
+  const list = $('profile-list');
+  const profiles = getProfiles();
+
+  $('profile-count').textContent = `บัญชีในเครื่องนี้ (${profiles.length})`;
+
+  if (profiles.length === 0) {
+    list.innerHTML = `<div style="padding:8px 10px;color:var(--text-muted);font-size:12px">
+      ไม่พบ profile อื่น — กด "เพิ่มบัญชีอื่น" ด้านล่าง
+    </div>`;
     return;
   }
 
-  $('who').textContent = label;
+  list.innerHTML = profiles.map(p => {
+    const isCurrent = p.label === currentLabel && p.role === currentRole;
+    const initial = (p.label || '?').trim().charAt(0).toUpperCase();
+    return `
+      <button class="profile-item ${isCurrent ? 'active' : ''}" data-token="${escapeHtml(p.token)}" type="button">
+        <span class="profile-avatar" style="width:28px;height:28px;font-size:12px">${escapeHtml(initial)}</span>
+        <span class="profile-item-info">
+          <span class="profile-item-name">${escapeHtml(p.label || '—')}</span>
+          <span class="profile-item-role">${p.role === 'admin' ? 'admin' : 'สมาชิก'}</span>
+        </span>
+        ${isCurrent ? '<span class="profile-item-check">✓</span>' : ''}
+      </button>
+    `;
+  }).join('');
 
-  // 2. ซ่อน menu items ที่ admin-only ถ้าเป็น member
+  list.querySelectorAll('.profile-item').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const token = btn.dataset.token;
+      // ถ้า active อยู่แล้ว → ปิด menu
+      if (btn.classList.contains('active')) {
+        $('profile-menu').hidden = true;
+        return;
+      }
+      try {
+        const res = await fetch('/api/auth/switch', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        });
+        if (!res.ok) {
+          // token หมดอายุแล้ว — ลบจาก localStorage
+          removeProfile(token);
+          alert('Session นั้นหมดอายุแล้ว — กรุณา login ใหม่');
+          return;
+        }
+        // reload เพื่อ pick up cookie ใหม่
+        location.reload();
+      } catch (e) {
+        alert('สลับบัญชีไม่สำเร็จ: ' + e.message);
+      }
+    });
+  });
+}
+
+function attachSidebarHandlers() {
+  // toggle dropdown
+  $('profile-toggle').addEventListener('click', (e) => {
+    e.stopPropagation();
+    $('profile-menu').hidden = !$('profile-menu').hidden;
+  });
+  document.addEventListener('click', (e) => {
+    const m = $('profile-menu');
+    if (!m.hidden && !m.contains(e.target) && !$('profile-toggle').contains(e.target)) {
+      m.hidden = true;
+    }
+  });
+
+  // add profile → ไป /login (current cookie จะถูกแทนใน logon ใหม่ แต่ profile เดิมยังอยู่ใน localStorage)
+  $('add-profile-btn').addEventListener('click', () => {
+    location.href = '/login';
+  });
+
+  // logout this account (ลบ session ฝั่ง server + ลบ profile จาก localStorage)
+  $('logout-btn').addEventListener('click', async () => {
+    try { await fetch(currentLogoutPath, { method: 'POST', credentials: 'same-origin' }); } catch {}
+    // ลบ profile ปัจจุบันจาก localStorage (match ด้วย label+role เพราะไม่มี token ที่ active)
+    saveProfiles(getProfiles().filter(p => !(p.label === currentLabel && p.role === currentRole)));
+    // ถ้ายังมี profile อื่น → switch ไปอันแรก
+    const remaining = getProfiles();
+    if (remaining.length > 0) {
+      try {
+        await fetch('/api/auth/switch', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: remaining[0].token }),
+        });
+        location.reload();
+        return;
+      } catch {}
+    }
+    location.replace('/');
+  });
+}
+
+(async () => {
+  const session = await detectActiveSession();
+  if (!session) {
+    location.replace('/login');
+    return;
+  }
+  currentRole = session.role;
+  currentLabel = session.label;
+  currentLogoutPath = session.logoutPath;
+
+  // ซ่อน admin-only tabs ถ้าเป็น member
   if (currentRole === 'member') {
     document.querySelectorAll('.nav a[data-route]').forEach(a => {
       if (HIDE_FROM_MEMBER_NAV.has(a.dataset.route)) a.style.display = 'none';
     });
   }
 
-  // 3. logout button — เลือก endpoint ตาม role
-  $('logout-btn').addEventListener('click', async () => {
-    try { await fetch(logoutPath, { method: 'POST', credentials: 'same-origin' }); } catch {}
-    location.replace('/');
-  });
+  attachSidebarHandlers();
+  renderProfileSwitcherFooter();
 
-  // 4. Default route — admin → dashboard, member → sites
+  // Default route — admin → dashboard, member → sites
   if (!location.hash) {
     location.hash = currentRole === 'admin' ? '#/dashboard' : '#/sites';
   }
