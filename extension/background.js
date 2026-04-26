@@ -22,6 +22,18 @@ async function getBackendUrl() {
   return (backendUrl || DEFAULT_BACKEND).replace(/\/$/, '');
 }
 
+async function getApiKey() {
+  const { apiKey } = await chrome.storage.sync.get(['apiKey']);
+  return apiKey || '';
+}
+
+async function authHeaders(extra = {}) {
+  const apiKey = await getApiKey();
+  const headers = { ...extra };
+  if (apiKey) headers['X-API-Key'] = apiKey;
+  return headers;
+}
+
 async function readQueue() {
   const r = await chrome.storage.local.get([QUEUE_KEY]);
   return Array.isArray(r[QUEUE_KEY]) ? r[QUEUE_KEY] : [];
@@ -42,12 +54,13 @@ async function setStatus(status) {
  */
 async function postSnapshot(payload) {
   const url = (await getBackendUrl()) + '/api/snapshot';
+  const headers = await authHeaders({ 'Content-Type': 'application/json' });
 
   for (let attempt = 0; attempt < BACKOFF_MS.length; attempt++) {
     try {
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
       });
       if (res.ok) return true;
@@ -156,9 +169,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     (async () => {
       try {
         const url = (await getBackendUrl()) + msg.path;
+        const headers = await authHeaders(
+          msg.body ? { 'Content-Type': 'application/json' } : {}
+        );
         const res = await fetch(url, {
           method: msg.method || 'GET',
-          headers: msg.body ? { 'Content-Type': 'application/json' } : {},
+          headers,
           body: msg.body ? JSON.stringify(msg.body) : undefined,
         });
         const text = await res.text();

@@ -6,15 +6,17 @@ const DEFAULT_BACKEND = 'http://localhost:8765';
 const $ = id => document.getElementById(id);
 
 async function load() {
-  const r = await chrome.storage.sync.get(['customSelector', 'backendUrl']);
+  const r = await chrome.storage.sync.get(['customSelector', 'backendUrl', 'apiKey']);
   $('customSelector').value = r.customSelector || '';
   $('backendUrl').value = r.backendUrl || DEFAULT_BACKEND;
+  $('apiKey').value = r.apiKey || '';
 }
 
 async function save() {
   const customSelector = $('customSelector').value.trim();
   const backendUrl = $('backendUrl').value.trim() || DEFAULT_BACKEND;
-  await chrome.storage.sync.set({ customSelector, backendUrl });
+  const apiKey = $('apiKey').value.trim();
+  await chrome.storage.sync.set({ customSelector, backendUrl, apiKey });
   $('saveStatus').textContent = 'บันทึกแล้ว ✓';
   setTimeout(() => { $('saveStatus').textContent = ''; }, 2500);
 }

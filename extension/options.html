@@ -91,9 +91,19 @@
   <div class="field">
     <label for="backendUrl">Backend URL</label>
     <div class="hint">
-      ตำแหน่งของ FastAPI backend — ปกติไม่ต้องเปลี่ยน
+      ตำแหน่งของ FastAPI backend — ใส่เป็น <code>http://localhost:8765</code> ถ้ารันในเครื่องตัวเอง
+      หรือ URL ของ Railway/server ถ้า deploy ไว้บน cloud
     </div>
     <input id="backendUrl" type="text" placeholder="http://localhost:8765" />
+  </div>
+
+  <div class="field">
+    <label for="apiKey">API Key (ถ้ามี)</label>
+    <div class="hint">
+      จำเป็นเฉพาะเมื่อ backend deploy บน internet — ดู key ได้ที่ Admin Console → 🔑 API Key
+      <br/>ถ้ารัน backend ในเครื่อง localhost ของตัวเอง ไม่จำเป็นต้องใส่ก็ใช้ได้ (แต่ถ้าใส่ก็จะใช้งานได้เหมือนกัน)
+    </div>
+    <input id="apiKey" type="password" placeholder="ปล่อยว่างถ้ารัน local — หรือวาง API key จาก admin console" autocomplete="off" />
   </div>
 
   <div class="row">

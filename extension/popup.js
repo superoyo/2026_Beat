@@ -19,6 +19,11 @@ async function getBackendUrl() {
   return (backendUrl || DEFAULT_BACKEND).replace(/\/$/, '');
 }
 
+async function getApiKey() {
+  const { apiKey } = await chrome.storage.sync.get(['apiKey']);
+  return apiKey || '';
+}
+
 function fmtAbsoluteDateTime(iso) {
   if (!iso) return '';
   return new Date(iso).toLocaleString('th-TH', {
@@ -50,8 +55,11 @@ async function loadCached() {
 
 async function loadSummary() {
   const url = (await getBackendUrl()) + '/api/summary';
+  const apiKey = await getApiKey();
+  const headers = {};
+  if (apiKey) headers['X-API-Key'] = apiKey;
   try {
-    const res = await fetch(url, { cache: 'no-store' });
+    const res = await fetch(url, { cache: 'no-store', headers });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const s = await res.json();
 

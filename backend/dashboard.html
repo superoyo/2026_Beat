@@ -298,7 +298,16 @@ function dotClass(level) {
 
 // --- API ---------------------------------------------------------------
 async function fetchJson(path) {
-  const res = await fetch(API + path, { cache: 'no-store' });
+  // ส่ง cookie session ของ admin (same-origin) + รองรับ public deploy
+  const res = await fetch(API + path, {
+    cache: 'no-store',
+    credentials: 'same-origin',
+  });
+  if (res.status === 401) {
+    // ผู้ใช้ยังไม่ login admin → พาไป login
+    location.replace('/admin/login');
+    throw new Error('unauthorized');
+  }
   if (!res.ok) throw new Error('HTTP ' + res.status);
   return res.json();
 }

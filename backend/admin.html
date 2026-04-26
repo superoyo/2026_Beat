@@ -186,6 +186,7 @@
       <a href="#/dashboard" data-route="dashboard">📊 Dashboard</a>
       <a href="#/sites" data-route="sites">🌐 Website</a>
       <a href="#/extension" data-route="extension">🧩 Extension</a>
+      <a href="#/security" data-route="security">🔑 API Key</a>
       <a href="/" target="_blank">🏠 หน้าแรก ↗</a>
     </nav>
     <div class="sidebar-footer">
@@ -226,6 +227,7 @@ const routes = {
   'dashboard': renderDashboardEmbed,
   'sites':     renderSitesList,
   'extension': renderExtensionPage,
+  'security':  renderSecurityPage,
 };
 
 function setActive(route) {
@@ -452,6 +454,59 @@ function showAddCredModal(siteId) {
       });
       await loadSite(siteId);
     },
+  });
+}
+
+async function renderSecurityPage() {
+  $('main').innerHTML = `
+    <div class="page-head">
+      <h2 class="page-title">🔑 Extension API Key</h2>
+      <button class="btn danger" id="regen-btn">Regenerate Key</button>
+    </div>
+    <div class="warning-box">
+      ⚠️ <strong>เก็บเป็นความลับ:</strong> ใครได้ key นี้ไปจะอ่าน credentials ทั้งหมดในระบบได้
+      ถ้าหลุด → กด <strong>Regenerate</strong> เพื่อสร้างใหม่ทันที (extension ของทุกเครื่องต้องอัพเดท key ใหม่)
+    </div>
+    <div class="card" style="display:block">
+      <div class="card-sub" style="margin-bottom:6px">API Key ปัจจุบัน</div>
+      <div style="display:flex;gap:8px;align-items:center;font-family:ui-monospace,Menlo,monospace;font-size:13px;background:var(--bg-card-2);padding:12px;border-radius:6px;border:1px solid var(--border)">
+        <span id="api-key-value" style="flex:1;word-break:break-all;user-select:all">…</span>
+        <button class="btn" id="copy-key-btn" style="white-space:nowrap">📋 คัดลอก</button>
+      </div>
+    </div>
+    <div class="card" style="display:block;margin-top:12px">
+      <div class="card-title" style="margin-bottom:6px">วิธีใช้</div>
+      <ol style="line-height:1.8;color:var(--text);font-size:13px;padding-left:20px;margin:0">
+        <li>กดไอคอน FEFL Beat extension บน Chrome toolbar → <strong>ตั้งค่า</strong></li>
+        <li>วาง API key ลงในช่อง <strong>API Key</strong></li>
+        <li>กด <strong>บันทึก</strong> → Extension จะส่ง key นี้ไปกับทุก request</li>
+      </ol>
+    </div>
+  `;
+
+  let key = '…';
+  try {
+    const r = await fetchJson('/api/admin/api-key');
+    key = r.api_key;
+  } catch (e) {
+    key = '(โหลดไม่สำเร็จ: ' + e.message + ')';
+  }
+  $('api-key-value').textContent = key;
+
+  $('copy-key-btn').addEventListener('click', () => {
+    navigator.clipboard.writeText(key);
+    const b = $('copy-key-btn');
+    const orig = b.textContent;
+    b.textContent = '✓ คัดลอกแล้ว';
+    setTimeout(() => { b.textContent = orig; }, 1500);
+  });
+
+  $('regen-btn').addEventListener('click', async () => {
+    if (!confirm('Regenerate API key? Extension ทุกเครื่องที่ใช้ key เก่าจะใช้งานไม่ได้จนกว่าจะอัพเดท')) return;
+    const r = await fetchJson('/api/admin/api-key/regenerate', { method: 'POST' });
+    key = r.api_key;
+    $('api-key-value').textContent = key;
+    alert('สร้าง key ใหม่แล้ว — กรุณาคัดลอกไปวางใน extension options');
   });
 }
 

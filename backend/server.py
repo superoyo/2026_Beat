@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field, field_validator
@@ -72,6 +72,9 @@ DEFAULT_CONFIG: dict[str, str] = {
     "monthly_quota": "10000",
     "billing_cycle_day": "1",
 }
+
+# Public deployment? เมื่อ True → CORS เปิดกว้างขึ้น + cookie secure
+IS_PUBLIC_DEPLOY = os.environ.get("FCT_PUBLIC_DEPLOY", "").lower() in ("1", "true", "yes")
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +240,31 @@ def require_admin(fct_session: Optional[str] = Cookie(default=None)) -> dict[str
     return sess
 
 
+def get_extension_api_key() -> Optional[str]:
+    """ดึง API key จาก config ถ้ายังไม่มี → generate + เซฟ"""
+    cfg = get_config()
+    key = cfg.get("extension_api_key")
+    if key:
+        return key
+    # First-time generation
+    new_key = secrets.token_urlsafe(32)
+    set_config({"extension_api_key": new_key})
+    return new_key
+
+
+def require_admin_or_api_key(
+    fct_session: Optional[str] = Cookie(default=None),
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+) -> str:
+    """ผ่านถ้า login admin อยู่ หรือส่ง X-API-Key ที่ตรงกับ config"""
+    if get_session(fct_session):
+        return "session"
+    expected = get_extension_api_key()
+    if expected and x_api_key and secrets.compare_digest(x_api_key, expected):
+        return "api_key"
+    raise HTTPException(status_code=401, detail="authentication required")
+
+
 # ---------------------------------------------------------------------------
 # URL matching: wildcard pattern → regex
 # ---------------------------------------------------------------------------
@@ -341,11 +369,15 @@ app = FastAPI(title="Freepik Credit Tracker", version=VERSION)
 
 app.add_middleware(
     CORSMiddleware,
-    # chrome-extension://<id> + http://localhost:<port>
-    allow_origin_regex=r"^(chrome-extension://.*|http://localhost(:\d+)?|http://127\.0\.0\.1(:\d+)?)$",
-    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
-    allow_headers=["Content-Type"],
-    allow_credentials=False,
+    # chrome-extension + localhost (always); + https://* on public deploy
+    allow_origin_regex=(
+        r"^(chrome-extension://.*|http://localhost(:\d+)?|http://127\.0\.0\.1(:\d+)?"
+        + (r"|https://.*" if IS_PUBLIC_DEPLOY else "")
+        + r")$"
+    ),
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-API-Key"],
+    allow_credentials=True,
 )
 
 
@@ -397,7 +429,11 @@ def health() -> dict[str, str]:
 # Snapshot ingestion
 # ---------------------------------------------------------------------------
 @app.post("/api/snapshot")
-def post_snapshot(snapshot: SnapshotIn, request: Request) -> dict[str, Any]:
+def post_snapshot(
+    snapshot: SnapshotIn,
+    request: Request,
+    _auth: str = Depends(require_admin_or_api_key),
+) -> dict[str, Any]:
     ts = snapshot.timestamp
     if ts:
         try:
@@ -436,7 +472,7 @@ def post_snapshot(snapshot: SnapshotIn, request: Request) -> dict[str, Any]:
 # History
 # ---------------------------------------------------------------------------
 @app.get("/api/history")
-def get_history(days: int = 30) -> dict[str, Any]:
+def get_history(days: int = 30, _auth: str = Depends(require_admin_or_api_key)) -> dict[str, Any]:
     days = max(1, min(365, days))
     cutoff = (utc_now() - timedelta(days=days)).isoformat()
 
@@ -471,7 +507,10 @@ def get_history(days: int = 30) -> dict[str, Any]:
 # Recent snapshots (for the dashboard table)
 # ---------------------------------------------------------------------------
 @app.get("/api/snapshots")
-def list_snapshots(limit: int = 20) -> dict[str, Any]:
+def list_snapshots(
+    limit: int = 20,
+    _auth: str = Depends(require_admin_or_api_key),
+) -> dict[str, Any]:
     limit = max(1, min(500, limit))
     with db_conn() as conn:
         rows = conn.execute(
@@ -526,7 +565,7 @@ def _daily_usage_series(days_back: int) -> list[tuple[str, float]]:
 
 
 @app.get("/api/summary")
-def get_summary() -> dict[str, Any]:
+def get_summary(_auth: str = Depends(require_admin_or_api_key)) -> dict[str, Any]:
     cfg = get_config()
     quota = float(cfg.get("monthly_quota", DEFAULT_CONFIG["monthly_quota"]))
     cycle_day = int(cfg.get("billing_cycle_day", DEFAULT_CONFIG["billing_cycle_day"]))
@@ -615,7 +654,7 @@ def get_summary() -> dict[str, Any]:
 # Config GET / PATCH
 # ---------------------------------------------------------------------------
 @app.get("/api/config")
-def get_config_endpoint() -> dict[str, Any]:
+def get_config_endpoint(_auth: str = Depends(require_admin_or_api_key)) -> dict[str, Any]:
     cfg = get_config()
     return {
         "monthly_quota": float(cfg["monthly_quota"]),
@@ -624,7 +663,10 @@ def get_config_endpoint() -> dict[str, Any]:
 
 
 @app.patch("/api/config")
-def patch_config(patch: ConfigPatch) -> dict[str, Any]:
+def patch_config(
+    patch: ConfigPatch,
+    _auth: str = Depends(require_admin_or_api_key),
+) -> dict[str, Any]:
     updates: dict[str, str] = {}
     if patch.monthly_quota is not None:
         updates["monthly_quota"] = str(patch.monthly_quota)
@@ -682,6 +724,7 @@ def admin_setup(payload: AdminSetupIn, response: Response) -> dict[str, Any]:
     response.set_cookie(
         SESSION_COOKIE, token, max_age=SESSION_TTL_SECONDS,
         httponly=True, samesite="lax", path="/",
+        secure=IS_PUBLIC_DEPLOY,
     )
     return {"ok": True, "username": payload.username}
 
@@ -699,8 +742,21 @@ def admin_login(payload: AdminLoginIn, response: Response) -> dict[str, Any]:
     response.set_cookie(
         SESSION_COOKIE, token, max_age=SESSION_TTL_SECONDS,
         httponly=True, samesite="lax", path="/",
+        secure=IS_PUBLIC_DEPLOY,
     )
     return {"ok": True, "username": row["username"]}
+
+
+@app.get("/api/admin/api-key")
+def get_api_key(_sess: dict = Depends(require_admin)) -> dict[str, str]:
+    return {"api_key": get_extension_api_key()}
+
+
+@app.post("/api/admin/api-key/regenerate")
+def regenerate_api_key(_sess: dict = Depends(require_admin)) -> dict[str, str]:
+    new_key = secrets.token_urlsafe(32)
+    set_config({"extension_api_key": new_key})
+    return {"api_key": new_key}
 
 
 @app.post("/api/admin/logout")
@@ -808,7 +864,10 @@ def delete_credential(cred_id: int, _sess: dict = Depends(require_admin)) -> dic
 # Extension-facing endpoints (no admin auth — local only)
 # ===========================================================================
 @app.get("/api/extension/match")
-def extension_match(url: str) -> dict[str, Any]:
+def extension_match(
+    url: str,
+    _auth: str = Depends(require_admin_or_api_key),
+) -> dict[str, Any]:
     """ตรวจว่า URL ตรงกับ site ใดที่ลงทะเบียนไว้ ถ้าใช่ คืน credentials"""
     with db_conn() as conn:
         sites = conn.execute("SELECT id, name, url_pattern FROM sites").fetchall()
@@ -834,7 +893,10 @@ def extension_match(url: str) -> dict[str, Any]:
 
 
 @app.post("/api/extension/credentials/{cred_id}/used")
-def mark_used(cred_id: int) -> dict[str, Any]:
+def mark_used(
+    cred_id: int,
+    _auth: str = Depends(require_admin_or_api_key),
+) -> dict[str, Any]:
     """แจ้ง backend ว่า credential ถูกใช้ — update last_used_at"""
     with db_conn() as conn:
         conn.execute(
@@ -875,9 +937,14 @@ async def _unhandled(_request: Request, exc: Exception) -> JSONResponse:
 if __name__ == "__main__":
     import uvicorn
 
+    # Production (Railway): bind 0.0.0.0 + ใช้ $PORT
+    # Local: bind 127.0.0.1 + port 8765
+    default_host = "0.0.0.0" if IS_PUBLIC_DEPLOY else "127.0.0.1"
+    default_port = os.environ.get("PORT") or os.environ.get("FCT_PORT") or "8765"
+
     uvicorn.run(
         "server:app",
-        host=os.environ.get("FCT_HOST", "127.0.0.1"),
-        port=int(os.environ.get("FCT_PORT", "8765")),
+        host=os.environ.get("FCT_HOST", default_host),
+        port=int(default_port),
         reload=False,
     )
