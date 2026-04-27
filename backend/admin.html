@@ -598,7 +598,8 @@ async function fetchJson(path, opts = {}) {
 // admin-only routes — member ห้ามเข้า (bounce ไป default)
 const ADMIN_ONLY_ROUTES = new Set(['security', 'members', 'sites', 'logs', 'teams']);
 // menu items ที่ซ่อนใน sidebar สำหรับ member
-const HIDE_FROM_MEMBER_NAV = new Set(['dashboard', 'security', 'members', 'sites', 'logs', 'teams']);
+// (dashboard เห็นได้ทุกบทบาท — ใช้เป็นหน้าแรกของ member ด้วย)
+const HIDE_FROM_MEMBER_NAV = new Set(['security', 'members', 'sites', 'logs', 'teams']);
 
 // ---------- routing ----------
 const routes = {
@@ -625,9 +626,9 @@ async function navigate() {
   const parts = hash.split('/');
   const route = parts[0];
 
-  // Member ห้ามเข้า admin-only routes
+  // Member ห้ามเข้า admin-only routes → bounce ไป dashboard
   if (currentRole === 'member' && (ADMIN_ONLY_ROUTES.has(route) || HIDE_FROM_MEMBER_NAV.has(route))) {
-    location.hash = '#/platforms';
+    location.hash = '#/dashboard';
     return;
   }
 
@@ -3279,7 +3280,8 @@ function attachSidebarHandlers() {
 
   // Default route — admin → dashboard, member → platforms
   if (!location.hash) {
-    location.hash = currentRole === 'admin' ? '#/dashboard' : '#/platforms';
+    // หน้าแรกของทุกบทบาทคือ dashboard
+    location.hash = '#/dashboard';
   }
   await navigate();
 })();
