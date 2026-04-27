@@ -257,12 +257,18 @@ def init_db() -> None:
             row["name"] for row in conn.execute("PRAGMA table_info(sites)").fetchall()
         }
         for col_name, col_def in [
-            ("renew_day",     "INTEGER"),                           # 1-31
+            ("renew_day",     "INTEGER"),                           # 1-31 (ใช้กับ monthly เท่านั้น)
             ("card_owner_id", "INTEGER REFERENCES card_owners(id) ON DELETE SET NULL"),
             ("cancelled",     "INTEGER NOT NULL DEFAULT 0"),
             ("cancelled_at",  "TEXT"),                              # ISO date
             ("payment_type",  "TEXT"),                              # ดู PAYMENT_TYPES ด้านล่าง
             ("usage_reason",  "TEXT"),                              # free text
+            # v1.9 — รอบบิล + ค่าใช้จ่าย + ช่วงเวลา
+            ("billing_cycle", "TEXT"),                              # 'monthly' | 'yearly' | NULL
+            ("cost_amount",   "REAL"),                              # ค่าใช้จ่าย (per cycle)
+            ("cost_currency", "TEXT"),                              # 'THB' | 'USD' | etc.
+            ("start_date",    "TEXT"),                              # ISO date — วันเริ่มต้น
+            ("end_date",      "TEXT"),                              # ISO date — วันสิ้นสุด (NULL = ongoing)
         ]:
             if col_name not in site_cols:
                 conn.execute(f"ALTER TABLE sites ADD COLUMN {col_name} {col_def}")
@@ -1870,6 +1876,12 @@ class SiteIn(BaseModel):
     cancelled_at: Optional[str] = Field(None, max_length=40)  # ISO date
     payment_type: Optional[str] = Field(None, max_length=40)
     usage_reason: Optional[str] = Field(None, max_length=2000)
+    # v1.9
+    billing_cycle: Optional[str] = Field(None, pattern="^(monthly|yearly)$")
+    cost_amount: Optional[float] = Field(None, ge=0)
+    cost_currency: Optional[str] = Field(None, max_length=10)
+    start_date: Optional[str] = Field(None, max_length=40)   # ISO YYYY-MM-DD
+    end_date: Optional[str] = Field(None, max_length=40)     # ISO YYYY-MM-DD
 
 
 class SitePatchIn(BaseModel):
@@ -1881,6 +1893,12 @@ class SitePatchIn(BaseModel):
     cancelled_at: Optional[str] = Field(None, max_length=40)
     payment_type: Optional[str] = Field(None, max_length=40)
     usage_reason: Optional[str] = Field(None, max_length=2000)
+    # v1.9 — ส่ง '' หรือ null เพื่อ clear
+    billing_cycle: Optional[str] = Field(None, pattern="^(monthly|yearly|)$")
+    cost_amount: Optional[float] = Field(None, ge=0)
+    cost_currency: Optional[str] = Field(None, max_length=10)
+    start_date: Optional[str] = Field(None, max_length=40)
+    end_date: Optional[str] = Field(None, max_length=40)
 
 
 def _resolve_card_owner_id(name: Optional[str]) -> Optional[int]:
@@ -1998,12 +2016,15 @@ def create_site(payload: SiteIn, _sess: dict = Depends(require_admin)) -> dict[s
     with db_conn() as conn:
         cur = conn.execute(
             "INSERT INTO sites(name, url_pattern, created_at, "
-            "  renew_day, card_owner_id, cancelled, cancelled_at, payment_type, usage_reason) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "  renew_day, card_owner_id, cancelled, cancelled_at, payment_type, usage_reason, "
+            "  billing_cycle, cost_amount, cost_currency, start_date, end_date) "
+            "VALUES (?, ?, ?,  ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?)",
             (
                 payload.name, payload.url_pattern, utc_now().isoformat(),
                 payload.renew_day, card_owner_id, cancelled_int,
                 payload.cancelled_at, payload.payment_type, payload.usage_reason,
+                payload.billing_cycle, payload.cost_amount, payload.cost_currency,
+                payload.start_date, payload.end_date,
             ),
         )
         new_id = cur.lastrowid
@@ -2072,6 +2093,17 @@ def update_site(
         updates["payment_type"] = payload.payment_type or None
     if payload.usage_reason is not None:
         updates["usage_reason"] = payload.usage_reason or None
+    if payload.billing_cycle is not None:
+        # '' = clear (NULL); 'monthly'/'yearly' = set
+        updates["billing_cycle"] = payload.billing_cycle or None
+    if payload.cost_amount is not None:
+        updates["cost_amount"] = payload.cost_amount
+    if payload.cost_currency is not None:
+        updates["cost_currency"] = payload.cost_currency or None
+    if payload.start_date is not None:
+        updates["start_date"] = payload.start_date or None
+    if payload.end_date is not None:
+        updates["end_date"] = payload.end_date or None
     if not updates:
         raise HTTPException(status_code=400, detail="ไม่มีอะไรให้บันทึก")
     set_clause = ", ".join(f"{k} = ?" for k in updates)

@@ -738,9 +738,28 @@ function siteFormHTML(site) {
     <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
     <div style="font-size:11.5px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px">ข้อมูลการเงิน</div>
 
+    <!-- รอบบิล: monthly / yearly / ไม่ระบุ -->
+    <div class="field">
+      <label>รอบการจ่าย</label>
+      <div style="display:flex;gap:14px;margin-top:6px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400">
+          <input type="radio" name="m-bc" value="monthly" ${s.billing_cycle === 'monthly' ? 'checked' : ''}>
+          <span>📅 รายเดือน</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400">
+          <input type="radio" name="m-bc" value="yearly" ${s.billing_cycle === 'yearly' ? 'checked' : ''}>
+          <span>🗓️ รายปี</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400;color:var(--text-muted)">
+          <input type="radio" name="m-bc" value="" ${!s.billing_cycle ? 'checked' : ''}>
+          <span>— ไม่ระบุ</span>
+        </label>
+      </div>
+    </div>
+
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div class="field">
-        <label>Renew วันที่ (1-31)</label>
+      <div class="field" id="m-renew-wrap" style="${s.billing_cycle === 'monthly' ? '' : 'display:none'}">
+        <label>Renew วันที่ของเดือน (1-31)</label>
         <input id="m-renew" type="number" min="1" max="31" value="${s.renew_day != null ? s.renew_day : ''}" placeholder="เช่น 5" />
       </div>
       <div class="field">
@@ -749,6 +768,34 @@ function siteFormHTML(site) {
           <option value="">— เลือก —</option>
           ${paymentOptions}
         </select>
+      </div>
+    </div>
+
+    <!-- ค่าใช้จ่าย + สกุลเงิน -->
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+      <div class="field">
+        <label>ค่าใช้จ่าย (ต่อรอบ)</label>
+        <input id="m-cost" type="number" min="0" step="0.01" value="${s.cost_amount != null ? s.cost_amount : ''}" placeholder="เช่น 590.00" />
+      </div>
+      <div class="field">
+        <label>สกุลเงิน</label>
+        <select id="m-currency" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
+          ${['THB','USD','EUR','GBP','JPY','CNY'].map(c =>
+            `<option value="${c}" ${(s.cost_currency || 'THB') === c ? 'selected' : ''}>${c}</option>`
+          ).join('')}
+        </select>
+      </div>
+    </div>
+
+    <!-- วันเริ่ม/สิ้นสุด -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="field">
+        <label>วันเริ่มต้น</label>
+        <input id="m-start-date" type="date" value="${escapeHtml((s.start_date || '').slice(0, 10))}" />
+      </div>
+      <div class="field">
+        <label>วันสิ้นสุด <span style="color:var(--text-muted);font-weight:400">(ถ้ามี)</span></label>
+        <input id="m-end-date" type="date" value="${escapeHtml((s.end_date || '').slice(0, 10))}" />
       </div>
     </div>
 
@@ -777,15 +824,21 @@ function siteFormHTML(site) {
 }
 
 function siteFormCollect() {
+  const billingCycle = document.querySelector('input[name="m-bc"]:checked')?.value || '';
   return {
     name: $('m-name').value.trim(),
     url_pattern: $('m-pattern').value.trim(),
-    renew_day: $('m-renew').value ? parseInt($('m-renew').value, 10) : null,
+    renew_day: ($('m-renew') && $('m-renew').value) ? parseInt($('m-renew').value, 10) : null,
     card_owner: $('m-card-owner').value.trim() || null,
     payment_type: $('m-payment').value || null,
     cancelled: $('m-cancelled').checked,
     cancelled_at: $('m-cancelled').checked ? ($('m-cancelled-at').value || null) : null,
     usage_reason: $('m-reason').value.trim() || null,
+    billing_cycle: billingCycle,                // '' = clear (backend จะเป็น NULL)
+    cost_amount: $('m-cost').value !== '' ? parseFloat($('m-cost').value) : null,
+    cost_currency: $('m-currency').value || 'THB',
+    start_date: $('m-start-date').value || null,
+    end_date: $('m-end-date').value || null,
   };
 }
 
@@ -801,6 +854,16 @@ async function bindSiteFormDynamic() {
   if (cb && wrap) {
     cb.addEventListener('change', () => { wrap.style.display = cb.checked ? '' : 'none'; });
   }
+
+  // toggle "Renew วันที่" visibility ตาม billing_cycle (เฉพาะ monthly เท่านั้น)
+  document.querySelectorAll('input[name="m-bc"]').forEach(rb => {
+    rb.addEventListener('change', () => {
+      const renewWrap = $('m-renew-wrap');
+      if (renewWrap) {
+        renewWrap.style.display = (rb.value === 'monthly' && rb.checked) ? '' : 'none';
+      }
+    });
+  });
 }
 
 function showAddSiteModal() {
@@ -876,7 +939,31 @@ function fmtPaymentTypeTh(v) {
 function siteInfoCard(site) {
   const items = [];
   items.push(['URL pattern', `<code>${escapeHtml(site.url_pattern)}</code>`]);
-  if (site.renew_day) items.push(['Renew', `วันที่ <strong>${site.renew_day}</strong> ของทุกเดือน`]);
+
+  // รอบบิล + Renew วันที่ (เฉพาะ monthly)
+  if (site.billing_cycle === 'monthly') {
+    const renewTxt = site.renew_day ? ` (Renew วันที่ <strong>${site.renew_day}</strong> ของทุกเดือน)` : '';
+    items.push(['รอบบิล', `<strong>📅 รายเดือน</strong>${renewTxt}`]);
+  } else if (site.billing_cycle === 'yearly') {
+    items.push(['รอบบิล', `<strong>🗓️ รายปี</strong>`]);
+  } else if (site.renew_day) {
+    // backward-compat — มี renew_day แต่ไม่มี billing_cycle
+    items.push(['Renew', `วันที่ <strong>${site.renew_day}</strong> ของทุกเดือน`]);
+  }
+
+  // ค่าใช้จ่าย
+  if (site.cost_amount != null) {
+    const cur = site.cost_currency || 'THB';
+    const formatted = new Intl.NumberFormat('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(site.cost_amount);
+    items.push(['ค่าใช้จ่าย', `<strong>${formatted}</strong> ${escapeHtml(cur)}` + (site.billing_cycle ? ` / ${site.billing_cycle === 'monthly' ? 'เดือน' : 'ปี'}` : '')]);
+  }
+
+  // ระยะเวลา
+  if (site.start_date || site.end_date) {
+    const fmt = (d) => d ? new Date(d).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+    items.push(['ระยะเวลา', `${fmt(site.start_date)} <span style="color:var(--text-muted)">→</span> ${site.end_date ? fmt(site.end_date) : '<span style="color:var(--text-muted)">ใช้งานต่อเนื่อง</span>'}`]);
+  }
+
   if (site.payment_type) items.push(['ประเภทการจ่าย', escapeHtml(fmtPaymentTypeTh(site.payment_type))]);
   if (site.card_owner_name) items.push(['ใช้บัตรของ', `<strong>${escapeHtml(site.card_owner_name)}</strong>`]);
   if (site.cancelled) {
