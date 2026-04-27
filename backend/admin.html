@@ -1125,18 +1125,12 @@ function patternToUrl(pattern) {
 }
 
 async function renderPlatformsPage() {
-  const isMember = (currentRole === 'member');
-  const hintText = isMember
-    ? 'เว็บไซต์/แพลตฟอร์มที่คุณมีสิทธิ์เข้าถึง (ตาม Team ที่อยู่) — คลิก card เพื่อเปิดเว็บนั้นใน tab ใหม่'
-    : 'เว็บไซต์/แพลตฟอร์มที่พร้อมใช้งานในระบบ — คลิก card เพื่อเปิดเว็บนั้นใน tab ใหม่';
   $('main').innerHTML = `
     <div class="page-head">
       <h2 class="page-title">🚀 Platforms</h2>
       <span class="card-sub" id="p-count">—</span>
     </div>
-    <div class="hint" style="margin-bottom:18px;color:var(--text-muted);font-size:13px">
-      ${hintText}
-    </div>
+    <div id="p-hint" class="hint" style="margin-bottom:18px;color:var(--text-muted);font-size:13px"></div>
     <div id="p-list">
       <div class="empty">กำลังโหลด…</div>
     </div>
@@ -1144,20 +1138,35 @@ async function renderPlatformsPage() {
 
   let data;
   try {
-    data = await fetchJson('/api/admin/sites');
+    data = await fetchJson('/api/my-platforms');
   } catch (e) {
     $('p-list').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
     return;
   }
-  const sites = data.sites;
+  const sites = data.sites || [];
+  const viewer = data.viewer;  // 'super_admin' | 'member'
   $('p-count').textContent = `${sites.length} แพลตฟอร์ม`;
+
+  // Hint แตกต่างตาม viewer
+  if (viewer === 'super_admin') {
+    $('p-hint').innerHTML = `
+      <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:8px;padding:10px 14px;margin-bottom:8px;color:#92400e">
+        🔒 <strong>Super admin view</strong> — ไม่อยู่ใน Team ใด ระบบแสดง <strong>ทั้งหมด</strong> เพื่อการจัดการ.
+        เพื่อทดสอบ team filtering: login เป็น member ที่ผูกกับ Team
+      </div>
+      เว็บไซต์/แพลตฟอร์มทั้งหมดในระบบ — คลิก card เพื่อเปิดเว็บนั้นใน tab ใหม่
+    `;
+  } else {
+    $('p-hint').textContent =
+      'เว็บไซต์/แพลตฟอร์มที่คุณมีสิทธิ์เข้าถึง (ตาม Team config) — คลิก card เพื่อเปิดเว็บนั้นใน tab ใหม่';
+  }
 
   if (sites.length === 0) {
     let emptyMsg;
-    if (currentRole === 'admin') {
+    if (viewer === 'super_admin') {
       emptyMsg = 'ยังไม่มีแพลตฟอร์มในระบบ — เพิ่มได้ที่เมนู <strong>🛠 Config</strong>';
     } else {
-      emptyMsg = 'คุณยังไม่ได้รับสิทธิ์เข้าถึงแพลตฟอร์มใดเลย — แจ้ง admin ให้เพิ่มคุณเข้า Team ที่มีสิทธิ์ใช้งาน';
+      emptyMsg = 'คุณยังไม่ได้รับสิทธิ์เข้าถึงแพลตฟอร์มใดเลย — แจ้ง admin ให้เพิ่มคุณเข้า Team ที่ผูกกับ platform ที่ต้องการใช้';
     }
     $('p-list').innerHTML = `<div class="empty">${emptyMsg}</div>`;
     return;

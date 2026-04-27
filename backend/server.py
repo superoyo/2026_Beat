@@ -1932,48 +1932,63 @@ def list_payment_types(_sess: dict = Depends(require_admin)) -> dict[str, list[s
 
 
 @app.get("/api/admin/sites")
-def list_sites(sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
-    """List sites — admin เห็นทั้งหมด, member เห็นเฉพาะ site ที่มีสิทธิ์เข้าถึง
+def list_sites(_sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    """List ALL sites — ใช้กับหน้า Config (admin-only ในฝั่ง UI)
 
-    กฎ filter สำหรับ member (ที่ไม่ใช่ admin):
-    - Public site (ไม่มี row ใน team_sites) → visible to all members
-    - Restricted site (มี row ใน team_sites) → เฉพาะ member ที่อยู่ในทีมที่ผูกกับ site นั้น
+    ไม่ filter ที่นี่ — Platforms page จะใช้ /api/my-platforms ที่มี strict filter แทน
     """
-    is_admin_caller = (
-        sess.get("role") == "admin"
-        or (sess.get("role") == "member" and _member_is_admin(sess["member_id"]))
-    )
-
     with db_conn() as conn:
-        if is_admin_caller:
+        sites = conn.execute(
+            "SELECT s.id, s.name, s.url_pattern, s.created_at, "
+            "       (SELECT COUNT(*) FROM credentials c WHERE c.site_id = s.id) AS cred_count "
+            "FROM sites s ORDER BY s.created_at DESC"
+        ).fetchall()
+    return {"sites": [dict(r) for r in sites]}
+
+
+@app.get("/api/my-platforms")
+def my_platforms(sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    """Strict opt-in: คืน site เฉพาะที่ user ปัจจุบันได้รับสิทธิ์ผ่าน team_sites
+
+    กฎ:
+    - Member (ทั้ง member ปกติ + member ที่ is_admin=1) → เห็นเฉพาะ site ที่อยู่ใน
+      team_sites และ user เป็นสมาชิกของ team นั้น (ไม่มี public site)
+    - Super admin (admin_users) → ไม่มี member_id, ไม่อยู่ใน team ใด → คืน site ว่าง
+      พร้อม viewer='super_admin' เพื่อให้ UI แสดง notice
+    """
+    member_id = sess.get("member_id")
+    if not member_id:
+        # Super admin → ไม่ใช่ member, ไม่อยู่ใน team → ไม่มี platform ที่ "ตน" เข้าถึง
+        # คืน list ทั้งหมดพร้อม flag เพื่อให้ UI แจ้งว่า "ดู Config เพื่อจัดการ"
+        with db_conn() as conn:
             sites = conn.execute(
                 "SELECT s.id, s.name, s.url_pattern, s.created_at, "
                 "       (SELECT COUNT(*) FROM credentials c WHERE c.site_id = s.id) AS cred_count "
                 "FROM sites s ORDER BY s.created_at DESC"
             ).fetchall()
-        else:
-            # Member ธรรมดา → filter ตาม team membership
-            member_id = sess["member_id"]
-            sites = conn.execute(
-                """
-                SELECT s.id, s.name, s.url_pattern, s.created_at,
-                       (SELECT COUNT(*) FROM credentials c WHERE c.site_id = s.id) AS cred_count
-                FROM sites s
-                WHERE
-                    -- Public site: ไม่มี team ใดผูกไว้
-                    NOT EXISTS (SELECT 1 FROM team_sites ts WHERE ts.site_id = s.id)
-                    OR
-                    -- Restricted site: member อยู่ในทีมที่ผูกกับ site นี้
-                    EXISTS (
-                        SELECT 1 FROM team_sites ts
-                        JOIN team_members tm ON tm.team_id = ts.team_id
-                        WHERE ts.site_id = s.id AND tm.member_id = ?
-                    )
-                ORDER BY s.created_at DESC
-                """,
-                (member_id,),
-            ).fetchall()
-    return {"sites": [dict(r) for r in sites]}
+        return {
+            "sites": [dict(r) for r in sites],
+            "viewer": "super_admin",
+            "note": "Super admin ไม่อยู่ในทีมใด — แสดงทั้งหมด",
+        }
+
+    with db_conn() as conn:
+        sites = conn.execute(
+            """
+            SELECT DISTINCT s.id, s.name, s.url_pattern, s.created_at,
+                   (SELECT COUNT(*) FROM credentials c WHERE c.site_id = s.id) AS cred_count
+            FROM sites s
+            JOIN team_sites ts ON ts.site_id = s.id
+            JOIN team_members tm ON tm.team_id = ts.team_id
+            WHERE tm.member_id = ?
+            ORDER BY s.created_at DESC
+            """,
+            (member_id,),
+        ).fetchall()
+    return {
+        "sites": [dict(r) for r in sites],
+        "viewer": "member",
+    }
 
 
 @app.post("/api/admin/sites")
