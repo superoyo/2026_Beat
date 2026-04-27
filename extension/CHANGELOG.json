@@ -2,6 +2,20 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.0",
+      "date": "2026-04-27",
+      "title": "2-step login support (ChatGPT, Google, Microsoft)",
+      "summary": "รองรับ login flow ที่ถาม username ก่อน → ถาม password ทีหลัง (เป็นคนละหน้า)",
+      "changes": [
+        "findLoginForm: ตรวจ mode 3 แบบ — both / user-only / password-only",
+        "user-only mode: หา input email/text ที่มี autocomplete=email/username หรือ keyword ใน name/id/placeholder",
+        "Step 1: user เลือก credential → fill username + เก็บ pending ใน chrome.storage (TTL 5 นาที, scoped per hostname)",
+        "Step 2: ถ้ามี pending → auto-fill password ทันที + log usage + clear pending (silent)",
+        "Step 2 ไม่มี pending → โชว์ widget ปกติให้เลือก",
+        "Mode badge ในแผง: 📝 Step 1 username / 🔑 Step 2 password / (ปกติ)"
+      ]
+    },
+    {
       "version": "1.8.6",
       "date": "2026-04-27",
       "title": "Form-less login support",

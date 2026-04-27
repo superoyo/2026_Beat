@@ -9,7 +9,7 @@
 //   - English for technical / library code
 
 const TAG = '[FCT]';
-const SCRIPT_VERSION = 'v20-formless-login';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
+const SCRIPT_VERSION = 'v21-two-step-login';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
 
 // Hostname ที่ extension จะทำหน้าที่ scrape credit (mode A)
 // เว็บอื่นที่ user เพิ่มใน admin จะได้แค่ prefill (mode B) — ไม่ scrape credit
@@ -445,74 +445,126 @@ function isInputVisible(el) {
 }
 
 /**
- * หา container ที่น่าจะเป็น login (มีช่อง password อย่างน้อย 1 ช่อง).
- * รองรับทั้งแบบมี <form> และแบบ SPA ที่ไม่มี <form> tag
- * @returns {{form:Element, userInput:HTMLInputElement|null, pwInput:HTMLInputElement}|null}
+ * หา login container — รองรับ 3 mode:
+ *   1. 'both'           — มีทั้ง user + password ในหน้าเดียว (ปกติ)
+ *   2. 'user-only'      — มีแค่ user/email field (Step 1 ของ 2-step login: ChatGPT, Google, MS)
+ *   3. 'password-only'  — มีแค่ password field (Step 2 หลังกด Next)
+ * @returns {{form:Element, userInput:HTMLInputElement|null, pwInput:HTMLInputElement|null, mode:string}|null}
  */
 function findLoginForm() {
-  const pwInputs = document.querySelectorAll('input[type="password"]');
-  for (const pw of pwInputs) {
-    // ข้ามช่อง confirm/new password
-    const name = (pw.name + ' ' + pw.id + ' ' + pw.autocomplete).toLowerCase();
-    if (/confirm|new[-_]?password|repeat/.test(name)) continue;
+  const pwInputs = Array.from(document.querySelectorAll('input[type="password"]'));
+  const visiblePws = pwInputs.filter(p => {
+    const name = (p.name + ' ' + p.id + ' ' + p.autocomplete).toLowerCase();
+    if (/confirm|new[-_]?password|repeat/.test(name)) return false;
+    return isInputVisible(p);
+  });
 
-    // ข้ามช่อง hidden/disabled
-    if (!isInputVisible(pw)) continue;
-
-    // หา container — prefer <form>, fallback: walk up จนเจอ ancestor ที่มี text input
-    let container = pw.closest('form');
-    if (!container) {
-      // Walk up สูงสุด 10 ระดับ หา ancestor ที่มี input อื่น (email/text/tel)
-      let cur = pw.parentElement;
-      for (let depth = 0; depth < 10 && cur; depth++) {
-        const otherInputs = cur.querySelectorAll(
-          'input[type="email"], input[type="text"], input[type="tel"], input:not([type])'
-        );
-        // เจอช่อง input อื่นที่ visible อย่างน้อย 1 ช่อง → ใช้ ancestor นี้เป็น container
-        for (const c of otherInputs) {
-          if (c !== pw && isInputVisible(c)) {
-            container = cur;
-            break;
+  // === A. มี password ที่ visible — โหมด 'both' หรือ 'password-only' ===
+  if (visiblePws.length > 0) {
+    for (const pw of visiblePws) {
+      // หา container — prefer <form>, fallback walk up
+      let container = pw.closest('form');
+      if (!container) {
+        let cur = pw.parentElement;
+        for (let depth = 0; depth < 10 && cur; depth++) {
+          const others = cur.querySelectorAll(
+            'input[type="email"], input[type="text"], input[type="tel"], input:not([type])'
+          );
+          for (const c of others) {
+            if (c !== pw && isInputVisible(c)) { container = cur; break; }
           }
+          if (container) break;
+          cur = cur.parentElement;
         }
-        if (container) break;
-        cur = cur.parentElement;
+        if (!container) container = pw.parentElement;
       }
-      // ถ้ายังไม่เจอ → ใช้ parentElement เป็น last resort (จะมีแค่ password ช่องเดียว)
-      if (!container) container = pw.parentElement;
-    }
-    if (!container) continue;
+      if (!container) continue;
 
-    // หาช่อง username/email ใน container
-    let userInput = null;
-    const candidates = container.querySelectorAll(
-      'input[type="email"], input[type="text"], input[type="tel"], input:not([type])'
-    );
-    // Pass 1: ช่องที่มี keyword ชัดเจน
-    for (const c of candidates) {
-      if (c === pw || !isInputVisible(c)) continue;
-      const meta = (c.name + ' ' + c.id + ' ' + c.autocomplete + ' ' + c.placeholder).toLowerCase();
-      if (/email|user|login|account|phone|tel|mobile/.test(meta)) {
-        userInput = c;
-        break;
-      }
-    }
-    // Pass 2: ช่อง visible ตัวแรก (fallback)
-    if (!userInput) {
+      // หา user input ใน container
+      const candidates = container.querySelectorAll(
+        'input[type="email"], input[type="text"], input[type="tel"], input:not([type])'
+      );
+      let userInput = null;
+      // Pass 1: keyword
       for (const c of candidates) {
         if (c === pw || !isInputVisible(c)) continue;
-        userInput = c;
-        break;
+        const meta = (c.name + ' ' + c.id + ' ' + c.autocomplete + ' ' + c.placeholder).toLowerCase();
+        if (/email|user|login|account|phone|tel|mobile/.test(meta)) { userInput = c; break; }
       }
+      // Pass 2: visible ตัวแรก
+      if (!userInput) {
+        for (const c of candidates) {
+          if (c === pw || !isInputVisible(c)) continue;
+          userInput = c;
+          break;
+        }
+      }
+      const mode = userInput ? 'both' : 'password-only';
+      console.debug(TAG, 'login form detected mode=' + mode,
+        '· container:', container.tagName.toLowerCase() + (container.id ? '#' + container.id : ''),
+        '· user:', userInput ? userInput.name || userInput.id || '(no-name)' : '(none)',
+        '· pw:', pw.name || pw.id || '(no-name)'
+      );
+      return { form: container, userInput, pwInput: pw, mode };
     }
-    console.debug(TAG, 'login form detected:',
-      container.tagName.toLowerCase() + (container.id ? '#' + container.id : ''),
-      'user:', userInput ? userInput.name || userInput.id || '(no-name)' : '(none)',
-      'pw:', pw.name || pw.id || '(no-name)'
-    );
-    return { form: container, userInput, pwInput: pw };
   }
+
+  // === B. ไม่มี password — เช็ค user-only mode (Step 1 ของ 2-step login) ===
+  const userCandidates = Array.from(document.querySelectorAll(
+    'input[type="email"], input[type="text"], input[type="tel"]'
+  )).filter(isInputVisible);
+
+  for (const c of userCandidates) {
+    const meta = (c.name + ' ' + c.id + ' ' + c.autocomplete + ' ' + c.placeholder).toLowerCase();
+    // ต้องมี signal ที่ชัดเจนว่าเป็น login field — ป้องกัน false positive
+    // (เช่น search box, comment box ที่ไม่ใช่ login)
+    const acHint = (c.autocomplete || '').toLowerCase();
+    const isLoginField =
+      /email|user(name)?|login|account|signin|sign[-_]in/.test(meta)
+      || acHint === 'username' || acHint === 'email';
+    if (!isLoginField) continue;
+
+    let container = c.closest('form') || c.parentElement;
+    console.debug(TAG, 'login form detected mode=user-only',
+      '· user:', c.name || c.id || '(no-name)', 'autocomplete=' + (c.autocomplete || '(none)')
+    );
+    return { form: container, userInput: c, pwInput: null, mode: 'user-only' };
+  }
+
   return null;
+}
+
+// === Pending credential — เก็บไว้ระหว่าง step 1 → step 2 ของ 2-step login ===
+const PENDING_TTL_MS = 5 * 60 * 1000;   // 5 นาที
+
+function _pendingKey() { return 'pending_prefill_' + location.hostname; }
+
+async function savePendingCredential(cred) {
+  await chrome.storage.local.set({
+    [_pendingKey()]: {
+      cred_id: cred.id, label: cred.label,
+      username: cred.username, password: cred.password,
+      ts: Date.now(),
+    }
+  });
+  console.debug(TAG, '💾 saved pending credential for', location.hostname,
+    '(label:', cred.label || '(no-label)', ') — รอ password page ถัดไป');
+}
+
+async function getPendingCredential() {
+  const r = await chrome.storage.local.get([_pendingKey()]);
+  const p = r[_pendingKey()];
+  if (!p) return null;
+  if (Date.now() - p.ts > PENDING_TTL_MS) {
+    await chrome.storage.local.remove([_pendingKey()]);
+    console.debug(TAG, '🗑 pending credential expired, cleared');
+    return null;
+  }
+  return p;
+}
+
+async function clearPendingCredential() {
+  await chrome.storage.local.remove([_pendingKey()]);
 }
 
 /** Trigger React/Vue change events properly */
@@ -526,8 +578,23 @@ function setReactInputValue(el, value) {
 }
 
 async function fillCredential(formInfo, cred) {
-  if (formInfo.userInput) setReactInputValue(formInfo.userInput, cred.username);
-  setReactInputValue(formInfo.pwInput, cred.password);
+  const mode = formInfo.mode || 'both';
+
+  if ((mode === 'both' || mode === 'user-only') && formInfo.userInput) {
+    setReactInputValue(formInfo.userInput, cred.username);
+  }
+  if ((mode === 'both' || mode === 'password-only') && formInfo.pwInput) {
+    setReactInputValue(formInfo.pwInput, cred.password);
+  }
+
+  // 2-step login bookkeeping
+  if (mode === 'user-only') {
+    // ใส่ username เสร็จแล้ว — เก็บ cred ไว้ใช้ตอน password page โผล่
+    await savePendingCredential(cred);
+  } else {
+    // both / password-only — log เสร็จแล้ว ไม่ต้องเก็บ
+    await clearPendingCredential();
+  }
 
   // ดึง paired user info (ถ้ามี) จาก chrome.storage
   let pairedUser = null;
@@ -542,13 +609,16 @@ async function fillCredential(formInfo, cred) {
     if (pairedUser.label) body.user_label = pairedUser.label;
     if (pairedUser.deviceLabel) body.device_label = pairedUser.deviceLabel;
   }
-  // แจ้ง backend ว่า cred นี้ถูกใช้ (update last_used_at + insert usage log)
-  backendFetch('/api/extension/credentials/' + cred.id + '/used', {
-    method: 'POST',
-    body,
-  }).catch(() => {});
-  console.debug(TAG, 'filled credential id=' + cred.id + ' label=' + (cred.label || '-')
-    + ' as=' + (pairedUser ? pairedUser.label : '(unpaired)'));
+  // แจ้ง backend ว่า cred นี้ถูกใช้ — log เฉพาะ both หรือ password-only
+  // (user-only ยังไม่นับว่า "ใช้" จนกว่าจะกรอก password ในหน้าถัดไป)
+  if (mode !== 'user-only') {
+    backendFetch('/api/extension/credentials/' + cred.id + '/used', {
+      method: 'POST',
+      body,
+    }).catch(() => {});
+  }
+  console.debug(TAG, '✓ filled credential id=' + cred.id + ' label=' + (cred.label || '-')
+    + ' mode=' + mode + ' as=' + (pairedUser ? pairedUser.label : '(unpaired)'));
 }
 
 function escapeHtmlSafe(s) {
@@ -608,7 +678,15 @@ function renderPrefillList(siteName) {
       accessBadge = `<div style="margin-top:4px;font-size:11px;padding:3px 7px;border-radius:6px;background:#dbeafe;color:#1e40af;display:inline-block">✓ via Team: ${escapeHtmlSafe(names)} (select)</div>`;
     }
   }
-  sub.innerHTML = `เว็บ: ${escapeHtmlSafe(siteName)}${accessBadge}`;
+  // mode badge — บอกว่ากำลังจะเติมอะไร (user-only / password-only / both)
+  let modeBadge = '';
+  const m = prefillFormInfo && prefillFormInfo.mode;
+  if (m === 'user-only') {
+    modeBadge = `<div style="margin-top:4px;font-size:11px;padding:3px 7px;border-radius:6px;background:#dbeafe;color:#1e40af;display:inline-block">📝 Step 1 — เลือก account → ระบบจะกรอก username ให้</div>`;
+  } else if (m === 'password-only') {
+    modeBadge = `<div style="margin-top:4px;font-size:11px;padding:3px 7px;border-radius:6px;background:#dbeafe;color:#1e40af;display:inline-block">🔑 Step 2 — เลือก account → ระบบจะกรอก password ให้</div>`;
+  }
+  sub.innerHTML = `เว็บ: ${escapeHtmlSafe(siteName)}${accessBadge}${modeBadge}`;
 
   if (prefillCreds.length === 0) {
     list.innerHTML = `<div class="fct-empty">
@@ -674,6 +752,34 @@ async function checkPrefill() {
     prefillNoFormLogged = false;
     prefillFormInfo = formInfo;
 
+    // === SHORTCUT: password-only mode + มี pending → auto-fill เลย ไม่ต้องถาม ===
+    if (formInfo.mode === 'password-only') {
+      const pending = await getPendingCredential();
+      if (pending) {
+        setReactInputValue(formInfo.pwInput, pending.password);
+        await clearPendingCredential();
+        // log usage หลังกรอกครบ (ทั้ง user + password) — ตอน step 2 นี้คือกรอกจริง
+        try {
+          let pairedUser = null;
+          const r = await chrome.storage.sync.get(['pairedUser']);
+          pairedUser = r.pairedUser || null;
+          const body = { source_url: location.href };
+          if (pairedUser) {
+            if (pairedUser.member_id) body.member_id = pairedUser.member_id;
+            if (pairedUser.label) body.user_label = pairedUser.label;
+            if (pairedUser.deviceLabel) body.device_label = pairedUser.deviceLabel;
+          }
+          backendFetch('/api/extension/credentials/' + pending.cred_id + '/used', {
+            method: 'POST', body,
+          }).catch(() => {});
+        } catch {}
+        if (prefillWidget) prefillWidget.style.display = 'none';
+        console.debug(TAG, '🚀 auto-filled password from pending (account:', pending.username, ') — 2-step login complete');
+        return;
+      }
+      // ไม่มี pending → fall through to normal flow (โชว์ widget ให้เลือก)
+    }
+
     // ตรวจ pairing status ก่อน — ถ้า unpaired ห้ามแสดง autofill เลย
     let pairedUserMatch = null;
     try {
@@ -683,7 +789,6 @@ async function checkPrefill() {
 
     if (!pairedUserMatch) {
       // Unpaired = no identity context → ไม่ควรแสดง autofill ทุก site
-      // (admin-paired กับ unpaired ต่างกัน: admin-paired = explicit bypass, unpaired = no access)
       if (prefillWidget) prefillWidget.style.display = 'none';
       console.debug(TAG, '🔒 prefill: extension is UNPAIRED → autofill disabled. ไป admin → Extension → "เชื่อมบัญชีของฉัน"');
       return;
