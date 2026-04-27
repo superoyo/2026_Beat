@@ -1052,6 +1052,88 @@ def get_summary(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
     }
 
 
+@app.get("/api/top-platforms")
+def top_platforms(
+    limit: int = 5,
+    days: int = 30,
+    sess: dict = Depends(require_admin_or_member),
+) -> dict[str, Any]:
+    """Top N platforms ที่ถูกคลิก/ใช้งานบ่อยสุด (จาก usage_logs)
+
+    นับจาก usage_logs (action = prefill credential) ในช่วง N วันล่าสุด
+    GROUP BY site_id → COUNT(*) DESC → top N
+
+    Filter ตาม role:
+    - Super admin → เห็น top platforms ทั้งระบบ
+    - Member → เห็นเฉพาะ platforms ที่ตนเองมีสิทธิ์ใน team (strict opt-in)
+    """
+    limit = max(1, min(50, limit))
+    days = max(1, min(365, days))
+    cutoff = (utc_now() - timedelta(days=days)).isoformat()
+
+    member_id = sess.get("member_id")
+    is_super_admin = (sess.get("role") == "admin")
+
+    with db_conn() as conn:
+        if is_super_admin or not member_id:
+            # Super admin → all sites
+            rows = conn.execute(
+                """
+                SELECT
+                    s.id, s.name, s.url_pattern,
+                    COUNT(ul.id) AS click_count,
+                    MAX(ul.timestamp) AS last_used_at,
+                    (SELECT COUNT(*) FROM credentials c WHERE c.site_id = s.id) AS cred_count
+                FROM usage_logs ul
+                JOIN sites s ON s.id = ul.site_id
+                WHERE ul.timestamp >= ?
+                GROUP BY s.id
+                ORDER BY click_count DESC
+                LIMIT ?
+                """,
+                (cutoff, limit),
+            ).fetchall()
+        else:
+            # Member → filter by team_sites
+            rows = conn.execute(
+                """
+                SELECT
+                    s.id, s.name, s.url_pattern,
+                    COUNT(ul.id) AS click_count,
+                    MAX(ul.timestamp) AS last_used_at,
+                    (SELECT COUNT(*) FROM credentials c WHERE c.site_id = s.id) AS cred_count
+                FROM usage_logs ul
+                JOIN sites s ON s.id = ul.site_id
+                WHERE ul.timestamp >= ?
+                  AND s.id IN (
+                    SELECT DISTINCT ts.site_id
+                    FROM team_sites ts
+                    JOIN team_members tm ON tm.team_id = ts.team_id
+                    WHERE tm.member_id = ?
+                  )
+                GROUP BY s.id
+                ORDER BY click_count DESC
+                LIMIT ?
+                """,
+                (cutoff, member_id, limit),
+            ).fetchall()
+
+    return {
+        "platforms": [
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "url_pattern": r["url_pattern"],
+                "click_count": r["click_count"],
+                "last_used_at": r["last_used_at"],
+                "cred_count": r["cred_count"],
+            }
+            for r in rows
+        ],
+        "days": days,
+    }
+
+
 @app.get("/api/credits-by-account")
 def credits_by_account(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
     """แสดงเครดิตล่าสุดของแต่ละบัญชี — group ด้วย profile_email > profile_name.

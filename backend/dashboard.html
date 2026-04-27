@@ -346,22 +346,11 @@
         </div>
       </section>
 
-      <section class="panel">
-        <details>
-          <summary>ตั้งค่า</summary>
-          <div class="form-row">
-            <label for="monthly-quota">โควต้ารายเดือน (เครดิต)</label>
-            <input type="number" id="monthly-quota" min="0" step="100" />
-          </div>
-          <div class="form-row">
-            <label for="billing-cycle-day">วันที่รอบบิลเริ่ม (1-31)</label>
-            <input type="number" id="billing-cycle-day" min="1" max="31" step="1" />
-          </div>
-          <div class="form-row">
-            <button class="primary" id="save-config">บันทึก</button>
-            <span class="save-status" id="save-status"></span>
-          </div>
-        </details>
+      <section class="panel" id="top-platforms-section">
+        <h2>🔥 Platforms ที่ใช้บ่อย <span id="top-platforms-sub" style="font-size:13px;color:var(--text-muted);font-weight:400">(30 วันล่าสุด)</span></h2>
+        <div id="top-platforms-list">
+          <div class="empty">กำลังโหลด…</div>
+        </div>
       </section>
     </div>
 
@@ -479,31 +468,68 @@ function escapeHtml(s) {
   }[c]));
 }
 
-async function loadConfig() {
-  const cfg = await fetchJson('/api/config');
-  document.getElementById('monthly-quota').value = cfg.monthly_quota;
-  document.getElementById('billing-cycle-day').value = cfg.billing_cycle_day;
+async function renderTopPlatforms() {
+  const wrap = document.getElementById('top-platforms-list');
+  if (!wrap) return;
+  let data;
+  try {
+    data = await fetchJson('/api/top-platforms?limit=5&days=30');
+  } catch (e) {
+    wrap.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  const items = data.platforms || [];
+  if (items.length === 0) {
+    wrap.innerHTML = `
+      <div class="empty">
+        ยังไม่มีข้อมูลการใช้งาน<br/>
+        <span style="font-size:12px">เมื่อมีคนใช้ extension prefill credentials จะนับสถิติที่นี่</span>
+      </div>
+    `;
+    return;
+  }
+  // หา max click_count เพื่อ scale progress bar
+  const maxClicks = Math.max(...items.map(p => p.click_count || 0), 1);
+
+  wrap.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${items.map((p, i) => {
+        const url = patternToUrlPlain(p.url_pattern);
+        const displayUrl = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+        const initial = (p.name || '?').trim().charAt(0).toUpperCase();
+        const widthPct = Math.max(8, Math.round((p.click_count / maxClicks) * 100));
+        const lastTxt = p.last_used_at ? `ล่าสุด ${fmtRelative(p.last_used_at)}` : '';
+        return `
+          <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer"
+             style="display:flex;align-items:center;gap:14px;padding:12px 16px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;text-decoration:none;color:inherit;transition:all .15s"
+             onmouseenter="this.style.borderColor='var(--primary)';this.style.transform='translateX(2px)'"
+             onmouseleave="this.style.borderColor='var(--border)';this.style.transform=''">
+            <div style="font-size:18px;font-weight:700;color:var(--text-muted);min-width:24px;text-align:center">${i + 1}</div>
+            <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:14px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(initial)}</div>
+            <div style="flex:1;min-width:0;overflow:hidden">
+              <div style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(p.name)}</div>
+              <div style="font-size:11.5px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(displayUrl)}${lastTxt ? ' · ' + escapeHtml(lastTxt) : ''}</div>
+              <div style="margin-top:5px;height:5px;background:var(--bg-soft);border-radius:999px;overflow:hidden">
+                <div style="width:${widthPct}%;height:100%;background:linear-gradient(90deg,#2563eb,#7c3aed);transition:width .3s"></div>
+              </div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-size:18px;font-weight:700;line-height:1;color:var(--primary)">${fmtInt(p.click_count)}</div>
+              <div style="font-size:10.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-top:2px">clicks</div>
+            </div>
+          </a>
+        `;
+      }).join('')}
+    </div>
+  `;
 }
 
-async function saveConfig() {
-  const status = document.getElementById('save-status');
-  status.textContent = 'กำลังบันทึก…';
-  try {
-    await fetch('/api/config', {
-      method: 'PATCH',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        monthly_quota: parseFloat(document.getElementById('monthly-quota').value),
-        billing_cycle_day: parseInt(document.getElementById('billing-cycle-day').value, 10),
-      }),
-    }).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); });
-    status.textContent = 'บันทึกแล้ว ✓';
-    await refresh();
-    setTimeout(() => { status.textContent = ''; }, 2500);
-  } catch (e) {
-    status.textContent = 'เกิดข้อผิดพลาด: ' + e.message;
-  }
+// Convert url_pattern (เช่น "*.freepik.com/*") → URL ที่ใช้งานได้
+function patternToUrlPlain(pattern) {
+  if (!pattern) return '#';
+  let u = pattern.replace(/\*\./g, '').replace(/\/\*$/, '/').replace(/\*/g, '');
+  if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+  return u;
 }
 
 function getHostFromUrl(u) {
@@ -634,6 +660,8 @@ async function refresh() {
     renderMain();
     renderSummary(summary);
     renderAccountsGrid(accounts);
+    // โหลด top platforms (ทำพร้อมกัน — ไม่ block ถ้า fail)
+    renderTopPlatforms().catch(() => {});
     // ถ้ากำลังดู account detail อยู่ → ก็ refresh detail ของมันด้วย
     if (currentAccountKey) {
       const acct = (accounts.accounts || []).find(a => a.account_key === currentAccountKey);
@@ -772,13 +800,11 @@ function renderAcctSnapshots(data) {
   const rb = document.getElementById('refresh-btn');
   if (rb) rb.addEventListener('click', refresh);
 }
-document.getElementById('save-config').addEventListener('click', saveConfig);
 
 // Back button — กลับไปหน้า accounts grid
 document.getElementById('back-to-accounts').addEventListener('click', closeAccountDetail);
 
 (async () => {
-  await loadConfig();
   await refresh();
   setInterval(refresh, 60_000);
 })();
