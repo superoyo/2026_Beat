@@ -386,16 +386,26 @@
       border-radius: 10px;
       padding: 14px 16px;
       margin-bottom: 8px;
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr auto;
-      gap: 14px;
-      align-items: center;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
       font-size: 13px;
       box-shadow: var(--shadow-sm);
     }
     .cred-row:hover { border-color: var(--border-strong); }
     .cred-row .col-label { font-weight: 600; }
     .cred-row .col-pw { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .cred-chip {
+      display: inline-flex; align-items: center;
+      padding: 2px 9px; border-radius: 999px;
+      font-size: 11.5px; font-weight: 500;
+      background: var(--bg-soft); color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+    .cred-chip-cancelled {
+      background: rgba(220,38,38,.10); color: var(--critical);
+      border-color: rgba(220,38,38,.20);
+    }
     .pw-mask { color: var(--text-muted); }
     .pw-show { color: var(--text); user-select: all; }
     .copy-btn {
@@ -720,10 +730,8 @@ async function getCardOwners() {
 
 function siteFormHTML(site) {
   // site อาจเป็น null (โหมด add) หรือ object (โหมด edit)
+  // ข้อมูลการเงิน/billing ย้ายไปอยู่ที่ credential แล้ว — ฟอร์ม site เก็บแค่ name + url_pattern
   const s = site || {};
-  const paymentOptions = Object.entries(PAYMENT_TYPE_LABELS).map(
-    ([v, label]) => `<option value="${v}" ${s.payment_type === v ? 'selected' : ''}>${escapeHtml(label)}</option>`
-  ).join('');
   return `
     <div class="field">
       <label>ชื่อเว็บ</label>
@@ -734,136 +742,23 @@ function siteFormHTML(site) {
       <input id="m-pattern" type="text" value="${escapeHtml(s.url_pattern || '')}" placeholder="*.example.com/*" />
       <div class="hint">เช่น <code>*.freepik.com/*</code></div>
     </div>
-
-    <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
-    <div style="font-size:11.5px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px">ข้อมูลการเงิน</div>
-
-    <!-- รอบบิล: monthly / yearly / ไม่ระบุ -->
-    <div class="field">
-      <label>รอบการจ่าย</label>
-      <div style="display:flex;gap:14px;margin-top:6px;flex-wrap:wrap">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400">
-          <input type="radio" name="m-bc" value="monthly" ${s.billing_cycle === 'monthly' ? 'checked' : ''}>
-          <span>📅 รายเดือน</span>
-        </label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400">
-          <input type="radio" name="m-bc" value="yearly" ${s.billing_cycle === 'yearly' ? 'checked' : ''}>
-          <span>🗓️ รายปี</span>
-        </label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400;color:var(--text-muted)">
-          <input type="radio" name="m-bc" value="" ${!s.billing_cycle ? 'checked' : ''}>
-          <span>— ไม่ระบุ</span>
-        </label>
-      </div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div class="field" id="m-renew-wrap" style="${s.billing_cycle === 'monthly' ? '' : 'display:none'}">
-        <label>Renew วันที่ของเดือน (1-31)</label>
-        <input id="m-renew" type="number" min="1" max="31" value="${s.renew_day != null ? s.renew_day : ''}" placeholder="เช่น 5" />
-      </div>
-      <div class="field">
-        <label>ประเภทการจ่าย</label>
-        <select id="m-payment" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
-          <option value="">— เลือก —</option>
-          ${paymentOptions}
-        </select>
-      </div>
-    </div>
-
-    <!-- ค่าใช้จ่าย + สกุลเงิน -->
-    <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
-      <div class="field">
-        <label>ค่าใช้จ่าย (ต่อรอบ)</label>
-        <input id="m-cost" type="number" min="0" step="0.01" value="${s.cost_amount != null ? s.cost_amount : ''}" placeholder="เช่น 590.00" />
-      </div>
-      <div class="field">
-        <label>สกุลเงิน</label>
-        <select id="m-currency" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
-          ${['THB','USD','EUR','GBP','JPY','CNY'].map(c =>
-            `<option value="${c}" ${(s.cost_currency || 'THB') === c ? 'selected' : ''}>${c}</option>`
-          ).join('')}
-        </select>
-      </div>
-    </div>
-
-    <!-- วันเริ่ม/สิ้นสุด -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div class="field">
-        <label>วันเริ่มต้น</label>
-        <input id="m-start-date" type="date" value="${escapeHtml((s.start_date || '').slice(0, 10))}" />
-      </div>
-      <div class="field">
-        <label>วันสิ้นสุด <span style="color:var(--text-muted);font-weight:400">(ถ้ามี)</span></label>
-        <input id="m-end-date" type="date" value="${escapeHtml((s.end_date || '').slice(0, 10))}" />
-      </div>
-    </div>
-
-    <div class="field">
-      <label>ใช้บัตรของ (พิมพ์ใหม่ได้ ระบบจะเพิ่มให้)</label>
-      <input id="m-card-owner" type="text" list="card-owners-list" value="${escapeHtml(s.card_owner_name || '')}" placeholder="เช่น Anan, Tao, สมชาย" />
-      <datalist id="card-owners-list"></datalist>
-    </div>
-
-    <div class="field">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-        <input id="m-cancelled" type="checkbox" ${s.cancelled ? 'checked' : ''}>
-        <span>ยกเลิกแล้ว</span>
-      </label>
-    </div>
-    <div class="field" id="m-cancelled-at-wrap" style="${s.cancelled ? '' : 'display:none'}">
-      <label>ยกเลิกเมื่อวันที่</label>
-      <input id="m-cancelled-at" type="date" value="${escapeHtml((s.cancelled_at || '').slice(0, 10))}" />
-    </div>
-
-    <div class="field">
-      <label>เหตุผลในการใช้งาน</label>
-      <textarea id="m-reason" rows="2" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical">${escapeHtml(s.usage_reason || '')}</textarea>
+    <div class="hint" style="background:var(--bg-soft);padding:10px 12px;border-radius:8px;color:var(--text-muted);font-size:12px;margin-top:8px">
+      💡 ข้อมูลการเงิน (ค่าใช้จ่าย, รอบบิล, ใช้บัตรของ ฯลฯ) ตอนนี้กำหนดที่ <strong>แต่ละ credential</strong>
+      เพราะ credential เดียวกันอาจจ่ายโดยคนละคน หรือคนละรอบ
     </div>
   `;
 }
 
 function siteFormCollect() {
-  const billingCycle = document.querySelector('input[name="m-bc"]:checked')?.value || '';
   return {
     name: $('m-name').value.trim(),
     url_pattern: $('m-pattern').value.trim(),
-    renew_day: ($('m-renew') && $('m-renew').value) ? parseInt($('m-renew').value, 10) : null,
-    card_owner: $('m-card-owner').value.trim() || null,
-    payment_type: $('m-payment').value || null,
-    cancelled: $('m-cancelled').checked,
-    cancelled_at: $('m-cancelled').checked ? ($('m-cancelled-at').value || null) : null,
-    usage_reason: $('m-reason').value.trim() || null,
-    billing_cycle: billingCycle,                // '' = clear (backend จะเป็น NULL)
-    cost_amount: $('m-cost').value !== '' ? parseFloat($('m-cost').value) : null,
-    cost_currency: $('m-currency').value || 'THB',
-    start_date: $('m-start-date').value || null,
-    end_date: $('m-end-date').value || null,
   };
 }
 
 async function bindSiteFormDynamic() {
-  // populate card-owners datalist
-  const owners = await getCardOwners();
-  const list = document.getElementById('card-owners-list');
-  if (list) list.innerHTML = owners.map(o => `<option value="${escapeHtml(o.name)}">`).join('');
-
-  // toggle cancelled-at visibility
-  const cb = $('m-cancelled');
-  const wrap = $('m-cancelled-at-wrap');
-  if (cb && wrap) {
-    cb.addEventListener('change', () => { wrap.style.display = cb.checked ? '' : 'none'; });
-  }
-
-  // toggle "Renew วันที่" visibility ตาม billing_cycle (เฉพาะ monthly เท่านั้น)
-  document.querySelectorAll('input[name="m-bc"]').forEach(rb => {
-    rb.addEventListener('change', () => {
-      const renewWrap = $('m-renew-wrap');
-      if (renewWrap) {
-        renewWrap.style.display = (rb.value === 'monthly' && rb.checked) ? '' : 'none';
-      }
-    });
-  });
+  // ฟอร์ม site ไม่มี billing fields แล้ว — ไม่ต้อง bind อะไรเพิ่ม
+  // (เก็บฟังก์ชันไว้เพราะถูกเรียกใน flow add/edit site)
 }
 
 function showAddSiteModal() {
@@ -936,58 +831,191 @@ function fmtPaymentTypeTh(v) {
   return PAYMENT_TYPE_LABELS[v] || (v || '—');
 }
 
+// === Billing fields HTML — ใช้ใน credential add/edit modal ===
+// (ฟิลด์เหล่านี้ย้ายมาจาก site form ใน v1.10)
+function billingFieldsHTML(obj) {
+  const o = obj || {};
+  const paymentOptions = Object.entries(PAYMENT_TYPE_LABELS).map(
+    ([v, label]) => `<option value="${v}" ${o.payment_type === v ? 'selected' : ''}>${escapeHtml(label)}</option>`
+  ).join('');
+  return `
+    <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
+    <div style="font-size:11.5px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px">ข้อมูลการเงิน (ของ credential นี้)</div>
+
+    <div class="field">
+      <label>รอบการจ่าย</label>
+      <div style="display:flex;gap:14px;margin-top:6px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400">
+          <input type="radio" name="m-bc" value="monthly" ${o.billing_cycle === 'monthly' ? 'checked' : ''}>
+          <span>📅 รายเดือน</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400">
+          <input type="radio" name="m-bc" value="yearly" ${o.billing_cycle === 'yearly' ? 'checked' : ''}>
+          <span>🗓️ รายปี</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400;color:var(--text-muted)">
+          <input type="radio" name="m-bc" value="" ${!o.billing_cycle ? 'checked' : ''}>
+          <span>— ไม่ระบุ</span>
+        </label>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="field" id="m-renew-wrap" style="${o.billing_cycle === 'monthly' ? '' : 'display:none'}">
+        <label>Renew วันที่ของเดือน (1-31)</label>
+        <input id="m-renew" type="number" min="1" max="31" value="${o.renew_day != null ? o.renew_day : ''}" placeholder="เช่น 5" />
+      </div>
+      <div class="field">
+        <label>ประเภทการจ่าย</label>
+        <select id="m-payment" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
+          <option value="">— เลือก —</option>
+          ${paymentOptions}
+        </select>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+      <div class="field">
+        <label>ค่าใช้จ่าย (ต่อรอบ)</label>
+        <input id="m-cost" type="number" min="0" step="0.01" value="${o.cost_amount != null ? o.cost_amount : ''}" placeholder="เช่น 590.00" />
+      </div>
+      <div class="field">
+        <label>สกุลเงิน</label>
+        <select id="m-currency" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
+          ${['THB','USD','EUR','GBP','JPY','CNY'].map(c =>
+            `<option value="${c}" ${(o.cost_currency || 'THB') === c ? 'selected' : ''}>${c}</option>`
+          ).join('')}
+        </select>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="field">
+        <label>วันเริ่มต้น</label>
+        <input id="m-start-date" type="date" value="${escapeHtml((o.start_date || '').slice(0, 10))}" />
+      </div>
+      <div class="field">
+        <label>วันสิ้นสุด <span style="color:var(--text-muted);font-weight:400">(ถ้ามี)</span></label>
+        <input id="m-end-date" type="date" value="${escapeHtml((o.end_date || '').slice(0, 10))}" />
+      </div>
+    </div>
+
+    <div class="field">
+      <label>ใช้บัตรของ (พิมพ์ใหม่ได้ ระบบจะเพิ่มให้)</label>
+      <input id="m-card-owner" type="text" list="card-owners-list" value="${escapeHtml(o.card_owner_name || '')}" placeholder="เช่น Anan, Tao, สมชาย" />
+      <datalist id="card-owners-list"></datalist>
+    </div>
+
+    <div class="field">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input id="m-cancelled" type="checkbox" ${o.cancelled ? 'checked' : ''}>
+        <span>ยกเลิกแล้ว</span>
+      </label>
+    </div>
+    <div class="field" id="m-cancelled-at-wrap" style="${o.cancelled ? '' : 'display:none'}">
+      <label>ยกเลิกเมื่อวันที่</label>
+      <input id="m-cancelled-at" type="date" value="${escapeHtml((o.cancelled_at || '').slice(0, 10))}" />
+    </div>
+
+    <div class="field">
+      <label>เหตุผลในการใช้งาน</label>
+      <textarea id="m-reason" rows="2" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical">${escapeHtml(o.usage_reason || '')}</textarea>
+    </div>
+  `;
+}
+
+function billingFieldsCollect() {
+  const billingCycle = document.querySelector('input[name="m-bc"]:checked')?.value || '';
+  return {
+    renew_day: ($('m-renew') && $('m-renew').value) ? parseInt($('m-renew').value, 10) : null,
+    card_owner: $('m-card-owner') ? ($('m-card-owner').value.trim() || null) : null,
+    payment_type: $('m-payment') ? ($('m-payment').value || null) : null,
+    cancelled: $('m-cancelled') ? $('m-cancelled').checked : false,
+    cancelled_at: ($('m-cancelled') && $('m-cancelled').checked) ? ($('m-cancelled-at').value || null) : null,
+    usage_reason: $('m-reason') ? ($('m-reason').value.trim() || null) : null,
+    billing_cycle: billingCycle,
+    cost_amount: ($('m-cost') && $('m-cost').value !== '') ? parseFloat($('m-cost').value) : null,
+    cost_currency: $('m-currency') ? ($('m-currency').value || 'THB') : 'THB',
+    start_date: $('m-start-date') ? ($('m-start-date').value || null) : null,
+    end_date: $('m-end-date') ? ($('m-end-date').value || null) : null,
+  };
+}
+
+async function bindBillingFieldsDynamic() {
+  // populate card-owners datalist
+  const owners = await getCardOwners();
+  const list = document.getElementById('card-owners-list');
+  if (list) list.innerHTML = owners.map(o => `<option value="${escapeHtml(o.name)}">`).join('');
+
+  // toggle cancelled-at visibility
+  const cb = $('m-cancelled');
+  const wrap = $('m-cancelled-at-wrap');
+  if (cb && wrap) {
+    cb.addEventListener('change', () => { wrap.style.display = cb.checked ? '' : 'none'; });
+  }
+
+  // toggle Renew วันที่ visibility ตาม billing_cycle
+  document.querySelectorAll('input[name="m-bc"]').forEach(rb => {
+    rb.addEventListener('change', () => {
+      const renewWrap = $('m-renew-wrap');
+      if (renewWrap) {
+        renewWrap.style.display = (rb.value === 'monthly' && rb.checked) ? '' : 'none';
+      }
+    });
+  });
+}
+
 function siteInfoCard(site) {
-  const items = [];
-  items.push(['URL pattern', `<code>${escapeHtml(site.url_pattern)}</code>`]);
-
-  // รอบบิล + Renew วันที่ (เฉพาะ monthly)
-  if (site.billing_cycle === 'monthly') {
-    const renewTxt = site.renew_day ? ` (Renew วันที่ <strong>${site.renew_day}</strong> ของทุกเดือน)` : '';
-    items.push(['รอบบิล', `<strong>📅 รายเดือน</strong>${renewTxt}`]);
-  } else if (site.billing_cycle === 'yearly') {
-    items.push(['รอบบิล', `<strong>🗓️ รายปี</strong>`]);
-  } else if (site.renew_day) {
-    // backward-compat — มี renew_day แต่ไม่มี billing_cycle
-    items.push(['Renew', `วันที่ <strong>${site.renew_day}</strong> ของทุกเดือน`]);
-  }
-
-  // ค่าใช้จ่าย
-  if (site.cost_amount != null) {
-    const cur = site.cost_currency || 'THB';
-    const formatted = new Intl.NumberFormat('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(site.cost_amount);
-    items.push(['ค่าใช้จ่าย', `<strong>${formatted}</strong> ${escapeHtml(cur)}` + (site.billing_cycle ? ` / ${site.billing_cycle === 'monthly' ? 'เดือน' : 'ปี'}` : '')]);
-  }
-
-  // ระยะเวลา
-  if (site.start_date || site.end_date) {
-    const fmt = (d) => d ? new Date(d).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
-    items.push(['ระยะเวลา', `${fmt(site.start_date)} <span style="color:var(--text-muted)">→</span> ${site.end_date ? fmt(site.end_date) : '<span style="color:var(--text-muted)">ใช้งานต่อเนื่อง</span>'}`]);
-  }
-
-  if (site.payment_type) items.push(['ประเภทการจ่าย', escapeHtml(fmtPaymentTypeTh(site.payment_type))]);
-  if (site.card_owner_name) items.push(['ใช้บัตรของ', `<strong>${escapeHtml(site.card_owner_name)}</strong>`]);
-  if (site.cancelled) {
-    const at = site.cancelled_at ? new Date(site.cancelled_at).toLocaleDateString('th-TH') : '';
-    items.push([
-      'สถานะ',
-      `<span style="display:inline-flex;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(220,38,38,.10);color:var(--critical)">⛔ ยกเลิกแล้ว</span>${at ? ' ' + escapeHtml(at) : ''}`
-    ]);
-  } else {
-    items.push(['สถานะ', '<span style="display:inline-flex;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(16,185,129,.12);color:var(--green)">✓ ใช้งานอยู่</span>']);
-  }
-  if (site.usage_reason) {
-    items.push(['เหตุผลในการใช้', `<div style="white-space:pre-wrap">${escapeHtml(site.usage_reason)}</div>`]);
-  }
+  // ข้อมูลการเงิน/billing ย้ายไปที่ระดับ credential แล้ว
+  // site card เก็บแค่ URL pattern + จำนวน credentials
   return `
     <div class="card" style="display:block">
       <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 16px;font-size:13.5px">
-        ${items.map(([k, v]) => `
-          <div style="color:var(--text-muted)">${k}</div>
-          <div>${v}</div>
-        `).join('')}
+        <div style="color:var(--text-muted)">URL pattern</div>
+        <div><code>${escapeHtml(site.url_pattern)}</code></div>
       </div>
     </div>
   `;
+}
+
+// แสดงสรุปข้อมูลการเงินของ credential แบบ chip ใต้แถว credential
+// (เฉพาะข้อมูลที่กรอกแล้ว — ไม่กรอก = ไม่โชว์)
+function credBillingSummary(c) {
+  const chips = [];
+  // รอบบิล + cost
+  if (c.billing_cycle === 'monthly') {
+    const renewTxt = c.renew_day ? ` วันที่ ${c.renew_day}` : '';
+    chips.push(`<span class="cred-chip">📅 รายเดือน${renewTxt}</span>`);
+  } else if (c.billing_cycle === 'yearly') {
+    chips.push(`<span class="cred-chip">🗓️ รายปี</span>`);
+  } else if (c.renew_day) {
+    chips.push(`<span class="cred-chip">📅 Renew วันที่ ${c.renew_day}</span>`);
+  }
+  if (c.cost_amount != null) {
+    const cur = c.cost_currency || 'THB';
+    const formatted = new Intl.NumberFormat('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(c.cost_amount);
+    chips.push(`<span class="cred-chip">💵 ${formatted} ${escapeHtml(cur)}</span>`);
+  }
+  if (c.payment_type) {
+    chips.push(`<span class="cred-chip">💳 ${escapeHtml(fmtPaymentTypeTh(c.payment_type))}</span>`);
+  }
+  if (c.card_owner_name) {
+    chips.push(`<span class="cred-chip">👤 ${escapeHtml(c.card_owner_name)}</span>`);
+  }
+  if (c.start_date || c.end_date) {
+    const fmt = (d) => d ? new Date(d).toLocaleDateString('th-TH', { year: '2-digit', month: 'short', day: 'numeric' }) : '?';
+    const range = `${fmt(c.start_date)} → ${c.end_date ? fmt(c.end_date) : 'ต่อเนื่อง'}`;
+    chips.push(`<span class="cred-chip">⏱ ${escapeHtml(range)}</span>`);
+  }
+  if (c.cancelled) {
+    const at = c.cancelled_at ? new Date(c.cancelled_at).toLocaleDateString('th-TH') : '';
+    chips.push(`<span class="cred-chip cred-chip-cancelled">⛔ ยกเลิก${at ? ' ' + escapeHtml(at) : ''}</span>`);
+  }
+  if (c.usage_reason) {
+    chips.push(`<span class="cred-chip" title="${escapeHtml(c.usage_reason)}">📝 ${escapeHtml(c.usage_reason.slice(0, 40))}${c.usage_reason.length > 40 ? '…' : ''}</span>`);
+  }
+  if (chips.length === 0) return '';
+  return `<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);display:flex;gap:6px;flex-wrap:wrap">${chips.join('')}</div>`;
 }
 
 async function loadSite(siteId) {
@@ -1002,27 +1030,30 @@ async function loadSite(siteId) {
     return;
   }
   list.innerHTML = credentials.map(c => `
-    <div class="cred-row" data-id="${c.id}">
-      <div class="col-label">${escapeHtml(c.label || '(ไม่มีชื่อ)')}</div>
-      <div>
-        <span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.04em">user</span>
-        <div style="margin-top:2px">
-          ${escapeHtml(c.username)}
-          <button class="copy-btn" data-copy="${escapeHtml(c.username)}" title="คัดลอก">📋</button>
+    <div class="cred-row" data-id="${c.id}" style="flex-direction:column;align-items:stretch">
+      <div style="display:grid;grid-template-columns:1fr 1.4fr 1.4fr auto;gap:14px;align-items:center;width:100%">
+        <div class="col-label">${escapeHtml(c.label || '(ไม่มีชื่อ)')}</div>
+        <div>
+          <span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.04em">user</span>
+          <div style="margin-top:2px">
+            ${escapeHtml(c.username)}
+            <button class="copy-btn" data-copy="${escapeHtml(c.username)}" title="คัดลอก">📋</button>
+          </div>
+        </div>
+        <div class="col-pw">
+          <span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.04em">password</span>
+          <div style="margin-top:2px">
+            <span class="pw-mask" data-pw="${escapeHtml(c.password)}" data-shown="false">••••••••</span>
+            <button class="copy-btn pw-toggle" data-id="${c.id}" title="show/hide">👁</button>
+            <button class="copy-btn" data-copy="${escapeHtml(c.password)}" title="คัดลอก">📋</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn" data-edit="${c.id}" style="font-size:12px;padding:5px 10px">✏️ แก้ไข</button>
+          <button class="btn danger" data-del="${c.id}">ลบ</button>
         </div>
       </div>
-      <div class="col-pw">
-        <span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.04em">password</span>
-        <div style="margin-top:2px">
-          <span class="pw-mask" data-pw="${escapeHtml(c.password)}" data-shown="false">••••••••</span>
-          <button class="copy-btn pw-toggle" data-id="${c.id}" title="show/hide">👁</button>
-          <button class="copy-btn" data-copy="${escapeHtml(c.password)}" title="คัดลอก">📋</button>
-        </div>
-      </div>
-      <div style="display:flex;gap:6px">
-        <button class="btn" data-edit="${c.id}" style="font-size:12px;padding:5px 10px">✏️ แก้ไข</button>
-        <button class="btn danger" data-del="${c.id}">ลบ</button>
-      </div>
+      ${credBillingSummary(c)}
     </div>
   `).join('');
 
@@ -1064,81 +1095,84 @@ async function loadSite(siteId) {
   });
 }
 
+function credFormHTML(cred) {
+  const c = cred || {};
+  return `
+    <div class="field">
+      <label>ชื่อย่อ (ไม่บังคับ)</label>
+      <input id="m-label" type="text" value="${escapeHtml(c.label || '')}" placeholder="เช่น account หลัก, สำรอง 1" />
+    </div>
+    <div class="field">
+      <label>Username / Email</label>
+      <input id="m-username" type="text" value="${escapeHtml(c.username || '')}" autocomplete="off" />
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <div style="display:flex;gap:6px">
+        <input id="m-password" type="password" value="${escapeHtml(c.password || '')}" autocomplete="off" style="flex:1" />
+        <button type="button" class="btn" id="m-pw-toggle" style="white-space:nowrap;font-size:12px;padding:5px 10px">👁 แสดง</button>
+      </div>
+    </div>
+    ${billingFieldsHTML(c)}
+  `;
+}
+
+function credFormCollect() {
+  return {
+    label: $('m-label').value.trim() || null,
+    username: $('m-username').value.trim(),
+    password: $('m-password').value,
+    ...billingFieldsCollect(),
+  };
+}
+
+async function bindCredFormDynamic() {
+  // password show/hide toggle
+  const tgl = document.getElementById('m-pw-toggle');
+  const pw = document.getElementById('m-password');
+  if (tgl && pw) {
+    tgl.addEventListener('click', () => {
+      if (pw.type === 'password') { pw.type = 'text'; tgl.textContent = '🙈 ซ่อน'; }
+      else { pw.type = 'password'; tgl.textContent = '👁 แสดง'; }
+    });
+  }
+  await bindBillingFieldsDynamic();
+}
+
 function showEditCredModal(cred, siteId) {
   showModal({
     title: 'แก้ไข Credential',
-    body: `
-      <div class="field">
-        <label>ชื่อย่อ (ไม่บังคับ)</label>
-        <input id="m-label" type="text" value="${escapeHtml(cred.label || '')}" placeholder="เช่น account หลัก, สำรอง 1" />
-      </div>
-      <div class="field">
-        <label>Username / Email</label>
-        <input id="m-username" type="text" value="${escapeHtml(cred.username)}" autocomplete="off" />
-      </div>
-      <div class="field">
-        <label>Password</label>
-        <div style="display:flex;gap:6px">
-          <input id="m-password" type="password" value="${escapeHtml(cred.password)}" autocomplete="off" style="flex:1" />
-          <button type="button" class="btn" id="m-pw-toggle" style="white-space:nowrap;font-size:12px;padding:5px 10px">👁 แสดง</button>
-        </div>
-        <div class="hint">ค่าที่กรอกจะแทน password เดิม</div>
-      </div>
-    `,
+    body: credFormHTML(cred),
     onSubmit: async () => {
-      const label = $('m-label').value.trim() || null;
-      const username = $('m-username').value.trim();
-      const password = $('m-password').value;
-      if (!username || !password) throw new Error('กรอก username และ password');
+      const data = credFormCollect();
+      if (!data.username || !data.password) throw new Error('กรอก username และ password');
       await fetchJson('/api/admin/credentials/' + cred.id, {
         method: 'PATCH',
-        body: JSON.stringify({ label, username, password }),
+        body: JSON.stringify(data),
       });
+      _cardOwnersCache = null;
       await loadSite(siteId);
     },
   });
-  // toggle show/hide password ใน modal
-  setTimeout(() => {
-    const tgl = document.getElementById('m-pw-toggle');
-    const pw = document.getElementById('m-password');
-    if (tgl && pw) {
-      tgl.addEventListener('click', () => {
-        if (pw.type === 'password') { pw.type = 'text'; tgl.textContent = '🙈 ซ่อน'; }
-        else { pw.type = 'password'; tgl.textContent = '👁 แสดง'; }
-      });
-    }
-  }, 0);
+  setTimeout(bindCredFormDynamic, 0);
 }
 
 function showAddCredModal(siteId) {
   showModal({
     title: 'เพิ่ม Credential',
-    body: `
-      <div class="field">
-        <label>ชื่อย่อ (ไม่บังคับ)</label>
-        <input id="m-label" type="text" placeholder="เช่น account หลัก, สำรอง 1" />
-      </div>
-      <div class="field">
-        <label>Username / Email</label>
-        <input id="m-username" type="text" autocomplete="off" />
-      </div>
-      <div class="field">
-        <label>Password</label>
-        <input id="m-password" type="password" autocomplete="off" />
-      </div>
-    `,
+    body: credFormHTML(null),
     onSubmit: async () => {
-      const label = $('m-label').value.trim() || null;
-      const username = $('m-username').value.trim();
-      const password = $('m-password').value;
-      if (!username || !password) throw new Error('กรอก username และ password');
+      const data = credFormCollect();
+      if (!data.username || !data.password) throw new Error('กรอก username และ password');
       await fetchJson('/api/admin/sites/' + siteId + '/credentials', {
         method: 'POST',
-        body: JSON.stringify({ label, username, password }),
+        body: JSON.stringify(data),
       });
+      _cardOwnersCache = null;
       await loadSite(siteId);
     },
   });
+  setTimeout(bindCredFormDynamic, 0);
 }
 
 async function renderSecurityPage() {

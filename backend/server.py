@@ -273,6 +273,27 @@ def init_db() -> None:
             if col_name not in site_cols:
                 conn.execute(f"ALTER TABLE sites ADD COLUMN {col_name} {col_def}")
 
+        # credentials table — billing/lifecycle fields ย้ายมาจาก sites (v1.10)
+        # หลังจากนี้ user จะ config ที่ระดับ credential แทน site
+        cred_cols = {
+            row["name"] for row in conn.execute("PRAGMA table_info(credentials)").fetchall()
+        }
+        for col_name, col_def in [
+            ("renew_day",     "INTEGER"),
+            ("card_owner_id", "INTEGER REFERENCES card_owners(id) ON DELETE SET NULL"),
+            ("cancelled",     "INTEGER NOT NULL DEFAULT 0"),
+            ("cancelled_at",  "TEXT"),
+            ("payment_type",  "TEXT"),
+            ("usage_reason",  "TEXT"),
+            ("billing_cycle", "TEXT"),
+            ("cost_amount",   "REAL"),
+            ("cost_currency", "TEXT"),
+            ("start_date",    "TEXT"),
+            ("end_date",      "TEXT"),
+        ]:
+            if col_name not in cred_cols:
+                conn.execute(f"ALTER TABLE credentials ADD COLUMN {col_name} {col_def}")
+
         # members table — เพิ่มคอลัมน์ email + password + enabled
         member_cols = {
             row["name"] for row in conn.execute("PRAGMA table_info(members)").fetchall()
@@ -1960,12 +1981,36 @@ class CredentialIn(BaseModel):
     label: Optional[str] = Field(None, max_length=120)
     username: str = Field(..., min_length=1, max_length=200)
     password: str = Field(..., min_length=1, max_length=500)
+    # billing/lifecycle (v1.10 — ย้ายจาก site)
+    renew_day: Optional[int] = Field(None, ge=1, le=31)
+    card_owner: Optional[str] = Field(None, max_length=120)
+    cancelled: Optional[bool] = None
+    cancelled_at: Optional[str] = Field(None, max_length=40)
+    payment_type: Optional[str] = Field(None, max_length=40)
+    usage_reason: Optional[str] = Field(None, max_length=2000)
+    billing_cycle: Optional[str] = Field(None, pattern="^(monthly|yearly|)$")
+    cost_amount: Optional[float] = Field(None, ge=0)
+    cost_currency: Optional[str] = Field(None, max_length=10)
+    start_date: Optional[str] = Field(None, max_length=40)
+    end_date: Optional[str] = Field(None, max_length=40)
 
 
 class CredentialPatchIn(BaseModel):
     label: Optional[str] = Field(None, max_length=120)
     username: Optional[str] = Field(None, min_length=1, max_length=200)
     password: Optional[str] = Field(None, min_length=1, max_length=500)
+    # billing/lifecycle
+    renew_day: Optional[int] = Field(None, ge=1, le=31)
+    card_owner: Optional[str] = Field(None, max_length=120)
+    cancelled: Optional[bool] = None
+    cancelled_at: Optional[str] = Field(None, max_length=40)
+    payment_type: Optional[str] = Field(None, max_length=40)
+    usage_reason: Optional[str] = Field(None, max_length=2000)
+    billing_cycle: Optional[str] = Field(None, pattern="^(monthly|yearly|)$")
+    cost_amount: Optional[float] = Field(None, ge=0)
+    cost_currency: Optional[str] = Field(None, max_length=10)
+    start_date: Optional[str] = Field(None, max_length=40)
+    end_date: Optional[str] = Field(None, max_length=40)
 
 
 @app.get("/api/admin/card-owners")
@@ -2078,16 +2123,23 @@ def get_site(site_id: int, _sess: dict = Depends(require_admin)) -> dict[str, An
         if not site:
             raise HTTPException(status_code=404, detail="site not found")
         creds = conn.execute(
-            "SELECT id, label, username, password, last_used_at, created_at "
-            "FROM credentials WHERE site_id = ? ORDER BY created_at DESC",
+            "SELECT c.*, co.name AS card_owner_name "
+            "FROM credentials c LEFT JOIN card_owners co ON co.id = c.card_owner_id "
+            "WHERE c.site_id = ? ORDER BY c.created_at DESC",
             (site_id,),
         ).fetchall()
     site_dict = dict(site)
     if "cancelled" in site_dict and site_dict["cancelled"] is not None:
         site_dict["cancelled"] = bool(site_dict["cancelled"])
+    cred_list = []
+    for c in creds:
+        cd = dict(c)
+        if "cancelled" in cd and cd["cancelled"] is not None:
+            cd["cancelled"] = bool(cd["cancelled"])
+        cred_list.append(cd)
     return {
         "site": site_dict,
-        "credentials": [dict(c) for c in creds],
+        "credentials": cred_list,
     }
 
 
@@ -2156,7 +2208,7 @@ def update_credential(
     payload: CredentialPatchIn,
     _sess: dict = Depends(require_admin),
 ) -> dict[str, Any]:
-    """แก้ไข label / username / password ของ credential"""
+    """แก้ไข label / username / password / billing fields ของ credential"""
     updates: dict[str, Any] = {}
     if payload.label is not None:
         v = payload.label.strip()
@@ -2165,6 +2217,29 @@ def update_credential(
         updates["username"] = payload.username.strip()
     if payload.password is not None:
         updates["password"] = payload.password
+    # billing/lifecycle (v1.10)
+    if payload.renew_day is not None:
+        updates["renew_day"] = payload.renew_day
+    if payload.card_owner is not None:
+        updates["card_owner_id"] = _resolve_card_owner_id(payload.card_owner) if payload.card_owner else None
+    if payload.cancelled is not None:
+        updates["cancelled"] = 1 if payload.cancelled else 0
+    if payload.cancelled_at is not None:
+        updates["cancelled_at"] = payload.cancelled_at or None
+    if payload.payment_type is not None:
+        updates["payment_type"] = payload.payment_type or None
+    if payload.usage_reason is not None:
+        updates["usage_reason"] = payload.usage_reason or None
+    if payload.billing_cycle is not None:
+        updates["billing_cycle"] = payload.billing_cycle or None
+    if payload.cost_amount is not None:
+        updates["cost_amount"] = payload.cost_amount
+    if payload.cost_currency is not None:
+        updates["cost_currency"] = payload.cost_currency or None
+    if payload.start_date is not None:
+        updates["start_date"] = payload.start_date or None
+    if payload.end_date is not None:
+        updates["end_date"] = payload.end_date or None
     if not updates:
         raise HTTPException(status_code=400, detail="ไม่มีอะไรให้บันทึก")
     set_clause = ", ".join(f"{k} = ?" for k in updates)
@@ -2182,14 +2257,25 @@ def add_credential(
     payload: CredentialIn,
     _sess: dict = Depends(require_admin),
 ) -> dict[str, Any]:
+    card_owner_id = _resolve_card_owner_id(payload.card_owner) if payload.card_owner else None
+    cancelled_int = 1 if payload.cancelled else 0
     with db_conn() as conn:
         site = conn.execute("SELECT 1 FROM sites WHERE id = ?", (site_id,)).fetchone()
         if not site:
             raise HTTPException(status_code=404, detail="site not found")
         cur = conn.execute(
-            "INSERT INTO credentials(site_id, label, username, password, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (site_id, payload.label, payload.username, payload.password, utc_now().isoformat()),
+            "INSERT INTO credentials("
+            "  site_id, label, username, password, created_at,"
+            "  renew_day, card_owner_id, cancelled, cancelled_at, payment_type, usage_reason,"
+            "  billing_cycle, cost_amount, cost_currency, start_date, end_date"
+            ") VALUES (?, ?, ?, ?, ?,  ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?)",
+            (
+                site_id, payload.label, payload.username, payload.password, utc_now().isoformat(),
+                payload.renew_day, card_owner_id, cancelled_int, payload.cancelled_at,
+                payload.payment_type, payload.usage_reason,
+                payload.billing_cycle or None, payload.cost_amount, payload.cost_currency,
+                payload.start_date, payload.end_date,
+            ),
         )
         new_id = cur.lastrowid
     return {"ok": True, "id": new_id}
