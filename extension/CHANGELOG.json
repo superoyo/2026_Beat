@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.7.0",
+      "date": "2026-04-27",
+      "title": "Per-account credit tracking",
+      "summary": "เก็บ email ของบัญชี Freepik พร้อมเครดิต — แยกแสดงแต่ละบัญชีใน Dashboard",
+      "changes": [
+        "Extension scrape profile email (data-cy=\"user-avatar\" → sibling <p>)",
+        "Backend snapshots.profile_email column",
+        "Dashboard มี section \"เครดิตแต่ละบัญชี\" แสดง card ต่อ account",
+        "Auto-link กับ credentials.username ถ้าตรงกัน"
+      ]
+    },
+    {
       "version": "1.6.0",
       "date": "2026-04-27",
       "title": "Team-based access control",

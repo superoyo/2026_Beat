@@ -323,6 +323,13 @@
       </div>
 
       <section class="panel">
+        <h2>เครดิตแต่ละบัญชี</h2>
+        <div id="accounts-grid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));gap:14px">
+          <div class="empty" style="grid-column:1/-1">กำลังโหลด…</div>
+        </div>
+      </section>
+
+      <section class="panel">
         <h2>การใช้งานรายวัน (30 วันล่าสุด)</h2>
         <div class="chart-wrap"><canvas id="usage-chart"></canvas></div>
       </section>
@@ -633,12 +640,47 @@ async function saveConfig() {
   }
 }
 
+function renderAccountsGrid(data) {
+  const grid = document.getElementById('accounts-grid');
+  if (!grid) return;
+  const accounts = data.accounts || [];
+  if (accounts.length === 0) {
+    grid.innerHTML = '<div class="empty" style="grid-column:1/-1">ยังไม่มีข้อมูลแต่ละบัญชี — extension ต้องเก็บ snapshot จากหน้า Freepik (login เข้า + เปิด profile dropdown)</div>';
+    return;
+  }
+  grid.innerHTML = accounts.map(a => {
+    const display = a.profile_name || a.profile_email || a.account_key || '(unknown)';
+    const initial = (display || '?').trim().charAt(0).toUpperCase();
+    const credBadge = a.credential_label
+      ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:600;background:rgba(16,185,129,.12);color:var(--ok)">✓ linked: ${escapeHtml(a.credential_label)}</span>`
+      : `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:10.5px;background:var(--bg-soft);color:var(--text-muted)">unlinked</span>`;
+    const emailLine = a.profile_email
+      ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;font-family:ui-monospace,Menlo,monospace;word-break:break-all">${escapeHtml(a.profile_email)}</div>`
+      : '';
+    return `
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:var(--shadow-sm)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <span style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:14px;display:inline-flex;align-items:center;justify-content:center">${escapeHtml(initial)}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(display)}</div>
+            ${emailLine}
+          </div>
+        </div>
+        <div style="font-size:26px;font-weight:700;letter-spacing:-0.02em;line-height:1.1;margin-bottom:4px">${fmtInt(a.balance)}</div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:10px">เครดิตคงเหลือ · เห็นล่าสุด ${fmtRelative(a.last_seen)}</div>
+        ${credBadge}
+      </div>
+    `;
+  }).join('');
+}
+
 async function refresh() {
   try {
-    const [summary, history, snaps] = await Promise.all([
+    const [summary, history, snaps, accounts] = await Promise.all([
       fetchJson('/api/summary'),
       fetchJson('/api/history?days=30'),
       fetchJson('/api/snapshots?limit=20'),
+      fetchJson('/api/credits-by-account'),
     ]);
     if (summary.current_balance == null) {
       renderEmpty();
@@ -646,6 +688,7 @@ async function refresh() {
     }
     renderMain();
     renderSummary(summary);
+    renderAccountsGrid(accounts);
     renderChart(history, summary);
     renderSnapshots(snaps);
   } catch (err) {

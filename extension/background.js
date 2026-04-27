@@ -103,7 +103,7 @@ async function drainQueue() {
 
 /**
  * Handle a fresh snapshot from content.js.
- * @param {{balance:number, sourceUrl:string, profileName?:string}} msg
+ * @param {{balance:number, sourceUrl:string, profileName?:string, profileEmail?:string}} msg
  */
 async function handleSnapshot(msg) {
   const payload = {
@@ -111,6 +111,7 @@ async function handleSnapshot(msg) {
     source_url: msg.sourceUrl || '',
     timestamp: new Date().toISOString(),
     profile_name: msg.profileName || null,
+    profile_email: msg.profileEmail || null,
   };
 
   // Update popup-cached values immediately so the user sees fresh data

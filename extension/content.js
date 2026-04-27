@@ -9,7 +9,7 @@
 //   - English for technical / library code
 
 const TAG = '[FCT]';
-const SCRIPT_VERSION = 'v13-team-filter';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
+const SCRIPT_VERSION = 'v14-profile-email';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
 
 // Hostname ที่ extension จะทำหน้าที่ scrape credit (mode A)
 // เว็บอื่นที่ user เพิ่มใน admin จะได้แค่ prefill (mode B) — ไม่ scrape credit
@@ -309,11 +309,43 @@ function findProfileName() {
 }
 
 /**
+ * Scrape email ของ profile ที่ login อยู่ (แยกจาก display name)
+ * — ใช้ link credit balance กับ credential ใน DB
+ */
+function findProfileEmail() {
+  // 1) anchor ที่ user-avatar — เดินขึ้นหา container ที่มี <p> sibling
+  const avatar = document.querySelector('[data-cy="user-avatar"]');
+  if (avatar) {
+    let cur = avatar;
+    for (let i = 0; i < 6; i++) {
+      if (!cur.parentElement) break;
+      cur = cur.parentElement;
+      const ps = cur.querySelectorAll('p');
+      for (const p of ps) {
+        const t = (p.textContent || '').trim();
+        if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t)) return t.toLowerCase();
+      }
+      if (ps.length >= 2) break;  // เจอ profile block แล้วไม่เจอ email — ไม่มีจริงๆ
+    }
+  }
+  // 2) fallback — element ใดก็ได้ที่มีข้อความเป็น email
+  const all = document.querySelectorAll('p, span, div');
+  for (const el of all) {
+    if (el.children.length > 0) continue;
+    const t = (el.textContent || '').trim();
+    if (t.length > 80) continue;
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t)) return t.toLowerCase();
+  }
+  return null;
+}
+
+/**
  * Send a snapshot to the background worker (which forwards to the backend).
  * @param {number} balance
  * @param {string|null} profileName
+ * @param {string|null} profileEmail
  */
-function reportBalance(balance, profileName) {
+function reportBalance(balance, profileName, profileEmail) {
   const now = Date.now();
   const isSameAsLast = balance === lastReportedBalance;
   const sinceLast = now - lastReportedAt;
@@ -328,8 +360,11 @@ function reportBalance(balance, profileName) {
       balance,
       sourceUrl: location.href,
       profileName: profileName || null,
+      profileEmail: profileEmail || null,
     });
-    console.debug(TAG, 'reported balance:', balance, '| profile:', profileName || '(none)');
+    console.debug(TAG, 'reported balance:', balance,
+      '| profile:', profileName || '(none)',
+      '| email:', profileEmail || '(none)');
   } catch (e) {
     // service worker อาจถูก suspend — อันนี้เป็นเรื่องปกติของ MV3
     console.debug(TAG, 'sendMessage failed (worker asleep?):', e);
@@ -342,9 +377,10 @@ function scheduleScan() {
     scanTimer = null;
     const balance = await findBalance();
     if (balance != null) {
-      // เก็บ profile name พร้อมกัน — มักอยู่ใน dropdown เดียวกับเครดิต
+      // เก็บ profile name + email พร้อมกัน — มักอยู่ใน dropdown เดียวกับเครดิต
       const profileName = findProfileName();
-      reportBalance(balance, profileName);
+      const profileEmail = findProfileEmail();
+      reportBalance(balance, profileName, profileEmail);
     }
   }, SCAN_DEBOUNCE_MS);
 }

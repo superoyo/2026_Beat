@@ -229,9 +229,10 @@ def init_db() -> None:
             row["name"] for row in conn.execute("PRAGMA table_info(snapshots)").fetchall()
         }
         for col_name, col_def in [
-            ("profile_name", "TEXT"),
-            ("host_name",    "TEXT"),
-            ("host_ip",      "TEXT"),
+            ("profile_name",  "TEXT"),
+            ("profile_email", "TEXT"),
+            ("host_name",     "TEXT"),
+            ("host_ip",       "TEXT"),
         ]:
             if col_name not in existing_cols:
                 conn.execute(f"ALTER TABLE snapshots ADD COLUMN {col_name} {col_def}")
@@ -612,6 +613,7 @@ class SnapshotIn(BaseModel):
     timestamp: Optional[str] = None
     user_agent: Optional[str] = None
     profile_name: Optional[str] = None
+    profile_email: Optional[str] = None
 
     @field_validator("balance")
     @classmethod
@@ -743,19 +745,21 @@ def post_snapshot(
     user_agent = snapshot.user_agent or request.headers.get("user-agent", "")
 
     profile_name = (snapshot.profile_name or "").strip() or None
+    profile_email = (snapshot.profile_email or "").strip().lower() or None
 
     # host info — backend รันในเครื่อง user เอง ดังนั้น autofill ได้เลย
     with db_conn() as conn:
         cur = conn.execute(
             "INSERT INTO snapshots"
-            "(timestamp, balance, source_url, user_agent, profile_name, host_name, host_ip) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "(timestamp, balance, source_url, user_agent, profile_name, profile_email, host_name, host_ip) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 ts_iso,
                 float(snapshot.balance),
                 snapshot.source_url,
                 user_agent,
                 profile_name,
+                profile_email,
                 HOST_NAME,
                 HOST_IP,
             ),
@@ -943,6 +947,70 @@ def get_summary(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
         "alert_level": alert_level,
         "last_snapshot_at": last_snapshot_at,
         "profile_name": profile_name,
+    }
+
+
+@app.get("/api/credits-by-account")
+def credits_by_account(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
+    """แสดงเครดิตล่าสุดของแต่ละบัญชี — group ด้วย profile_email > profile_name.
+
+    พยายาม match กับ credentials.username เพื่อโชว์ label/credential_id
+    """
+    cycle_day = int(get_config().get("billing_cycle_day", DEFAULT_CONFIG["billing_cycle_day"]))
+    cycle_start, _ = billing_cycle_window(utc_now(), cycle_day)
+    cutoff = (utc_now() - timedelta(days=30)).isoformat()  # ดูย้อนหลัง 30 วัน
+
+    # latest snapshot ของแต่ละ "account key" (email > name)
+    sql = """
+        WITH ranked AS (
+            SELECT s.*,
+                COALESCE(LOWER(profile_email), profile_name) AS account_key,
+                ROW_NUMBER() OVER (
+                    PARTITION BY COALESCE(LOWER(profile_email), profile_name)
+                    ORDER BY timestamp DESC
+                ) AS rn
+            FROM snapshots s
+            WHERE timestamp >= ?
+              AND (profile_email IS NOT NULL OR profile_name IS NOT NULL)
+        )
+        SELECT account_key, profile_name, profile_email, balance, timestamp,
+               source_url, host_name
+        FROM ranked WHERE rn = 1
+        ORDER BY balance ASC
+    """
+    with db_conn() as conn:
+        rows = conn.execute(sql, (cutoff,)).fetchall()
+        creds = conn.execute(
+            "SELECT id, label, username, site_id FROM credentials"
+        ).fetchall()
+    cred_by_username = {(c["username"] or "").lower(): dict(c) for c in creds if c["username"]}
+
+    accounts = []
+    for r in rows:
+        match = None
+        # Try email first
+        if r["profile_email"]:
+            match = cred_by_username.get((r["profile_email"] or "").lower())
+        # Fallback: profile_name อาจเป็น email format (ในระบบบางที่)
+        if not match and r["profile_name"] and "@" in r["profile_name"]:
+            match = cred_by_username.get(r["profile_name"].lower())
+        accounts.append({
+            "account_key": r["account_key"],
+            "profile_name": r["profile_name"],
+            "profile_email": r["profile_email"],
+            "balance": r["balance"],
+            "last_seen": r["timestamp"],
+            "source_url": r["source_url"],
+            "host_name": r["host_name"],
+            "credential_id": match["id"] if match else None,
+            "credential_label": match["label"] if match else None,
+            "credential_username": match["username"] if match else None,
+        })
+
+    return {
+        "accounts": accounts,
+        "count": len(accounts),
+        "cycle_start": cycle_start.date().isoformat(),
     }
 
 
