@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.8.1",
+      "date": "2026-04-27",
+      "title": "Hide prefill widget when no access",
+      "summary": "Extension ซ่อน prefill widget ทันทีถ้า user ไม่มีสิทธิ์เข้า site นั้น (สอดคล้องกับ Platforms strict opt-in)",
+      "changes": [
+        "content.js: ถ้า /api/extension/match คืน credentials=[] → ซ่อน widget แทนที่จะโชว์ trigger ว่าง",
+        "ทำให้ behavior สอดคล้องกัน — site ที่ไม่ผูกทีม + member-paired = ไม่มี autofill จริงๆ"
+      ]
+    },
+    {
       "version": "1.8.0",
       "date": "2026-04-27",
       "title": "K/M suffix + Spent tracking",

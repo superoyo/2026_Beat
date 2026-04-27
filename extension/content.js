@@ -9,7 +9,7 @@
 //   - English for technical / library code
 
 const TAG = '[FCT]';
-const SCRIPT_VERSION = 'v15-spent';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
+const SCRIPT_VERSION = 'v16-strict-prefill';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
 
 // Hostname ที่ extension จะทำหน้าที่ scrape credit (mode A)
 // เว็บอื่นที่ user เพิ่มใน admin จะได้แค่ prefill (mode B) — ไม่ scrape credit
@@ -608,6 +608,14 @@ async function checkPrefill() {
     }
 
     prefillCreds = data.credentials || [];
+    // ถ้าไม่มี credential (ผู้ใช้ไม่มีสิทธิ์ผ่าน team) → ซ่อน widget เลย
+    // ไม่ควรโชว์ trigger ที่กดแล้วบอก "ไม่มี credential" เพราะจะทำให้ดูเหมือนสิทธิ์ผ่าน
+    if (prefillCreds.length === 0) {
+      if (prefillWidget) prefillWidget.style.display = 'none';
+      console.debug(TAG, 'prefill: no credentials granted for', data.site.name, '— widget hidden');
+      return;
+    }
+
     buildPrefillWidget();
     prefillWidget.style.display = '';
     renderPrefillList(data.site.name);
