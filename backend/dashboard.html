@@ -309,20 +309,6 @@
     </div>
 
     <div id="main-view">
-      <div class="grid-cards" id="cards">
-        <div class="card">
-          <div class="card-label">เครดิตคงเหลือ</div>
-          <div class="card-value" id="card-balance">—</div>
-          <div class="card-sub" id="card-balance-sub">ยังไม่มีข้อมูล</div>
-          <div class="progress"><div id="balance-progress" style="width:0%"></div></div>
-        </div>
-        <div class="card">
-          <div class="card-label">อัตราใช้งาน (7 วัน)</div>
-          <div class="card-value" id="card-burn">—</div>
-          <div class="card-sub">เครดิต / วัน เฉลี่ย 7 วัน</div>
-        </div>
-      </div>
-
       <section class="panel">
         <h2>เครดิตแต่ละบัญชี (จัดกลุ่มตามเว็บ)</h2>
         <div id="accounts-by-site">
@@ -472,15 +458,7 @@ function renderSummary(s) {
     profileLine.style.display = 'none';
   }
 
-  document.getElementById('card-balance').textContent = fmtInt(s.current_balance);
-  const usedTxt = s.credits_used_this_cycle != null
-    ? `ใช้ไปแล้ว ${fmtInt(s.credits_used_this_cycle)} / ${fmtInt(s.monthly_quota)} (${fmtNum(s.usage_percent)}%)`
-    : '—';
-  document.getElementById('card-balance-sub').textContent = usedTxt;
-  const pct = Math.max(0, Math.min(100, s.usage_percent || 0));
-  document.getElementById('balance-progress').style.width = pct + '%';
-
-  document.getElementById('card-burn').textContent = fmtInt(s.burn_rate_7day);
+  // (cards "เครดิตคงเหลือ" และ "อัตราใช้งาน" ถูกลบไปแล้ว — ดู accounts grid ด้านล่างแทน)
 
   const dot = document.querySelector('#status-pill .dot');
   dot.className = 'dot ' + dotClass(s.alert_level);
