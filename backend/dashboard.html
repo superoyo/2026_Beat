@@ -657,6 +657,19 @@ function renderAccountsGrid(data) {
     const emailLine = a.profile_email
       ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;font-family:ui-monospace,Menlo,monospace;word-break:break-all">${escapeHtml(a.profile_email)}</div>`
       : '';
+    const hasSpent = (a.credits_spent != null);
+    const spentBlock = hasSpent
+      ? `<div style="display:flex;gap:12px;margin-bottom:10px;padding:8px 10px;background:var(--bg-soft);border-radius:8px">
+           <div style="flex:1">
+             <div style="font-size:10.5px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em">Spent</div>
+             <div style="font-size:14px;font-weight:600;color:#dc2626">${fmtInt(a.credits_spent)}</div>
+           </div>
+           <div style="flex:1">
+             <div style="font-size:10.5px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em">Quota</div>
+             <div style="font-size:14px;font-weight:600">${a.estimated_quota != null ? fmtInt(a.estimated_quota) : '—'}</div>
+           </div>
+         </div>`
+      : '';
     return `
       <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:var(--shadow-sm)">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
@@ -667,7 +680,8 @@ function renderAccountsGrid(data) {
           </div>
         </div>
         <div style="font-size:26px;font-weight:700;letter-spacing:-0.02em;line-height:1.1;margin-bottom:4px">${fmtInt(a.balance)}</div>
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:10px">เครดิตคงเหลือ · เห็นล่าสุด ${fmtRelative(a.last_seen)}</div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:10px">Available · เห็นล่าสุด ${fmtRelative(a.last_seen)}</div>
+        ${spentBlock}
         ${credBadge}
       </div>
     `;

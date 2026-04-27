@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.8.0",
+      "date": "2026-04-27",
+      "title": "K/M suffix + Spent tracking",
+      "summary": "รองรับเลข K/M (เช่น 690K = 690,000) + เก็บค่า Spent คู่กับ Available — Dashboard แสดง Quota รวม",
+      "changes": [
+        "Extension parseNumberFromText: รองรับ suffix K (×1,000) และ M (×1,000,000)",
+        "Extension scrape [data-cy=\"credits-spent\"] + fallback regex \"Spent X\"",
+        "Backend snapshots.credits_spent column + SnapshotIn field",
+        "Dashboard per-account cards แสดง Available + Spent + Quota (= Available + Spent)"
+      ]
+    },
+    {
       "version": "1.7.0",
       "date": "2026-04-27",
       "title": "Per-account credit tracking",

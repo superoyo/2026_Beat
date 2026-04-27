@@ -9,7 +9,7 @@
 //   - English for technical / library code
 
 const TAG = '[FCT]';
-const SCRIPT_VERSION = 'v14-profile-email';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
+const SCRIPT_VERSION = 'v15-spent';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
 
 // Hostname ที่ extension จะทำหน้าที่ scrape credit (mode A)
 // เว็บอื่นที่ user เพิ่มใน admin จะได้แค่ prefill (mode B) — ไม่ scrape credit
@@ -58,20 +58,31 @@ let lastReportedAt = 0;
 let scanTimer = null;
 
 /**
- * Parse a string like "5,900", "5.900", "5 900 credits left" → 5900.
- * Returns null if no plausible number was found.
+ * Parse a string like "5,900", "5.900", "690K", "1.5K", "2M" → number.
+ * - K suffix → ×1000, M suffix → ×1,000,000
+ * - มี K/M → จุดถือเป็น decimal (1.5K = 1500)
+ * - ไม่มี K/M → จุดถือเป็น thousands separator แบบไทย/EU (5.900 = 5900)
  * @param {string} text
  * @returns {number|null}
  */
 function parseNumberFromText(text) {
   if (!text) return null;
-  // จับเฉพาะกลุ่มตัวเลข เว้นวรรค จุด หรือคอมม่า — รองรับฟอร์แมตไทย/EU/US
-  const match = text.match(/(\d[\d.,\s]*\d|\d)/);
+  const match = text.match(/([\d,.\s]+)\s*([KkMm])?/);
   if (!match) return null;
-  const cleaned = match[1].replace(/[\s,.]/g, '');
-  const n = parseInt(cleaned, 10);
+  const suffix = (match[2] || '').toLowerCase();
+  let raw = match[1].replace(/[\s,]/g, '');  // ตัด space + comma
+  let n;
+  if (suffix === 'k' || suffix === 'm') {
+    // มี suffix → จุดเป็น decimal
+    n = parseFloat(raw);
+  } else {
+    // ไม่มี suffix → จุดเป็น thousands separator (Thai/EU) — ตัดออก
+    n = parseInt(raw.replace(/\./g, ''), 10);
+  }
   if (!Number.isFinite(n)) return null;
-  return n;
+  if (suffix === 'k') n *= 1000;
+  else if (suffix === 'm') n *= 1_000_000;
+  return Math.round(n);
 }
 
 /**
@@ -309,6 +320,36 @@ function findProfileName() {
 }
 
 /**
+ * Scrape "credits spent" จาก profile dropdown — Freepik แสดงเป็น "Spent 690K"
+ * อยู่ใน element data-cy="credits-spent"
+ * @returns {number|null}
+ */
+function findCreditsSpent() {
+  // Known-good selector ก่อน
+  const direct = document.querySelector('[data-cy="credits-spent"]');
+  if (direct) {
+    const n = parseNumberFromText(direct.textContent || '');
+    if (n != null && n >= 0 && n <= 100_000_000) return n;
+  }
+  // Fallback: หา element ที่มีข้อความ "Spent X..." ใกล้กับ credits-limit
+  const limit = document.querySelector('[data-cy="credits-limit"]');
+  if (limit) {
+    let cur = limit;
+    for (let i = 0; i < 5; i++) {
+      if (!cur.parentElement) break;
+      cur = cur.parentElement;
+      const txt = (cur.textContent || '');
+      const m = txt.match(/Spent\s+(\d[\d.,\s]*[KkMm]?)/i);
+      if (m) {
+        const n = parseNumberFromText(m[1]);
+        if (n != null) return n;
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Scrape email ของ profile ที่ login อยู่ (แยกจาก display name)
  * — ใช้ link credit balance กับ credential ใน DB
  */
@@ -344,8 +385,9 @@ function findProfileEmail() {
  * @param {number} balance
  * @param {string|null} profileName
  * @param {string|null} profileEmail
+ * @param {number|null} creditsSpent
  */
-function reportBalance(balance, profileName, profileEmail) {
+function reportBalance(balance, profileName, profileEmail, creditsSpent) {
   const now = Date.now();
   const isSameAsLast = balance === lastReportedBalance;
   const sinceLast = now - lastReportedAt;
@@ -361,8 +403,10 @@ function reportBalance(balance, profileName, profileEmail) {
       sourceUrl: location.href,
       profileName: profileName || null,
       profileEmail: profileEmail || null,
+      creditsSpent: (creditsSpent != null && Number.isFinite(creditsSpent)) ? creditsSpent : null,
     });
     console.debug(TAG, 'reported balance:', balance,
+      '| spent:', creditsSpent != null ? creditsSpent : '(none)',
       '| profile:', profileName || '(none)',
       '| email:', profileEmail || '(none)');
   } catch (e) {
@@ -377,10 +421,11 @@ function scheduleScan() {
     scanTimer = null;
     const balance = await findBalance();
     if (balance != null) {
-      // เก็บ profile name + email พร้อมกัน — มักอยู่ใน dropdown เดียวกับเครดิต
+      // เก็บ profile name + email + spent พร้อมกัน — มักอยู่ใน dropdown เดียวกับเครดิต
       const profileName = findProfileName();
       const profileEmail = findProfileEmail();
-      reportBalance(balance, profileName, profileEmail);
+      const creditsSpent = findCreditsSpent();
+      reportBalance(balance, profileName, profileEmail, creditsSpent);
     }
   }, SCAN_DEBOUNCE_MS);
 }

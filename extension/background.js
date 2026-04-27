@@ -103,7 +103,7 @@ async function drainQueue() {
 
 /**
  * Handle a fresh snapshot from content.js.
- * @param {{balance:number, sourceUrl:string, profileName?:string, profileEmail?:string}} msg
+ * @param {{balance:number, sourceUrl:string, profileName?:string, profileEmail?:string, creditsSpent?:number}} msg
  */
 async function handleSnapshot(msg) {
   const payload = {
@@ -112,6 +112,7 @@ async function handleSnapshot(msg) {
     timestamp: new Date().toISOString(),
     profile_name: msg.profileName || null,
     profile_email: msg.profileEmail || null,
+    credits_spent: (typeof msg.creditsSpent === 'number') ? msg.creditsSpent : null,
   };
 
   // Update popup-cached values immediately so the user sees fresh data
@@ -120,6 +121,7 @@ async function handleSnapshot(msg) {
     [LAST_KEY]: msg.balance,
     [LAST_AT_KEY]: payload.timestamp,
     last_profile_name: msg.profileName || null,
+    last_credits_spent: payload.credits_spent,
   });
 
   // ลองยิง snapshot ใหม่ก่อน — ถ้าผ่าน จะ drain คิวเก่าด้วย

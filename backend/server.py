@@ -240,6 +240,7 @@ def init_db() -> None:
             ("profile_email", "TEXT"),
             ("host_name",     "TEXT"),
             ("host_ip",       "TEXT"),
+            ("credits_spent", "REAL"),   # v1.8.0 — Spent value (จะมาคู่กับ balance)
         ]:
             if col_name not in existing_cols:
                 conn.execute(f"ALTER TABLE snapshots ADD COLUMN {col_name} {col_def}")
@@ -636,12 +637,22 @@ class SnapshotIn(BaseModel):
     user_agent: Optional[str] = None
     profile_name: Optional[str] = None
     profile_email: Optional[str] = None
+    credits_spent: Optional[float] = Field(None, ge=0)
 
     @field_validator("balance")
     @classmethod
     def _finite(cls, v: float) -> float:
         if v != v or v in (float("inf"), float("-inf")):
             raise ValueError("balance must be finite")
+        return v
+
+    @field_validator("credits_spent")
+    @classmethod
+    def _finite_spent(cls, v: Optional[float]) -> Optional[float]:
+        if v is None:
+            return None
+        if v != v or v in (float("inf"), float("-inf")):
+            raise ValueError("credits_spent must be finite")
         return v
 
 
@@ -769,12 +780,18 @@ def post_snapshot(
     profile_name = (snapshot.profile_name or "").strip() or None
     profile_email = (snapshot.profile_email or "").strip().lower() or None
 
+    credits_spent = (
+        float(snapshot.credits_spent)
+        if snapshot.credits_spent is not None
+        else None
+    )
+
     # host info — backend รันในเครื่อง user เอง ดังนั้น autofill ได้เลย
     with db_conn() as conn:
         cur = conn.execute(
             "INSERT INTO snapshots"
-            "(timestamp, balance, source_url, user_agent, profile_name, profile_email, host_name, host_ip) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "(timestamp, balance, source_url, user_agent, profile_name, profile_email, host_name, host_ip, credits_spent) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 ts_iso,
                 float(snapshot.balance),
@@ -784,6 +801,7 @@ def post_snapshot(
                 profile_email,
                 HOST_NAME,
                 HOST_IP,
+                credits_spent,
             ),
         )
         new_id = cur.lastrowid
@@ -996,7 +1014,7 @@ def credits_by_account(_auth: str = Depends(require_any_auth)) -> dict[str, Any]
               AND (profile_email IS NOT NULL OR profile_name IS NOT NULL)
         )
         SELECT account_key, profile_name, profile_email, balance, timestamp,
-               source_url, host_name
+               source_url, host_name, credits_spent
         FROM ranked WHERE rn = 1
         ORDER BY balance ASC
     """
@@ -1016,11 +1034,22 @@ def credits_by_account(_auth: str = Depends(require_any_auth)) -> dict[str, Any]
         # Fallback: profile_name อาจเป็น email format (ในระบบบางที่)
         if not match and r["profile_name"] and "@" in r["profile_name"]:
             match = cred_by_username.get(r["profile_name"].lower())
+        spent = r["credits_spent"]
+        bal = r["balance"]
+        # estimated_quota = balance + spent (ถ้า spent มี)
+        est_quota = None
+        if spent is not None and bal is not None:
+            try:
+                est_quota = float(bal) + float(spent)
+            except (TypeError, ValueError):
+                est_quota = None
         accounts.append({
             "account_key": r["account_key"],
             "profile_name": r["profile_name"],
             "profile_email": r["profile_email"],
-            "balance": r["balance"],
+            "balance": bal,
+            "credits_spent": spent,
+            "estimated_quota": est_quota,
             "last_seen": r["timestamp"],
             "source_url": r["source_url"],
             "host_name": r["host_name"],
