@@ -348,9 +348,9 @@
         }
         const data = await res.json();
         addProfile({ token: data.token, role: data.role, label: data.label });
-        const target = data.role === 'admin' ? '/admin' : '/';
-        showOk(`เข้าสู่ระบบสำเร็จ (${data.role}) — กำลังพาไป…`);
-        setTimeout(() => location.replace(target), 600);
+        // ทั้ง admin และ member → เข้าระบบหลังบ้านเลย (default route = dashboard)
+        showOk(`เข้าสู่ระบบสำเร็จ (${data.role}) — กำลังพาไประบบหลังบ้าน…`);
+        setTimeout(() => location.replace('/admin'), 600);
       } catch (e) {
         showErr(e.message);
       } finally {
@@ -445,9 +445,9 @@
         addProfile({ token: data.token, role: 'member', label: data.label || data.phone });
         showOk(data.is_new
           ? 'ลงทะเบียนสำเร็จ — กำลังพาไปหน้าโปรไฟล์เพื่อตั้งรหัสผ่าน…'
-          : 'เข้าสู่ระบบสำเร็จ — กำลังพาไปหน้าแรก…');
-        // member ใหม่ → หน้า "บัญชีของฉัน" ใน admin SPA
-        setTimeout(() => location.replace(data.is_new ? '/admin#/account' : '/'), 800);
+          : 'เข้าสู่ระบบสำเร็จ — กำลังพาเข้าระบบหลังบ้าน…');
+        // member ใหม่ → หน้า "บัญชีของฉัน" / member เดิม → dashboard ในระบบหลังบ้าน
+        setTimeout(() => location.replace(data.is_new ? '/admin#/account' : '/admin'), 800);
       } catch (e) {
         console.error(e);
         showErr('OTP ไม่ถูกต้อง: ' + (e.message || e.code || 'unknown'));
