@@ -248,10 +248,11 @@ def init_db() -> None:
             row["name"] for row in conn.execute("PRAGMA table_info(members)").fetchall()
         }
         for col_name, col_def in [
-            ("email",   "TEXT"),
-            ("pw_hash", "TEXT"),
-            ("pw_salt", "TEXT"),
-            ("enabled", "INTEGER NOT NULL DEFAULT 1"),
+            ("email",    "TEXT"),
+            ("pw_hash",  "TEXT"),
+            ("pw_salt",  "TEXT"),
+            ("enabled",  "INTEGER NOT NULL DEFAULT 1"),
+            ("is_admin", "INTEGER NOT NULL DEFAULT 0"),
         ]:
             if col_name not in member_cols:
                 conn.execute(f"ALTER TABLE members ADD COLUMN {col_name} {col_def}")
@@ -346,10 +347,42 @@ def get_session(token: Optional[str]) -> Optional[dict[str, Any]]:
     return sess
 
 
-def require_admin(fct_session: Optional[str] = Cookie(default=None)) -> dict[str, Any]:
+def _member_is_admin(member_id: int) -> bool:
+    """ตรวจว่า member นี้ถูก promote เป็น admin หรือยัง"""
+    try:
+        with db_conn() as conn:
+            row = conn.execute(
+                "SELECT is_admin FROM members WHERE id = ?", (member_id,)
+            ).fetchone()
+        return bool(row and row["is_admin"])
+    except Exception:
+        return False
+
+
+def require_admin(
+    fct_session: Optional[str] = Cookie(default=None),
+    fct_member_session: Optional[str] = Cookie(default=None),
+) -> dict[str, Any]:
+    """ผ่านถ้าเป็น super admin (admin_users) หรือ member ที่มี is_admin=1"""
+    sess = get_session(fct_session)
+    if sess:
+        return {**sess, "role": "admin", "is_super": True}
+    msess = get_member_session(fct_member_session)
+    if msess and _member_is_admin(msess["member_id"]):
+        return {**msess, "role": "admin", "is_super": False}
+    raise HTTPException(status_code=401, detail="ต้องเป็น admin เท่านั้น")
+
+
+def require_super_admin(
+    fct_session: Optional[str] = Cookie(default=None),
+) -> dict[str, Any]:
+    """เฉพาะ super admin (admin_users) — ใช้กับ ops ที่กระทบ admin หลัก"""
     sess = get_session(fct_session)
     if not sess:
-        raise HTTPException(status_code=401, detail="not authenticated")
+        raise HTTPException(
+            status_code=403,
+            detail="ต้องเป็น super admin (เข้าด้วย username/password ของ admin หลัก) เท่านั้น",
+        )
     return sess
 
 
@@ -386,11 +419,15 @@ def update_extension_heartbeat() -> None:
 
 def require_admin_or_api_key(
     fct_session: Optional[str] = Cookie(default=None),
+    fct_member_session: Optional[str] = Cookie(default=None),
     x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
 ) -> str:
-    """ผ่านถ้า login admin อยู่ หรือส่ง X-API-Key ที่ตรงกับ config"""
+    """ผ่านถ้า admin หรือ admin-member หรือส่ง X-API-Key ที่ตรงกับ config"""
     if get_session(fct_session):
         return "session"
+    msess = get_member_session(fct_member_session)
+    if msess and _member_is_admin(msess["member_id"]):
+        return "admin_member"
     expected = get_extension_api_key()
     if expected and x_api_key and secrets.compare_digest(x_api_key, expected):
         update_extension_heartbeat()
@@ -1016,9 +1053,9 @@ def admin_login(payload: AdminLoginIn, response: Response) -> dict[str, Any]:
 @app.patch("/api/admin/credentials")
 def update_admin_credentials(
     payload: AdminCredentialsPatch,
-    sess: dict = Depends(require_admin),
+    sess: dict = Depends(require_super_admin),
 ) -> dict[str, Any]:
-    """เปลี่ยน username และ/หรือ password ของ admin ที่กำลัง login อยู่"""
+    """เปลี่ยน username และ/หรือ password ของ super admin (admin_users) เท่านั้น"""
     updates: dict[str, Any] = {}
     if payload.username is not None:
         updates["username"] = payload.username.strip()
@@ -1578,11 +1615,15 @@ class MemberAdminPatch(BaseModel):
     password: Optional[str] = Field(None, min_length=4, max_length=200)
 
 
+class MemberRolePatch(BaseModel):
+    is_admin: bool
+
+
 @app.get("/api/admin/members")
 def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
     with db_conn() as conn:
         rows = conn.execute(
-            "SELECT id, phone, email, display_name, enabled, "
+            "SELECT id, phone, email, display_name, enabled, is_admin, "
             "       (pw_hash IS NOT NULL) AS has_password, "
             "       created_at, last_login_at "
             "FROM members ORDER BY created_at DESC"
@@ -1595,6 +1636,7 @@ def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
                 "email": r["email"],
                 "display_name": r["display_name"],
                 "enabled": bool(r["enabled"]) if r["enabled"] is not None else True,
+                "is_admin": bool(r["is_admin"]) if r["is_admin"] is not None else False,
                 "has_password": bool(r["has_password"]),
                 "created_at": r["created_at"],
                 "last_login_at": r["last_login_at"],
@@ -1658,6 +1700,23 @@ def admin_update_member(
         n = _invalidate_member_sessions(member_id)
         return {"ok": True, "sessions_killed": n}
     return {"ok": True}
+
+
+@app.patch("/api/admin/members/{member_id}/admin")
+def admin_set_member_admin(
+    member_id: int,
+    payload: MemberRolePatch,
+    _sess: dict = Depends(require_super_admin),  # ⚠️ super only — กัน admin promote กันเอง
+) -> dict[str, Any]:
+    """Promote/demote member เป็น admin (เฉพาะ super admin ทำได้)"""
+    with db_conn() as conn:
+        cur = conn.execute(
+            "UPDATE members SET is_admin = ? WHERE id = ?",
+            (1 if payload.is_admin else 0, member_id),
+        )
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="ไม่พบ member")
+    return {"ok": True, "is_admin": payload.is_admin}
 
 
 @app.delete("/api/admin/members/{member_id}")
@@ -2048,12 +2107,18 @@ def _require_member_session(token: Optional[str]) -> dict[str, Any]:
 
 
 def _member_row_to_profile(row: sqlite3.Row) -> dict[str, Any]:
+    # is_admin อาจไม่มีใน row เก่า — fallback เป็น False
+    try:
+        is_admin = bool(row["is_admin"])
+    except (KeyError, IndexError):
+        is_admin = False
     return {
         "id": row["id"],
         "phone": row["phone"],
         "email": row["email"],
         "display_name": row["display_name"],
         "has_password": bool(row["pw_hash"]),
+        "is_admin": is_admin,
         "created_at": row["created_at"],
         "last_login_at": row["last_login_at"],
     }
@@ -2199,7 +2264,7 @@ def member_update_profile(
         with db_conn() as conn:
             conn.execute(f"UPDATE members SET {set_clause} WHERE id = ?", values)
             row = conn.execute(
-                "SELECT id, phone, email, display_name, pw_hash, created_at, last_login_at "
+                "SELECT id, phone, email, display_name, pw_hash, is_admin, created_at, last_login_at "
                 "FROM members WHERE id = ?",
                 (member_id,),
             ).fetchone()
@@ -2230,7 +2295,7 @@ def member_me(
         return {"logged_in": False}
     with db_conn() as conn:
         row = conn.execute(
-            "SELECT id, phone, email, display_name, pw_hash, created_at, last_login_at "
+            "SELECT id, phone, email, display_name, pw_hash, is_admin, created_at, last_login_at "
             "FROM members WHERE id = ?",
             (sess["member_id"],),
         ).fetchone()

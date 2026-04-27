@@ -1602,6 +1602,7 @@ async function loadMembersList() {
             <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">ชื่อ</th>
             <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">เบอร์มือถือ</th>
             <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">อีเมล</th>
+            <th style="text-align:center;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">บทบาท</th>
             <th style="text-align:center;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">รหัสผ่าน</th>
             <th style="text-align:center;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">สถานะ</th>
             <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">เข้าระบบล่าสุด</th>
@@ -1619,6 +1620,9 @@ async function loadMembersList() {
   const pwBadge = has => has
     ? '<span style="color:var(--green);font-weight:600">✓</span>'
     : '<span style="color:var(--text-muted)">—</span>';
+  const roleBadge = isAdmin => isAdmin
+    ? '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:linear-gradient(135deg, rgba(37,99,235,.15), rgba(124,58,237,.15));color:var(--primary-dark)">👑 Admin</span>'
+    : '<span style="color:var(--text-muted);font-size:12px">Member</span>';
 
   const tbody = $('m-tbody');
   tbody.innerHTML = members.map(m => `
@@ -1626,10 +1630,14 @@ async function loadMembersList() {
       <td style="padding:12px">${escapeHtml(m.display_name || '—')}</td>
       <td style="padding:12px;font-family:ui-monospace,Menlo,monospace">${escapeHtml(m.phone || '—')}</td>
       <td style="padding:12px">${escapeHtml(m.email || '—')}</td>
+      <td style="padding:12px;text-align:center">${roleBadge(m.is_admin)}</td>
       <td style="padding:12px;text-align:center">${pwBadge(m.has_password)}</td>
       <td style="padding:12px;text-align:center">${statusBadge(m.enabled)}</td>
       <td style="padding:12px;color:var(--text-muted);font-size:12px">${fmtMemberDate(m.last_login_at)}</td>
       <td style="padding:12px;text-align:right;white-space:nowrap">
+        ${currentIsSuper ? `
+          <button class="btn ${m.is_admin ? 'danger' : ''}" data-act="role" data-id="${m.id}" data-current="${m.is_admin ? 1 : 0}" data-name="${escapeHtml(m.display_name || m.email || m.phone)}" style="font-size:12px;padding:5px 10px;margin-right:4px" title="${m.is_admin ? 'ถอด admin' : 'แต่งตั้งเป็น admin'}">${m.is_admin ? '↓ Demote' : '↑ Make Admin'}</button>
+        ` : ''}
         <button class="btn" data-act="reset" data-id="${m.id}" data-name="${escapeHtml(m.display_name || m.email || m.phone)}" style="font-size:12px;padding:5px 10px">Reset PW</button>
         <button class="btn ${m.enabled ? 'danger' : ''}" data-act="toggle" data-id="${m.id}" data-enabled="${m.enabled ? 1 : 0}" style="font-size:12px;padding:5px 10px;margin-left:4px">${m.enabled ? 'Disable' : 'Enable'}</button>
         <button class="btn danger" data-act="delete" data-id="${m.id}" data-name="${escapeHtml(m.display_name || m.email || m.phone)}" style="font-size:12px;padding:5px 10px;margin-left:4px">ลบ</button>
@@ -1645,6 +1653,23 @@ async function loadMembersList() {
 async function handleMemberAction(btn) {
   const id = btn.dataset.id;
   const act = btn.dataset.act;
+
+  if (act === 'role') {
+    const isCurrentlyAdmin = btn.dataset.current === '1';
+    const name = btn.dataset.name;
+    const action = isCurrentlyAdmin ? 'ถอดสิทธิ์ admin จาก' : 'แต่งตั้ง admin ให้';
+    if (!confirm(`ยืนยัน${action} "${name}"?`)) return;
+    try {
+      await fetchJson(`/api/admin/members/${id}/admin`, {
+        method: 'PATCH',
+        body: JSON.stringify({ is_admin: !isCurrentlyAdmin }),
+      });
+      await loadMembersList();
+    } catch (e) {
+      alert('ทำรายการไม่สำเร็จ: ' + e.message);
+    }
+    return;
+  }
 
   if (act === 'reset') {
     const name = btn.dataset.name;
@@ -1712,10 +1737,10 @@ function showResetPasswordModal(memberId, memberName) {
 }
 
 async function renderAccountPage() {
-  if (currentRole === 'member') {
-    return renderMemberAccountPage();
-  }
-  return renderAdminAccountPage();
+  // super admin → admin form (เปลี่ยน super admin pw)
+  // admin-member หรือ member → member profile form (แก้ตัวเองได้ — name/email/password)
+  if (currentIsSuper) return renderAdminAccountPage();
+  return renderMemberAccountPage();
 }
 
 async function renderAdminAccountPage() {
@@ -2552,22 +2577,24 @@ function removeProfile(token) { saveProfiles(getProfiles().filter(p => p.token !
 
 let currentLabel = null;       // ชื่อ active profile
 let currentLogoutPath = null;  // /api/admin/logout หรือ /api/member/logout
+let currentIsSuper = false;    // true ถ้า super admin (admin_users), false ถ้า admin-member
 
 async function detectActiveSession() {
-  // ลอง admin ก่อน
+  // ลอง super admin ก่อน
   try {
     const a = await fetch('/api/admin/state', { credentials: 'same-origin' }).then(r => r.json());
     if (a.logged_in) {
-      return { role: 'admin', label: a.username, logoutPath: '/api/admin/logout' };
+      return { role: 'admin', label: a.username, logoutPath: '/api/admin/logout', isSuper: true };
     }
   } catch {}
-  // member
+  // member — เช็ค is_admin → upgrade เป็น admin
   try {
     const m = await fetch('/api/member/me', { credentials: 'same-origin' }).then(r => r.json());
     if (m.logged_in) {
       const md = m.member;
       const display = md.display_name || md.email || md.phone;
-      return { role: 'member', label: display, logoutPath: '/api/member/logout' };
+      const role = md.is_admin ? 'admin' : 'member';
+      return { role, label: display, logoutPath: '/api/member/logout', isSuper: false, memberId: md.id };
     }
   } catch {}
   return null;
@@ -2576,7 +2603,9 @@ async function detectActiveSession() {
 function renderProfileSwitcherFooter() {
   // current profile pill
   $('who').textContent = currentLabel || '—';
-  $('who-role').textContent = currentRole === 'admin' ? 'admin' : 'สมาชิก';
+  $('who-role').textContent = currentIsSuper
+    ? 'super admin'
+    : currentRole === 'admin' ? 'admin (member)' : 'สมาชิก';
   $('profile-avatar').textContent = (currentLabel || '?').trim().charAt(0).toUpperCase();
 
   // dropdown content
@@ -2686,6 +2715,7 @@ function attachSidebarHandlers() {
   currentRole = session.role;
   currentLabel = session.label;
   currentLogoutPath = session.logoutPath;
+  currentIsSuper = !!session.isSuper;
 
   // ซ่อน admin-only ทั้ง section + items ถ้าเป็น member
   if (currentRole === 'member') {
