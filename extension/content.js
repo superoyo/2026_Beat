@@ -9,7 +9,7 @@
 //   - English for technical / library code
 
 const TAG = '[FCT]';
-const SCRIPT_VERSION = 'v24-spa-nav-poll';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
+const SCRIPT_VERSION = 'v25-pending-on-both';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
 
 // Hostname ที่ extension จะทำหน้าที่ scrape credit (mode A)
 // เว็บอื่นที่ user เพิ่มใน admin จะได้แค่ prefill (mode B) — ไม่ scrape credit
@@ -932,13 +932,27 @@ async function checkPrefill() {
     prefillNoFormLogged = false;
     prefillFormInfo = formInfo;
 
-    // === SHORTCUT: password-only mode + มี pending → auto-fill เลย ไม่ต้องถาม ===
-    if (formInfo.mode === 'password-only') {
+    // === SHORTCUT: มี pending → auto-fill ทันที ไม่ต้องถาม ===
+    // รองรับทั้ง:
+    //  - password-only (Step 2 มีแค่ password — Auth0 บางเทมเพลต)
+    //  - both          (Step 2 แสดง email อ่านอย่างเดียว + password — เคส ChatGPT)
+    if (formInfo.mode === 'password-only' || formInfo.mode === 'both') {
       const pending = await getPendingCredential();
       if (pending) {
-        setReactInputValue(formInfo.pwInput, pending.password);
+        // Fill password เสมอ
+        if (formInfo.pwInput) {
+          setReactInputValue(formInfo.pwInput, pending.password);
+        }
+        // Fill username เฉพาะถ้าช่องว่าง — อย่า overwrite สิ่งที่ user/page ใส่ไว้แล้ว
+        // (ChatGPT แสดง email ของ Step 1 ในช่อง read-only — เราไม่ต้องกรอกซ้ำ)
+        if (formInfo.mode === 'both' && formInfo.userInput) {
+          const existing = (formInfo.userInput.value || '').trim();
+          if (!existing) {
+            setReactInputValue(formInfo.userInput, pending.username);
+          }
+        }
         await clearPendingCredential();
-        // log usage หลังกรอกครบ (ทั้ง user + password) — ตอน step 2 นี้คือกรอกจริง
+        // log usage หลังกรอกครบ
         try {
           let pairedUser = null;
           const r = await chrome.storage.sync.get(['pairedUser']);
@@ -954,12 +968,11 @@ async function checkPrefill() {
           }).catch(() => {});
         } catch {}
         if (prefillWidget) prefillWidget.style.display = 'none';
-        // แสดง toast confirmation ให้ user รู้ว่า auto-fill ทำงานแล้ว
         showAutoFillToast(`✓ FEFL Beat: กรอก password ของ ${pending.username || pending.label || 'account'} ให้แล้ว`);
-        console.debug(TAG, '🚀 auto-filled password from pending (account:', pending.username, ') — 2-step login complete');
+        console.debug(TAG, '🚀 auto-filled password from pending (mode=' + formInfo.mode + ', account:', pending.username, ')');
         return;
       }
-      console.debug(TAG, '🔑 password-only detected, no pending → will show widget for manual pick');
+      console.debug(TAG, formInfo.mode + ' detected, no pending → will show widget for manual pick');
       // ไม่มี pending → fall through to normal flow (โชว์ widget ให้เลือก)
     }
 

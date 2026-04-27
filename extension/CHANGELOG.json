@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.4",
+      "date": "2026-04-27",
+      "title": "Pending shortcut works on 'both' mode (ChatGPT fix)",
+      "summary": "Step 2 ของ ChatGPT แสดง email (read-only) + password — detect เป็น mode='both' ทำให้ pending shortcut ไม่ทำงาน",
+      "changes": [
+        "Pending shortcut รองรับทั้ง password-only และ both mode",
+        "เคส both: fill password เสมอ + fill username เฉพาะถ้าช่องว่าง (ไม่ overwrite ค่า read-only ของหน้าเว็บ)",
+        "Toast เด้งยืนยันบน both mode ด้วย"
+      ]
+    },
+    {
       "version": "1.9.3",
       "date": "2026-04-27",
       "title": "SPA navigation detection + extended pending TTL",
