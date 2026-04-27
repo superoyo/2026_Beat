@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.8.3",
+      "date": "2026-04-27",
+      "title": "Unpair + pairing status",
+      "summary": "เพิ่มปุ่ม Unpair, ปุ่มดูสถานะ pairing ปัจจุบัน + auto-check ตอนเปิดหน้า extension",
+      "changes": [
+        "Extension: handle FCT_UNPAIR + FCT_GET_PAIRING postMessage",
+        "Background: UNPAIR ลบ pairedUser ออกจาก chrome.storage (ไม่ลบ backendUrl/apiKey)",
+        "Admin extension page: ปุ่ม Unpair (สีแดง) + ปุ่ม Check pairing + กล่องสรุป role/member_id/device",
+        "Auto-check ตอนเปิดหน้า — เห็นทันทีว่า paired เป็น admin หรือ member"
+      ]
+    },
+    {
       "version": "1.8.2",
       "date": "2026-04-27",
       "title": "Access diagnostic for prefill",

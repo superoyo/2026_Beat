@@ -187,6 +187,37 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
+  // GET_PAIRING — admin page ขอเช็คว่าตอนนี้ paired กับใคร
+  if (msg.type === 'GET_PAIRING') {
+    (async () => {
+      try {
+        const r = await chrome.storage.sync.get(['pairedUser', 'backendUrl']);
+        sendResponse({
+          ok: true,
+          pairedUser: r.pairedUser || null,
+          backendUrl: r.backendUrl || null,
+        });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  // UNPAIR — ลบ pairedUser ออกจาก chrome.storage (ไม่ลบ backendUrl/apiKey)
+  if (msg.type === 'UNPAIR') {
+    (async () => {
+      try {
+        await chrome.storage.sync.remove(['pairedUser']);
+        console.debug(TAG, 'unpaired');
+        sendResponse({ ok: true });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
   // FORCE_PING — เรียก backend /api/extension/heartbeat ทันที (active probe)
   if (msg.type === 'FORCE_PING') {
     (async () => {

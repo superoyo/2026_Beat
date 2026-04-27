@@ -9,7 +9,7 @@
 //   - English for technical / library code
 
 const TAG = '[FCT]';
-const SCRIPT_VERSION = 'v17-access-diagnostic';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
+const SCRIPT_VERSION = 'v18-unpair';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
 
 // Hostname ที่ extension จะทำหน้าที่ scrape credit (mode A)
 // เว็บอื่นที่ user เพิ่มใน admin จะได้แค่ prefill (mode B) — ไม่ scrape credit
@@ -726,6 +726,53 @@ window.addEventListener('message', (event) => {
     } catch (e) {
       window.postMessage({
         type: 'FCT_PAIR_RESULT', requestId: reqId,
+        ok: false, error: e.message, version: SCRIPT_VERSION,
+      }, '*');
+    }
+    return;
+  }
+
+  // FCT_GET_PAIRING — admin page ขอเช็คว่า extension ตอนนี้ paired กับใคร
+  if (data.type === 'FCT_GET_PAIRING') {
+    const reqId = data.requestId;
+    try {
+      chrome.runtime.sendMessage({ type: 'GET_PAIRING' }, (reply) => {
+        const err = chrome.runtime.lastError ? chrome.runtime.lastError.message : null;
+        window.postMessage({
+          type: 'FCT_PAIRING_RESULT',
+          requestId: reqId,
+          ok: !!(reply && reply.ok),
+          pairedUser: reply ? reply.pairedUser : null,
+          error: (reply && reply.error) || err || null,
+          version: SCRIPT_VERSION,
+        }, '*');
+      });
+    } catch (e) {
+      window.postMessage({
+        type: 'FCT_PAIRING_RESULT', requestId: reqId,
+        ok: false, error: e.message, version: SCRIPT_VERSION,
+      }, '*');
+    }
+    return;
+  }
+
+  // FCT_UNPAIR — เคลียร์ pairedUser ออกจาก chrome.storage
+  if (data.type === 'FCT_UNPAIR') {
+    const reqId = data.requestId;
+    try {
+      chrome.runtime.sendMessage({ type: 'UNPAIR' }, (reply) => {
+        const err = chrome.runtime.lastError ? chrome.runtime.lastError.message : null;
+        window.postMessage({
+          type: 'FCT_UNPAIR_RESULT',
+          requestId: reqId,
+          ok: !!(reply && reply.ok),
+          error: (reply && reply.error) || err || null,
+          version: SCRIPT_VERSION,
+        }, '*');
+      });
+    } catch (e) {
+      window.postMessage({
+        type: 'FCT_UNPAIR_RESULT', requestId: reqId,
         ok: false, error: e.message, version: SCRIPT_VERSION,
       }, '*');
     }
