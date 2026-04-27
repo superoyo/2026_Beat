@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.6",
+      "date": "2026-04-27",
+      "title": "all_frames + match_about_blank — fix iframe-based logins",
+      "summary": "Shutterstock + เว็บที่ login form อยู่ใน iframe — ก่อนหน้านี้ content.js รันแค่ top frame",
+      "changes": [
+        "manifest: all_frames: true → content.js รันในทุก iframe (default คือแค่ top frame)",
+        "manifest: match_about_blank: true → รองรับ iframe ที่เป็น about:blank/srcdoc",
+        "Diagnostic นับ text/email inputs ใน same-origin iframe ด้วย (ไม่ใช่แค่ password)",
+        "เพิ่ม URL ของ iframes ที่มี input ใน log → ช่วย pinpoint"
+      ]
+    },
+    {
       "version": "1.9.5",
       "date": "2026-04-27",
       "title": "Diagnostic: iframe + popup window detection",

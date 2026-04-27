@@ -9,7 +9,7 @@
 //   - English for technical / library code
 
 const TAG = '[FCT]';
-const SCRIPT_VERSION = 'v26-iframe-diag';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
+const SCRIPT_VERSION = 'v27-all-frames';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
 
 // Hostname ที่ extension จะทำหน้าที่ scrape credit (mode A)
 // เว็บอื่นที่ user เพิ่มใน admin จะได้แค่ prefill (mode B) — ไม่ scrape credit
@@ -926,19 +926,26 @@ async function checkPrefill() {
         const crossOriginFrames = iframes.length - sameOriginFrames.length;
         let iframeHint = '';
         let iframePwTotal = 0;
+        let iframeTextTotal = 0;
+        const iframeUrls = [];
         for (const f of sameOriginFrames) {
           try {
-            const ipw = f.contentDocument.querySelectorAll('input[type="password"]').length;
-            iframePwTotal += ipw;
+            iframePwTotal += f.contentDocument.querySelectorAll('input[type="password"]').length;
+            iframeTextTotal += f.contentDocument.querySelectorAll(
+              'input[type="email"], input[type="text"]:not([type="hidden"])'
+            ).length;
+            iframeUrls.push(f.contentDocument.location.href || f.src || '(no-src)');
           } catch {}
         }
         if (iframes.length > 0) {
           iframeHint = `\n  iframes: ${iframes.length} total (${sameOriginFrames.length} same-origin, ${crossOriginFrames} cross-origin)`;
-          if (iframePwTotal > 0) {
-            iframeHint += `\n  ⚠ พบ ${iframePwTotal} password field(s) ใน same-origin iframe — content.js ใน iframe นั้นจะจัดการเอง (ดู log จาก iframe context)`;
+          if (iframePwTotal > 0 || iframeTextTotal > 0) {
+            iframeHint += `\n  ⚠ พบใน same-origin iframe: ${iframePwTotal} password / ${iframeTextTotal} text/email`;
+            iframeHint += `\n     iframe URLs: ${iframeUrls.join(', ').slice(0, 200)}`;
+            iframeHint += `\n     → content.js ต้องรันใน iframe (ต้องมี all_frames:true ใน manifest)`;
           }
           if (crossOriginFrames > 0) {
-            iframeHint += `\n  ⚠ มี cross-origin iframe — ถ้า login form อยู่ในนั้น content.js จะรันแยกใน iframe context (ดู console ของ iframe ที่ DevTools เลือก)`;
+            iframeHint += `\n  ⚠ มี cross-origin iframe — content.js รันแยก (ดู console ของ iframe context)`;
           }
         }
 
