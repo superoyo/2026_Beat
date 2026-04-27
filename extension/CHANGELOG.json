@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.8.6",
+      "date": "2026-04-27",
+      "title": "Form-less login support",
+      "summary": "รองรับเว็บที่ไม่ใช้ <form> tag (SPA สมัยใหม่) เช่น kling.ai, midjourney",
+      "changes": [
+        "findLoginForm: ถ้าไม่เจอ <form> → walk up DOM หา ancestor ที่มี text input เป็น container",
+        "เพิ่ม visibility check (offsetParent + getClientRects) — ข้าม hidden password fields",
+        "Pass 1 หา username ด้วย keyword (email/user/login/account/phone), Pass 2 fallback ช่อง visible แรก",
+        "เพิ่ม diagnostic log ถ้าไม่เจอ form: บอกจำนวน password fields, สาเหตุที่เป็นไปได้"
+      ]
+    },
+    {
       "version": "1.8.5",
       "date": "2026-04-27",
       "title": "Show paired profile in extension popup + toolbar",

@@ -9,7 +9,7 @@
 //   - English for technical / library code
 
 const TAG = '[FCT]';
-const SCRIPT_VERSION = 'v19-unpair-disables-autofill';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
+const SCRIPT_VERSION = 'v20-formless-login';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
 
 // Hostname ที่ extension จะทำหน้าที่ scrape credit (mode A)
 // เว็บอื่นที่ user เพิ่มใน admin จะได้แค่ prefill (mode B) — ไม่ scrape credit
@@ -434,9 +434,20 @@ function scheduleScan() {
 // PREFILL MODE — fill saved username/password on login pages
 // ============================================================================
 
+/** ตรวจว่า input element มอง visible หรือไม่ (เลี่ยง hidden/0-size/display:none) */
+function isInputVisible(el) {
+  if (!el) return false;
+  if (el.disabled) return false;
+  if (el.type === 'hidden') return false;
+  // offsetParent === null ก็เป็น hidden ยกเว้น position:fixed → เช็ค getClientRects เพิ่ม
+  if (el.offsetParent === null && el.getClientRects().length === 0) return false;
+  return true;
+}
+
 /**
- * หา <form> ที่น่าจะเป็น login form (มีช่อง password อย่างน้อย 1 ช่อง).
- * @returns {{form:HTMLFormElement, userInput:HTMLInputElement|null, pwInput:HTMLInputElement}|null}
+ * หา container ที่น่าจะเป็น login (มีช่อง password อย่างน้อย 1 ช่อง).
+ * รองรับทั้งแบบมี <form> และแบบ SPA ที่ไม่มี <form> tag
+ * @returns {{form:Element, userInput:HTMLInputElement|null, pwInput:HTMLInputElement}|null}
  */
 function findLoginForm() {
   const pwInputs = document.querySelectorAll('input[type="password"]');
@@ -445,25 +456,61 @@ function findLoginForm() {
     const name = (pw.name + ' ' + pw.id + ' ' + pw.autocomplete).toLowerCase();
     if (/confirm|new[-_]?password|repeat/.test(name)) continue;
 
-    const form = pw.closest('form');
-    if (!form) continue;
+    // ข้ามช่อง hidden/disabled
+    if (!isInputVisible(pw)) continue;
 
-    // หาช่อง username/email ใน form เดียวกัน
+    // หา container — prefer <form>, fallback: walk up จนเจอ ancestor ที่มี text input
+    let container = pw.closest('form');
+    if (!container) {
+      // Walk up สูงสุด 10 ระดับ หา ancestor ที่มี input อื่น (email/text/tel)
+      let cur = pw.parentElement;
+      for (let depth = 0; depth < 10 && cur; depth++) {
+        const otherInputs = cur.querySelectorAll(
+          'input[type="email"], input[type="text"], input[type="tel"], input:not([type])'
+        );
+        // เจอช่อง input อื่นที่ visible อย่างน้อย 1 ช่อง → ใช้ ancestor นี้เป็น container
+        for (const c of otherInputs) {
+          if (c !== pw && isInputVisible(c)) {
+            container = cur;
+            break;
+          }
+        }
+        if (container) break;
+        cur = cur.parentElement;
+      }
+      // ถ้ายังไม่เจอ → ใช้ parentElement เป็น last resort (จะมีแค่ password ช่องเดียว)
+      if (!container) container = pw.parentElement;
+    }
+    if (!container) continue;
+
+    // หาช่อง username/email ใน container
     let userInput = null;
-    const candidates = form.querySelectorAll(
+    const candidates = container.querySelectorAll(
       'input[type="email"], input[type="text"], input[type="tel"], input:not([type])'
     );
+    // Pass 1: ช่องที่มี keyword ชัดเจน
     for (const c of candidates) {
+      if (c === pw || !isInputVisible(c)) continue;
       const meta = (c.name + ' ' + c.id + ' ' + c.autocomplete + ' ' + c.placeholder).toLowerCase();
-      if (/email|user|login|account/.test(meta)) {
+      if (/email|user|login|account|phone|tel|mobile/.test(meta)) {
         userInput = c;
         break;
       }
     }
-    if (!userInput && candidates.length > 0) {
-      userInput = candidates[0];   // fallback: ช่องแรก
+    // Pass 2: ช่อง visible ตัวแรก (fallback)
+    if (!userInput) {
+      for (const c of candidates) {
+        if (c === pw || !isInputVisible(c)) continue;
+        userInput = c;
+        break;
+      }
     }
-    return { form, userInput, pwInput: pw };
+    console.debug(TAG, 'login form detected:',
+      container.tagName.toLowerCase() + (container.id ? '#' + container.id : ''),
+      'user:', userInput ? userInput.name || userInput.id || '(no-name)' : '(none)',
+      'pw:', pw.name || pw.id || '(no-name)'
+    );
+    return { form: container, userInput, pwInput: pw };
   }
   return null;
 }
@@ -592,6 +639,8 @@ function renderPrefillList(siteName) {
 }
 
 let prefillCheckInFlight = false;
+let prefillNoFormLogged = false;   // กัน log spam — log เฉพาะครั้งแรก/หลัง URL เปลี่ยน
+let prefillLastUrlForLog = null;
 async function checkPrefill() {
   if (prefillCheckInFlight) return;
   prefillCheckInFlight = true;
@@ -600,8 +649,29 @@ async function checkPrefill() {
     if (!formInfo) {
       // ไม่มี login form → ซ่อน widget
       if (prefillWidget) prefillWidget.style.display = 'none';
+
+      // Diagnostic — แสดงครั้งเดียวต่อ URL เพื่อช่วย debug
+      if (location.href !== prefillLastUrlForLog) {
+        prefillLastUrlForLog = location.href;
+        prefillNoFormLogged = false;
+      }
+      if (!prefillNoFormLogged) {
+        prefillNoFormLogged = true;
+        const pwCount = document.querySelectorAll('input[type="password"]').length;
+        const visiblePw = Array.from(document.querySelectorAll('input[type="password"]'))
+          .filter(p => isInputVisible(p)).length;
+        console.debug(TAG, '🔍 prefill: no login form detected on', location.href,
+          `\n  password fields: ${pwCount} total, ${visiblePw} visible`,
+          pwCount === 0
+            ? '\n  → ยังไม่เห็นช่อง password — อาจต้องคลิก "Login" เพื่อเปิด modal ก่อน'
+            : visiblePw === 0
+              ? '\n  → ช่อง password ถูกซ่อนอยู่ — เปิด form login ก่อน'
+              : '\n  → มีช่อง password แต่หา username pair ไม่ได้ (รายงาน console DOM ให้ admin)'
+        );
+      }
       return;
     }
+    prefillNoFormLogged = false;
     prefillFormInfo = formInfo;
 
     // ตรวจ pairing status ก่อน — ถ้า unpaired ห้ามแสดง autofill เลย
