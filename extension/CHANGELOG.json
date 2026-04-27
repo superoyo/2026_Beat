@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.8.4",
+      "date": "2026-04-27",
+      "title": "Unpaired = no autofill",
+      "summary": "แยก unpaired ออกจาก admin-paired — unpaired = ไม่แสดง widget เลย ทุกเว็บ",
+      "changes": [
+        "content.js: เช็ค pairedUser ก่อนเรียก /api/extension/match — ถ้า null ซ่อน widget + ไม่ส่ง request",
+        "ก่อนหน้านี้ unpaired กับ admin-paired ส่งคำขอเหมือนกัน (ไม่มี member_id) → backend bypass filter",
+        "Admin extension page: กล่อง Unpaired เปลี่ยนเป็นสีแดง + ข้อความชัดเจนว่า autofill ปิด"
+      ]
+    },
+    {
       "version": "1.8.3",
       "date": "2026-04-27",
       "title": "Unpair + pairing status",

@@ -2654,7 +2654,7 @@ async function renderExtensionPage() {
         cleanup();
         if (d.ok) {
           status.style.color = '#15803d';
-          status.innerHTML = '✓ Unpaired แล้ว — extension กลับเป็น unpaired (ไม่มี pairedUser)<br/>ขั้นตอนต่อไป: <strong>logout</strong> จากระบบหลังบ้าน → <strong>login เป็น member ที่ต้องการทดสอบ</strong> → กด "🔗 เชื่อมบัญชีของฉัน"';
+          status.innerHTML = '✓ Unpaired แล้ว — extension จะ <strong>ไม่แสดง autofill widget</strong> บนเว็บใดทั้งสิ้น จนกว่าจะ pair ใหม่<br/><span style="color:var(--text-muted);font-size:12px">หาก reload หน้าเว็บที่เคยมี widget แล้วยังโผล่ ให้ <code>chrome://extensions</code> → Reload extension อีกครั้ง</span>';
           // refresh status display
           setTimeout(() => $('check-pairing-btn').click(), 300);
         } else {
@@ -2685,9 +2685,13 @@ async function renderExtensionPage() {
       const box = $('pairing-current');
       box.style.display = '';
       if (!pairedUser) {
-        box.style.background = '#fef9c3';
-        box.style.borderColor = '#fde68a';
-        box.innerHTML = '<strong>⚠ ยังไม่ได้ pair</strong> — extension ไม่มี member_id ส่งไป backend (จะถูก treat เป็น unpaired = no autofill สำหรับ member-only sites)';
+        box.style.background = '#fee2e2';
+        box.style.borderColor = '#fca5a5';
+        box.innerHTML = '<strong>🔒 Unpaired — autofill disabled</strong>' +
+          '<div style="margin-top:6px;font-size:12px;color:#7f1d1d;line-height:1.6">' +
+          'Extension ไม่มี pairing context → จะไม่แสดง prefill widget บนเว็บใดเลย' +
+          '<br/>กดปุ่ม <strong>"🔗 เชื่อมบัญชีของฉัน"</strong> ด้านบน เพื่อ pair กับบัญชีปัจจุบัน' +
+          '</div>';
         return;
       }
       const role = pairedUser.role || 'unknown';

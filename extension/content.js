@@ -9,7 +9,7 @@
 //   - English for technical / library code
 
 const TAG = '[FCT]';
-const SCRIPT_VERSION = 'v18-unpair';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
+const SCRIPT_VERSION = 'v19-unpair-disables-autofill';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
 
 // Hostname ที่ extension จะทำหน้าที่ scrape credit (mode A)
 // เว็บอื่นที่ user เพิ่มใน admin จะได้แค่ prefill (mode B) — ไม่ scrape credit
@@ -604,13 +604,22 @@ async function checkPrefill() {
     }
     prefillFormInfo = formInfo;
 
-    // Query backend ผ่าน background proxy (เลี่ยง CORS) — ส่ง member_id ถ้า paired
+    // ตรวจ pairing status ก่อน — ถ้า unpaired ห้ามแสดง autofill เลย
     let pairedUserMatch = null;
     try {
       const r = await chrome.storage.sync.get(['pairedUser']);
       pairedUserMatch = r.pairedUser || null;
     } catch {}
-    const memberQ = pairedUserMatch && pairedUserMatch.member_id
+
+    if (!pairedUserMatch) {
+      // Unpaired = no identity context → ไม่ควรแสดง autofill ทุก site
+      // (admin-paired กับ unpaired ต่างกัน: admin-paired = explicit bypass, unpaired = no access)
+      if (prefillWidget) prefillWidget.style.display = 'none';
+      console.debug(TAG, '🔒 prefill: extension is UNPAIRED → autofill disabled. ไป admin → Extension → "เชื่อมบัญชีของฉัน"');
+      return;
+    }
+
+    const memberQ = pairedUserMatch.member_id
       ? '&member_id=' + encodeURIComponent(pairedUserMatch.member_id)
       : '';
 
