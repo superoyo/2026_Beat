@@ -42,6 +42,11 @@
     }
     .container { max-width: 1200px; margin: 0 auto; padding: 28px; }
 
+    /* Embedded mode — เมื่อ dashboard อยู่ใน iframe ของ admin SPA
+       ซ่อน header ทั้งหมด (hamburger + brand + status + refresh) เพราะ admin SPA มี header เป็นของตัวเอง */
+    html.embedded .container { padding: 22px 28px; }
+    html.embedded > body > .container > header { display: none !important; }
+
     header {
       display: flex;
       align-items: center;
@@ -254,6 +259,12 @@
       margin: 36px 0 18px;
     }
   </style>
+  <script>
+    // Detect iframe embed (อยู่ใน admin SPA) → ซ่อน header
+    if (window.self !== window.top) {
+      document.documentElement.classList.add('embedded');
+    }
+  </script>
 </head>
 <body>
   <div class="container">
