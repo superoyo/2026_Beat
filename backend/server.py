@@ -226,8 +226,17 @@ def init_db() -> None:
                 added_at       TEXT NOT NULL,
                 PRIMARY KEY (team_id, credential_id)
             );
+
+            -- v1.11 — ให้สิทธิ์ credential กับ member โดยตรง (bypass team)
+            CREATE TABLE IF NOT EXISTS credential_members (
+                credential_id  INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+                member_id      INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+                added_at       TEXT NOT NULL,
+                PRIMARY KEY (credential_id, member_id)
+            );
             CREATE INDEX IF NOT EXISTS idx_team_members_member ON team_members(member_id);
             CREATE INDEX IF NOT EXISTS idx_team_sites_site ON team_sites(site_id);
+            CREATE INDEX IF NOT EXISTS idx_credential_members_member ON credential_members(member_id);
             """
         )
 
@@ -1106,16 +1115,20 @@ def top_platforms(
                 JOIN sites s ON s.id = ul.site_id
                 WHERE ul.timestamp >= ?
                   AND s.id IN (
-                    SELECT DISTINCT ts.site_id
+                    SELECT ts.site_id
                     FROM team_sites ts
                     JOIN team_members tm ON tm.team_id = ts.team_id
                     WHERE tm.member_id = ?
+                    UNION
+                    SELECT c.site_id FROM credentials c
+                    JOIN credential_members cm ON cm.credential_id = c.id
+                    WHERE cm.member_id = ?
                   )
                 GROUP BY s.id
                 ORDER BY click_count DESC
                 LIMIT ?
                 """,
-                (cutoff, member_id, limit),
+                (cutoff, member_id, member_id, limit),
             ).fetchall()
 
     return {
@@ -2267,17 +2280,26 @@ def my_platforms(sess: dict = Depends(require_admin_or_member)) -> dict[str, Any
         }
 
     with db_conn() as conn:
+        # Member เห็น site ถ้า:
+        # - อยู่ในทีมที่มี team_sites สำหรับ site นั้น (ผ่าน team) — เดิม
+        # - มี direct credential grant สำหรับ credential ใดของ site นั้น (ใหม่ v1.11)
         sites = conn.execute(
             """
             SELECT DISTINCT s.id, s.name, s.url_pattern, s.created_at,
                    (SELECT COUNT(*) FROM credentials c WHERE c.site_id = s.id) AS cred_count
             FROM sites s
-            JOIN team_sites ts ON ts.site_id = s.id
-            JOIN team_members tm ON tm.team_id = ts.team_id
-            WHERE tm.member_id = ?
+            WHERE s.id IN (
+                SELECT ts.site_id FROM team_sites ts
+                JOIN team_members tm ON tm.team_id = ts.team_id
+                WHERE tm.member_id = ?
+                UNION
+                SELECT c.site_id FROM credentials c
+                JOIN credential_members cm ON cm.credential_id = c.id
+                WHERE cm.member_id = ?
+            )
             ORDER BY s.created_at DESC
             """,
-            (member_id,),
+            (member_id, member_id),
         ).fetchall()
     return {
         "sites": [dict(r) for r in sites],
@@ -2486,6 +2508,164 @@ def delete_credential(cred_id: int, _sess: dict = Depends(require_admin)) -> dic
     return {"ok": True}
 
 
+# === v1.11 — Credential access control (per-credential team + direct member grants) ===
+
+class CredentialAccessIn(BaseModel):
+    team_ids: list[int] = []
+    member_ids: list[int] = []
+
+
+@app.get("/api/admin/credentials/{cred_id}/access")
+def get_credential_access(
+    cred_id: int,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """คืน access ปัจจุบันของ credential นี้:
+    - teams: ทีมที่อยู่ใน team_credentials ของ credential นี้
+            + label ว่า team นั้นมี team_sites ระดับใด ('all', 'select', 'none')
+    - members: member ที่อยู่ใน credential_members (direct grant)
+    """
+    with db_conn() as conn:
+        cred = conn.execute(
+            "SELECT id, site_id, label, username FROM credentials WHERE id = ?",
+            (cred_id,),
+        ).fetchone()
+        if not cred:
+            raise HTTPException(status_code=404, detail="credential not found")
+        site_id = cred["site_id"]
+
+        # Teams ที่มี cred นี้ใน team_credentials (ถูก "select" ไว้)
+        team_rows = conn.execute(
+            """
+            SELECT t.id, t.name,
+                   COALESCE(ts.access_type, 'none') AS site_access
+            FROM teams t
+            LEFT JOIN team_sites ts ON ts.team_id = t.id AND ts.site_id = ?
+            WHERE t.id IN (SELECT team_id FROM team_credentials WHERE credential_id = ?)
+            ORDER BY t.name
+            """,
+            (site_id, cred_id),
+        ).fetchall()
+        # ทุกทีมที่มี team_sites['all'] ของ site นี้ก็เห็น cred นี้โดยอัตโนมัติ —
+        # เก็บไว้บอก UI เพื่อแสดงเป็น "auto-granted (via all)"
+        auto_team_rows = conn.execute(
+            """
+            SELECT t.id, t.name
+            FROM teams t
+            JOIN team_sites ts ON ts.team_id = t.id
+            WHERE ts.site_id = ? AND ts.access_type = 'all'
+            ORDER BY t.name
+            """,
+            (site_id,),
+        ).fetchall()
+
+        # Direct member grants
+        member_rows = conn.execute(
+            """
+            SELECT m.id, m.display_name, m.email, m.phone
+            FROM members m
+            JOIN credential_members cm ON cm.member_id = m.id
+            WHERE cm.credential_id = ?
+            ORDER BY m.display_name, m.id
+            """,
+            (cred_id,),
+        ).fetchall()
+
+    return {
+        "credential": {"id": cred["id"], "label": cred["label"], "username": cred["username"], "site_id": site_id},
+        "teams": [{"id": r["id"], "name": r["name"], "site_access": r["site_access"]} for r in team_rows],
+        "auto_teams": [{"id": r["id"], "name": r["name"]} for r in auto_team_rows],
+        "members": [
+            {"id": r["id"], "display_name": r["display_name"], "email": r["email"], "phone": r["phone"]}
+            for r in member_rows
+        ],
+    }
+
+
+@app.put("/api/admin/credentials/{cred_id}/access")
+def set_credential_access(
+    cred_id: int,
+    payload: CredentialAccessIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """ตั้ง access ของ credential นี้เป็นชุดที่กำหนด (replace all)
+
+    - teams: รายชื่อทีมที่จะเห็น credential นี้ (ผ่าน team_credentials)
+      ถ้าทีมไม่มี team_sites สำหรับ site → สร้าง row พร้อม access_type='select'
+    - members: รายชื่อ member ที่จะเห็นโดยตรง (ผ่าน credential_members)
+    """
+    now = utc_now().isoformat()
+    target_teams = set(int(t) for t in payload.team_ids)
+    target_members = set(int(m) for m in payload.member_ids)
+
+    with db_conn() as conn:
+        cred = conn.execute(
+            "SELECT id, site_id FROM credentials WHERE id = ?", (cred_id,)
+        ).fetchone()
+        if not cred:
+            raise HTTPException(status_code=404, detail="credential not found")
+        site_id = cred["site_id"]
+
+        # Validate teams + members exist
+        if target_teams:
+            valid_t = {r["id"] for r in conn.execute(
+                f"SELECT id FROM teams WHERE id IN ({','.join('?'*len(target_teams))})",
+                tuple(target_teams),
+            ).fetchall()}
+            if valid_t != target_teams:
+                raise HTTPException(status_code=400, detail=f"team not found: {sorted(target_teams - valid_t)}")
+        if target_members:
+            valid_m = {r["id"] for r in conn.execute(
+                f"SELECT id FROM members WHERE id IN ({','.join('?'*len(target_members))})",
+                tuple(target_members),
+            ).fetchall()}
+            if valid_m != target_members:
+                raise HTTPException(status_code=400, detail=f"member not found: {sorted(target_members - valid_m)}")
+
+        # === Teams ===
+        current_teams = {r["team_id"] for r in conn.execute(
+            "SELECT team_id FROM team_credentials WHERE credential_id = ?", (cred_id,)
+        ).fetchall()}
+        for tid in target_teams - current_teams:
+            # ตรวจ team_sites — ถ้ายังไม่มี → สร้างด้วย access_type='select'
+            existing = conn.execute(
+                "SELECT 1 FROM team_sites WHERE team_id = ? AND site_id = ?",
+                (tid, site_id),
+            ).fetchone()
+            if not existing:
+                conn.execute(
+                    "INSERT INTO team_sites(team_id, site_id, access_type, added_at) "
+                    "VALUES (?, ?, 'select', ?)",
+                    (tid, site_id, now),
+                )
+            conn.execute(
+                "INSERT INTO team_credentials(team_id, credential_id, added_at) VALUES (?, ?, ?)",
+                (tid, cred_id, now),
+            )
+        for tid in current_teams - target_teams:
+            conn.execute(
+                "DELETE FROM team_credentials WHERE team_id = ? AND credential_id = ?",
+                (tid, cred_id),
+            )
+
+        # === Direct member grants ===
+        current_members = {r["member_id"] for r in conn.execute(
+            "SELECT member_id FROM credential_members WHERE credential_id = ?", (cred_id,)
+        ).fetchall()}
+        for mid in target_members - current_members:
+            conn.execute(
+                "INSERT INTO credential_members(credential_id, member_id, added_at) VALUES (?, ?, ?)",
+                (cred_id, mid, now),
+            )
+        for mid in current_members - target_members:
+            conn.execute(
+                "DELETE FROM credential_members WHERE credential_id = ? AND member_id = ?",
+                (cred_id, mid),
+            )
+
+    return {"ok": True}
+
+
 # ===========================================================================
 # Extension-facing endpoints (no admin auth — local only)
 # ===========================================================================
@@ -2537,7 +2717,7 @@ def extension_match(
             access_info["via"] = "admin_paired"
             access_info["reason"] = "Extension ถูก pair เป็น admin (member_id=null) — bypass team filter ทั้งหมด"
         else:
-            # Member-paired → strict: ต้องอยู่ใน team ที่ grant site นี้
+            # Member-paired → รวมสิทธิ์จาก team_sites/team_credentials + direct credential_members
             access_rows = conn.execute(
                 "SELECT t.id AS team_id, t.name AS team_name, ts.access_type "
                 "FROM team_members tm "
@@ -2550,29 +2730,37 @@ def extension_match(
                 {"id": r["team_id"], "name": r["team_name"], "access_type": r["access_type"]}
                 for r in access_rows
             ]
-            if not access_rows:
-                # Member ไม่อยู่ในทีมที่มีสิทธิ์ (หรือ site ไม่ถูกผูกทีมใดเลย)
-                creds = []
-                access_info["via"] = "no_access"
-                access_info["reason"] = (
-                    f"member_id={member_id} ไม่อยู่ใน team ใดที่ grant site นี้ → ไม่มี credential"
-                )
-            elif any(r["access_type"] == "all" for r in access_rows):
-                # อย่างน้อย 1 ทีมให้ access 'all' → คืนทุก credential
-                creds = conn.execute(
+            # v1.11 — direct member grants (อยู่นอกระบบ team)
+            direct_cred_rows = conn.execute(
+                "SELECT c.id, c.label, c.username, c.password "
+                "FROM credentials c "
+                "JOIN credential_members cm ON cm.credential_id = c.id "
+                "WHERE c.site_id = ? AND cm.member_id = ? "
+                "ORDER BY c.last_used_at DESC NULLS LAST, c.created_at DESC",
+                (matched_id, member_id),
+            ).fetchall()
+            access_info["direct_credentials"] = len(direct_cred_rows)
+
+            cred_map: dict[int, dict[str, Any]] = {}   # id → row dict (UNION across all sources)
+
+            if any(r["access_type"] == "all" for r in access_rows):
+                # อย่างน้อย 1 ทีมให้ access 'all' → ทุก credential ของ site
+                team_all_rows = conn.execute(
                     "SELECT id, label, username, password "
                     "FROM credentials WHERE site_id = ? "
                     "ORDER BY last_used_at DESC NULLS LAST, created_at DESC",
                     (matched_id,),
                 ).fetchall()
+                for r in team_all_rows:
+                    cred_map[r["id"]] = dict(r)
                 all_teams = [t["name"] for t in access_info["teams"] if t["access_type"] == "all"]
                 access_info["via"] = "team_all"
                 access_info["reason"] = (
                     f"ผ่าน team '{', '.join(all_teams)}' (access_type=all) → ทุก credential"
                 )
-            else:
-                # ทุกทีมเป็น 'select' → เอา credentials ที่ team_credentials ระบุไว้ (union)
-                creds = conn.execute(
+            elif access_rows:
+                # ทุกทีมเป็น 'select' → เอา credentials ที่ team_credentials ระบุไว้
+                team_sel_rows = conn.execute(
                     "SELECT DISTINCT c.id, c.label, c.username, c.password "
                     "FROM credentials c "
                     "WHERE c.site_id = ? AND c.id IN ("
@@ -2583,12 +2771,38 @@ def extension_match(
                     "ORDER BY c.last_used_at DESC NULLS LAST, c.created_at DESC",
                     (matched_id, member_id),
                 ).fetchall()
+                for r in team_sel_rows:
+                    cred_map[r["id"]] = dict(r)
                 sel_teams = [t["name"] for t in access_info["teams"]]
                 access_info["via"] = "team_select"
                 access_info["reason"] = (
                     f"ผ่าน team '{', '.join(sel_teams)}' (access_type=select) → "
-                    f"{len(creds)} credential ที่ team กำหนดไว้"
+                    f"{len(team_sel_rows)} credential"
                 )
+
+            # Add direct grants (UNION) — แม้ไม่มี team access ก็เห็น credential ที่ถูก grant ตรง
+            for r in direct_cred_rows:
+                cred_map[r["id"]] = dict(r)
+
+            if not cred_map:
+                creds = []
+                access_info["via"] = "no_access"
+                access_info["reason"] = (
+                    f"member_id={member_id} ไม่อยู่ใน team ใดที่ grant site นี้ + "
+                    f"ไม่มี direct grant → ไม่มี credential"
+                )
+            else:
+                creds = list(cred_map.values())
+                # ถ้ามาจาก direct grant อย่างเดียว (ไม่ได้ผ่าน team) → ปรับ via
+                if not access_rows and direct_cred_rows:
+                    access_info["via"] = "direct_grant"
+                    access_info["reason"] = (
+                        f"ผ่าน direct grant ที่ credential_members → {len(direct_cred_rows)} credential"
+                    )
+                elif direct_cred_rows:
+                    access_info["reason"] += (
+                        f" + direct grant {len(direct_cred_rows)} credential"
+                    )
 
     return {
         "matched": True,

@@ -1147,6 +1147,7 @@ async function loadSite(siteId) {
 
 function credFormHTML(cred) {
   const c = cred || {};
+  const isEdit = !!c.id;
   return `
     <div class="field-grid-2">
       <div class="field-section-label">ข้อมูลบัญชี (Login credential)</div>
@@ -1168,6 +1169,28 @@ function credFormHTML(cred) {
       </div>
 
       ${billingFieldsHTML(c)}
+
+      <div class="field-section-label">ใครเข้าถึง credential นี้ได้บ้าง</div>
+      <div class="field field-span-2">
+        <div class="hint" style="margin-bottom:10px;color:var(--text-muted);font-size:12px">
+          เลือกได้ทั้ง <strong>ทีม</strong> (ทุกคนในทีมจะเห็น) และ/หรือ <strong>บุคคล</strong> (เฉพาะคนที่เลือก)
+        </div>
+        <div id="m-access-loading" style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px">
+          ${isEdit ? '⏳ กำลังโหลดข้อมูล access...' : '⏳ บันทึก credential ก่อน แล้วระบบจะเปิดให้ตั้ง access ได้'}
+        </div>
+        <div id="m-access-content" style="display:none">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+            <div>
+              <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px">🏷 ทีม</div>
+              <div id="m-access-teams" style="display:flex;flex-direction:column;gap:5px;max-height:240px;overflow-y:auto"></div>
+            </div>
+            <div>
+              <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px">👤 บุคคล (direct grant)</div>
+              <div id="m-access-members" style="display:flex;flex-direction:column;gap:5px;max-height:240px;overflow-y:auto"></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   `;
 }
@@ -1194,6 +1217,116 @@ async function bindCredFormDynamic() {
   await bindBillingFieldsDynamic();
 }
 
+// === Credential access controls — load/render in modal ===
+let _credAccessState = { team_ids: [], member_ids: [], auto_team_ids: [] };
+
+async function loadCredAccessIntoModal(credId) {
+  const loadingEl = document.getElementById('m-access-loading');
+  const contentEl = document.getElementById('m-access-content');
+  if (!loadingEl || !contentEl) return;
+
+  if (!credId) {
+    // ADD mode — แสดง message แต่ไม่โหลด
+    loadingEl.innerHTML = '💡 บันทึก credential ก่อน แล้ว <strong>กดแก้ไข</strong> เพื่อตั้ง access';
+    return;
+  }
+
+  try {
+    const [accessData, teamsData, membersData] = await Promise.all([
+      fetchJson(`/api/admin/credentials/${credId}/access`),
+      fetchJson('/api/admin/teams'),
+      fetchJson('/api/admin/members'),
+    ]);
+
+    const grantedTeamIds = new Set(accessData.teams.map(t => t.id));
+    const autoTeamIds = new Set(accessData.auto_teams.map(t => t.id));
+    const grantedMemberIds = new Set(accessData.members.map(m => m.id));
+
+    _credAccessState.team_ids = Array.from(grantedTeamIds);
+    _credAccessState.member_ids = Array.from(grantedMemberIds);
+    _credAccessState.auto_team_ids = Array.from(autoTeamIds);
+
+    // Render teams checkboxes (auto teams = checked + disabled with notice)
+    const teamsHtml = (teamsData.teams || []).length === 0
+      ? '<div class="empty" style="padding:14px;font-size:12px">ยังไม่มี team — สร้างที่ <a href="#/teams" style="color:var(--primary)">หน้า Teams</a></div>'
+      : (teamsData.teams).map(t => {
+          const isAuto = autoTeamIds.has(t.id);
+          const isChecked = grantedTeamIds.has(t.id);
+          const bg = (isChecked || isAuto) ? 'var(--primary-soft)' : 'var(--bg-card)';
+          const tooltip = isAuto ? 'ทีมนี้มี access_type=all สำหรับ site → เห็นทุก credential อัตโนมัติ' : '';
+          return `
+            <label style="display:flex;align-items:flex-start;gap:8px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;cursor:pointer;background:${bg};transition:all .12s;font-size:12.5px"
+                   ${tooltip ? `title="${escapeHtml(tooltip)}"` : ''}>
+              <input type="checkbox" class="m-team-cb" value="${t.id}"
+                     ${(isChecked || isAuto) ? 'checked' : ''}
+                     ${isAuto ? 'disabled' : ''}
+                     style="margin:2px 0 0 0">
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:600">${escapeHtml(t.name)}</div>
+                <div style="font-size:10.5px;color:var(--text-muted)">
+                  ${isAuto
+                    ? '🟢 auto (team มี access_type=all)'
+                    : `${t.member_count} member`}
+                </div>
+              </div>
+            </label>
+          `;
+        }).join('');
+    document.getElementById('m-access-teams').innerHTML = teamsHtml;
+
+    // Render members checkboxes
+    const membersHtml = (membersData.members || []).length === 0
+      ? '<div class="empty" style="padding:14px;font-size:12px">ยังไม่มี member ในระบบ</div>'
+      : (membersData.members).map(m => {
+          const isChecked = grantedMemberIds.has(m.id);
+          const display = m.display_name || m.email || m.phone || '?';
+          const initial = display.trim().charAt(0).toUpperCase();
+          const bg = isChecked ? 'var(--primary-soft)' : 'var(--bg-card)';
+          return `
+            <label style="display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;cursor:pointer;background:${bg};transition:all .12s;font-size:12.5px">
+              <input type="checkbox" class="m-member-cb" value="${m.id}" ${isChecked ? 'checked' : ''} style="margin:0">
+              <div style="width:24px;height:24px;border-radius:6px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:11px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(initial)}</div>
+              <div style="flex:1;min-width:0;overflow:hidden">
+                <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(display)}</div>
+                <div style="font-size:10.5px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(m.email || m.phone || '')}</div>
+              </div>
+            </label>
+          `;
+        }).join('');
+    document.getElementById('m-access-members').innerHTML = membersHtml;
+
+    // Wire visual toggle
+    document.querySelectorAll('.m-team-cb, .m-member-cb').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const lbl = cb.closest('label');
+        if (lbl) lbl.style.background = cb.checked ? 'var(--primary-soft)' : 'var(--bg-card)';
+      });
+    });
+
+    loadingEl.style.display = 'none';
+    contentEl.style.display = '';
+  } catch (e) {
+    loadingEl.innerHTML = `<span style="color:var(--critical)">⚠ โหลด access ไม่สำเร็จ: ${escapeHtml(e.message)}</span>`;
+  }
+}
+
+function credAccessCollect() {
+  // เก็บค่า — เฉพาะ checkbox ที่ user เปลี่ยนได้ (ไม่รวม disabled ของ auto-team)
+  const team_ids = Array.from(document.querySelectorAll('.m-team-cb:not(:disabled):checked'))
+    .map(cb => parseInt(cb.value, 10));
+  const member_ids = Array.from(document.querySelectorAll('.m-member-cb:checked'))
+    .map(cb => parseInt(cb.value, 10));
+  return { team_ids, member_ids };
+}
+
+async function saveCredAccess(credId) {
+  const access = credAccessCollect();
+  await fetchJson(`/api/admin/credentials/${credId}/access`, {
+    method: 'PUT',
+    body: JSON.stringify(access),
+  });
+}
+
 function showEditCredModal(cred, siteId) {
   showModal({
     title: 'แก้ไข Credential',
@@ -1202,15 +1335,23 @@ function showEditCredModal(cred, siteId) {
     onSubmit: async () => {
       const data = credFormCollect();
       if (!data.username || !data.password) throw new Error('กรอก username และ password');
+      // 1. PATCH credential fields
       await fetchJson('/api/admin/credentials/' + cred.id, {
         method: 'PATCH',
         body: JSON.stringify(data),
       });
+      // 2. PUT access (ทีม + บุคคล)
+      try { await saveCredAccess(cred.id); } catch (e) {
+        console.warn('saveCredAccess failed:', e);
+      }
       _cardOwnersCache = null;
       await loadSite(siteId);
     },
   });
-  setTimeout(bindCredFormDynamic, 0);
+  setTimeout(async () => {
+    await bindCredFormDynamic();
+    await loadCredAccessIntoModal(cred.id);
+  }, 0);
 }
 
 function showAddCredModal(siteId) {
@@ -1221,6 +1362,7 @@ function showAddCredModal(siteId) {
     onSubmit: async () => {
       const data = credFormCollect();
       if (!data.username || !data.password) throw new Error('กรอก username และ password');
+      // ADD mode: access fields ยังไม่ active — user ต้องเปิดแก้ไขทีหลัง
       await fetchJson('/api/admin/sites/' + siteId + '/credentials', {
         method: 'POST',
         body: JSON.stringify(data),
@@ -1229,7 +1371,10 @@ function showAddCredModal(siteId) {
       await loadSite(siteId);
     },
   });
-  setTimeout(bindCredFormDynamic, 0);
+  setTimeout(async () => {
+    await bindCredFormDynamic();
+    await loadCredAccessIntoModal(null);   // ADD = no cred yet
+  }, 0);
 }
 
 async function renderSecurityPage() {
