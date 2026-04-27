@@ -2148,12 +2148,14 @@ def extension_match(
 ) -> dict[str, Any]:
     """ตรวจว่า URL ตรงกับ site ใดที่ลงทะเบียนไว้ ถ้าใช่ คืน credentials.
 
-    Filter ด้วย team:
-    - ถ้า site ไม่ถูกผูกกับทีมใดเลย → ทุก member + admin เห็น credentials ทั้งหมด
-    - ถ้า site ถูกผูกกับทีม → เฉพาะ member ในทีมที่มีสิทธิ์ + admin (member_id=None)
-    - access_type='all'   → เห็น credentials ทั้งหมดของ site
-    - access_type='select' → เห็นเฉพาะ credentials ที่ team_credentials ระบุ
-    - Member ในหลายทีม → union (ถ้าทีมใดทีมหนึ่งมี 'all' → เห็นทั้งหมด)
+    Strict opt-in (consistent กับ /api/my-platforms):
+    - Admin-paired extension (member_id=None) → คืน credentials ทุก row ของ site
+    - Member-paired extension → ต้องอยู่ใน team ที่มี team_sites ผูกกับ site นี้:
+      * access_type='all'    → เห็น credentials ทุก row ของ site
+      * access_type='select' → เห็นเฉพาะ credentials ที่ team_credentials ระบุ
+      * Member ในหลายทีม → union (ถ้าทีมใดทีมหนึ่งมี 'all' → เห็นทั้งหมด)
+    - ถ้า site ไม่ถูกผูกทีมใดเลย → member ไม่ได้ autofill (คืน credentials ว่าง)
+      เพื่อให้ตรงกับ Platforms page ที่ก็ไม่โชว์ site แบบนี้ให้ member
     """
     with db_conn() as conn:
         sites = conn.execute("SELECT id, name, url_pattern FROM sites").fetchall()
@@ -2167,12 +2169,8 @@ def extension_match(
         if matched_id is None:
             return {"matched": False}
 
-        team_restricted = conn.execute(
-            "SELECT 1 FROM team_sites WHERE site_id = ? LIMIT 1", (matched_id,)
-        ).fetchone() is not None
-
-        if not team_restricted or member_id is None:
-            # Public site OR caller ไม่ใช่ member (admin-paired) → คืนทุก credential
+        if member_id is None:
+            # Admin-paired → ไม่ filter (ใช้สำหรับ admin หรือ super admin)
             creds = conn.execute(
                 "SELECT id, label, username, password "
                 "FROM credentials WHERE site_id = ? "
@@ -2180,7 +2178,7 @@ def extension_match(
                 (matched_id,),
             ).fetchall()
         else:
-            # Site ถูก restrict + caller เป็น member → เช็คว่าเข้าได้มั้ย
+            # Member-paired → strict: ต้องอยู่ใน team ที่ grant site นี้
             access_rows = conn.execute(
                 "SELECT ts.access_type FROM team_members tm "
                 "JOIN team_sites ts ON ts.team_id = tm.team_id "
@@ -2188,7 +2186,8 @@ def extension_match(
                 (matched_id, member_id),
             ).fetchall()
             if not access_rows:
-                # Member ไม่อยู่ในทีมที่มีสิทธิ์ → คืน credentials ว่าง
+                # Member ไม่อยู่ในทีมที่มีสิทธิ์ (หรือ site ไม่ถูกผูกทีมใดเลย)
+                # → คืน credentials ว่าง → extension จะไม่แสดง prefill widget
                 creds = []
             elif any(r["access_type"] == "all" for r in access_rows):
                 # อย่างน้อย 1 ทีมให้ access 'all' → คืนทุก credential
