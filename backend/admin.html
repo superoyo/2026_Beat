@@ -866,49 +866,44 @@ function billingFieldsHTML(obj) {
   return `
     <div class="field-section-label">ข้อมูลการเงิน (ของ credential นี้)</div>
 
-    <div class="field field-span-2">
+    <!-- Row 1: รอบการจ่าย (dropdown) | Renew วันที่ -->
+    <div class="field">
       <label>รอบการจ่าย</label>
-      <div style="display:flex;gap:14px;margin-top:6px;flex-wrap:wrap">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400">
-          <input type="radio" name="m-bc" value="monthly" ${o.billing_cycle === 'monthly' ? 'checked' : ''}>
-          <span>📅 รายเดือน</span>
-        </label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400">
-          <input type="radio" name="m-bc" value="yearly" ${o.billing_cycle === 'yearly' ? 'checked' : ''}>
-          <span>🗓️ รายปี</span>
-        </label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400;color:var(--text-muted)">
-          <input type="radio" name="m-bc" value="" ${!o.billing_cycle ? 'checked' : ''}>
-          <span>— ไม่ระบุ</span>
-        </label>
-      </div>
+      <select id="m-billing-cycle" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
+        <option value="" ${!o.billing_cycle ? 'selected' : ''}>— ไม่ระบุ —</option>
+        <option value="monthly" ${o.billing_cycle === 'monthly' ? 'selected' : ''}>📅 รายเดือน</option>
+        <option value="yearly" ${o.billing_cycle === 'yearly' ? 'selected' : ''}>🗓️ รายปี</option>
+      </select>
     </div>
-
     <div class="field" id="m-renew-wrap" style="${o.billing_cycle === 'monthly' ? '' : 'display:none'}">
       <label>Renew วันที่ของเดือน (1-31)</label>
       <input id="m-renew" type="number" min="1" max="31" value="${o.renew_day != null ? o.renew_day : ''}" placeholder="เช่น 5" />
     </div>
-    <div class="field">
-      <label>ประเภทการจ่าย</label>
-      <select id="m-payment" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
-        <option value="">— เลือก —</option>
-        ${paymentOptions}
-      </select>
+
+    <!-- Row 2: ค่าใช้จ่าย | สกุลเงิน | ประเภทการจ่าย (3 cols on one line) -->
+    <div class="field-span-2" style="display:grid;grid-template-columns:1.6fr 1fr 1.4fr;gap:14px">
+      <div class="field" style="margin-bottom:0">
+        <label>ค่าใช้จ่าย (ต่อรอบ)</label>
+        <input id="m-cost" type="number" min="0" step="0.01" value="${o.cost_amount != null ? o.cost_amount : ''}" placeholder="เช่น 590.00" />
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label>สกุลเงิน</label>
+        <select id="m-currency" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
+          ${['THB','USD','EUR','GBP','JPY','CNY'].map(c =>
+            `<option value="${c}" ${(o.cost_currency || 'THB') === c ? 'selected' : ''}>${c}</option>`
+          ).join('')}
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label>ประเภทการจ่าย</label>
+        <select id="m-payment" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
+          <option value="">— เลือก —</option>
+          ${paymentOptions}
+        </select>
+      </div>
     </div>
 
-    <div class="field">
-      <label>ค่าใช้จ่าย (ต่อรอบ)</label>
-      <input id="m-cost" type="number" min="0" step="0.01" value="${o.cost_amount != null ? o.cost_amount : ''}" placeholder="เช่น 590.00" />
-    </div>
-    <div class="field">
-      <label>สกุลเงิน</label>
-      <select id="m-currency" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
-        ${['THB','USD','EUR','GBP','JPY','CNY'].map(c =>
-          `<option value="${c}" ${(o.cost_currency || 'THB') === c ? 'selected' : ''}>${c}</option>`
-        ).join('')}
-      </select>
-    </div>
-
+    <!-- Row 3: วันเริ่ม | วันสิ้นสุด (already same line via field-grid-2) -->
     <div class="field">
       <label>วันเริ่มต้น</label>
       <input id="m-start-date" type="date" value="${escapeHtml((o.start_date || '').slice(0, 10))}" />
@@ -943,7 +938,7 @@ function billingFieldsHTML(obj) {
 }
 
 function billingFieldsCollect() {
-  const billingCycle = document.querySelector('input[name="m-bc"]:checked')?.value || '';
+  const billingCycle = $('m-billing-cycle') ? ($('m-billing-cycle').value || '') : '';
   return {
     renew_day: ($('m-renew') && $('m-renew').value) ? parseInt($('m-renew').value, 10) : null,
     card_owner: $('m-card-owner') ? ($('m-card-owner').value.trim() || null) : null,
@@ -972,15 +967,16 @@ async function bindBillingFieldsDynamic() {
     cb.addEventListener('change', () => { wrap.style.display = cb.checked ? '' : 'none'; });
   }
 
-  // toggle Renew วันที่ visibility ตาม billing_cycle
-  document.querySelectorAll('input[name="m-bc"]').forEach(rb => {
-    rb.addEventListener('change', () => {
+  // toggle Renew วันที่ visibility ตาม billing_cycle (dropdown)
+  const bc = $('m-billing-cycle');
+  if (bc) {
+    bc.addEventListener('change', () => {
       const renewWrap = $('m-renew-wrap');
       if (renewWrap) {
-        renewWrap.style.display = (rb.value === 'monthly' && rb.checked) ? '' : 'none';
+        renewWrap.style.display = bc.value === 'monthly' ? '' : 'none';
       }
     });
-  });
+  }
 }
 
 function siteInfoCard(site) {
