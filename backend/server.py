@@ -1891,6 +1891,17 @@ def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
             "       created_at, last_login_at "
             "FROM members ORDER BY created_at DESC"
         ).fetchall()
+        # ดึง team membership ของทุก member ในคำขอเดียว → group ใน Python
+        tm_rows = conn.execute(
+            "SELECT tm.member_id, t.id AS team_id, t.name AS team_name "
+            "FROM team_members tm JOIN teams t ON t.id = tm.team_id "
+            "ORDER BY t.name"
+        ).fetchall()
+    teams_by_member: dict[int, list[dict[str, Any]]] = {}
+    for r in tm_rows:
+        teams_by_member.setdefault(r["member_id"], []).append(
+            {"id": r["team_id"], "name": r["team_name"]}
+        )
     return {
         "members": [
             {
@@ -1903,10 +1914,57 @@ def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
                 "has_password": bool(r["has_password"]),
                 "created_at": r["created_at"],
                 "last_login_at": r["last_login_at"],
+                "teams": teams_by_member.get(r["id"], []),
             }
             for r in rows
         ]
     }
+
+
+class MemberTeamsPatch(BaseModel):
+    team_ids: list[int]
+
+
+@app.put("/api/admin/members/{member_id}/teams")
+def admin_set_member_teams(
+    member_id: int,
+    payload: MemberTeamsPatch,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """ตั้ง teams ของ member เป็นชุดที่กำหนด (replace all)
+    Diff old vs new → INSERT/DELETE rows ใน team_members
+    """
+    with db_conn() as conn:
+        if not conn.execute("SELECT 1 FROM members WHERE id = ?", (member_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="member not found")
+        current = {r["team_id"] for r in conn.execute(
+            "SELECT team_id FROM team_members WHERE member_id = ?", (member_id,)
+        ).fetchall()}
+        target = set(int(t) for t in payload.team_ids)
+        # validate ว่า team ทั้งหมดที่ส่งมามีอยู่จริง
+        if target:
+            valid = {r["id"] for r in conn.execute(
+                f"SELECT id FROM teams WHERE id IN ({','.join('?' * len(target))})",
+                tuple(target),
+            ).fetchall()}
+            if valid != target:
+                missing = target - valid
+                raise HTTPException(status_code=400, detail=f"team not found: {sorted(missing)}")
+
+        to_add = target - current
+        to_remove = current - target
+        now = utc_now().isoformat()
+        for team_id in to_add:
+            conn.execute(
+                "INSERT INTO team_members(team_id, member_id, added_at) VALUES (?, ?, ?)",
+                (team_id, member_id, now),
+            )
+        for team_id in to_remove:
+            conn.execute(
+                "DELETE FROM team_members WHERE team_id = ? AND member_id = ?",
+                (team_id, member_id),
+            )
+    return {"ok": True, "added": len(to_add), "removed": len(to_remove)}
 
 
 @app.get("/api/admin/members/{member_id}")

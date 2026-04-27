@@ -2066,11 +2066,51 @@ async function renderMembersPage() {
       <h2 class="page-title">👥 Members</h2>
       <span class="card-sub" id="m-count">—</span>
     </div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+      <label style="font-size:13px;color:var(--text-muted);font-weight:500">Filter:</label>
+      <select id="m-team-filter" style="padding:8px 12px;font-size:13px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);min-width:200px">
+        <option value="">— ทุกคน (default) —</option>
+        <option value="__none__">🚫 ยังไม่มีทีม</option>
+        <!-- options ของ teams โหลดด้วย JS -->
+      </select>
+      <span id="m-filter-info" style="font-size:12px;color:var(--text-muted)"></span>
+    </div>
     <div id="m-list">
       <div class="empty">กำลังโหลด…</div>
     </div>
   `;
   await loadMembersList();
+}
+
+// State สำหรับ filter
+let _membersCache = [];
+let _teamsCache = [];
+
+function applyMemberFilter() {
+  const filterEl = $('m-team-filter');
+  if (!filterEl) return;
+  const filter = filterEl.value;
+  let filtered;
+  if (filter === '') {
+    filtered = _membersCache;
+  } else if (filter === '__none__') {
+    filtered = _membersCache.filter(m => !m.teams || m.teams.length === 0);
+  } else {
+    const teamId = parseInt(filter, 10);
+    filtered = _membersCache.filter(m => (m.teams || []).some(t => t.id === teamId));
+  }
+  renderMembersTable(filtered);
+  $('m-count').textContent = filter
+    ? `${filtered.length} / ${_membersCache.length} คน`
+    : `รวม ${_membersCache.length} คน`;
+  const info = $('m-filter-info');
+  if (info) {
+    if (filter === '__none__') info.textContent = '— เฉพาะ member ที่ยังไม่อยู่ในทีมใด';
+    else if (filter) {
+      const t = _teamsCache.find(tt => tt.id === parseInt(filter, 10));
+      info.textContent = t ? `— สมาชิกของทีม "${t.name}"` : '';
+    } else info.textContent = '';
+  }
 }
 
 function fmtMemberDate(iso) {
@@ -2082,18 +2122,46 @@ function fmtMemberDate(iso) {
 }
 
 async function loadMembersList() {
-  let data;
+  let data, teamsData;
   try {
-    data = await fetchJson('/api/admin/members');
+    [data, teamsData] = await Promise.all([
+      fetchJson('/api/admin/members'),
+      fetchJson('/api/admin/teams'),
+    ]);
   } catch (e) {
     $('m-list').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
     return;
   }
-  const members = data.members;
-  $('m-count').textContent = `รวม ${members.length} คน`;
+  _membersCache = data.members || [];
+  _teamsCache = teamsData.teams || [];
 
-  if (members.length === 0) {
+  // populate team filter dropdown
+  const filterEl = $('m-team-filter');
+  if (filterEl) {
+    const currentVal = filterEl.value;
+    // เก็บ default options + เพิ่ม teams
+    filterEl.innerHTML = `
+      <option value="">— ทุกคน (default) —</option>
+      <option value="__none__">🚫 ยังไม่มีทีม</option>
+      ${_teamsCache.map(t => `<option value="${t.id}">${escapeHtml(t.name)} (${t.member_count})</option>`).join('')}
+    `;
+    if (currentVal) filterEl.value = currentVal;   // restore selection
+    // wire change handler (idempotent — ใส่ใหม่ทุก load)
+    filterEl.onchange = applyMemberFilter;
+  }
+
+  if (_membersCache.length === 0) {
     $('m-list').innerHTML = `<div class="empty">ยังไม่มี member ในระบบ — สมัครได้ที่ <a href="/login" target="_blank" style="color:var(--primary)">/login</a></div>`;
+    $('m-count').textContent = '0 คน';
+    return;
+  }
+
+  applyMemberFilter();   // render with current filter
+}
+
+function renderMembersTable(members) {
+  if (members.length === 0) {
+    $('m-list').innerHTML = `<div class="empty">ไม่เจอ member ที่ตรงกับ filter</div>`;
     return;
   }
 
@@ -2105,6 +2173,7 @@ async function loadMembersList() {
             <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">ชื่อ</th>
             <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">เบอร์มือถือ</th>
             <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">อีเมล</th>
+            <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">ทีม</th>
             <th style="text-align:center;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">บทบาท</th>
             <th style="text-align:center;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">รหัสผ่าน</th>
             <th style="text-align:center;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">สถานะ</th>
@@ -2126,6 +2195,14 @@ async function loadMembersList() {
   const roleBadge = isAdmin => isAdmin
     ? '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:linear-gradient(135deg, rgba(37,99,235,.15), rgba(124,58,237,.15));color:var(--primary-dark)">👑 Admin</span>'
     : '<span style="color:var(--text-muted);font-size:12px">Member</span>';
+  const teamsCell = teams => {
+    if (!teams || teams.length === 0) {
+      return '<span style="color:var(--text-muted);font-size:12px;font-style:italic">— ยังไม่มีทีม —</span>';
+    }
+    return teams.map(t =>
+      `<span style="display:inline-block;padding:2px 8px;margin:1px 3px 1px 0;border-radius:999px;font-size:11px;font-weight:500;background:rgba(37,99,235,.10);color:var(--primary)">${escapeHtml(t.name)}</span>`
+    ).join('');
+  };
 
   const tbody = $('m-tbody');
   tbody.innerHTML = members.map(m => `
@@ -2133,6 +2210,12 @@ async function loadMembersList() {
       <td style="padding:12px">${escapeHtml(m.display_name || '—')}</td>
       <td style="padding:12px;font-family:ui-monospace,Menlo,monospace">${escapeHtml(m.phone || '—')}</td>
       <td style="padding:12px">${escapeHtml(m.email || '—')}</td>
+      <td style="padding:8px 12px">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <div style="display:inline-flex;flex-wrap:wrap;align-items:center">${teamsCell(m.teams)}</div>
+          <button class="btn" data-act="edit-teams" data-id="${m.id}" data-name="${escapeHtml(m.display_name || m.email || m.phone)}" style="font-size:11px;padding:3px 8px" title="แก้ไขทีม">✏️</button>
+        </div>
+      </td>
       <td style="padding:12px;text-align:center">${roleBadge(m.is_admin)}</td>
       <td style="padding:12px;text-align:center">${pwBadge(m.has_password)}</td>
       <td style="padding:12px;text-align:center">${statusBadge(m.enabled)}</td>
@@ -2153,9 +2236,66 @@ async function loadMembersList() {
   });
 }
 
+// === Modal: edit member's teams (multi-select) ===
+function showEditMemberTeamsModal(memberId, memberName) {
+  const member = _membersCache.find(m => m.id === memberId);
+  if (!member) return;
+  const currentTeamIds = new Set((member.teams || []).map(t => t.id));
+
+  showModal({
+    title: `แก้ไขทีมของ ${memberName}`,
+    body: `
+      <div class="hint" style="margin-bottom:12px;color:var(--text-muted);font-size:12px">
+        เลือกทีมที่ member นี้สังกัด (จะถูก grant สิทธิ์เข้าถึง platform ตาม team)
+      </div>
+      ${_teamsCache.length === 0
+        ? '<div class="empty">ยังไม่มี team ในระบบ — สร้าง team ก่อนที่ <a href="#/teams" style="color:var(--primary)">หน้า Teams</a></div>'
+        : `<div style="display:flex;flex-direction:column;gap:6px;max-height:400px;overflow-y:auto">
+            ${_teamsCache.map(t => `
+              <label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;background:${currentTeamIds.has(t.id) ? 'var(--primary-soft)' : 'var(--bg-card)'};transition:all .12s">
+                <input type="checkbox" name="m-team" value="${t.id}" ${currentTeamIds.has(t.id) ? 'checked' : ''} style="margin:0">
+                <div style="flex:1;min-width:0">
+                  <div style="font-weight:600;font-size:13.5px">${escapeHtml(t.name)}</div>
+                  <div style="font-size:11.5px;color:var(--text-muted)">
+                    ${t.member_count} member · ${t.site_count} site${t.description ? ' · ' + escapeHtml(t.description) : ''}
+                  </div>
+                </div>
+              </label>
+            `).join('')}
+          </div>`
+      }
+    `,
+    onSubmit: async () => {
+      const checked = Array.from(document.querySelectorAll('input[name="m-team"]:checked'))
+        .map(cb => parseInt(cb.value, 10));
+      await fetchJson(`/api/admin/members/${memberId}/teams`, {
+        method: 'PUT',
+        body: JSON.stringify({ team_ids: checked }),
+      });
+      await loadMembersList();
+    },
+  });
+
+  // visual feedback ตอนติ๊ก
+  setTimeout(() => {
+    document.querySelectorAll('input[name="m-team"]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const lbl = cb.closest('label');
+        if (lbl) lbl.style.background = cb.checked ? 'var(--primary-soft)' : 'var(--bg-card)';
+      });
+    });
+  }, 0);
+}
+
 async function handleMemberAction(btn) {
   const id = btn.dataset.id;
   const act = btn.dataset.act;
+
+  if (act === 'edit-teams') {
+    const name = btn.dataset.name;
+    showEditMemberTeamsModal(parseInt(id, 10), name);
+    return;
+  }
 
   if (act === 'role') {
     const isCurrentlyAdmin = btn.dataset.current === '1';
