@@ -2169,6 +2169,14 @@ def extension_match(
         if matched_id is None:
             return {"matched": False}
 
+        # access_info: diagnostic เพื่อบอกฝั่ง extension ว่า credentials ที่ส่งกลับ
+        # มาจาก rule ไหน — ช่วย debug "ทำไมยังเห็น"
+        access_info: dict[str, Any] = {
+            "member_id": member_id,
+            "via": None,           # 'admin_paired' | 'team_all' | 'team_select' | 'no_access'
+            "teams": [],           # list of {id, name, access_type} ที่ contribute
+        }
+
         if member_id is None:
             # Admin-paired → ไม่ filter (ใช้สำหรับ admin หรือ super admin)
             creds = conn.execute(
@@ -2177,18 +2185,29 @@ def extension_match(
                 "ORDER BY last_used_at DESC NULLS LAST, created_at DESC",
                 (matched_id,),
             ).fetchall()
+            access_info["via"] = "admin_paired"
+            access_info["reason"] = "Extension ถูก pair เป็น admin (member_id=null) — bypass team filter ทั้งหมด"
         else:
             # Member-paired → strict: ต้องอยู่ใน team ที่ grant site นี้
             access_rows = conn.execute(
-                "SELECT ts.access_type FROM team_members tm "
+                "SELECT t.id AS team_id, t.name AS team_name, ts.access_type "
+                "FROM team_members tm "
                 "JOIN team_sites ts ON ts.team_id = tm.team_id "
+                "JOIN teams t ON t.id = tm.team_id "
                 "WHERE ts.site_id = ? AND tm.member_id = ?",
                 (matched_id, member_id),
             ).fetchall()
+            access_info["teams"] = [
+                {"id": r["team_id"], "name": r["team_name"], "access_type": r["access_type"]}
+                for r in access_rows
+            ]
             if not access_rows:
                 # Member ไม่อยู่ในทีมที่มีสิทธิ์ (หรือ site ไม่ถูกผูกทีมใดเลย)
-                # → คืน credentials ว่าง → extension จะไม่แสดง prefill widget
                 creds = []
+                access_info["via"] = "no_access"
+                access_info["reason"] = (
+                    f"member_id={member_id} ไม่อยู่ใน team ใดที่ grant site นี้ → ไม่มี credential"
+                )
             elif any(r["access_type"] == "all" for r in access_rows):
                 # อย่างน้อย 1 ทีมให้ access 'all' → คืนทุก credential
                 creds = conn.execute(
@@ -2197,6 +2216,11 @@ def extension_match(
                     "ORDER BY last_used_at DESC NULLS LAST, created_at DESC",
                     (matched_id,),
                 ).fetchall()
+                all_teams = [t["name"] for t in access_info["teams"] if t["access_type"] == "all"]
+                access_info["via"] = "team_all"
+                access_info["reason"] = (
+                    f"ผ่าน team '{', '.join(all_teams)}' (access_type=all) → ทุก credential"
+                )
             else:
                 # ทุกทีมเป็น 'select' → เอา credentials ที่ team_credentials ระบุไว้ (union)
                 creds = conn.execute(
@@ -2210,11 +2234,18 @@ def extension_match(
                     "ORDER BY c.last_used_at DESC NULLS LAST, c.created_at DESC",
                     (matched_id, member_id),
                 ).fetchall()
+                sel_teams = [t["name"] for t in access_info["teams"]]
+                access_info["via"] = "team_select"
+                access_info["reason"] = (
+                    f"ผ่าน team '{', '.join(sel_teams)}' (access_type=select) → "
+                    f"{len(creds)} credential ที่ team กำหนดไว้"
+                )
 
     return {
         "matched": True,
         "site": matched_site,
         "credentials": [dict(c) for c in creds],
+        "access": access_info,
     }
 
 

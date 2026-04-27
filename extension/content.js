@@ -9,7 +9,7 @@
 //   - English for technical / library code
 
 const TAG = '[FCT]';
-const SCRIPT_VERSION = 'v16-strict-prefill';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
+const SCRIPT_VERSION = 'v17-access-diagnostic';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
 
 // Hostname ที่ extension จะทำหน้าที่ scrape credit (mode A)
 // เว็บอื่นที่ user เพิ่มใน admin จะได้แค่ prefill (mode B) — ไม่ scrape credit
@@ -504,9 +504,16 @@ async function fillCredential(formInfo, cred) {
     + ' as=' + (pairedUser ? pairedUser.label : '(unpaired)'));
 }
 
+function escapeHtmlSafe(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
+  ));
+}
+
 let prefillWidget = null;
 let prefillCreds = [];
 let prefillFormInfo = null;
+let prefillAccess = null;   // {via, reason, teams[], member_id} จาก backend
 
 function buildPrefillWidget() {
   if (prefillWidget) return;
@@ -539,7 +546,23 @@ function togglePrefillPanel() {
 
 function renderPrefillList(siteName) {
   const list = prefillWidget.querySelector('#fct-cred-list');
-  prefillWidget.querySelector('#fct-panel-sub').textContent = `เว็บ: ${siteName}`;
+  // Header sub-text: site name + access source (badge)
+  const sub = prefillWidget.querySelector('#fct-panel-sub');
+  let accessBadge = '';
+  if (prefillAccess) {
+    const via = prefillAccess.via;
+    if (via === 'admin_paired') {
+      accessBadge = `<div style="margin-top:4px;font-size:11px;padding:3px 7px;border-radius:6px;background:#fef3c7;color:#92400e;display:inline-block">⚠ admin-paired (bypass team filter)</div>`;
+    } else if (via === 'team_all') {
+      const names = (prefillAccess.teams || []).filter(t => t.access_type === 'all').map(t => t.name).join(', ');
+      accessBadge = `<div style="margin-top:4px;font-size:11px;padding:3px 7px;border-radius:6px;background:#dcfce7;color:#166534;display:inline-block">✓ via Team: ${escapeHtmlSafe(names)} (all)</div>`;
+    } else if (via === 'team_select') {
+      const names = (prefillAccess.teams || []).map(t => t.name).join(', ');
+      accessBadge = `<div style="margin-top:4px;font-size:11px;padding:3px 7px;border-radius:6px;background:#dbeafe;color:#1e40af;display:inline-block">✓ via Team: ${escapeHtmlSafe(names)} (select)</div>`;
+    }
+  }
+  sub.innerHTML = `เว็บ: ${escapeHtmlSafe(siteName)}${accessBadge}`;
+
   if (prefillCreds.length === 0) {
     list.innerHTML = `<div class="fct-empty">
       ยังไม่มี credential สำหรับเว็บนี้<br/>
@@ -608,18 +631,38 @@ async function checkPrefill() {
     }
 
     prefillCreds = data.credentials || [];
+    prefillAccess = data.access || null;
+
+    // === DIAGNOSTIC LOG (เปิดให้ user ตรวจสอบสิทธิ์ได้ใน Console) ===
+    const pairLabel = pairedUserMatch
+      ? `${pairedUserMatch.role || '?'}:${pairedUserMatch.label || '?'} (member_id=${pairedUserMatch.member_id || 'null'})`
+      : '(unpaired)';
+    console.log(
+      `${TAG} 🔑 prefill check:`,
+      '\n  site         :', data.site.name,
+      '\n  paired-as    :', pairLabel,
+      '\n  via          :', prefillAccess ? prefillAccess.via : '(no access info)',
+      '\n  reason       :', prefillAccess ? prefillAccess.reason : '(none)',
+      '\n  teams matched:', prefillAccess ? prefillAccess.teams : [],
+      '\n  credentials  :', prefillCreds.length,
+    );
+
     // ถ้าไม่มี credential (ผู้ใช้ไม่มีสิทธิ์ผ่าน team) → ซ่อน widget เลย
-    // ไม่ควรโชว์ trigger ที่กดแล้วบอก "ไม่มี credential" เพราะจะทำให้ดูเหมือนสิทธิ์ผ่าน
     if (prefillCreds.length === 0) {
       if (prefillWidget) prefillWidget.style.display = 'none';
-      console.debug(TAG, 'prefill: no credentials granted for', data.site.name, '— widget hidden');
+      console.warn(TAG, 'prefill: no credentials granted for', data.site.name, '— widget hidden');
       return;
     }
 
     buildPrefillWidget();
     prefillWidget.style.display = '';
     renderPrefillList(data.site.name);
-    console.debug(TAG, 'prefill ready:', prefillCreds.length, 'credentials for', data.site.name);
+
+    // เตือนถ้าผู้ใช้คาดว่าไม่ควรเห็น แต่ widget ยังโชว์ — บอกว่ามาจาก rule ไหน
+    if (prefillAccess && prefillAccess.via === 'admin_paired') {
+      console.warn(TAG, '⚠️  Extension is paired as ADMIN → bypasses all team filtering.',
+        'หากต้องการ test team filter ให้ unpair แล้ว pair ใหม่ในฐานะ member');
+    }
   } finally {
     prefillCheckInFlight = false;
   }

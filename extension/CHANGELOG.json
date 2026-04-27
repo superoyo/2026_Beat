@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.8.2",
+      "date": "2026-04-27",
+      "title": "Access diagnostic for prefill",
+      "summary": "Backend คืน access info พร้อม credentials + extension log + แสดง badge ในแผง prefill ว่าสิทธิ์มาจาก rule ไหน",
+      "changes": [
+        "Backend /api/extension/match: เพิ่ม access object {via, reason, teams[], member_id}",
+        "Extension content.js: log diagnostic ลง console พร้อม pairing info",
+        "แผง prefill มี badge สี: ⚠ admin-paired / ✓ via Team X (all) / ✓ via Team X (select)",
+        "Console warning ถ้า paired เป็น admin (bypass team filter)"
+      ]
+    },
+    {
       "version": "1.8.1",
       "date": "2026-04-27",
       "title": "Hide prefill widget when no access",
