@@ -1760,12 +1760,29 @@ function renderVersionCard(cl) {
 
   return `
     <div class="card" style="display:block;margin-bottom:14px;padding:20px 22px;background:linear-gradient(135deg, rgba(37,99,235,.04), rgba(124,58,237,.04));border-color:var(--primary-soft)">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-        <span style="font-size:22px">📦</span>
-        <div>${headerLine}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:22px">📦</span>
+          <div>${headerLine}</div>
+        </div>
+        <a href="/api/admin/extension/download" class="btn primary" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;font-size:12.5px;padding:7px 14px">
+          📥 ดาวน์โหลดเวอร์ชันนี้
+        </a>
       </div>
       ${summary}
       ${changesList}
+
+      <div style="margin-top:18px;padding:12px 14px;background:var(--bg-soft);border-radius:8px;border:1px solid var(--border)">
+        <div style="font-size:12.5px;font-weight:600;color:var(--text);margin-bottom:6px">🔄 วิธีอัพเดท extension (ไม่ต้อง remove)</div>
+        <ol style="margin:0;padding-left:20px;line-height:1.7;color:var(--text);font-size:12.5px">
+          <li>ดาวน์โหลด ZIP ใหม่ (ปุ่มด้านบน) — แตก <strong>ทับ folder เดิม</strong> (replace files)
+            <br><span style="color:var(--text-muted);font-size:11.5px">หรือถ้า clone repo ไว้: <code style="background:var(--bg-card);padding:1px 5px;border-radius:3px;font-size:11px">git pull</code></span>
+          </li>
+          <li>เปิด <code style="background:var(--bg-card);padding:1px 5px;border-radius:3px;font-size:11px">chrome://extensions</code> → กดปุ่ม <strong>🔄 Reload</strong> บน card "FEFL Beat"</li>
+          <li>เสร็จ — ไม่ต้อง re-pair, config เดิมยังอยู่</li>
+        </ol>
+      </div>
+
       ${olderSection}
     </div>
   `;
