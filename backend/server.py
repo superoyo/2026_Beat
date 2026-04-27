@@ -193,6 +193,13 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_usage_logs_site ON usage_logs(site_id);
             CREATE INDEX IF NOT EXISTS idx_usage_logs_member ON usage_logs(member_id);
 
+            -- Card owners (for sites' billing info)
+            CREATE TABLE IF NOT EXISTS card_owners (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT NOT NULL UNIQUE,
+                created_at  TEXT NOT NULL
+            );
+
             -- Teams + access control
             CREATE TABLE IF NOT EXISTS teams (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -243,6 +250,21 @@ def init_db() -> None:
         }
         if "device_label" not in log_cols:
             conn.execute("ALTER TABLE usage_logs ADD COLUMN device_label TEXT")
+
+        # sites migration — เพิ่มข้อมูล billing/lifecycle
+        site_cols = {
+            row["name"] for row in conn.execute("PRAGMA table_info(sites)").fetchall()
+        }
+        for col_name, col_def in [
+            ("renew_day",     "INTEGER"),                           # 1-31
+            ("card_owner_id", "INTEGER REFERENCES card_owners(id) ON DELETE SET NULL"),
+            ("cancelled",     "INTEGER NOT NULL DEFAULT 0"),
+            ("cancelled_at",  "TEXT"),                              # ISO date
+            ("payment_type",  "TEXT"),                              # ดู PAYMENT_TYPES ด้านล่าง
+            ("usage_reason",  "TEXT"),                              # free text
+        ]:
+            if col_name not in site_cols:
+                conn.execute(f"ALTER TABLE sites ADD COLUMN {col_name} {col_def}")
 
         # members table — เพิ่มคอลัมน์ email + password + enabled
         member_cols = {
@@ -1804,14 +1826,52 @@ def admin_delete_member(
 # ===========================================================================
 # Sites & Credentials (admin-protected)
 # ===========================================================================
+PAYMENT_TYPES = [
+    "credit_card", "debit_card", "bank_transfer", "promptpay",
+    "truemoney", "paypal", "crypto", "other",
+]
+
+
 class SiteIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     url_pattern: str = Field(..., min_length=1, max_length=500)
+    renew_day: Optional[int] = Field(None, ge=1, le=31)
+    card_owner: Optional[str] = Field(None, max_length=120)  # name (auto-create ถ้าไม่มี)
+    cancelled: Optional[bool] = None
+    cancelled_at: Optional[str] = Field(None, max_length=40)  # ISO date
+    payment_type: Optional[str] = Field(None, max_length=40)
+    usage_reason: Optional[str] = Field(None, max_length=2000)
 
 
 class SitePatchIn(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=120)
     url_pattern: Optional[str] = Field(None, min_length=1, max_length=500)
+    renew_day: Optional[int] = Field(None, ge=1, le=31)
+    card_owner: Optional[str] = Field(None, max_length=120)  # ส่ง '' เพื่อ clear
+    cancelled: Optional[bool] = None
+    cancelled_at: Optional[str] = Field(None, max_length=40)
+    payment_type: Optional[str] = Field(None, max_length=40)
+    usage_reason: Optional[str] = Field(None, max_length=2000)
+
+
+def _resolve_card_owner_id(name: Optional[str]) -> Optional[int]:
+    """หา card_owner.id จากชื่อ — ถ้าไม่มี สร้างใหม่ คืน id; ถ้า name ว่าง คืน None"""
+    if not name:
+        return None
+    name = name.strip()
+    if not name:
+        return None
+    with db_conn() as conn:
+        row = conn.execute(
+            "SELECT id FROM card_owners WHERE LOWER(name) = LOWER(?)", (name,)
+        ).fetchone()
+        if row:
+            return row["id"]
+        cur = conn.execute(
+            "INSERT INTO card_owners(name, created_at) VALUES (?, ?)",
+            (name, utc_now().isoformat()),
+        )
+        return cur.lastrowid
 
 
 class CredentialIn(BaseModel):
@@ -1824,6 +1884,22 @@ class CredentialPatchIn(BaseModel):
     label: Optional[str] = Field(None, max_length=120)
     username: Optional[str] = Field(None, min_length=1, max_length=200)
     password: Optional[str] = Field(None, min_length=1, max_length=500)
+
+
+@app.get("/api/admin/card-owners")
+def list_card_owners(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    """รายชื่อเจ้าของบัตรเครดิตทั้งหมด — ใช้กับ datalist ใน UI"""
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, name, created_at FROM card_owners ORDER BY name"
+        ).fetchall()
+    return {"card_owners": [dict(r) for r in rows]}
+
+
+@app.get("/api/admin/payment-types")
+def list_payment_types(_sess: dict = Depends(require_admin)) -> dict[str, list[str]]:
+    """รายชื่อ payment type ที่ระบบรองรับ — fixed list"""
+    return {"payment_types": PAYMENT_TYPES}
 
 
 @app.get("/api/admin/sites")
@@ -1839,10 +1915,18 @@ def list_sites(_sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]
 
 @app.post("/api/admin/sites")
 def create_site(payload: SiteIn, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    card_owner_id = _resolve_card_owner_id(payload.card_owner) if payload.card_owner else None
+    cancelled_int = 1 if payload.cancelled else 0
     with db_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO sites(name, url_pattern, created_at) VALUES (?, ?, ?)",
-            (payload.name, payload.url_pattern, utc_now().isoformat()),
+            "INSERT INTO sites(name, url_pattern, created_at, "
+            "  renew_day, card_owner_id, cancelled, cancelled_at, payment_type, usage_reason) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                payload.name, payload.url_pattern, utc_now().isoformat(),
+                payload.renew_day, card_owner_id, cancelled_int,
+                payload.cancelled_at, payload.payment_type, payload.usage_reason,
+            ),
         )
         new_id = cur.lastrowid
     return {"ok": True, "id": new_id}
@@ -1851,7 +1935,12 @@ def create_site(payload: SiteIn, _sess: dict = Depends(require_admin)) -> dict[s
 @app.get("/api/admin/sites/{site_id}")
 def get_site(site_id: int, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
     with db_conn() as conn:
-        site = conn.execute("SELECT * FROM sites WHERE id = ?", (site_id,)).fetchone()
+        site = conn.execute(
+            "SELECT s.*, co.name AS card_owner_name "
+            "FROM sites s LEFT JOIN card_owners co ON co.id = s.card_owner_id "
+            "WHERE s.id = ?",
+            (site_id,),
+        ).fetchone()
         if not site:
             raise HTTPException(status_code=404, detail="site not found")
         creds = conn.execute(
@@ -1859,8 +1948,11 @@ def get_site(site_id: int, _sess: dict = Depends(require_admin)) -> dict[str, An
             "FROM credentials WHERE site_id = ? ORDER BY created_at DESC",
             (site_id,),
         ).fetchall()
+    site_dict = dict(site)
+    if "cancelled" in site_dict and site_dict["cancelled"] is not None:
+        site_dict["cancelled"] = bool(site_dict["cancelled"])
     return {
-        "site": dict(site),
+        "site": site_dict,
         "credentials": [dict(c) for c in creds],
     }
 
@@ -1883,12 +1975,25 @@ def update_site(
     payload: SitePatchIn,
     _sess: dict = Depends(require_admin),
 ) -> dict[str, Any]:
-    """แก้ไขชื่อ + URL pattern ของ site"""
+    """แก้ไข site — รองรับทุกฟิลด์ (partial update)"""
     updates: dict[str, Any] = {}
     if payload.name is not None:
         updates["name"] = payload.name.strip()
     if payload.url_pattern is not None:
         updates["url_pattern"] = payload.url_pattern.strip()
+    if payload.renew_day is not None:
+        updates["renew_day"] = payload.renew_day
+    if payload.card_owner is not None:
+        # ถ้าเป็น empty string → clear (NULL)
+        updates["card_owner_id"] = _resolve_card_owner_id(payload.card_owner) if payload.card_owner else None
+    if payload.cancelled is not None:
+        updates["cancelled"] = 1 if payload.cancelled else 0
+    if payload.cancelled_at is not None:
+        updates["cancelled_at"] = payload.cancelled_at or None
+    if payload.payment_type is not None:
+        updates["payment_type"] = payload.payment_type or None
+    if payload.usage_reason is not None:
+        updates["usage_reason"] = payload.usage_reason or None
     if not updates:
         raise HTTPException(status_code=400, detail="ไม่มีอะไรให้บันทึก")
     set_clause = ", ".join(f"{k} = ?" for k in updates)

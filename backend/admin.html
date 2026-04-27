@@ -692,31 +692,126 @@ async function loadSites() {
   });
 }
 
+// ====== Site form helpers (shared by add + edit) ======
+const PAYMENT_TYPE_LABELS = {
+  credit_card: 'บัตรเครดิต',
+  debit_card: 'บัตรเดบิต',
+  bank_transfer: 'โอนธนาคาร',
+  promptpay: 'PromptPay',
+  truemoney: 'TrueMoney Wallet',
+  paypal: 'PayPal',
+  crypto: 'Crypto',
+  other: 'อื่นๆ',
+};
+
+let _cardOwnersCache = null;
+async function getCardOwners() {
+  if (_cardOwnersCache) return _cardOwnersCache;
+  try {
+    const r = await fetchJson('/api/admin/card-owners');
+    _cardOwnersCache = r.card_owners || [];
+  } catch { _cardOwnersCache = []; }
+  return _cardOwnersCache;
+}
+
+function siteFormHTML(site) {
+  // site อาจเป็น null (โหมด add) หรือ object (โหมด edit)
+  const s = site || {};
+  const paymentOptions = Object.entries(PAYMENT_TYPE_LABELS).map(
+    ([v, label]) => `<option value="${v}" ${s.payment_type === v ? 'selected' : ''}>${escapeHtml(label)}</option>`
+  ).join('');
+  return `
+    <div class="field">
+      <label>ชื่อเว็บ</label>
+      <input id="m-name" type="text" value="${escapeHtml(s.name || '')}" placeholder="เช่น Behance, Adobe Stock" />
+    </div>
+    <div class="field">
+      <label>URL pattern (ใช้ * เป็น wildcard)</label>
+      <input id="m-pattern" type="text" value="${escapeHtml(s.url_pattern || '')}" placeholder="*.example.com/*" />
+      <div class="hint">เช่น <code>*.freepik.com/*</code></div>
+    </div>
+
+    <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
+    <div style="font-size:11.5px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px">ข้อมูลการเงิน</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="field">
+        <label>Renew วันที่ (1-31)</label>
+        <input id="m-renew" type="number" min="1" max="31" value="${s.renew_day != null ? s.renew_day : ''}" placeholder="เช่น 5" />
+      </div>
+      <div class="field">
+        <label>ประเภทการจ่าย</label>
+        <select id="m-payment" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
+          <option value="">— เลือก —</option>
+          ${paymentOptions}
+        </select>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>ใช้บัตรของ (พิมพ์ใหม่ได้ ระบบจะเพิ่มให้)</label>
+      <input id="m-card-owner" type="text" list="card-owners-list" value="${escapeHtml(s.card_owner_name || '')}" placeholder="เช่น Anan, Tao, สมชาย" />
+      <datalist id="card-owners-list"></datalist>
+    </div>
+
+    <div class="field">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input id="m-cancelled" type="checkbox" ${s.cancelled ? 'checked' : ''}>
+        <span>ยกเลิกแล้ว</span>
+      </label>
+    </div>
+    <div class="field" id="m-cancelled-at-wrap" style="${s.cancelled ? '' : 'display:none'}">
+      <label>ยกเลิกเมื่อวันที่</label>
+      <input id="m-cancelled-at" type="date" value="${escapeHtml((s.cancelled_at || '').slice(0, 10))}" />
+    </div>
+
+    <div class="field">
+      <label>เหตุผลในการใช้งาน</label>
+      <textarea id="m-reason" rows="2" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical">${escapeHtml(s.usage_reason || '')}</textarea>
+    </div>
+  `;
+}
+
+function siteFormCollect() {
+  return {
+    name: $('m-name').value.trim(),
+    url_pattern: $('m-pattern').value.trim(),
+    renew_day: $('m-renew').value ? parseInt($('m-renew').value, 10) : null,
+    card_owner: $('m-card-owner').value.trim() || null,
+    payment_type: $('m-payment').value || null,
+    cancelled: $('m-cancelled').checked,
+    cancelled_at: $('m-cancelled').checked ? ($('m-cancelled-at').value || null) : null,
+    usage_reason: $('m-reason').value.trim() || null,
+  };
+}
+
+async function bindSiteFormDynamic() {
+  // populate card-owners datalist
+  const owners = await getCardOwners();
+  const list = document.getElementById('card-owners-list');
+  if (list) list.innerHTML = owners.map(o => `<option value="${escapeHtml(o.name)}">`).join('');
+
+  // toggle cancelled-at visibility
+  const cb = $('m-cancelled');
+  const wrap = $('m-cancelled-at-wrap');
+  if (cb && wrap) {
+    cb.addEventListener('change', () => { wrap.style.display = cb.checked ? '' : 'none'; });
+  }
+}
+
 function showAddSiteModal() {
   showModal({
     title: 'เพิ่มเว็บใหม่',
-    body: `
-      <div class="field">
-        <label>ชื่อเว็บ</label>
-        <input id="m-name" type="text" placeholder="เช่น Behance, Adobe Stock" />
-      </div>
-      <div class="field">
-        <label>URL pattern (ใช้ * เป็น wildcard)</label>
-        <input id="m-pattern" type="text" placeholder="*.example.com/*" />
-        <div class="hint">เช่น <code>*.freepik.com/*</code> หรือ <code>app.example.com/login</code></div>
-      </div>
-    `,
+    body: siteFormHTML(null),
     onSubmit: async () => {
-      const name = $('m-name').value.trim();
-      const url_pattern = $('m-pattern').value.trim();
-      if (!name || !url_pattern) throw new Error('กรอกชื่อและ URL pattern');
-      await fetchJson('/api/admin/sites', {
-        method: 'POST',
-        body: JSON.stringify({ name, url_pattern }),
-      });
+      const data = siteFormCollect();
+      if (!data.name || !data.url_pattern) throw new Error('กรอกชื่อและ URL pattern');
+      await fetchJson('/api/admin/sites', { method: 'POST', body: JSON.stringify(data) });
+      _cardOwnersCache = null;  // invalidate cache (อาจมี owner ใหม่)
       await loadSites();
     },
   });
+  setTimeout(bindSiteFormDynamic, 0);
 }
 
 let _currentSite = null;
@@ -756,42 +851,59 @@ async function renderSiteDetail(siteId) {
 function showEditSiteModal(site, siteId) {
   showModal({
     title: 'แก้ไขข้อมูลเว็บ',
-    body: `
-      <div class="field">
-        <label>ชื่อเว็บ</label>
-        <input id="m-name" type="text" value="${escapeHtml(site.name)}" />
-      </div>
-      <div class="field">
-        <label>URL pattern (ใช้ * เป็น wildcard)</label>
-        <input id="m-pattern" type="text" value="${escapeHtml(site.url_pattern)}" />
-        <div class="hint">เช่น <code>*.freepik.com/*</code> หรือ <code>app.example.com/login</code></div>
-      </div>
-    `,
+    body: siteFormHTML(site),
     onSubmit: async () => {
-      const name = $('m-name').value.trim();
-      const url_pattern = $('m-pattern').value.trim();
-      if (!name || !url_pattern) throw new Error('กรอกชื่อและ URL pattern');
+      const data = siteFormCollect();
+      if (!data.name || !data.url_pattern) throw new Error('กรอกชื่อและ URL pattern');
       await fetchJson('/api/admin/sites/' + siteId, {
-        method: 'PATCH',
-        body: JSON.stringify({ name, url_pattern }),
+        method: 'PATCH', body: JSON.stringify(data),
       });
+      _cardOwnersCache = null;
       await loadSite(siteId);
     },
   });
+  setTimeout(bindSiteFormDynamic, 0);
+}
+
+function fmtPaymentTypeTh(v) {
+  return PAYMENT_TYPE_LABELS[v] || (v || '—');
+}
+
+function siteInfoCard(site) {
+  const items = [];
+  items.push(['URL pattern', `<code>${escapeHtml(site.url_pattern)}</code>`]);
+  if (site.renew_day) items.push(['Renew', `วันที่ <strong>${site.renew_day}</strong> ของทุกเดือน`]);
+  if (site.payment_type) items.push(['ประเภทการจ่าย', escapeHtml(fmtPaymentTypeTh(site.payment_type))]);
+  if (site.card_owner_name) items.push(['ใช้บัตรของ', `<strong>${escapeHtml(site.card_owner_name)}</strong>`]);
+  if (site.cancelled) {
+    const at = site.cancelled_at ? new Date(site.cancelled_at).toLocaleDateString('th-TH') : '';
+    items.push([
+      'สถานะ',
+      `<span style="display:inline-flex;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(220,38,38,.10);color:var(--critical)">⛔ ยกเลิกแล้ว</span>${at ? ' ' + escapeHtml(at) : ''}`
+    ]);
+  } else {
+    items.push(['สถานะ', '<span style="display:inline-flex;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(16,185,129,.12);color:var(--green)">✓ ใช้งานอยู่</span>']);
+  }
+  if (site.usage_reason) {
+    items.push(['เหตุผลในการใช้', `<div style="white-space:pre-wrap">${escapeHtml(site.usage_reason)}</div>`]);
+  }
+  return `
+    <div class="card" style="display:block">
+      <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 16px;font-size:13.5px">
+        ${items.map(([k, v]) => `
+          <div style="color:var(--text-muted)">${k}</div>
+          <div>${v}</div>
+        `).join('')}
+      </div>
+    </div>
+  `;
 }
 
 async function loadSite(siteId) {
   const { site, credentials } = await fetchJson('/api/admin/sites/' + siteId);
   _currentSite = site;
   $('site-name').textContent = site.name;
-  $('site-meta').innerHTML = `
-    <div class="card">
-      <div>
-        <div class="card-sub">URL pattern</div>
-        <div class="card-title"><code>${escapeHtml(site.url_pattern)}</code></div>
-      </div>
-    </div>
-  `;
+  $('site-meta').innerHTML = siteInfoCard(site);
 
   const list = $('creds-list');
   if (credentials.length === 0) {
