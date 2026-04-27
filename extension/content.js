@@ -9,7 +9,7 @@
 //   - English for technical / library code
 
 const TAG = '[FCT]';
-const SCRIPT_VERSION = 'v21-two-step-login';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
+const SCRIPT_VERSION = 'v22-shadow-dom';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
 
 // Hostname ที่ extension จะทำหน้าที่ scrape credit (mode A)
 // เว็บอื่นที่ user เพิ่มใน admin จะได้แค่ prefill (mode B) — ไม่ scrape credit
@@ -627,44 +627,130 @@ function escapeHtmlSafe(s) {
   ));
 }
 
-let prefillWidget = null;
+// === Prefill widget — ใช้ Shadow DOM เพื่อ isolate จาก page CSS ทั้งหมด ===
+// (ป้องกันปัญหา z-index/stacking context/pointer-events ของหน้าเว็บ
+//  เช่น ChatGPT, Tailwind modals ที่ครอบงำ widget)
+let prefillWidget = null;   // = host element (เก็บไว้สำหรับ style.display ภายนอก)
+let prefillRoot = null;     // = shadow root (querySelector ภายใน)
 let prefillCreds = [];
 let prefillFormInfo = null;
 let prefillAccess = null;   // {via, reason, teams[], member_id} จาก backend
 
+// CSS ที่จะ inline ใน Shadow DOM — ไม่อิง prefill.css (page CSS เข้าไม่ถึง shadow)
+const PREFILL_SHADOW_CSS = `
+  :host { all: initial; }
+  * { box-sizing: border-box; }
+  #root {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 13px; color: #e6ebf3;
+    max-width: 320px;
+    pointer-events: auto;
+  }
+  .fct-trigger {
+    background: #4f8cff; color: #fff;
+    border: none; border-radius: 999px;
+    padding: 10px 16px; font-size: 13px; font-weight: 500;
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgba(0,0,0,.35);
+    display: flex; align-items: center; gap: 6px;
+    font-family: inherit;
+    pointer-events: auto;
+  }
+  .fct-trigger:hover { background: #3b78eb; }
+  .fct-panel {
+    background: #131a26; border: 1px solid #243044;
+    border-radius: 12px; padding: 12px; width: 320px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.5);
+    margin-bottom: 10px;
+  }
+  .fct-panel-head {
+    display: flex; justify-content: space-between; align-items: center;
+    font-weight: 600; margin-bottom: 8px;
+  }
+  .fct-close {
+    background: none; border: none; color: #8b95a8;
+    cursor: pointer; font-size: 16px; padding: 0 4px;
+  }
+  .fct-close:hover { color: #e6ebf3; }
+  .fct-panel-sub { color: #8b95a8; font-size: 11px; margin-bottom: 8px; }
+  .fct-cred {
+    background: #1b2433; border: 1px solid #243044;
+    border-radius: 8px; padding: 10px; margin-bottom: 6px;
+    cursor: pointer; transition: border .15s;
+  }
+  .fct-cred:hover { border-color: #4f8cff; background: #232f44; }
+  .fct-cred-label { font-size: 12px; color: #8b95a8; }
+  .fct-cred-username {
+    font-size: 13px; font-weight: 500; color: #e6ebf3;
+    word-break: break-all;
+  }
+  .fct-empty {
+    color: #8b95a8; font-size: 12px;
+    text-align: center; padding: 14px;
+  }
+  .fct-empty a { color: #4f8cff; }
+`;
+
 function buildPrefillWidget() {
   if (prefillWidget) return;
-  prefillWidget = document.createElement('div');
-  prefillWidget.id = 'fct-prefill-widget';
-  prefillWidget.innerHTML = `
-    <div class="fct-panel" id="fct-panel" style="display:none">
-      <div class="fct-panel-head">
-        <span>🔑 FEFL Beat — เลือกบัญชี</span>
-        <button class="fct-close" id="fct-close-btn">×</button>
-      </div>
-      <div class="fct-panel-sub" id="fct-panel-sub"></div>
-      <div id="fct-cred-list"></div>
-    </div>
-    <button class="fct-trigger" id="fct-trigger">🔑 FEFL Beat : Sign On</button>
-  `;
-  document.body.appendChild(prefillWidget);
 
-  prefillWidget.querySelector('#fct-trigger').addEventListener('click', togglePrefillPanel);
-  prefillWidget.querySelector('#fct-close-btn').addEventListener('click', () => {
-    prefillWidget.querySelector('#fct-panel').style.display = 'none';
+  // Host element — ใช้ inline !important styles เพื่อ override page CSS แน่ๆ
+  prefillWidget = document.createElement('div');
+  prefillWidget.id = 'fct-prefill-host';
+  prefillWidget.setAttribute('style', `
+    position: fixed !important;
+    bottom: 20px !important;
+    right: 20px !important;
+    z-index: 2147483647 !important;
+    pointer-events: auto !important;
+    isolation: isolate !important;
+    contain: layout style !important;
+    width: auto !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    transform: translateZ(0) !important;
+  `);
+
+  // Shadow DOM — encapsulate จาก page CSS/JS ทั้งหมด
+  prefillRoot = prefillWidget.attachShadow({ mode: 'open' });
+  prefillRoot.innerHTML = `
+    <style>${PREFILL_SHADOW_CSS}</style>
+    <div id="root">
+      <div class="fct-panel" id="fct-panel" style="display:none">
+        <div class="fct-panel-head">
+          <span>🔑 FEFL Beat — เลือกบัญชี</span>
+          <button class="fct-close" id="fct-close-btn">×</button>
+        </div>
+        <div class="fct-panel-sub" id="fct-panel-sub"></div>
+        <div id="fct-cred-list"></div>
+      </div>
+      <button class="fct-trigger" id="fct-trigger">🔑 FEFL Beat : Sign On</button>
+    </div>
+  `;
+
+  // Append ที่ <html> ไม่ใช่ <body> — escape body's stacking context
+  // (บางเว็บใส่ transform/contain บน body ทำให้ position:fixed ใน body ถูก clip)
+  (document.documentElement || document.body).appendChild(prefillWidget);
+
+  prefillRoot.getElementById('fct-trigger').addEventListener('click', togglePrefillPanel);
+  prefillRoot.getElementById('fct-close-btn').addEventListener('click', () => {
+    prefillRoot.getElementById('fct-panel').style.display = 'none';
   });
 }
 
 function togglePrefillPanel() {
-  const panel = prefillWidget.querySelector('#fct-panel');
+  const panel = prefillRoot.getElementById('fct-panel');
   const visible = panel.style.display !== 'none';
   panel.style.display = visible ? 'none' : 'block';
 }
 
 function renderPrefillList(siteName) {
-  const list = prefillWidget.querySelector('#fct-cred-list');
+  const list = prefillRoot.getElementById('fct-cred-list');
   // Header sub-text: site name + access source (badge)
-  const sub = prefillWidget.querySelector('#fct-panel-sub');
+  const sub = prefillRoot.getElementById('fct-panel-sub');
   let accessBadge = '';
   if (prefillAccess) {
     const via = prefillAccess.via;
@@ -711,7 +797,7 @@ function renderPrefillList(siteName) {
         return;
       }
       fillCredential(formInfo, cred);
-      prefillWidget.querySelector('#fct-panel').style.display = 'none';
+      prefillRoot.getElementById('fct-panel').style.display = 'none';
     });
   });
 }

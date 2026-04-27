@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.1",
+      "date": "2026-04-27",
+      "title": "Shadow DOM widget — fix click-blocked on ChatGPT",
+      "summary": "Widget ถูก overlay ของหน้าเว็บ (ChatGPT, Tailwind modals) บังคลิกไม่ได้ — แก้ด้วย Shadow DOM + append ที่ <html>",
+      "changes": [
+        "Refactor widget เข้า Shadow DOM (mode:open) — isolate จาก page CSS/JS ทั้งหมด",
+        "Inline CSS ใน shadow root (ไม่อิง prefill.css อีกต่อไป)",
+        "Append host element ที่ documentElement (<html>) แทน body — escape body's stacking context",
+        "Inline !important styles: position/z-index/pointer-events/isolation/contain/transform",
+        "ลบ prefill.css ออกจาก manifest (ไม่ได้ใช้แล้วเพราะ inline ใน shadow)"
+      ]
+    },
+    {
       "version": "1.9.0",
       "date": "2026-04-27",
       "title": "2-step login support (ChatGPT, Google, Microsoft)",

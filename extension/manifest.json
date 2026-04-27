@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FEFL Beat",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "FEFL Beat — Sign-On + Credit Tracker สำหรับ Freepik และเว็บอื่นๆ ที่จัดการผ่าน admin panel",
   "permissions": ["storage", "activeTab"],
   "host_permissions": [
@@ -17,7 +17,6 @@
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"],
-      "css": ["prefill.css"],
       "run_at": "document_idle"
     }
   ],
