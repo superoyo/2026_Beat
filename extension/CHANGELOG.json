@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.5",
+      "date": "2026-04-27",
+      "title": "Diagnostic: iframe + popup window detection",
+      "summary": "ช่วย debug เว็บที่ login modal อยู่ใน iframe หรือเป็น popup window — Shutterstock เป็นต้น",
+      "changes": [
+        "Diagnostic log บอกจำนวน iframe (same-origin/cross-origin)",
+        "ถ้า same-origin iframe มี password field → log เตือน (content.js ใน iframe นั้นจะ handle เอง)",
+        "Detect popup window context (window.opener) → บอก opener URL",
+        "เปลี่ยนข้อความ hint: ยังไม่เห็น password → กด Login/popup ก่อน"
+      ]
+    },
+    {
       "version": "1.9.4",
       "date": "2026-04-27",
       "title": "Pending shortcut works on 'both' mode (ChatGPT fix)",

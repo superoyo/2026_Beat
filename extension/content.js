@@ -9,7 +9,7 @@
 //   - English for technical / library code
 
 const TAG = '[FCT]';
-const SCRIPT_VERSION = 'v25-pending-on-both';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
+const SCRIPT_VERSION = 'v26-iframe-diag';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
 
 // Hostname ที่ extension จะทำหน้าที่ scrape credit (mode A)
 // เว็บอื่นที่ user เพิ่มใน admin จะได้แค่ prefill (mode B) — ไม่ scrape credit
@@ -917,11 +917,43 @@ async function checkPrefill() {
           const meta = i.name || i.id || i.placeholder || '(no-name)';
           return `[${i.type || 'text'}${i.autocomplete ? ' ac=' + i.autocomplete : ''}] ${meta}`;
         });
+
+        // === IFRAME diagnostic — modal บางเว็บอยู่ใน iframe ===
+        const iframes = Array.from(document.querySelectorAll('iframe'));
+        const sameOriginFrames = iframes.filter(f => {
+          try { return !!f.contentDocument; } catch { return false; }
+        });
+        const crossOriginFrames = iframes.length - sameOriginFrames.length;
+        let iframeHint = '';
+        let iframePwTotal = 0;
+        for (const f of sameOriginFrames) {
+          try {
+            const ipw = f.contentDocument.querySelectorAll('input[type="password"]').length;
+            iframePwTotal += ipw;
+          } catch {}
+        }
+        if (iframes.length > 0) {
+          iframeHint = `\n  iframes: ${iframes.length} total (${sameOriginFrames.length} same-origin, ${crossOriginFrames} cross-origin)`;
+          if (iframePwTotal > 0) {
+            iframeHint += `\n  ⚠ พบ ${iframePwTotal} password field(s) ใน same-origin iframe — content.js ใน iframe นั้นจะจัดการเอง (ดู log จาก iframe context)`;
+          }
+          if (crossOriginFrames > 0) {
+            iframeHint += `\n  ⚠ มี cross-origin iframe — ถ้า login form อยู่ในนั้น content.js จะรันแยกใน iframe context (ดู console ของ iframe ที่ DevTools เลือก)`;
+          }
+        }
+
+        // === Window context — เป็น popup window หรือไม่ ===
+        const isPopupWindow = window.opener != null;
+        const popupHint = isPopupWindow
+          ? `\n  📦 หน้านี้คือ popup window (window.opener != null) — opener: ${window.opener.location ? window.opener.location.href : '(cross-origin)'}`
+          : '';
+
         console.debug(TAG, '🔍 prefill: no login form detected on', location.href,
           `\n  password fields: ${pwAll.length} total, ${visiblePw} visible`,
           `\n  visible inputs (top 12):`, summary.length ? summary : '(none)',
+          iframeHint + popupHint,
           pwAll.length === 0
-            ? '\n  → ยังไม่เห็นช่อง password — อาจต้องคลิกปุ่มเปิดหน้า password ก่อน'
+            ? '\n  → ยังไม่เห็นช่อง password — อาจต้องคลิกปุ่มเปิดหน้า login/popup ก่อน'
             : visiblePw === 0
               ? '\n  → ช่อง password ถูกซ่อนอยู่'
               : '\n  → มีช่อง password แต่ container detection ล้มเหลว'
