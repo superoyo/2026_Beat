@@ -1,0 +1,71 @@
+{
+  "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
+  "versions": [
+    {
+      "version": "1.5.0",
+      "date": "2026-04-27",
+      "title": "Device label tracking",
+      "summary": "บันทึกชื่อเครื่อง (device label) ใน log การใช้งานทุกครั้ง",
+      "changes": [
+        "Auto-detect ชื่อเครื่องจาก browser (ใช้ navigator.userAgentData)",
+        "ผู้ใช้สามารถแก้ไขเป็นชื่อเครื่องที่อ่านง่าย (เช่น \"Anan MacBook\")",
+        "เพิ่มคอลัมน์ \"เครื่อง\" ในหน้า Logs"
+      ]
+    },
+    {
+      "version": "1.4.0",
+      "date": "2026-04-27",
+      "title": "1-click install + auto-pair",
+      "summary": "ดาวน์โหลด ZIP จากหน้า admin + ผูก extension กับ user อัตโนมัติ",
+      "changes": [
+        "ดาวน์โหลด extension เป็น ZIP โดยตรงจาก admin panel",
+        "ปุ่ม \"เชื่อมบัญชี\" ส่ง config (Backend URL + API Key + ชื่อ user) ไปยัง extension อัตโนมัติ",
+        "Log บันทึก member_id + user_label ของผู้ใช้ที่ pair"
+      ]
+    },
+    {
+      "version": "1.3.0",
+      "date": "2026-04-27",
+      "title": "Usage logging",
+      "summary": "บันทึก log ทุกครั้งที่ user คลิก Prefill",
+      "changes": [
+        "ส่ง source_url ของหน้าที่กด Prefill ไปยัง backend",
+        "Backend insert usage_logs row พร้อม snapshot ของ site/credential",
+        "เพิ่มหน้า 📜 Logs ใน admin sidebar"
+      ]
+    },
+    {
+      "version": "1.2.0",
+      "date": "2026-04-26",
+      "title": "Live status probe",
+      "summary": "Active probe extension จากหน้า admin เพื่อตรวจสอบสถานะการเชื่อมต่อแบบ real-time",
+      "changes": [
+        "Postmessage bridge: FCT_FORCE_PING ระหว่าง admin page กับ content.js",
+        "Backend GET /api/admin/extension/status + heartbeat tracking",
+        "Status widget แสดงสถานะ live (เขียว / เหลือง / แดง) พร้อม auto-refresh ทุก 5 วินาที"
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "date": "2026-04-26",
+      "title": "API Key authentication + Railway deploy",
+      "summary": "รองรับ deploy บน Railway + ป้องกัน endpoint ด้วย X-API-Key",
+      "changes": [
+        "Extension ส่ง X-API-Key header กับทุก request",
+        "Backend bind 0.0.0.0 + ใช้ $PORT เมื่อ FCT_PUBLIC_DEPLOY=true",
+        "CORS เปิดให้ origin chrome-extension://*"
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "date": "2026-04-25",
+      "title": "Initial release",
+      "summary": "FEFL Beat extension รุ่นแรก — credit tracker + sign-on",
+      "changes": [
+        "Chrome MV3 extension",
+        "Track Freepik credit balance อัตโนมัติเมื่อ user เปิดหน้า Freepik",
+        "Prefill credentials บนหน้า login ของเว็บที่ลงทะเบียนใน Config"
+      ]
+    }
+  ]
+}

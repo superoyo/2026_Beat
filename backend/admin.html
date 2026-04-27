@@ -1709,6 +1709,68 @@ async function manualRefreshStatus() {
   }
 }
 
+function renderVersionCard(cl) {
+  const cur = cl.current_entry;
+  const ver = cl.current_version || '?';
+  const olderVersions = (cl.versions || []).filter(v => v.version !== ver);
+
+  const headerLine = cur
+    ? `<span style="font-size:18px;font-weight:700;color:var(--primary)">v${escapeHtml(ver)}</span>
+       <span style="margin-left:8px;font-size:14px;color:var(--text)">— ${escapeHtml(cur.title)}</span>`
+    : `<span style="font-size:18px;font-weight:700;color:var(--primary)">v${escapeHtml(ver)}</span>
+       <span style="margin-left:8px;font-size:13px;color:var(--text-muted)">(ไม่มี changelog entry)</span>`;
+
+  const summary = cur && cur.summary
+    ? `<div style="margin:6px 0 0;color:var(--text-muted);font-size:13px">${escapeHtml(cur.summary)}</div>`
+    : '';
+
+  const changesList = cur && cur.changes && cur.changes.length
+    ? `<div style="margin-top:14px">
+         <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">✨ ใหม่ในเวอร์ชันนี้</div>
+         <ul style="margin:0;padding-left:20px;line-height:1.7;color:var(--text);font-size:13.5px">
+           ${cur.changes.map(c => `<li>${escapeHtml(c)}</li>`).join('')}
+         </ul>
+       </div>`
+    : '';
+
+  const olderSection = olderVersions.length > 0
+    ? `<details style="margin-top:18px">
+         <summary style="cursor:pointer;font-size:13px;color:var(--primary);font-weight:500;list-style:none">
+           ▼ ดูประวัติเวอร์ชันที่ผ่านมา (${olderVersions.length})
+         </summary>
+         <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:14px">
+           ${olderVersions.map(v => `
+             <div style="padding:12px 14px;background:var(--bg-soft);border-radius:8px;border:1px solid var(--border)">
+               <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px;flex-wrap:wrap">
+                 <span style="font-weight:700;color:var(--primary)">v${escapeHtml(v.version)}</span>
+                 <span style="font-size:13px;font-weight:600">${escapeHtml(v.title || '—')}</span>
+                 <span style="margin-left:auto;font-size:11.5px;color:var(--text-soft)">${escapeHtml(v.date || '')}</span>
+               </div>
+               ${v.summary ? `<div style="color:var(--text-muted);font-size:12.5px;margin-bottom:8px">${escapeHtml(v.summary)}</div>` : ''}
+               ${v.changes && v.changes.length ? `
+                 <ul style="margin:0;padding-left:18px;font-size:12.5px;color:var(--text);line-height:1.65">
+                   ${v.changes.map(c => `<li>${escapeHtml(c)}</li>`).join('')}
+                 </ul>
+               ` : ''}
+             </div>
+           `).join('')}
+         </div>
+       </details>`
+    : '';
+
+  return `
+    <div class="card" style="display:block;margin-bottom:14px;padding:20px 22px;background:linear-gradient(135deg, rgba(37,99,235,.04), rgba(124,58,237,.04));border-color:var(--primary-soft)">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <span style="font-size:22px">📦</span>
+        <div>${headerLine}</div>
+      </div>
+      ${summary}
+      ${changesList}
+      ${olderSection}
+    </div>
+  `;
+}
+
 async function renderExtensionPage() {
   const backendUrl = location.origin;
 
@@ -1720,6 +1782,14 @@ async function renderExtensionPage() {
       const r = await fetchJson('/api/admin/api-key');
       apiKey = r.api_key;
     } catch (e) { apiKeyError = e.message; }
+  }
+
+  // ดึง changelog (admin only)
+  let changelog = null;
+  if (currentRole === 'admin') {
+    try {
+      changelog = await fetchJson('/api/admin/extension/changelog');
+    } catch {}
   }
 
   $('main').innerHTML = `
@@ -1741,6 +1811,9 @@ async function renderExtensionPage() {
       </div>
     </div>
     ` : ''}
+
+    <!-- Version card (admin only) -->
+    ${currentRole === 'admin' && changelog ? renderVersionCard(changelog) : ''}
 
     <!-- Step 1: ติดตั้ง -->
     <div class="card" style="display:block;margin-bottom:14px">

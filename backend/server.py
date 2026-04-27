@@ -1022,6 +1022,39 @@ def get_api_key(_sess: dict = Depends(require_admin)) -> dict[str, str]:
     return {"api_key": get_extension_api_key()}
 
 
+@app.get("/api/admin/extension/changelog")
+def extension_changelog(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    """อ่าน CHANGELOG.json + manifest.json จาก extension folder"""
+    manifest_path = EXTENSION_DIR / "manifest.json"
+    changelog_path = EXTENSION_DIR / "CHANGELOG.json"
+
+    current_version: Optional[str] = None
+    if manifest_path.exists():
+        try:
+            mf = _json.loads(manifest_path.read_text(encoding="utf-8"))
+            current_version = mf.get("version")
+        except Exception:
+            pass
+
+    versions: list[dict[str, Any]] = []
+    if changelog_path.exists():
+        try:
+            data = _json.loads(changelog_path.read_text(encoding="utf-8"))
+            versions = data.get("versions", [])
+        except Exception:
+            pass
+
+    # หา entry ที่ตรงกับ current version (ถ้ามี)
+    current_entry = next(
+        (v for v in versions if v.get("version") == current_version), None
+    )
+    return {
+        "current_version": current_version,
+        "current_entry": current_entry,
+        "versions": versions,
+    }
+
+
 @app.get("/api/admin/extension/download")
 def download_extension(_sess: dict = Depends(require_admin)) -> StreamingResponse:
     """สร้าง ZIP ของ extension folder เพื่อให้ admin ดาวน์โหลดไป install เอง"""
