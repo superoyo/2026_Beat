@@ -1538,8 +1538,10 @@ async function renderTeamSites(teamId, sites) {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
       <!-- Column: Available -->
       <div class="dnd-col" data-side="available" style="background:var(--bg-soft);border:1.5px dashed var(--border);border-radius:10px;padding:12px;min-height:280px;transition:all .2s">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <div style="font-weight:600;font-size:13.5px;color:var(--text)">📚 Site ทั้งหมด <span class="card-sub" id="dnd-avail-count">(${available.length})</span></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px">
+          <div style="font-weight:600;font-size:13.5px;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis">📚 Site ทั้งหมด <span class="card-sub" id="dnd-avail-count">(${available.length})</span></div>
+          <button class="btn primary" id="dnd-add-all" ${available.length === 0 ? 'disabled' : ''}
+                  style="font-size:11px;padding:4px 10px;white-space:nowrap;flex-shrink:0">+ เพิ่มทั้งหมด</button>
         </div>
         <input type="text" id="dnd-avail-search" placeholder="🔍 ค้นหา..." autocomplete="off"
                style="width:100%;padding:7px 10px;font-size:12.5px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text);margin-bottom:8px" />
@@ -1563,8 +1565,10 @@ async function renderTeamSites(teamId, sites) {
 
       <!-- Column: In team -->
       <div class="dnd-col" data-side="in-team" style="background:rgba(37,99,235,.04);border:1.5px dashed rgba(37,99,235,.3);border-radius:10px;padding:12px;min-height:280px;transition:all .2s">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <div style="font-weight:600;font-size:13.5px;color:var(--text)">✓ ใน Team <span class="card-sub" id="dnd-in-count">(${sites.length})</span></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px">
+          <div style="font-weight:600;font-size:13.5px;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis">✓ ใน Team <span class="card-sub" id="dnd-in-count">(${sites.length})</span></div>
+          <button class="btn danger" id="dnd-remove-all" ${sites.length === 0 ? 'disabled' : ''}
+                  style="font-size:11px;padding:4px 10px;white-space:nowrap;flex-shrink:0">ถอดทั้งหมด</button>
         </div>
         <input type="text" id="dnd-in-search" placeholder="🔍 ค้นหา..." autocomplete="off"
                style="width:100%;padding:7px 10px;font-size:12.5px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text);margin-bottom:8px" />
@@ -1703,6 +1707,66 @@ async function renderTeamSites(teamId, sites) {
   };
   wireSearch('dnd-avail-search', 'available');
   wireSearch('dnd-in-search', 'in-team');
+
+  // === Bulk actions: เพิ่มทั้งหมด / ถอดทั้งหมด ===
+  // หมายเหตุ: ทำงานเฉพาะ items ที่ visible (หลัง filter) → user สามารถใช้ search
+  //          กับ "เพิ่มทั้งหมด/ถอดทั้งหมด" เพื่อ bulk เฉพาะกลุ่มที่กรองได้
+  const bulkAction = async (listSel, opts) => {
+    const visibleItems = Array.from(
+      root.querySelectorAll(`.dnd-list[data-list="${listSel}"] .dnd-item`)
+    ).filter(item => item.style.display !== 'none');
+    if (visibleItems.length === 0) {
+      alert(opts.emptyMsg);
+      return;
+    }
+    const filterVal = (document.getElementById(opts.searchId)?.value || '').trim();
+    const filterMsg = filterVal ? ` (filter: "${filterVal}")` : '';
+    if (!confirm(`${opts.confirmPrefix} ${visibleItems.length} site${filterMsg}?`)) return;
+
+    const btn = document.getElementById(opts.btnId);
+    if (btn) {
+      btn.disabled = true;
+      btn._origText = btn.textContent;
+      btn.textContent = `⏳ กำลัง ${opts.verb} ${visibleItems.length}...`;
+    }
+
+    const ids = visibleItems.map(i => parseInt(i.dataset.siteId, 10));
+    const results = await Promise.allSettled(ids.map(opts.apiCall));
+    const failed = results.filter(r => r.status === 'rejected').length;
+    if (failed > 0) {
+      alert(`${opts.verb}สำเร็จ ${ids.length - failed}/${ids.length} site (ล้มเหลว ${failed})`);
+    }
+    await loadTeamDetail(teamId);   // reload — re-render ทั้งหมด, btn จะถูกสร้างใหม่
+  };
+
+  const addAllBtn = document.getElementById('dnd-add-all');
+  if (addAllBtn) {
+    addAllBtn.addEventListener('click', () => bulkAction('available', {
+      emptyMsg: 'ไม่มี site ให้เพิ่ม',
+      confirmPrefix: 'เพิ่ม',
+      verb: 'เพิ่ม',
+      searchId: 'dnd-avail-search',
+      btnId: 'dnd-add-all',
+      apiCall: (siteId) => fetchJson(`/api/admin/teams/${teamId}/sites`, {
+        method: 'POST',
+        body: JSON.stringify({ site_id: siteId, access_type: 'all' }),
+      }),
+    }));
+  }
+
+  const rmAllBtn = document.getElementById('dnd-remove-all');
+  if (rmAllBtn) {
+    rmAllBtn.addEventListener('click', () => bulkAction('in-team', {
+      emptyMsg: 'ไม่มี site ให้ถอด',
+      confirmPrefix: 'ถอด',
+      verb: 'ถอด',
+      searchId: 'dnd-in-search',
+      btnId: 'dnd-remove-all',
+      apiCall: (siteId) => fetchJson(`/api/admin/teams/${teamId}/sites/${siteId}`, {
+        method: 'DELETE',
+      }),
+    }));
+  }
 }
 
 async function showEditTeamSiteModal(teamId, site) {
