@@ -1932,13 +1932,47 @@ def list_payment_types(_sess: dict = Depends(require_admin)) -> dict[str, list[s
 
 
 @app.get("/api/admin/sites")
-def list_sites(_sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+def list_sites(sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    """List sites — admin เห็นทั้งหมด, member เห็นเฉพาะ site ที่มีสิทธิ์เข้าถึง
+
+    กฎ filter สำหรับ member (ที่ไม่ใช่ admin):
+    - Public site (ไม่มี row ใน team_sites) → visible to all members
+    - Restricted site (มี row ใน team_sites) → เฉพาะ member ที่อยู่ในทีมที่ผูกกับ site นั้น
+    """
+    is_admin_caller = (
+        sess.get("role") == "admin"
+        or (sess.get("role") == "member" and _member_is_admin(sess["member_id"]))
+    )
+
     with db_conn() as conn:
-        sites = conn.execute(
-            "SELECT s.id, s.name, s.url_pattern, s.created_at, "
-            "       (SELECT COUNT(*) FROM credentials c WHERE c.site_id = s.id) AS cred_count "
-            "FROM sites s ORDER BY s.created_at DESC"
-        ).fetchall()
+        if is_admin_caller:
+            sites = conn.execute(
+                "SELECT s.id, s.name, s.url_pattern, s.created_at, "
+                "       (SELECT COUNT(*) FROM credentials c WHERE c.site_id = s.id) AS cred_count "
+                "FROM sites s ORDER BY s.created_at DESC"
+            ).fetchall()
+        else:
+            # Member ธรรมดา → filter ตาม team membership
+            member_id = sess["member_id"]
+            sites = conn.execute(
+                """
+                SELECT s.id, s.name, s.url_pattern, s.created_at,
+                       (SELECT COUNT(*) FROM credentials c WHERE c.site_id = s.id) AS cred_count
+                FROM sites s
+                WHERE
+                    -- Public site: ไม่มี team ใดผูกไว้
+                    NOT EXISTS (SELECT 1 FROM team_sites ts WHERE ts.site_id = s.id)
+                    OR
+                    -- Restricted site: member อยู่ในทีมที่ผูกกับ site นี้
+                    EXISTS (
+                        SELECT 1 FROM team_sites ts
+                        JOIN team_members tm ON tm.team_id = ts.team_id
+                        WHERE ts.site_id = s.id AND tm.member_id = ?
+                    )
+                ORDER BY s.created_at DESC
+                """,
+                (member_id,),
+            ).fetchall()
     return {"sites": [dict(r) for r in sites]}
 
 

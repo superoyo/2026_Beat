@@ -1121,13 +1121,17 @@ function patternToUrl(pattern) {
 }
 
 async function renderPlatformsPage() {
+  const isMember = (currentRole === 'member');
+  const hintText = isMember
+    ? 'เว็บไซต์/แพลตฟอร์มที่คุณมีสิทธิ์เข้าถึง (ตาม Team ที่อยู่) — คลิก card เพื่อเปิดเว็บนั้นใน tab ใหม่'
+    : 'เว็บไซต์/แพลตฟอร์มที่พร้อมใช้งานในระบบ — คลิก card เพื่อเปิดเว็บนั้นใน tab ใหม่';
   $('main').innerHTML = `
     <div class="page-head">
       <h2 class="page-title">🚀 Platforms</h2>
       <span class="card-sub" id="p-count">—</span>
     </div>
     <div class="hint" style="margin-bottom:18px;color:var(--text-muted);font-size:13px">
-      เว็บไซต์/แพลตฟอร์มที่พร้อมใช้งานในระบบ — คลิก card เพื่อเปิดเว็บนั้นใน tab ใหม่
+      ${hintText}
     </div>
     <div id="p-list">
       <div class="empty">กำลังโหลด…</div>
@@ -1145,7 +1149,13 @@ async function renderPlatformsPage() {
   $('p-count').textContent = `${sites.length} แพลตฟอร์ม`;
 
   if (sites.length === 0) {
-    $('p-list').innerHTML = `<div class="empty">ยังไม่มีแพลตฟอร์มในระบบ${currentRole === 'admin' ? ' — เพิ่มได้ที่เมนู <strong>🛠 Config</strong>' : ' — แจ้ง admin ให้เพิ่ม'}</div>`;
+    let emptyMsg;
+    if (currentRole === 'admin') {
+      emptyMsg = 'ยังไม่มีแพลตฟอร์มในระบบ — เพิ่มได้ที่เมนู <strong>🛠 Config</strong>';
+    } else {
+      emptyMsg = 'คุณยังไม่ได้รับสิทธิ์เข้าถึงแพลตฟอร์มใดเลย — แจ้ง admin ให้เพิ่มคุณเข้า Team ที่มีสิทธิ์ใช้งาน';
+    }
+    $('p-list').innerHTML = `<div class="empty">${emptyMsg}</div>`;
     return;
   }
 
