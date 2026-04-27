@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.3",
+      "date": "2026-04-27",
+      "title": "SPA navigation detection + extended pending TTL",
+      "summary": "ChatGPT email-verification → password page บางทีไม่ trigger MutationObserver ทันเวลา + user อาจอ่าน email ก่อนกด password",
+      "changes": [
+        "URL polling 500ms — detect SPA navigation ที่ MutationObserver พลาด",
+        "Safety net periodic check ทุก 3 วินาที (fallback)",
+        "Pending TTL: hostname-specific 5→15 นาที, recent fallback 2→10 นาที",
+        "Diagnostic log ละเอียดขึ้น: visible inputs (top 12) พร้อม type/autocomplete/name"
+      ]
+    },
+    {
       "version": "1.9.2",
       "date": "2026-04-27",
       "title": "Cross-hostname pending + shadow DOM scan + auto-fill toast",

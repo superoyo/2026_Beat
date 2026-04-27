@@ -9,7 +9,7 @@
 //   - English for technical / library code
 
 const TAG = '[FCT]';
-const SCRIPT_VERSION = 'v23-cross-host-pending';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
+const SCRIPT_VERSION = 'v24-spa-nav-poll';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
 
 // Hostname ที่ extension จะทำหน้าที่ scrape credit (mode A)
 // เว็บอื่นที่ user เพิ่มใน admin จะได้แค่ prefill (mode B) — ไม่ scrape credit
@@ -557,11 +557,12 @@ function findLoginForm() {
 
 // === Pending credential — เก็บไว้ระหว่าง step 1 → step 2 ของ 2-step login ===
 // เก็บ 2 keys:
-//  1. hostname-specific (chatgpt.com)         — TTL 5 นาที
-//  2. global "recent"                         — TTL 2 นาที (fallback กรณี
-//     password page ไปคนละ hostname เช่น auth.openai.com)
-const PENDING_TTL_MS = 5 * 60 * 1000;
-const PENDING_RECENT_TTL_MS = 2 * 60 * 1000;
+//  1. hostname-specific (chatgpt.com)         — TTL 15 นาที (กรณี user อ่าน email)
+//  2. global "recent"                         — TTL 10 นาที (fallback กรณี
+//     password page ไปคนละ hostname เช่น auth.openai.com — ChatGPT มี email
+//     verification page กลาง ที่ user อาจอ่านนาน)
+const PENDING_TTL_MS = 15 * 60 * 1000;
+const PENDING_RECENT_TTL_MS = 10 * 60 * 1000;
 const PENDING_RECENT_KEY = 'fct_recent_pending';
 
 function _pendingKey() { return 'pending_prefill_' + location.hostname; }
@@ -908,16 +909,22 @@ async function checkPrefill() {
       }
       if (!prefillNoFormLogged) {
         prefillNoFormLogged = true;
-        const pwCount = document.querySelectorAll('input[type="password"]').length;
-        const visiblePw = Array.from(document.querySelectorAll('input[type="password"]'))
-          .filter(p => isInputVisible(p)).length;
+        const pwAll = deepQuerySelectorAll('input[type="password"]');
+        const visiblePw = pwAll.filter(p => isInputVisible(p)).length;
+        // List visible inputs (top 12) เพื่อช่วย debug
+        const allInputs = deepQuerySelectorAll('input').filter(isInputVisible).slice(0, 12);
+        const summary = allInputs.map(i => {
+          const meta = i.name || i.id || i.placeholder || '(no-name)';
+          return `[${i.type || 'text'}${i.autocomplete ? ' ac=' + i.autocomplete : ''}] ${meta}`;
+        });
         console.debug(TAG, '🔍 prefill: no login form detected on', location.href,
-          `\n  password fields: ${pwCount} total, ${visiblePw} visible`,
-          pwCount === 0
-            ? '\n  → ยังไม่เห็นช่อง password — อาจต้องคลิก "Login" เพื่อเปิด modal ก่อน'
+          `\n  password fields: ${pwAll.length} total, ${visiblePw} visible`,
+          `\n  visible inputs (top 12):`, summary.length ? summary : '(none)',
+          pwAll.length === 0
+            ? '\n  → ยังไม่เห็นช่อง password — อาจต้องคลิกปุ่มเปิดหน้า password ก่อน'
             : visiblePw === 0
-              ? '\n  → ช่อง password ถูกซ่อนอยู่ — เปิด form login ก่อน'
-              : '\n  → มีช่อง password แต่หา username pair ไม่ได้ (รายงาน console DOM ให้ admin)'
+              ? '\n  → ช่อง password ถูกซ่อนอยู่'
+              : '\n  → มีช่อง password แต่ container detection ล้มเหลว'
         );
       }
       return;
@@ -1163,6 +1170,22 @@ observer.observe(document.body, {
   subtree: true,
   characterData: true,
 });
+
+// SPA navigation detection — content script รันใน isolated world ไม่เห็น
+// pushState/replaceState ของ page → poll location.href ทุก 500ms
+let _lastPolledUrl = location.href;
+setInterval(() => {
+  if (location.href !== _lastPolledUrl) {
+    const oldUrl = _lastPolledUrl;
+    _lastPolledUrl = location.href;
+    console.debug(TAG, '🔄 URL changed:', oldUrl, '→', location.href, '— re-checking prefill');
+    prefillNoFormLogged = false;   // reset log gate
+    schedulePrefillCheck();
+  }
+}, 500);
+
+// Safety net — re-check prefill ทุก 3 วินาที (กรณี MutationObserver พลาด event)
+setInterval(() => schedulePrefillCheck(), 3000);
 
 // ตอบ message จาก options page (Test selector button)
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
