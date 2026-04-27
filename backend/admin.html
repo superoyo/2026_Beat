@@ -554,6 +554,10 @@
             <span class="profile-action-icon">↪</span>
             <span>ออกจากบัญชีนี้</span>
           </button>
+          <button class="profile-action danger" id="logout-all-btn" type="button" title="ลบ session ทุกบัญชีในเครื่องนี้">
+            <span class="profile-action-icon">⎋</span>
+            <span>ออกจากทุกบัญชี (เคลียร์ browser)</span>
+          </button>
         </div>
       </div>
     </div>
@@ -2825,6 +2829,28 @@ function attachSidebarHandlers() {
       } catch {}
     }
     location.replace('/');
+  });
+
+  // logout จากทุกบัญชี — เคลียร์ session ทั้งฝั่ง admin + member + localStorage
+  $('logout-all-btn').addEventListener('click', async () => {
+    const profiles = getProfiles();
+    const n = profiles.length;
+    const msg = n > 0
+      ? `ออกจากทุกบัญชี (${n} บัญชี) ในเครื่องนี้?\n\nระบบจะลบ session ฝั่ง server และล้างข้อมูล profile ทั้งหมดในเบราว์เซอร์นี้`
+      : 'ออกจากระบบและล้าง session ทั้งหมดในเครื่องนี้?';
+    if (!confirm(msg)) return;
+
+    // ลบ session ฝั่ง server — ทั้ง admin และ member endpoints (ทำพร้อมกันเพราะ cookies แยกกัน)
+    await Promise.allSettled([
+      fetch('/api/admin/logout',  { method: 'POST', credentials: 'same-origin' }),
+      fetch('/api/member/logout', { method: 'POST', credentials: 'same-origin' }),
+    ]);
+
+    // ล้าง localStorage ที่เกี่ยวกับ profile/auth ทั้งหมด
+    try { localStorage.removeItem(PROFILES_KEY); } catch {}
+    try { sessionStorage.clear(); } catch {}
+
+    location.replace('/login');
   });
 }
 
