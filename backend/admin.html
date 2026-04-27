@@ -1791,23 +1791,19 @@ function renderVersionCard(cl) {
 async function renderExtensionPage() {
   const backendUrl = location.origin;
 
-  // ดึง API Key ถ้าเป็น admin (member ดูไม่ได้)
+  // ดึง API Key (ทั้ง admin + member)
   let apiKey = null;
   let apiKeyError = null;
-  if (currentRole === 'admin') {
-    try {
-      const r = await fetchJson('/api/admin/api-key');
-      apiKey = r.api_key;
-    } catch (e) { apiKeyError = e.message; }
-  }
+  try {
+    const r = await fetchJson('/api/admin/api-key');
+    apiKey = r.api_key;
+  } catch (e) { apiKeyError = e.message; }
 
-  // ดึง changelog (admin only)
+  // ดึง changelog (ทั้ง admin + member)
   let changelog = null;
-  if (currentRole === 'admin') {
-    try {
-      changelog = await fetchJson('/api/admin/extension/changelog');
-    } catch {}
-  }
+  try {
+    changelog = await fetchJson('/api/admin/extension/changelog');
+  } catch {}
 
   $('main').innerHTML = `
     <div class="page-head">
@@ -1815,8 +1811,7 @@ async function renderExtensionPage() {
       <button class="btn" id="ext-refresh" style="font-size:12px;padding:6px 12px">🔄 รีเฟรช status</button>
     </div>
 
-    <!-- Status widget (admin only) -->
-    ${currentRole === 'admin' ? `
+    <!-- Status widget -->
     <div class="card" style="display:block;margin-bottom:14px;padding:18px 22px">
       <div style="display:flex;align-items:center;gap:18px">
         <span id="ext-status-dot" style="width:14px;height:14px;border-radius:50%;background:#94a3b8;flex-shrink:0;transition:all .25s"></span>
@@ -1827,10 +1822,9 @@ async function renderExtensionPage() {
         </div>
       </div>
     </div>
-    ` : ''}
 
-    <!-- Version card (admin only) -->
-    ${currentRole === 'admin' && changelog ? renderVersionCard(changelog) : ''}
+    <!-- Version card -->
+    ${changelog ? renderVersionCard(changelog) : ''}
 
     <!-- Step 1: ติดตั้ง -->
     <div class="card" style="display:block;margin-bottom:14px">
@@ -1838,7 +1832,6 @@ async function renderExtensionPage() {
         <span style="display:inline-block;width:24px;height:24px;background:var(--primary);color:#fff;border-radius:50%;text-align:center;line-height:24px;font-size:12px;margin-right:8px">1</span>
         ติดตั้ง Extension เข้า Chrome
       </h3>
-      ${currentRole === 'admin' ? `
       <div style="margin-bottom:14px">
         <a href="/api/admin/extension/download" class="btn primary" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none">
           📥 ดาวน์โหลด Extension (ZIP)
@@ -1847,7 +1840,6 @@ async function renderExtensionPage() {
           ได้ไฟล์ zip — แตกออกแล้วเลือก folder ใน step ถัดไป
         </span>
       </div>
-      ` : ''}
       <ol style="line-height:1.85;color:var(--text);font-size:13.5px;padding-left:20px;margin:0 0 12px">
         <li>เปิด Chrome พิมพ์ <code style="background:var(--bg-soft);padding:1px 6px;border-radius:4px">chrome://extensions</code> ใน address bar</li>
         <li>เปิดสวิตช์ <strong>Developer mode</strong> (มุมขวาบน)</li>
@@ -1864,10 +1856,7 @@ async function renderExtensionPage() {
         🔗 เชื่อมบัญชีของคุณกับ Extension
       </h3>
       <p style="margin:0 0 14px;color:var(--text-muted);font-size:13px">
-        ${currentRole === 'admin'
-          ? 'กดปุ่มด้านล่างครั้งเดียว — ระบบจะส่ง Backend URL + API Key + ชื่อบัญชีคุณ ไปเก็บใน extension อัตโนมัติ — ไม่ต้องตั้ง options เอง'
-          : 'กดปุ่มด้านล่างเพื่อบอก extension ว่ามี member นี้ใช้งาน — log จะเก็บชื่อคุณทุกครั้งที่ prefill'
-        }
+        กดปุ่มด้านล่างครั้งเดียว — ระบบจะส่ง Backend URL + API Key + ชื่อบัญชีคุณ ไปเก็บใน extension อัตโนมัติ — ไม่ต้องตั้ง options เอง
       </p>
 
       <div class="field" style="margin-bottom:10px">
@@ -1895,16 +1884,10 @@ async function renderExtensionPage() {
           </div>
           <div>
             <div style="font-size:12px;font-weight:600;margin-bottom:4px;color:var(--text-muted)">API Key</div>
-            ${currentRole === 'admin' ? `
-              <div class="key-block">
-                <span class="val" id="ext-apikey" style="font-size:12px">${escapeHtml(apiKey || apiKeyError || '...')}</span>
-                <button class="btn" id="ext-copy-apikey" style="white-space:nowrap;font-size:11px;padding:4px 9px" ${apiKey ? '' : 'disabled'}>📋 คัดลอก</button>
-              </div>
-            ` : `
-              <div class="hint" style="padding:8px 10px;background:var(--bg-soft);border-radius:6px;border:1px solid var(--border);font-size:12px">
-                Member ดู API Key ไม่ได้ — ใช้ปุ่ม "🔗 เชื่อมบัญชีของฉัน" แทน (auto)
-              </div>
-            `}
+            <div class="key-block">
+              <span class="val" id="ext-apikey" style="font-size:12px">${escapeHtml(apiKey || apiKeyError || '...')}</span>
+              <button class="btn" id="ext-copy-apikey" style="white-space:nowrap;font-size:11px;padding:4px 9px" ${apiKey ? '' : 'disabled'}>📋 คัดลอก</button>
+            </div>
           </div>
         </div>
       </details>
@@ -2003,7 +1986,7 @@ async function renderExtensionPage() {
       status.style.color = 'var(--text-muted)';
       status.textContent = '⏳ กำลังเชื่อม...';
 
-      // เก็บ config — admin มี API key, member ไม่มี
+      // เก็บ config — ทั้ง admin และ member ได้ API key (ดึงจาก /api/admin/api-key)
       let myApiKey = apiKey;
       let pairedUser = null;
 
@@ -2047,8 +2030,7 @@ async function renderExtensionPage() {
         if (d.ok) {
           status.style.color = 'var(--green)';
           status.innerHTML = `✓ เชื่อมสำเร็จ — extension รู้แล้วว่าคุณคือ <strong>${escapeHtml(pairedUser?.label || 'unknown')}</strong>` +
-            (deviceLabel ? ` จาก <strong>${escapeHtml(deviceLabel)}</strong>` : '') +
-            (myApiKey ? '' : '<br><small style="color:var(--warning)">⚠️ Member ไม่มี API Key — extension ยังต้องอาศัย admin ตั้งให้</small>');
+            (deviceLabel ? ` จาก <strong>${escapeHtml(deviceLabel)}</strong>` : '');
           // refresh status widget
           setTimeout(() => loadExtensionStatus(), 500);
         } else {
@@ -2094,12 +2076,10 @@ async function renderExtensionPage() {
     }
   }
 
-  // Start polling status (admin only)
-  if (currentRole === 'admin') {
-    startExtStatusPolling();
-    const refreshBtn = $('ext-refresh');
-    if (refreshBtn) refreshBtn.addEventListener('click', manualRefreshStatus);
-  }
+  // Start polling status (admin + member)
+  startExtStatusPolling();
+  const refreshBtn = $('ext-refresh');
+  if (refreshBtn) refreshBtn.addEventListener('click', manualRefreshStatus);
 }
 
 // ---------- modal helper ----------

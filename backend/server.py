@@ -1018,12 +1018,13 @@ def update_admin_credentials(
 
 
 @app.get("/api/admin/api-key")
-def get_api_key(_sess: dict = Depends(require_admin)) -> dict[str, str]:
+def get_api_key(_sess: dict = Depends(require_admin_or_member)) -> dict[str, str]:
+    """API key — เปิดให้ทั้ง admin และ member ดูได้ (ใช้ตอนผูก extension ของตัวเอง)"""
     return {"api_key": get_extension_api_key()}
 
 
 @app.get("/api/admin/extension/changelog")
-def extension_changelog(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
+def extension_changelog(_sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
     """อ่าน CHANGELOG.json + manifest.json จาก extension folder"""
     manifest_path = EXTENSION_DIR / "manifest.json"
     changelog_path = EXTENSION_DIR / "CHANGELOG.json"
@@ -1056,7 +1057,7 @@ def extension_changelog(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
 
 
 @app.get("/api/admin/extension/download")
-def download_extension(_sess: dict = Depends(require_admin)) -> StreamingResponse:
+def download_extension(_sess: dict = Depends(require_admin_or_member)) -> StreamingResponse:
     """สร้าง ZIP ของ extension folder เพื่อให้ admin ดาวน์โหลดไป install เอง"""
     if not EXTENSION_DIR.exists() or not EXTENSION_DIR.is_dir():
         raise HTTPException(
@@ -1108,7 +1109,7 @@ def download_extension(_sess: dict = Depends(require_admin)) -> StreamingRespons
 
 
 @app.get("/api/admin/extension/status")
-def admin_extension_status(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
+def admin_extension_status(_sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
     """ดู status การเชื่อมต่อ extension จาก heartbeat ที่ track ไว้"""
     cfg = get_config()
     last_seen = cfg.get("extension_last_seen")
