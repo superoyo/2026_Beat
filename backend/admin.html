@@ -1115,8 +1115,9 @@ async function loadLogsList() {
             <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">เว็บ</th>
             <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">บัญชีที่ใช้</th>
             <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">User</th>
+            <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">เครื่อง</th>
             <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">หน้า</th>
-            <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">เครื่อง / IP</th>
+            <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em">Browser / IP</th>
           </tr>
         </thead>
         <tbody>
@@ -1133,6 +1134,7 @@ async function loadLogsList() {
                 <td style="padding:10px 12px;font-weight:500">${escapeHtml(l.site_name || '(ลบแล้ว)')}</td>
                 <td style="padding:10px 12px">${credInfo}</td>
                 <td style="padding:10px 12px;font-size:12.5px">${escapeHtml(l.member_label || '—')}</td>
+                <td style="padding:10px 12px;font-size:12.5px">${escapeHtml(l.device_label || '—')}</td>
                 <td style="padding:10px 12px">${sourceUrl}</td>
                 <td style="padding:10px 12px;color:var(--text-muted);font-size:12px;white-space:nowrap" title="${escapeHtml(l.user_agent || '')}">${escapeHtml(shortUserAgent(l.user_agent))}<br><span style="font-size:11px">${escapeHtml(l.client_ip || '')}</span></td>
               </tr>
@@ -1778,6 +1780,14 @@ async function renderExtensionPage() {
         }
       </p>
 
+      <div class="field" style="margin-bottom:10px">
+        <label style="font-size:12.5px;font-weight:500;color:var(--text)">ชื่อเครื่อง (สำหรับ log)</label>
+        <input id="device-label-input" type="text" placeholder="เช่น Anan MacBook, Office PC #3" maxlength="200" />
+        <div class="hint" style="font-size:11.5px;color:var(--text-muted);margin-top:3px">
+          แก้ไขได้ — ระบบ auto-fill จาก browser ให้ตอนเริ่ม
+        </div>
+      </div>
+
       <button class="btn primary" id="pair-btn" style="display:inline-flex;align-items:center;gap:8px">
         🔗 เชื่อมบัญชีของฉัน
       </button>
@@ -1863,6 +1873,36 @@ async function renderExtensionPage() {
     </div>
   `;
 
+  // Auto-detect device label จาก userAgentData → fill input
+  (async () => {
+    const inp = $('device-label-input');
+    if (!inp) return;
+    let label = '';
+    try {
+      if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+        const data = await navigator.userAgentData.getHighEntropyValues(['platform']);
+        const brand = (navigator.userAgentData.brands || [])
+          .find(b => /Chrome|Edge/.test(b.brand));
+        const browserLabel = brand ? brand.brand.replace('Google ', '') + ' ' + brand.version : 'Chrome';
+        label = (data.platform || 'Unknown') + ' · ' + browserLabel;
+      }
+    } catch {}
+    if (!label) {
+      // Fallback: parse user-agent
+      const ua = navigator.userAgent;
+      let os = 'Unknown';
+      if (/Mac OS X|Macintosh/.test(ua)) os = 'macOS';
+      else if (/Windows/.test(ua)) os = 'Windows';
+      else if (/Linux/.test(ua)) os = 'Linux';
+      else if (/Android/.test(ua)) os = 'Android';
+      else if (/iPhone|iPad/.test(ua)) os = 'iOS';
+      const m = ua.match(/Chrome\/([\d.]+)/);
+      const chrome = m ? 'Chrome ' + m[1].split('.')[0] : 'Chrome';
+      label = os + ' · ' + chrome;
+    }
+    inp.value = label;
+  })();
+
   // pair button → ส่ง config ผ่าน postMessage ไปให้ extension
   const pairBtn = $('pair-btn');
   if (pairBtn) {
@@ -1878,10 +1918,14 @@ async function renderExtensionPage() {
       let pairedUser = null;
 
       // หา label ของ user ที่ login ปัจจุบัน
+      const deviceLabel = ($('device-label-input')?.value || '').trim() || null;
       try {
         if (currentRole === 'admin') {
           const s = await fetch('/api/admin/state', { credentials: 'same-origin' }).then(r => r.json());
-          pairedUser = { role: 'admin', label: s.username, member_id: null, paired_at: new Date().toISOString() };
+          pairedUser = {
+            role: 'admin', label: s.username, member_id: null,
+            deviceLabel, paired_at: new Date().toISOString(),
+          };
         } else {
           const m = await fetch('/api/member/me', { credentials: 'same-origin' }).then(r => r.json());
           if (m.logged_in && m.member) {
@@ -1890,6 +1934,7 @@ async function renderExtensionPage() {
               role: 'member',
               label: md.display_name || md.email || md.phone,
               member_id: md.id,
+              deviceLabel,
               paired_at: new Date().toISOString(),
             };
           }
@@ -1912,6 +1957,7 @@ async function renderExtensionPage() {
         if (d.ok) {
           status.style.color = 'var(--green)';
           status.innerHTML = `✓ เชื่อมสำเร็จ — extension รู้แล้วว่าคุณคือ <strong>${escapeHtml(pairedUser?.label || 'unknown')}</strong>` +
+            (deviceLabel ? ` จาก <strong>${escapeHtml(deviceLabel)}</strong>` : '') +
             (myApiKey ? '' : '<br><small style="color:var(--warning)">⚠️ Member ไม่มี API Key — extension ยังต้องอาศัย admin ตั้งให้</small>');
           // refresh status widget
           setTimeout(() => loadExtensionStatus(), 500);

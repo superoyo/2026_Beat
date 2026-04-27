@@ -207,6 +207,13 @@ def init_db() -> None:
             if col_name not in existing_cols:
                 conn.execute(f"ALTER TABLE snapshots ADD COLUMN {col_name} {col_def}")
 
+        # usage_logs migration — เพิ่ม device_label สำหรับ Option C
+        log_cols = {
+            row["name"] for row in conn.execute("PRAGMA table_info(usage_logs)").fetchall()
+        }
+        if "device_label" not in log_cols:
+            conn.execute("ALTER TABLE usage_logs ADD COLUMN device_label TEXT")
+
         # members table — เพิ่มคอลัมน์ email + password + enabled
         member_cols = {
             row["name"] for row in conn.execute("PRAGMA table_info(members)").fetchall()
@@ -1536,6 +1543,7 @@ class CredentialUsedIn(BaseModel):
     source_url: Optional[str] = Field(None, max_length=2000)
     member_id: Optional[int] = None      # ถ้า extension paired กับ member
     user_label: Optional[str] = Field(None, max_length=200)  # ชื่อ user ที่ pair (admin หรือ member)
+    device_label: Optional[str] = Field(None, max_length=200)  # ชื่อเครื่อง (auto-detect หรือ manual)
 
 
 @app.post("/api/extension/credentials/{cred_id}/used")
@@ -1550,6 +1558,7 @@ def mark_used(
     source_url = payload.source_url if payload else None
     member_id = payload.member_id if payload else None
     user_label_in = payload.user_label if payload else None
+    device_label = payload.device_label if payload else None
     user_agent = request.headers.get("user-agent", "")[:500] if request else ""
     client_ip = (request.client.host if request and request.client else "")[:64]
 
@@ -1583,14 +1592,14 @@ def mark_used(
         conn.execute(
             "INSERT INTO usage_logs(timestamp, action, "
             "  site_id, site_name, credential_id, credential_label, credential_username, "
-            "  member_id, member_label, source_url, user_agent, client_ip) "
-            "VALUES (?, 'prefill', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "  member_id, member_label, source_url, user_agent, client_ip, device_label) "
+            "VALUES (?, 'prefill', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 now,
                 cred["site_id"], cred["site_name"],
                 cred_id, cred["label"], cred["username"],
                 member_id, member_label,
-                source_url, user_agent, client_ip,
+                source_url, user_agent, client_ip, device_label,
             ),
         )
     return {"ok": True}
@@ -1624,7 +1633,7 @@ def admin_list_logs(
     sql = (
         "SELECT id, timestamp, action, "
         "       site_id, site_name, credential_id, credential_label, credential_username, "
-        "       member_id, member_label, source_url, user_agent, client_ip "
+        "       member_id, member_label, source_url, user_agent, client_ip, device_label "
         f"FROM usage_logs {where_clause} ORDER BY timestamp DESC LIMIT ?"
     )
     params.append(limit)
