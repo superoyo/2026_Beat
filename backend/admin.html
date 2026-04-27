@@ -439,6 +439,51 @@
       text-decoration: underline;
     }
 
+    /* Credential access rows (in modal) — Notion/Linear style */
+    .m-access-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 11px 14px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      cursor: pointer;
+      background: var(--bg-card);
+      transition: all .12s;
+    }
+    .m-access-row:hover { background: var(--bg-hover); border-color: var(--border-strong); }
+    .m-access-row.m-access-on {
+      background: var(--primary-soft);
+      border-color: rgba(37,99,235,.35);
+    }
+    .m-access-row.m-access-on:hover {
+      background: rgba(37,99,235,.14);
+    }
+    .m-access-cb {
+      width: 17px; height: 17px;
+      flex-shrink: 0;
+      cursor: pointer;
+      accent-color: var(--primary);
+    }
+    .m-access-cb:disabled { cursor: not-allowed; opacity: .8; }
+    .m-access-avatar {
+      width: 34px; height: 34px;
+      border-radius: 9px;
+      color: #fff;
+      font-weight: 700; font-size: 13px;
+      display: inline-flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .m-access-text { flex: 1; min-width: 0; overflow: hidden; }
+    .m-access-name {
+      font-size: 14px; font-weight: 600; color: var(--text);
+      line-height: 1.3;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .m-access-sub {
+      font-size: 11.5px; color: var(--text-muted);
+      margin-top: 2px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
     .cred-row {
       background: var(--bg-card);
       border: 1px solid var(--border);
@@ -1172,23 +1217,36 @@ function credFormHTML(cred) {
 
       <div class="field-section-label">ใครเข้าถึง credential นี้ได้บ้าง</div>
       <div class="field field-span-2">
-        <div class="hint" style="margin-bottom:10px;color:var(--text-muted);font-size:12px">
+        <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:12.5px;line-height:1.5">
           เลือกได้ทั้ง <strong>ทีม</strong> (ทุกคนในทีมจะเห็น) และ/หรือ <strong>บุคคล</strong> (เฉพาะคนที่เลือก)
         </div>
-        <div id="m-access-loading" style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px">
-          ${isEdit ? '⏳ กำลังโหลดข้อมูล access...' : '⏳ บันทึก credential ก่อน แล้วระบบจะเปิดให้ตั้ง access ได้'}
+        <div id="m-access-loading" style="text-align:center;padding:24px;color:var(--text-muted);font-size:13px;background:var(--bg-soft);border-radius:10px">
+          ${isEdit ? '⏳ กำลังโหลดข้อมูล access...' : '💡 บันทึก credential ก่อน แล้วระบบจะเปิดให้ตั้ง access ได้'}
         </div>
         <div id="m-access-content" style="display:none">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-            <div>
-              <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px">🏷 ทีม</div>
-              <div id="m-access-teams" style="display:flex;flex-direction:column;gap:5px;max-height:240px;overflow-y:auto"></div>
+
+          <!-- Section: ทีม -->
+          <div style="margin-bottom:20px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+              <span style="font-size:16px">🏷</span>
+              <div style="font-size:14px;font-weight:600;color:var(--text)">อนุญาตให้ทีม</div>
+              <span id="m-access-teams-count" style="font-size:11.5px;color:var(--text-muted);font-weight:500"></span>
             </div>
-            <div>
-              <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px">👤 บุคคล (direct grant)</div>
-              <div id="m-access-members" style="display:flex;flex-direction:column;gap:5px;max-height:240px;overflow-y:auto"></div>
-            </div>
+            <div id="m-access-teams" style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;padding:2px"></div>
           </div>
+
+          <!-- Section: Direct member grants -->
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+              <span style="font-size:16px">👤</span>
+              <div style="font-size:14px;font-weight:600;color:var(--text)">อนุญาตเป็นรายบุคคล <span style="color:var(--text-muted);font-weight:400;font-size:12px">(direct grant)</span></div>
+              <span id="m-access-members-count" style="font-size:11.5px;color:var(--text-muted);font-weight:500"></span>
+            </div>
+            <input type="text" id="m-access-member-search" placeholder="🔍 ค้นหา member (ชื่อ/email/เบอร์)..." autocomplete="off"
+                   style="width:100%;padding:8px 12px;font-size:13px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);margin-bottom:8px" />
+            <div id="m-access-members" style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;padding:2px"></div>
+          </div>
+
         </div>
       </div>
     </div>
@@ -1246,62 +1304,82 @@ async function loadCredAccessIntoModal(credId) {
     _credAccessState.member_ids = Array.from(grantedMemberIds);
     _credAccessState.auto_team_ids = Array.from(autoTeamIds);
 
-    // Render teams checkboxes (auto teams = checked + disabled with notice)
-    const teamsHtml = (teamsData.teams || []).length === 0
-      ? '<div class="empty" style="padding:14px;font-size:12px">ยังไม่มี team — สร้างที่ <a href="#/teams" style="color:var(--primary)">หน้า Teams</a></div>'
-      : (teamsData.teams).map(t => {
+    // === Render TEAMS rows (full width, big & clear) ===
+    const teamsList = teamsData.teams || [];
+    document.getElementById('m-access-teams-count').textContent =
+      teamsList.length === 0 ? '' : `(${teamsList.length} ทีม)`;
+    const teamsHtml = teamsList.length === 0
+      ? '<div class="empty" style="padding:18px;font-size:13px;background:var(--bg-soft);border-radius:8px">ยังไม่มี team — สร้างที่ <a href="#/teams" style="color:var(--primary)">หน้า Teams</a></div>'
+      : teamsList.map(t => {
           const isAuto = autoTeamIds.has(t.id);
           const isChecked = grantedTeamIds.has(t.id);
-          const bg = (isChecked || isAuto) ? 'var(--primary-soft)' : 'var(--bg-card)';
+          const isOn = isChecked || isAuto;
           const tooltip = isAuto ? 'ทีมนี้มี access_type=all สำหรับ site → เห็นทุก credential อัตโนมัติ' : '';
+          const tInitial = (t.name || '?').trim().charAt(0).toUpperCase();
           return `
-            <label style="display:flex;align-items:flex-start;gap:8px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;cursor:pointer;background:${bg};transition:all .12s;font-size:12.5px"
+            <label class="m-access-row ${isOn ? 'm-access-on' : ''}"
                    ${tooltip ? `title="${escapeHtml(tooltip)}"` : ''}>
-              <input type="checkbox" class="m-team-cb" value="${t.id}"
-                     ${(isChecked || isAuto) ? 'checked' : ''}
-                     ${isAuto ? 'disabled' : ''}
-                     style="margin:2px 0 0 0">
-              <div style="flex:1;min-width:0">
-                <div style="font-weight:600">${escapeHtml(t.name)}</div>
-                <div style="font-size:10.5px;color:var(--text-muted)">
-                  ${isAuto
-                    ? '🟢 auto (team มี access_type=all)'
-                    : `${t.member_count} member`}
-                </div>
+              <input type="checkbox" class="m-team-cb m-access-cb" value="${t.id}"
+                     ${isOn ? 'checked' : ''}
+                     ${isAuto ? 'disabled' : ''}>
+              <div class="m-access-avatar" style="background:linear-gradient(135deg,#7c3aed,#2563eb)">${escapeHtml(tInitial)}</div>
+              <div class="m-access-text">
+                <div class="m-access-name">${escapeHtml(t.name)}${isAuto ? ' <span style="margin-left:6px;display:inline-block;padding:1px 7px;border-radius:6px;font-size:10.5px;font-weight:600;background:rgba(16,185,129,.12);color:var(--green)">🟢 auto (all)</span>' : ''}</div>
+                <div class="m-access-sub">${t.member_count} member · ${t.site_count} site${t.description ? ' · ' + escapeHtml(t.description) : ''}</div>
               </div>
             </label>
           `;
         }).join('');
     document.getElementById('m-access-teams').innerHTML = teamsHtml;
 
-    // Render members checkboxes
-    const membersHtml = (membersData.members || []).length === 0
-      ? '<div class="empty" style="padding:14px;font-size:12px">ยังไม่มี member ในระบบ</div>'
-      : (membersData.members).map(m => {
-          const isChecked = grantedMemberIds.has(m.id);
-          const display = m.display_name || m.email || m.phone || '?';
-          const initial = display.trim().charAt(0).toUpperCase();
-          const bg = isChecked ? 'var(--primary-soft)' : 'var(--bg-card)';
-          return `
-            <label style="display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;cursor:pointer;background:${bg};transition:all .12s;font-size:12.5px">
-              <input type="checkbox" class="m-member-cb" value="${m.id}" ${isChecked ? 'checked' : ''} style="margin:0">
-              <div style="width:24px;height:24px;border-radius:6px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:11px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(initial)}</div>
-              <div style="flex:1;min-width:0;overflow:hidden">
-                <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(display)}</div>
-                <div style="font-size:10.5px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(m.email || m.phone || '')}</div>
-              </div>
-            </label>
-          `;
-        }).join('');
+    // === Render MEMBERS rows ===
+    const membersList = membersData.members || [];
+    document.getElementById('m-access-members-count').textContent =
+      membersList.length === 0 ? '' : `(${membersList.length} คน)`;
+    const renderMember = (m) => {
+      const isChecked = grantedMemberIds.has(m.id);
+      const display = m.display_name || m.email || m.phone || '?';
+      const initial = display.trim().charAt(0).toUpperCase();
+      const subParts = [];
+      if (m.email) subParts.push(m.email);
+      if (m.phone && m.phone !== display) subParts.push(m.phone);
+      const sub = subParts.join(' · ') || '—';
+      const searchKey = (display + ' ' + (m.email || '') + ' ' + (m.phone || '')).toLowerCase();
+      return `
+        <label class="m-access-row ${isChecked ? 'm-access-on' : ''}" data-search="${escapeHtml(searchKey)}">
+          <input type="checkbox" class="m-member-cb m-access-cb" value="${m.id}" ${isChecked ? 'checked' : ''}>
+          <div class="m-access-avatar" style="background:linear-gradient(135deg,#2563eb,#7c3aed)">${escapeHtml(initial)}</div>
+          <div class="m-access-text">
+            <div class="m-access-name">${escapeHtml(display)}</div>
+            <div class="m-access-sub">${escapeHtml(sub)}</div>
+          </div>
+        </label>
+      `;
+    };
+    const membersHtml = membersList.length === 0
+      ? '<div class="empty" style="padding:18px;font-size:13px;background:var(--bg-soft);border-radius:8px">ยังไม่มี member ในระบบ</div>'
+      : membersList.map(renderMember).join('');
     document.getElementById('m-access-members').innerHTML = membersHtml;
 
-    // Wire visual toggle
+    // Wire visual toggle for checkboxes
     document.querySelectorAll('.m-team-cb, .m-member-cb').forEach(cb => {
       cb.addEventListener('change', () => {
         const lbl = cb.closest('label');
-        if (lbl) lbl.style.background = cb.checked ? 'var(--primary-soft)' : 'var(--bg-card)';
+        if (lbl) lbl.classList.toggle('m-access-on', cb.checked);
       });
     });
+
+    // Wire member search filter
+    const searchInput = document.getElementById('m-access-member-search');
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        const q = searchInput.value.toLowerCase().trim();
+        document.querySelectorAll('#m-access-members .m-access-row').forEach(row => {
+          const key = row.dataset.search || '';
+          row.style.display = (!q || key.includes(q)) ? '' : 'none';
+        });
+      });
+    }
 
     loadingEl.style.display = 'none';
     contentEl.style.display = '';
