@@ -675,8 +675,9 @@ async function navigate() {
     setActive('sites');
     await renderSiteDetail(parseInt(parts[1], 10));
   } else if (route === 'teams' && parts[1]) {
+    // Teams page now uses tabs — pass team_id เพื่อ select tab
     setActive('teams');
-    await renderTeamDetail(parseInt(parts[1], 10));
+    await renderTeamsPage(parseInt(parts[1], 10));
   } else if (routes[route]) {
     setActive(route);
     await routes[route]();
@@ -1372,49 +1373,94 @@ async function renderPlatformsPage() {
 
 // ============== Teams ==============
 
-async function renderTeamsPage() {
+async function renderTeamsPage(selectedTeamId) {
+  // Fetch all teams
+  let data;
+  try {
+    data = await fetchJson('/api/admin/teams');
+  } catch (e) {
+    $('main').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  const teams = data.teams || [];
+
+  // กำหนด tab default — ถ้ามี ID ใน URL ใช้, ไม่งั้นเลือกทีมแรก
+  if (selectedTeamId && !teams.find(t => t.id === selectedTeamId)) {
+    selectedTeamId = null;   // ID ไม่มีในระบบแล้ว
+  }
+  if (!selectedTeamId && teams.length > 0) {
+    selectedTeamId = teams[0].id;
+  }
+
+  // Render tab strip + container
   $('main').innerHTML = `
     <div class="page-head">
       <h2 class="page-title">👨‍👩‍👧 Teams</h2>
       <button class="btn primary" id="add-team-btn">+ สร้าง Team ใหม่</button>
     </div>
-    <div class="hint" style="margin-bottom:18px;color:var(--text-muted);font-size:13px">
+    <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px">
       จัดกลุ่ม member เพื่อกำหนดสิทธิ์เข้าถึง platform — site ที่ผูกกับทีมจะ visible เฉพาะคนในทีมเท่านั้น
     </div>
-    <div id="teams-list"><div class="empty">กำลังโหลด…</div></div>
-  `;
-  $('add-team-btn').addEventListener('click', showAddTeamModal);
-  await loadTeamsList();
-}
 
-async function loadTeamsList() {
-  let data;
-  try {
-    data = await fetchJson('/api/admin/teams');
-  } catch (e) {
-    $('teams-list').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
-    return;
-  }
-  const teams = data.teams;
-  if (teams.length === 0) {
-    $('teams-list').innerHTML = `<div class="empty">ยังไม่มี team — กด <strong>+ สร้าง Team ใหม่</strong> ด้านบน</div>`;
-    return;
-  }
-  $('teams-list').innerHTML = teams.map(t => `
-    <div class="card card-clickable" data-id="${t.id}">
-      <div>
-        <div class="card-title">${escapeHtml(t.name)}</div>
-        <div class="card-sub">
-          ${t.member_count} member · ${t.site_count} site
-          ${t.description ? '· ' + escapeHtml(t.description) : ''}
-        </div>
-      </div>
-      <div style="color:var(--text-muted)">→</div>
+    <!-- Horizontal team tabs (scrollable) -->
+    <div id="teams-tab-strip" style="display:flex;gap:6px;overflow-x:auto;border-bottom:1px solid var(--border);margin-bottom:14px;padding-bottom:1px">
+      ${teams.length === 0
+        ? '<div style="padding:12px 4px;color:var(--text-muted);font-size:13px">ยังไม่มี team — กด <strong>+ สร้าง Team ใหม่</strong> ด้านบน</div>'
+        : teams.map(t => {
+            const isActive = t.id === selectedTeamId;
+            return `
+              <button class="teams-pill" data-team-id="${t.id}"
+                      style="background:${isActive ? 'var(--bg-card)' : 'transparent'};
+                             border:1px solid ${isActive ? 'var(--border)' : 'transparent'};
+                             border-bottom:${isActive ? '1px solid var(--bg-card)' : 'none'};
+                             margin-bottom:-1px;
+                             padding:9px 14px;font-size:13.5px;
+                             color:${isActive ? 'var(--primary)' : 'var(--text)'};
+                             font-weight:${isActive ? '600' : '500'};
+                             border-radius:8px 8px 0 0;
+                             cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;transition:all .12s">
+                <span>${escapeHtml(t.name)}</span>
+                <span style="font-size:11px;color:var(--text-muted);background:var(--bg-soft);padding:1px 7px;border-radius:999px;font-weight:500">
+                  ${t.member_count}👤 · ${t.site_count}🌐
+                </span>
+              </button>
+            `;
+          }).join('')
+      }
     </div>
-  `).join('');
-  document.querySelectorAll('#teams-list .card[data-id]').forEach(card => {
-    card.addEventListener('click', () => { location.hash = '#/teams/' + card.dataset.id; });
+
+    <!-- Selected team panel -->
+    <div id="team-panel">
+      ${selectedTeamId ? '<div class="empty">กำลังโหลด…</div>' : ''}
+    </div>
+  `;
+
+  $('add-team-btn').addEventListener('click', showAddTeamModal);
+
+  // Wire tab clicks → update URL hash → navigate handler will re-render with new selectedTeamId
+  document.querySelectorAll('.teams-pill[data-team-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = parseInt(btn.dataset.teamId, 10);
+      if (id !== selectedTeamId) {
+        location.hash = '#/teams/' + id;
+      }
+    });
+    btn.addEventListener('mouseenter', () => {
+      if (parseInt(btn.dataset.teamId, 10) !== selectedTeamId) {
+        btn.style.background = 'var(--bg-hover)';
+      }
+    });
+    btn.addEventListener('mouseleave', () => {
+      if (parseInt(btn.dataset.teamId, 10) !== selectedTeamId) {
+        btn.style.background = 'transparent';
+      }
+    });
   });
+
+  // Load selected team detail
+  if (selectedTeamId) {
+    await loadTeamDetail(selectedTeamId);
+  }
 }
 
 function showAddTeamModal() {
@@ -1433,38 +1479,74 @@ function showAddTeamModal() {
     onSubmit: async () => {
       const name = $('m-name').value.trim();
       if (!name) throw new Error('กรอกชื่อทีม');
-      await fetchJson('/api/admin/teams', {
+      const r = await fetchJson('/api/admin/teams', {
         method: 'POST',
         body: JSON.stringify({ name, description: $('m-desc').value.trim() || null }),
       });
-      await loadTeamsList();
+      // เด้งไป tab ของ team ใหม่ที่เพิ่งสร้าง
+      if (r && r.id) {
+        location.hash = '#/teams/' + r.id;
+      } else {
+        await renderTeamsPage();
+      }
     },
   });
 }
 
-async function renderTeamDetail(teamId) {
-  $('main').innerHTML = `
-    <div class="crumb"><a href="#/teams">← Teams</a></div>
-    <div class="page-head">
-      <h2 class="page-title" id="team-name">…</h2>
-      <div style="display:flex;gap:8px">
-        <button class="btn" id="edit-team-btn">✏️ แก้ไขข้อมูล</button>
-        <button class="btn danger" id="delete-team-btn">ลบ Team</button>
+// Render team detail content into #team-panel (called by tab click / page load)
+let _currentTeam = null;
+let _allMembers = null;   // cache list of all members for "add to team" picker
+let _allSites = null;     // cache list of all sites
+
+async function loadTeamDetail(teamId) {
+  const panel = $('team-panel');
+  if (!panel) return;
+  let data;
+  try {
+    data = await fetchJson('/api/admin/teams/' + teamId);
+  } catch (e) {
+    panel.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  _currentTeam = data.team;
+
+  // Update count badge บน tab strip ของ team นี้ — ให้ตัวเลขทันสมัยหลังเพิ่ม/ลบ member/site
+  const tabBtn = document.querySelector(`.teams-pill[data-team-id="${teamId}"]`);
+  if (tabBtn) {
+    const badge = tabBtn.querySelector('span:last-child');
+    if (badge) {
+      badge.textContent = `${data.members.length}👤 · ${data.sites.length}🌐`;
+    }
+  }
+
+  // Render team header + sub-tab structure (Members | Site Access) — เหมือนเดิมแต่ inline
+  panel.innerHTML = `
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-top-left-radius:0;border-top-right-radius:12px;border-bottom-left-radius:12px;border-bottom-right-radius:12px;padding:18px 20px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap">
+        <div style="flex:1;min-width:0">
+          <h3 style="margin:0 0 4px;font-size:18px;font-weight:700">${escapeHtml(data.team.name)}</h3>
+          <div style="font-size:13px;color:var(--text-muted)">
+            ${data.team.description ? escapeHtml(data.team.description) : '<span style="font-style:italic">ไม่มีคำอธิบาย</span>'}
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-shrink:0">
+          <button class="btn" id="edit-team-btn" style="font-size:12.5px;padding:6px 12px">✏️ แก้ไข</button>
+          <button class="btn danger" id="delete-team-btn" style="font-size:12.5px;padding:6px 12px">🗑 ลบ</button>
+        </div>
       </div>
     </div>
-    <div id="team-meta"></div>
-    <div id="team-tabs" style="display:flex;gap:6px;margin:20px 0 14px;border-bottom:1px solid var(--border)">
+
+    <div id="team-tabs" style="display:flex;gap:6px;margin:0 0 14px;border-bottom:1px solid var(--border)">
       <button class="team-tab active" data-tab="members" style="background:none;border:none;padding:10px 14px;font-size:13.5px;color:var(--primary);font-weight:600;cursor:pointer;border-bottom:2px solid var(--primary)">👥 Members</button>
       <button class="team-tab" data-tab="sites" style="background:none;border:none;padding:10px 14px;font-size:13.5px;color:var(--text-muted);cursor:pointer">🌐 Site Access</button>
     </div>
     <div id="tab-members" class="team-tab-pane"></div>
     <div id="tab-sites" class="team-tab-pane" style="display:none"></div>
   `;
-  await loadTeamDetail(teamId);
 
-  document.querySelectorAll('.team-tab').forEach(b => {
+  document.querySelectorAll('#team-tabs .team-tab').forEach(b => {
     b.addEventListener('click', () => {
-      document.querySelectorAll('.team-tab').forEach(x => {
+      document.querySelectorAll('#team-tabs .team-tab').forEach(x => {
         x.classList.toggle('active', x === b);
         x.style.color = x === b ? 'var(--primary)' : 'var(--text-muted)';
         x.style.fontWeight = x === b ? '600' : '500';
@@ -1484,28 +1566,6 @@ async function renderTeamDetail(teamId) {
     await fetchJson('/api/admin/teams/' + teamId, { method: 'DELETE' });
     location.hash = '#/teams';
   });
-}
-
-let _currentTeam = null;
-let _allMembers = null;   // cache list of all members for "add to team" picker
-let _allSites = null;     // cache list of all sites
-
-async function loadTeamDetail(teamId) {
-  let data;
-  try {
-    data = await fetchJson('/api/admin/teams/' + teamId);
-  } catch (e) {
-    $('team-name').textContent = 'โหลดไม่สำเร็จ: ' + e.message;
-    return;
-  }
-  _currentTeam = data.team;
-  $('team-name').textContent = data.team.name;
-  $('team-meta').innerHTML = `
-    <div class="card" style="display:block">
-      <div class="card-sub" style="margin-bottom:4px">คำอธิบาย</div>
-      <div>${escapeHtml(data.team.description || '(ไม่มี)')}</div>
-    </div>
-  `;
 
   renderTeamMembers(teamId, data.members);
   renderTeamSites(teamId, data.sites);
@@ -1905,7 +1965,8 @@ function showEditTeamModal(team, teamId) {
         method: 'PATCH',
         body: JSON.stringify({ name, description: $('m-desc').value.trim() || null }),
       });
-      await loadTeamDetail(teamId);
+      // Re-render full page เพื่อ update ชื่อใน tab strip ด้วย
+      await renderTeamsPage(teamId);
     },
   });
 }
