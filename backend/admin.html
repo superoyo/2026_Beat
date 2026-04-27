@@ -1218,6 +1218,11 @@ async function renderPlatformsPage() {
       <span class="card-sub" id="p-count">—</span>
     </div>
     <div id="p-hint" class="hint" style="margin-bottom:18px;color:var(--text-muted);font-size:13px"></div>
+    <div style="margin-bottom:16px;position:relative">
+      <input id="p-search" type="text" placeholder="🔍 ค้นหา platform (ชื่อ หรือ URL)" autocomplete="off"
+             style="width:100%;padding:10px 14px;font-size:14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-input);color:var(--text)" />
+      <span id="p-search-clear" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--text-muted);display:none;padding:4px 8px;border-radius:6px">×</span>
+    </div>
     <div id="p-list">
       <div class="empty">กำลังโหลด…</div>
     </div>
@@ -1268,8 +1273,9 @@ async function renderPlatformsPage() {
         const credLabel = s.cred_count > 0
           ? `${s.cred_count} บัญชี`
           : '<span style="color:var(--warning);">ยังไม่มีบัญชี</span>';
+        const searchKey = (s.name + ' ' + s.url_pattern).toLowerCase();
         return `
-          <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="platform-card">
+          <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="platform-card" data-search="${escapeHtml(searchKey)}">
             <div class="platform-avatar">${escapeHtml(initial)}</div>
             <div class="platform-name">${escapeHtml(s.name)}</div>
             <div class="platform-url">${escapeHtml(displayUrl)}</div>
@@ -1281,7 +1287,32 @@ async function renderPlatformsPage() {
         `;
       }).join('')}
     </div>
+    <div id="p-no-results" class="empty" style="display:none">ไม่เจอ platform ที่ตรงกับคำค้น</div>
   `;
+
+  // wire search box
+  const searchInput = $('p-search');
+  const clearBtn = $('p-search-clear');
+  const noResults = $('p-no-results');
+  const applyFilter = () => {
+    const q = searchInput.value.toLowerCase().trim();
+    clearBtn.style.display = q ? '' : 'none';
+    let shown = 0;
+    document.querySelectorAll('.platform-card').forEach(card => {
+      const key = card.dataset.search || '';
+      const match = !q || key.includes(q);
+      card.style.display = match ? '' : 'none';
+      if (match) shown++;
+    });
+    noResults.style.display = (q && shown === 0) ? '' : 'none';
+    $('p-count').textContent = q
+      ? `${shown} / ${sites.length} แพลตฟอร์ม (filter: "${q}")`
+      : `${sites.length} แพลตฟอร์ม`;
+  };
+  if (searchInput) {
+    searchInput.addEventListener('input', applyFilter);
+    clearBtn.addEventListener('click', () => { searchInput.value = ''; applyFilter(); searchInput.focus(); });
+  }
 }
 
 // ============== Teams ==============
@@ -1491,117 +1522,187 @@ async function showAddMemberToTeamModal(teamId, currentMembers) {
   });
 }
 
-function renderTeamSites(teamId, sites) {
+async function renderTeamSites(teamId, sites) {
+  // โหลด site ทั้งหมดเพื่อสร้างกล่อง "Available"
+  if (!_allSites) {
+    try { _allSites = (await fetchJson('/api/admin/sites')).sites; } catch { _allSites = []; }
+  }
+  const inIds = new Set(sites.map(s => s.id));
+  const available = _allSites.filter(s => !inIds.has(s.id));
+
   const html = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <span class="card-sub">${sites.length} site</span>
-      <button class="btn primary" id="add-site-btn" style="font-size:12.5px;padding:6px 12px">+ เพิ่ม Site Access</button>
+    <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span>💡 <strong>Drag</strong> site จากซ้าย → ขวาเพื่อเพิ่ม, ลาก ขวา → ซ้ายเพื่อถอด, หรือกดปุ่ม → ←</span>
     </div>
-    <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:12px">
-      <strong>All</strong> = ทีมเข้าถึงทุก credential ของ site นี้  |
-      <strong>Select</strong> = ระบุ credentials เฉพาะที่ต้องการ
-    </div>
-    ${sites.length === 0
-      ? '<div class="empty">ยังไม่ได้ผูก site กับทีมนี้</div>'
-      : sites.map(s => {
-          const accessBadge = s.access_type === 'all'
-            ? '<span style="display:inline-flex;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(37,99,235,.12);color:var(--primary)">All credentials</span>'
-            : '<span style="display:inline-flex;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(124,58,237,.12);color:var(--accent)">Select (' + (s.credentials.length) + ')</span>';
-          const credsList = s.access_type === 'select' && s.credentials.length > 0
-            ? '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">' +
-              s.credentials.map(c => `
-                <div style="font-size:12.5px;color:var(--text-muted);margin-top:3px">
-                  • ${escapeHtml(c.label || '(no label)')} <span style="color:var(--text-soft)">— ${escapeHtml(c.username)}</span>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <!-- Column: Available -->
+      <div class="dnd-col" data-side="available" style="background:var(--bg-soft);border:1.5px dashed var(--border);border-radius:10px;padding:12px;min-height:280px;transition:all .2s">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-weight:600;font-size:13.5px;color:var(--text)">📚 Site ทั้งหมด <span class="card-sub" id="dnd-avail-count">(${available.length})</span></div>
+        </div>
+        <input type="text" id="dnd-avail-search" placeholder="🔍 ค้นหา..." autocomplete="off"
+               style="width:100%;padding:7px 10px;font-size:12.5px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text);margin-bottom:8px" />
+        <div class="dnd-list" data-list="available" style="display:flex;flex-direction:column;gap:6px;max-height:500px;overflow-y:auto">
+          ${available.length === 0
+            ? '<div class="empty" style="padding:18px 10px">ทุก site อยู่ในทีมแล้ว</div>'
+            : available.map(s => `
+              <div class="dnd-item" draggable="true" data-site-id="${s.id}" data-side="available" data-search="${escapeHtml((s.name + ' ' + s.url_pattern).toLowerCase())}"
+                   style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:9px 11px;cursor:grab;display:flex;align-items:center;gap:8px;font-size:12.5px;transition:all .15s">
+                <span style="color:var(--text-muted);font-size:14px;line-height:1">⋮⋮</span>
+                <div style="flex:1;min-width:0;overflow:hidden">
+                  <div style="font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(s.name)}</div>
+                  <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(s.url_pattern)}</div>
                 </div>
-              `).join('') +
-              '</div>'
-            : '';
-          return `
-            <div class="card" style="display:block">
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-                <div style="flex:1;min-width:0">
-                  <div class="card-title">${escapeHtml(s.name)}</div>
-                  <div class="card-sub">${escapeHtml(s.url_pattern)} · ${accessBadge}</div>
-                </div>
-                <div style="display:flex;gap:6px">
-                  <button class="btn" data-edit-site="${s.id}" style="font-size:12px;padding:5px 10px">✏️ แก้ไข</button>
-                  <button class="btn danger" data-rm-site="${s.id}" style="font-size:12px;padding:5px 10px">ถอด</button>
-                </div>
+                <button class="dnd-action" data-action="add" data-site-id="${s.id}" title="เพิ่มเข้าทีม"
+                        style="background:var(--primary);color:#fff;border:none;border-radius:6px;width:28px;height:24px;cursor:pointer;font-size:14px;line-height:1">→</button>
               </div>
-              ${credsList}
-            </div>
-          `;
-        }).join('')}
+            `).join('')}
+        </div>
+      </div>
+
+      <!-- Column: In team -->
+      <div class="dnd-col" data-side="in-team" style="background:rgba(37,99,235,.04);border:1.5px dashed rgba(37,99,235,.3);border-radius:10px;padding:12px;min-height:280px;transition:all .2s">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-weight:600;font-size:13.5px;color:var(--text)">✓ ใน Team <span class="card-sub" id="dnd-in-count">(${sites.length})</span></div>
+        </div>
+        <input type="text" id="dnd-in-search" placeholder="🔍 ค้นหา..." autocomplete="off"
+               style="width:100%;padding:7px 10px;font-size:12.5px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text);margin-bottom:8px" />
+        <div class="dnd-list" data-list="in-team" style="display:flex;flex-direction:column;gap:6px;max-height:500px;overflow-y:auto">
+          ${sites.length === 0
+            ? '<div class="empty" style="padding:18px 10px">ลาก site จากซ้ายมาที่นี่</div>'
+            : sites.map(s => {
+              const isAll = s.access_type === 'all';
+              const accessBadge = isAll
+                ? '<span style="display:inline-block;padding:1px 7px;border-radius:6px;font-size:10px;font-weight:600;background:rgba(37,99,235,.12);color:var(--primary)">All</span>'
+                : `<span style="display:inline-block;padding:1px 7px;border-radius:6px;font-size:10px;font-weight:600;background:rgba(124,58,237,.12);color:var(--accent)">Select(${s.credentials.length})</span>`;
+              return `
+                <div class="dnd-item" draggable="true" data-site-id="${s.id}" data-side="in-team" data-search="${escapeHtml((s.name + ' ' + s.url_pattern).toLowerCase())}"
+                     style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:9px 11px;cursor:grab;font-size:12.5px;transition:all .15s">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <button class="dnd-action" data-action="remove" data-site-id="${s.id}" title="ถอดออกจากทีม"
+                            style="background:rgba(220,38,38,.1);color:var(--critical);border:none;border-radius:6px;width:28px;height:24px;cursor:pointer;font-size:14px;line-height:1">←</button>
+                    <div style="flex:1;min-width:0;overflow:hidden">
+                      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                        <span style="font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(s.name)}</span>
+                        ${accessBadge}
+                      </div>
+                      <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(s.url_pattern)}</div>
+                    </div>
+                    <button class="dnd-edit" data-edit-site="${s.id}" title="แก้ไข access type / credentials"
+                            style="background:none;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;width:28px;height:24px;cursor:pointer;font-size:11px">✏️</button>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+        </div>
+      </div>
+    </div>
   `;
   $('tab-sites').innerHTML = html;
 
-  $('add-site-btn').addEventListener('click', () => showAddSiteToTeamModal(teamId, sites));
+  // === Drag & Drop wiring ===
+  const root = $('tab-sites');
 
-  document.querySelectorAll('#tab-sites button[data-rm-site]').forEach(b => {
-    b.addEventListener('click', async () => {
-      if (!confirm('ถอด site นี้ออกจากทีม?')) return;
-      await fetchJson(`/api/admin/teams/${teamId}/sites/${b.dataset.rmSite}`, { method: 'DELETE' });
-      await loadTeamDetail(teamId);
+  root.querySelectorAll('.dnd-item').forEach(item => {
+    item.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', JSON.stringify({
+        siteId: parseInt(item.dataset.siteId, 10),
+        side: item.dataset.side,
+      }));
+      e.dataTransfer.effectAllowed = 'move';
+      item.style.opacity = '0.4';
+    });
+    item.addEventListener('dragend', () => { item.style.opacity = ''; });
+  });
+
+  root.querySelectorAll('.dnd-col').forEach(col => {
+    col.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      col.style.borderStyle = 'solid';
+      col.style.background = col.dataset.side === 'in-team'
+        ? 'rgba(37,99,235,.08)' : 'var(--bg-hover)';
+    });
+    col.addEventListener('dragleave', (e) => {
+      // ตรวจว่าเมาส์ออกจาก col จริงๆ (ไม่ใช่แค่เข้า child)
+      if (!col.contains(e.relatedTarget)) {
+        col.style.borderStyle = 'dashed';
+        col.style.background = '';
+      }
+    });
+    col.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      col.style.borderStyle = 'dashed';
+      col.style.background = '';
+      let payload;
+      try { payload = JSON.parse(e.dataTransfer.getData('text/plain')); } catch { return; }
+      const targetSide = col.dataset.side;
+      // ลากภายใน col เดิม → ไม่ทำอะไร
+      if (payload.side === targetSide) return;
+      try {
+        if (targetSide === 'in-team') {
+          // available → in-team: เพิ่มด้วย access_type='all'
+          await fetchJson(`/api/admin/teams/${teamId}/sites`, {
+            method: 'POST',
+            body: JSON.stringify({ site_id: payload.siteId, access_type: 'all' }),
+          });
+        } else {
+          // in-team → available: ถอดออก
+          await fetchJson(`/api/admin/teams/${teamId}/sites/${payload.siteId}`, { method: 'DELETE' });
+        }
+        await loadTeamDetail(teamId);
+      } catch (err) {
+        alert('ไม่สำเร็จ: ' + err.message);
+      }
     });
   });
 
-  document.querySelectorAll('#tab-sites button[data-edit-site]').forEach(b => {
-    b.addEventListener('click', () => {
-      const sid = parseInt(b.dataset.editSite, 10);
+  // === ปุ่ม fallback (→ / ← / ✏️) — กรณี drag ไม่สะดวก เช่น mobile ===
+  root.querySelectorAll('.dnd-action').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const action = btn.dataset.action;
+      const siteId = parseInt(btn.dataset.siteId, 10);
+      try {
+        if (action === 'add') {
+          await fetchJson(`/api/admin/teams/${teamId}/sites`, {
+            method: 'POST',
+            body: JSON.stringify({ site_id: siteId, access_type: 'all' }),
+          });
+        } else {
+          if (!confirm('ถอด site นี้ออกจากทีม?')) return;
+          await fetchJson(`/api/admin/teams/${teamId}/sites/${siteId}`, { method: 'DELETE' });
+        }
+        await loadTeamDetail(teamId);
+      } catch (err) {
+        alert('ไม่สำเร็จ: ' + err.message);
+      }
+    });
+  });
+
+  root.querySelectorAll('.dnd-edit').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sid = parseInt(btn.dataset.editSite, 10);
       const site = sites.find(s => s.id === sid);
       if (site) showEditTeamSiteModal(teamId, site);
     });
   });
-}
 
-async function showAddSiteToTeamModal(teamId, currentSites) {
-  if (!_allSites) {
-    try { _allSites = (await fetchJson('/api/admin/sites')).sites; } catch { _allSites = []; }
-  }
-  const inIds = new Set(currentSites.map(s => s.id));
-  const candidates = _allSites.filter(s => !inIds.has(s.id));
-  if (candidates.length === 0) {
-    alert('ไม่มี site เพิ่มเติม — site ทั้งหมดถูกผูกแล้ว');
-    return;
-  }
-  showModal({
-    title: 'เพิ่ม Site Access ให้ทีม',
-    body: `
-      <div class="field">
-        <label>เลือก Site</label>
-        <select id="m-site" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
-          ${candidates.map(s => `<option value="${s.id}">${escapeHtml(s.name)} (${s.cred_count} credentials)</option>`).join('')}
-        </select>
-      </div>
-      <div class="field">
-        <label>วิธีเข้าถึง credential</label>
-        <select id="m-access" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
-          <option value="all">All credentials — เข้าถึงทุก credential ของ site นี้</option>
-          <option value="select">Select — ระบุ credentials เฉพาะที่จะให้</option>
-        </select>
-      </div>
-      <div class="hint" id="m-select-hint" style="display:none;color:var(--text-muted);font-size:12px;padding:10px;background:var(--bg-soft);border-radius:6px">
-        หลังกดบันทึก ให้ไป "✏️ แก้ไข" ที่ site นั้น เพื่อเลือก credentials ที่จะให้
-      </div>
-    `,
-    onSubmit: async () => {
-      const siteId = parseInt($('m-site').value, 10);
-      const access = $('m-access').value;
-      await fetchJson(`/api/admin/teams/${teamId}/sites`, {
-        method: 'POST',
-        body: JSON.stringify({ site_id: siteId, access_type: access }),
+  // === Search filters ===
+  const wireSearch = (inputId, listSel) => {
+    const inp = document.getElementById(inputId);
+    if (!inp) return;
+    inp.addEventListener('input', () => {
+      const q = inp.value.toLowerCase().trim();
+      root.querySelectorAll(`.dnd-list[data-list="${listSel}"] .dnd-item`).forEach(item => {
+        const key = item.dataset.search || '';
+        item.style.display = (!q || key.includes(q)) ? '' : 'none';
       });
-      await loadTeamDetail(teamId);
-    },
-  });
-  // toggle hint
-  setTimeout(() => {
-    const acc = document.getElementById('m-access');
-    const hint = document.getElementById('m-select-hint');
-    if (acc && hint) {
-      acc.addEventListener('change', () => { hint.style.display = acc.value === 'select' ? '' : 'none'; });
-    }
-  }, 0);
+    });
+  };
+  wireSearch('dnd-avail-search', 'available');
+  wireSearch('dnd-in-search', 'in-team');
 }
 
 async function showEditTeamSiteModal(teamId, site) {
