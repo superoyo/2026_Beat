@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.2",
+      "date": "2026-04-27",
+      "title": "Cross-hostname pending + shadow DOM scan + auto-fill toast",
+      "summary": "ChatGPT 2-step login ข้าม domain (chatgpt.com → auth.openai.com), auth providers ที่ใช้ Web Components, + visual feedback ตอน auto-fill",
+      "changes": [
+        "savePendingCredential เก็บ 2 keys: hostname-specific (TTL 5นาที) + global recent (TTL 2นาที)",
+        "getPendingCredential fallback ไป global recent — รองรับ password page คนละ hostname",
+        "deepQuerySelectorAll: traverse เข้า shadow DOMs ของหน้าเว็บด้วย (Auth0/Web Components)",
+        "Toast 🟢 confirmation ตอน auto-fill silently → user รู้ว่าระบบทำงานแล้ว",
+        "Console log บอกชัด: 🌉 cross-hostname / 🔑 password-only no pending / 🚀 auto-filled"
+      ]
+    },
+    {
       "version": "1.9.1",
       "date": "2026-04-27",
       "title": "Shadow DOM widget — fix click-blocked on ChatGPT",

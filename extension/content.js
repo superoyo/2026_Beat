@@ -9,7 +9,7 @@
 //   - English for technical / library code
 
 const TAG = '[FCT]';
-const SCRIPT_VERSION = 'v22-shadow-dom';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
+const SCRIPT_VERSION = 'v23-cross-host-pending';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
 
 // Hostname ที่ extension จะทำหน้าที่ scrape credit (mode A)
 // เว็บอื่นที่ user เพิ่มใน admin จะได้แค่ prefill (mode B) — ไม่ scrape credit
@@ -445,6 +445,26 @@ function isInputVisible(el) {
 }
 
 /**
+ * querySelectorAll ที่ traverse เข้า shadow DOMs ของหน้าเว็บด้วย
+ * (Auth0/Web Components บางทีใส่ password field ใน shadow root → document.qsa หาไม่เจอ)
+ */
+function deepQuerySelectorAll(selector, root = document) {
+  const result = [];
+  if (!root) return result;
+  const direct = (root.querySelectorAll && root.querySelectorAll(selector)) || [];
+  for (const el of direct) result.push(el);
+  // เดินเข้า shadow DOMs ของทุก element
+  const all = (root.querySelectorAll && root.querySelectorAll('*')) || [];
+  for (const el of all) {
+    if (el.shadowRoot) {
+      const inShadow = deepQuerySelectorAll(selector, el.shadowRoot);
+      for (const x of inShadow) result.push(x);
+    }
+  }
+  return result;
+}
+
+/**
  * หา login container — รองรับ 3 mode:
  *   1. 'both'           — มีทั้ง user + password ในหน้าเดียว (ปกติ)
  *   2. 'user-only'      — มีแค่ user/email field (Step 1 ของ 2-step login: ChatGPT, Google, MS)
@@ -452,7 +472,8 @@ function isInputVisible(el) {
  * @returns {{form:Element, userInput:HTMLInputElement|null, pwInput:HTMLInputElement|null, mode:string}|null}
  */
 function findLoginForm() {
-  const pwInputs = Array.from(document.querySelectorAll('input[type="password"]'));
+  // ใช้ deep query — รองรับ shadow DOMs ของหน้าเว็บ (Auth0 Web Components ฯลฯ)
+  const pwInputs = deepQuerySelectorAll('input[type="password"]');
   const visiblePws = pwInputs.filter(p => {
     const name = (p.name + ' ' + p.id + ' ' + p.autocomplete).toLowerCase();
     if (/confirm|new[-_]?password|repeat/.test(name)) return false;
@@ -510,9 +531,9 @@ function findLoginForm() {
   }
 
   // === B. ไม่มี password — เช็ค user-only mode (Step 1 ของ 2-step login) ===
-  const userCandidates = Array.from(document.querySelectorAll(
+  const userCandidates = deepQuerySelectorAll(
     'input[type="email"], input[type="text"], input[type="tel"]'
-  )).filter(isInputVisible);
+  ).filter(isInputVisible);
 
   for (const c of userCandidates) {
     const meta = (c.name + ' ' + c.id + ' ' + c.autocomplete + ' ' + c.placeholder).toLowerCase();
@@ -535,36 +556,102 @@ function findLoginForm() {
 }
 
 // === Pending credential — เก็บไว้ระหว่าง step 1 → step 2 ของ 2-step login ===
-const PENDING_TTL_MS = 5 * 60 * 1000;   // 5 นาที
+// เก็บ 2 keys:
+//  1. hostname-specific (chatgpt.com)         — TTL 5 นาที
+//  2. global "recent"                         — TTL 2 นาที (fallback กรณี
+//     password page ไปคนละ hostname เช่น auth.openai.com)
+const PENDING_TTL_MS = 5 * 60 * 1000;
+const PENDING_RECENT_TTL_MS = 2 * 60 * 1000;
+const PENDING_RECENT_KEY = 'fct_recent_pending';
 
 function _pendingKey() { return 'pending_prefill_' + location.hostname; }
 
 async function savePendingCredential(cred) {
+  const entry = {
+    cred_id: cred.id, label: cred.label,
+    username: cred.username, password: cred.password,
+    saved_hostname: location.hostname,
+    saved_url: location.href,
+    ts: Date.now(),
+  };
   await chrome.storage.local.set({
-    [_pendingKey()]: {
-      cred_id: cred.id, label: cred.label,
-      username: cred.username, password: cred.password,
-      ts: Date.now(),
-    }
+    [_pendingKey()]: entry,
+    [PENDING_RECENT_KEY]: entry,    // fallback for cross-hostname 2-step
   });
   console.debug(TAG, '💾 saved pending credential for', location.hostname,
     '(label:', cred.label || '(no-label)', ') — รอ password page ถัดไป');
 }
 
 async function getPendingCredential() {
-  const r = await chrome.storage.local.get([_pendingKey()]);
-  const p = r[_pendingKey()];
-  if (!p) return null;
-  if (Date.now() - p.ts > PENDING_TTL_MS) {
-    await chrome.storage.local.remove([_pendingKey()]);
-    console.debug(TAG, '🗑 pending credential expired, cleared');
-    return null;
+  const r = await chrome.storage.local.get([_pendingKey(), PENDING_RECENT_KEY]);
+  // Pass 1: hostname-specific (TTL 5 นาที)
+  const local = r[_pendingKey()];
+  if (local && Date.now() - local.ts < PENDING_TTL_MS) {
+    return local;
   }
-  return p;
+  // Pass 2: global recent (TTL 2 นาที) — สำหรับ cross-hostname 2-step
+  // เช่น chatgpt.com (Step 1) → auth.openai.com (Step 2)
+  const recent = r[PENDING_RECENT_KEY];
+  if (recent && Date.now() - recent.ts < PENDING_RECENT_TTL_MS) {
+    if (recent.saved_hostname !== location.hostname) {
+      console.debug(TAG, '🌉 cross-hostname pending: saved on',
+        recent.saved_hostname, '→ using on', location.hostname);
+    }
+    return recent;
+  }
+  // expired
+  if (local) await chrome.storage.local.remove([_pendingKey()]);
+  if (recent) await chrome.storage.local.remove([PENDING_RECENT_KEY]);
+  return null;
 }
 
 async function clearPendingCredential() {
-  await chrome.storage.local.remove([_pendingKey()]);
+  await chrome.storage.local.remove([_pendingKey(), PENDING_RECENT_KEY]);
+}
+
+// Show ephemeral toast เมื่อ auto-fill ทำงานเงียบๆ (user จะได้รู้)
+function showAutoFillToast(message) {
+  try {
+    const host = document.createElement('div');
+    host.setAttribute('style', `
+      position: fixed !important;
+      bottom: 80px !important;
+      right: 20px !important;
+      z-index: 2147483647 !important;
+      pointer-events: none !important;
+      isolation: isolate !important;
+      transform: translateZ(0) !important;
+    `);
+    const root = host.attachShadow({ mode: 'open' });
+    root.innerHTML = `
+      <style>
+        :host { all: initial; }
+        .toast {
+          background: #10b981; color: #fff;
+          padding: 10px 16px; border-radius: 999px;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+          font-size: 13px; font-weight: 500;
+          box-shadow: 0 6px 20px rgba(0,0,0,.35);
+          opacity: 0; transform: translateY(8px);
+          transition: opacity .25s, transform .25s;
+        }
+        .toast.show { opacity: 1; transform: translateY(0); }
+      </style>
+      <div class="toast">${escapeHtmlSafe(message)}</div>
+    `;
+    (document.documentElement || document.body).appendChild(host);
+    requestAnimationFrame(() => {
+      const t = root.querySelector('.toast');
+      if (t) t.classList.add('show');
+    });
+    setTimeout(() => {
+      const t = root.querySelector('.toast');
+      if (t) t.classList.remove('show');
+      setTimeout(() => host.remove(), 300);
+    }, 2800);
+  } catch (e) {
+    console.debug(TAG, 'toast failed:', e.message);
+  }
 }
 
 /** Trigger React/Vue change events properly */
@@ -860,9 +947,12 @@ async function checkPrefill() {
           }).catch(() => {});
         } catch {}
         if (prefillWidget) prefillWidget.style.display = 'none';
+        // แสดง toast confirmation ให้ user รู้ว่า auto-fill ทำงานแล้ว
+        showAutoFillToast(`✓ FEFL Beat: กรอก password ของ ${pending.username || pending.label || 'account'} ให้แล้ว`);
         console.debug(TAG, '🚀 auto-filled password from pending (account:', pending.username, ') — 2-step login complete');
         return;
       }
+      console.debug(TAG, '🔑 password-only detected, no pending → will show widget for manual pick');
       // ไม่มี pending → fall through to normal flow (โชว์ widget ให้เลือก)
     }
 
