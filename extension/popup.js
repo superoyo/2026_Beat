@@ -36,11 +36,52 @@ function showProfile(name) {
   const wrap = document.getElementById('profile');
   if (name) {
     wrap.style.display = '';
-    document.getElementById('profile-name').textContent = name;
-    document.getElementById('profile-name').title = name;
+    const el = document.getElementById('profile-name');
+    el.textContent = '🌐 Freepik: ' + name;
+    el.title = name;
   } else {
     wrap.style.display = 'none';
   }
+}
+
+async function showPairedUser() {
+  const card = document.getElementById('pair-card');
+  const avatar = document.getElementById('pair-avatar');
+  const nameEl = document.getElementById('pair-name');
+  const metaEl = document.getElementById('pair-meta');
+
+  const r = await chrome.storage.sync.get(['pairedUser']);
+  const p = r.pairedUser || null;
+
+  // เคลียร์ class state เก่า
+  card.classList.remove('member', 'admin', 'unpaired');
+
+  if (!p) {
+    card.classList.add('unpaired');
+    avatar.textContent = '🔒';
+    nameEl.textContent = 'ยังไม่ได้ Pair';
+    nameEl.style.color = '#8b95a8';
+    metaEl.textContent = 'autofill ปิด — เปิดระบบหลังบ้านเพื่อ pair';
+    return;
+  }
+
+  const isAdmin = (p.role === 'admin') || p.member_id == null;
+  card.classList.add(isAdmin ? 'admin' : 'member');
+  const label = p.label || 'unknown';
+  avatar.textContent = (label.trim().charAt(0) || '?').toUpperCase();
+  nameEl.style.color = '';
+  nameEl.textContent = label;
+  nameEl.title = label;
+
+  const parts = [];
+  if (isAdmin) {
+    parts.push('admin (bypass team)');
+  } else {
+    parts.push('member · ID ' + p.member_id);
+  }
+  if (p.deviceLabel) parts.push('💻 ' + p.deviceLabel);
+  metaEl.textContent = parts.join(' · ');
+  metaEl.title = metaEl.textContent;
 }
 
 async function loadCached() {
@@ -111,6 +152,9 @@ document.getElementById('options-btn').addEventListener('click', () => {
 });
 
 (async () => {
-  await loadCached();
+  await Promise.all([
+    showPairedUser(),
+    loadCached(),
+  ]);
   await loadSummary();
 })();

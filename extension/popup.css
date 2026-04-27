@@ -30,6 +30,66 @@ body {
 .balance-label { color: #8b95a8; font-size: 11px; margin-top: 4px; letter-spacing: 0.05em; text-transform: uppercase; }
 .balance-time { color: #6b7588; font-size: 10px; margin-top: 6px; font-variant-numeric: tabular-nums; }
 
+/* Paired user (FEFL Beat identity) */
+.pair-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #131a26;
+  border: 1px solid #243044;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  border-left-width: 3px;
+}
+.pair-card.member  { border-left-color: #10b981; }   /* เขียว */
+.pair-card.admin   { border-left-color: #f59e0b; }   /* เหลือง — bypass */
+.pair-card.unpaired { border-left-color: #6b7588; opacity: .85; }
+
+.pair-avatar {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 13px;
+  flex-shrink: 0;
+  color: #fff;
+  background: linear-gradient(135deg, #4f8cff, #7c5cff);
+}
+.pair-card.admin .pair-avatar    { background: linear-gradient(135deg, #f59e0b, #f97316); }
+.pair-card.unpaired .pair-avatar { background: #243044; color: #6b7588; }
+
+.pair-body {
+  flex: 1; min-width: 0;
+  overflow: hidden;
+}
+.pair-row {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pair-label {
+  color: #6b7588;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+.pair-name {
+  color: #e6ebf3; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pair-meta {
+  color: #6b7588;
+  font-size: 10.5px;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Freepik profile (scraped) */
 .profile {
   display: flex;
   align-items: center;
@@ -39,11 +99,11 @@ body {
   border: 1px solid #243044;
   border-radius: 6px;
   margin-bottom: 8px;
-  font-size: 12px;
-  color: #c9d2e1;
+  font-size: 11.5px;
+  color: #8b95a8;
   overflow: hidden;
 }
-.profile-icon { font-size: 14px; }
+.profile-icon { font-size: 13px; opacity: .7; }
 .profile-name {
   white-space: nowrap;
   overflow: hidden;

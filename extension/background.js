@@ -264,13 +264,56 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 });
 
-// On install: try to drain anything stale.
+// อัพเดท tooltip + badge ของ extension icon ให้สะท้อน pairing status
+async function refreshActionTitle() {
+  try {
+    const r = await chrome.storage.sync.get(['pairedUser']);
+    const p = r.pairedUser || null;
+    if (!p) {
+      await chrome.action.setTitle({ title: 'FEFL Beat — 🔒 ยังไม่ได้ Pair (autofill ปิด)' });
+      await chrome.action.setBadgeText({ text: '!' });
+      await chrome.action.setBadgeBackgroundColor({ color: '#9ca3af' });
+      return;
+    }
+    const isAdmin = (p.role === 'admin') || p.member_id == null;
+    const initial = ((p.label || '?').trim().charAt(0) || '?').toUpperCase();
+    if (isAdmin) {
+      await chrome.action.setTitle({
+        title: `FEFL Beat — ⚠ Paired as ADMIN: ${p.label || 'admin'} (bypass team filter)`
+      });
+      await chrome.action.setBadgeText({ text: 'A' });
+      await chrome.action.setBadgeBackgroundColor({ color: '#f59e0b' });
+    } else {
+      await chrome.action.setTitle({
+        title: `FEFL Beat — ✓ Paired as MEMBER: ${p.label || 'member'} (ID ${p.member_id})`
+      });
+      await chrome.action.setBadgeText({ text: initial });
+      await chrome.action.setBadgeBackgroundColor({ color: '#10b981' });
+    }
+  } catch (e) {
+    console.warn(TAG, 'refreshActionTitle failed', e);
+  }
+}
+
+// อัพเดท tooltip ทันทีเมื่อ pairedUser เปลี่ยน (PAIR / UNPAIR)
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'sync' && 'pairedUser' in changes) {
+    refreshActionTitle();
+  }
+});
+
+// On install: try to drain anything stale + set initial tooltip.
 chrome.runtime.onInstalled.addListener(() => {
   console.debug(TAG, 'installed');
   drainQueue().catch(() => {});
+  refreshActionTitle();
 });
 
 // On startup: same.
 chrome.runtime.onStartup.addListener(() => {
   drainQueue().catch(() => {});
+  refreshActionTitle();
 });
+
+// Also set on service worker initialization (covers reload case)
+refreshActionTitle();

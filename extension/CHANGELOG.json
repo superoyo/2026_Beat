@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.8.5",
+      "date": "2026-04-27",
+      "title": "Show paired profile in extension popup + toolbar",
+      "summary": "Extension popup + toolbar tooltip + badge แสดง paired user ที่ชัดเจน (แยกจาก Freepik scraped profile)",
+      "changes": [
+        "Popup: card Paired ด้านบน — สีเขียว (member) / เหลือง (admin) / เทา (unpaired) + avatar + meta",
+        "Browser action tooltip: hover icon เห็น 'Paired as MEMBER: John (ID 5)' หรือ '⚠ admin' หรือ '🔒 ยังไม่ได้ Pair'",
+        "Badge บน icon: ตัวอักษรแรกของ label (เขียว) / 'A' (เหลือง=admin) / '!' (เทา=unpaired)",
+        "Auto-refresh ทันทีเมื่อ pairedUser เปลี่ยน (chrome.storage.onChanged)"
+      ]
+    },
+    {
       "version": "1.8.4",
       "date": "2026-04-27",
       "title": "Unpaired = no autofill",
