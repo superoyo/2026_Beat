@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.6.0",
+      "date": "2026-04-27",
+      "title": "Team-based access control",
+      "summary": "Filter credentials ที่ extension เห็นตาม team membership ของ member",
+      "changes": [
+        "Extension ส่ง member_id ในคำขอ /match",
+        "Backend filter ตามทีมที่ member อยู่ — site ที่ผูกกับทีมจะ visible เฉพาะคนในทีม",
+        "รองรับ access_type: 'all' (ทุก credential) หรือ 'select' (เฉพาะที่กำหนด)"
+      ]
+    },
+    {
       "version": "1.5.0",
       "date": "2026-04-27",
       "title": "Device label tracking",

@@ -192,6 +192,35 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_usage_logs_ts ON usage_logs(timestamp);
             CREATE INDEX IF NOT EXISTS idx_usage_logs_site ON usage_logs(site_id);
             CREATE INDEX IF NOT EXISTS idx_usage_logs_member ON usage_logs(member_id);
+
+            -- Teams + access control
+            CREATE TABLE IF NOT EXISTS teams (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT NOT NULL UNIQUE,
+                description TEXT,
+                created_at  TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS team_members (
+                team_id    INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+                member_id  INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+                added_at   TEXT NOT NULL,
+                PRIMARY KEY (team_id, member_id)
+            );
+            CREATE TABLE IF NOT EXISTS team_sites (
+                team_id     INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+                site_id     INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+                access_type TEXT NOT NULL DEFAULT 'all',   -- 'all' หรือ 'select'
+                added_at    TEXT NOT NULL,
+                PRIMARY KEY (team_id, site_id)
+            );
+            CREATE TABLE IF NOT EXISTS team_credentials (
+                team_id        INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+                credential_id  INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+                added_at       TEXT NOT NULL,
+                PRIMARY KEY (team_id, credential_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_team_members_member ON team_members(member_id);
+            CREATE INDEX IF NOT EXISTS idx_team_sites_site ON team_sites(site_id);
             """
         )
 
@@ -1279,6 +1308,269 @@ def admin_logout(response: Response, fct_session: Optional[str] = Cookie(default
 
 
 # ===========================================================================
+# Teams + access control (admin-only)
+# ===========================================================================
+class TeamIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    description: Optional[str] = Field(None, max_length=500)
+
+
+class TeamPatchIn(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=120)
+    description: Optional[str] = Field(None, max_length=500)
+
+
+class TeamMemberIn(BaseModel):
+    member_id: int
+
+
+class TeamSiteIn(BaseModel):
+    site_id: int
+    access_type: str = Field("all", pattern="^(all|select)$")
+    credential_ids: Optional[list[int]] = None
+
+
+class TeamSitePatchIn(BaseModel):
+    access_type: Optional[str] = Field(None, pattern="^(all|select)$")
+    credential_ids: Optional[list[int]] = None  # replace ทั้งชุด ถ้าส่ง
+
+
+@app.get("/api/admin/teams")
+def admin_list_teams(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT t.id, t.name, t.description, t.created_at, "
+            "  (SELECT COUNT(*) FROM team_members WHERE team_id = t.id) AS member_count, "
+            "  (SELECT COUNT(*) FROM team_sites   WHERE team_id = t.id) AS site_count "
+            "FROM teams t ORDER BY t.created_at DESC"
+        ).fetchall()
+    return {"teams": [dict(r) for r in rows]}
+
+
+@app.post("/api/admin/teams")
+def admin_create_team(payload: TeamIn, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    with db_conn() as conn:
+        try:
+            cur = conn.execute(
+                "INSERT INTO teams(name, description, created_at) VALUES (?, ?, ?)",
+                (payload.name.strip(), payload.description, utc_now().isoformat()),
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail="ชื่อ team นี้ถูกใช้แล้ว")
+    return {"ok": True, "id": cur.lastrowid}
+
+
+@app.get("/api/admin/teams/{team_id}")
+def admin_get_team(team_id: int, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    with db_conn() as conn:
+        team = conn.execute("SELECT * FROM teams WHERE id = ?", (team_id,)).fetchone()
+        if not team:
+            raise HTTPException(status_code=404, detail="team not found")
+        members = conn.execute(
+            "SELECT m.id, m.phone, m.email, m.display_name, m.enabled, tm.added_at "
+            "FROM team_members tm JOIN members m ON m.id = tm.member_id "
+            "WHERE tm.team_id = ? ORDER BY tm.added_at DESC",
+            (team_id,),
+        ).fetchall()
+        sites = conn.execute(
+            "SELECT s.id, s.name, s.url_pattern, ts.access_type, ts.added_at, "
+            "  (SELECT COUNT(*) FROM credentials WHERE site_id = s.id) AS total_creds "
+            "FROM team_sites ts JOIN sites s ON s.id = ts.site_id "
+            "WHERE ts.team_id = ? ORDER BY ts.added_at DESC",
+            (team_id,),
+        ).fetchall()
+        # สำหรับ site ที่ access_type='select' → เก็บรายชื่อ credential ที่ team เลือก
+        site_creds: dict[int, list[dict[str, Any]]] = {}
+        for s in sites:
+            if s["access_type"] == "select":
+                rows = conn.execute(
+                    "SELECT c.id, c.label, c.username "
+                    "FROM team_credentials tc JOIN credentials c ON c.id = tc.credential_id "
+                    "WHERE tc.team_id = ? AND c.site_id = ?",
+                    (team_id, s["id"]),
+                ).fetchall()
+                site_creds[s["id"]] = [dict(r) for r in rows]
+
+    return {
+        "team": dict(team),
+        "members": [dict(m) for m in members],
+        "sites": [
+            {**dict(s), "credentials": site_creds.get(s["id"], [])}
+            for s in sites
+        ],
+    }
+
+
+@app.patch("/api/admin/teams/{team_id}")
+def admin_update_team(
+    team_id: int,
+    payload: TeamPatchIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    updates: dict[str, Any] = {}
+    if payload.name is not None:
+        updates["name"] = payload.name.strip()
+    if payload.description is not None:
+        updates["description"] = payload.description
+    if not updates:
+        raise HTTPException(status_code=400, detail="ไม่มีอะไรให้บันทึก")
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [team_id]
+    with db_conn() as conn:
+        try:
+            cur = conn.execute(f"UPDATE teams SET {set_clause} WHERE id = ?", values)
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail="ชื่อ team ซ้ำกับที่มีอยู่")
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="team not found")
+    return {"ok": True}
+
+
+@app.delete("/api/admin/teams/{team_id}")
+def admin_delete_team(team_id: int, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    with db_conn() as conn:
+        cur = conn.execute("DELETE FROM teams WHERE id = ?", (team_id,))
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="team not found")
+    return {"ok": True}
+
+
+@app.post("/api/admin/teams/{team_id}/members")
+def admin_add_team_member(
+    team_id: int,
+    payload: TeamMemberIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    with db_conn() as conn:
+        if not conn.execute("SELECT 1 FROM teams WHERE id = ?", (team_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="team not found")
+        if not conn.execute("SELECT 1 FROM members WHERE id = ?", (payload.member_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="member not found")
+        try:
+            conn.execute(
+                "INSERT INTO team_members(team_id, member_id, added_at) VALUES (?, ?, ?)",
+                (team_id, payload.member_id, utc_now().isoformat()),
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail="member อยู่ในทีมนี้แล้ว")
+    return {"ok": True}
+
+
+@app.delete("/api/admin/teams/{team_id}/members/{member_id}")
+def admin_remove_team_member(
+    team_id: int,
+    member_id: int,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    with db_conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM team_members WHERE team_id = ? AND member_id = ?",
+            (team_id, member_id),
+        )
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"ok": True}
+
+
+@app.post("/api/admin/teams/{team_id}/sites")
+def admin_add_team_site(
+    team_id: int,
+    payload: TeamSiteIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    with db_conn() as conn:
+        if not conn.execute("SELECT 1 FROM teams WHERE id = ?", (team_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="team not found")
+        if not conn.execute("SELECT 1 FROM sites WHERE id = ?", (payload.site_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="site not found")
+        try:
+            conn.execute(
+                "INSERT INTO team_sites(team_id, site_id, access_type, added_at) "
+                "VALUES (?, ?, ?, ?)",
+                (team_id, payload.site_id, payload.access_type, utc_now().isoformat()),
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail="site นี้ถูกผูกกับทีมแล้ว")
+
+        if payload.access_type == "select" and payload.credential_ids:
+            for cid in payload.credential_ids:
+                # ตรวจว่า credential นี้เป็นของ site นี้จริงๆ
+                ok = conn.execute(
+                    "SELECT 1 FROM credentials WHERE id = ? AND site_id = ?",
+                    (cid, payload.site_id),
+                ).fetchone()
+                if ok:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO team_credentials(team_id, credential_id, added_at) "
+                        "VALUES (?, ?, ?)",
+                        (team_id, cid, utc_now().isoformat()),
+                    )
+    return {"ok": True}
+
+
+@app.patch("/api/admin/teams/{team_id}/sites/{site_id}")
+def admin_update_team_site(
+    team_id: int,
+    site_id: int,
+    payload: TeamSitePatchIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    with db_conn() as conn:
+        ts = conn.execute(
+            "SELECT 1 FROM team_sites WHERE team_id = ? AND site_id = ?",
+            (team_id, site_id),
+        ).fetchone()
+        if not ts:
+            raise HTTPException(status_code=404, detail="team-site not found")
+        if payload.access_type:
+            conn.execute(
+                "UPDATE team_sites SET access_type = ? WHERE team_id = ? AND site_id = ?",
+                (payload.access_type, team_id, site_id),
+            )
+        if payload.credential_ids is not None:
+            # replace ทั้งชุด — ลบของเดิม (เฉพาะ credentials ของ site นี้)
+            conn.execute(
+                "DELETE FROM team_credentials WHERE team_id = ? AND credential_id IN "
+                "(SELECT id FROM credentials WHERE site_id = ?)",
+                (team_id, site_id),
+            )
+            for cid in payload.credential_ids:
+                ok = conn.execute(
+                    "SELECT 1 FROM credentials WHERE id = ? AND site_id = ?",
+                    (cid, site_id),
+                ).fetchone()
+                if ok:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO team_credentials(team_id, credential_id, added_at) "
+                        "VALUES (?, ?, ?)",
+                        (team_id, cid, utc_now().isoformat()),
+                    )
+    return {"ok": True}
+
+
+@app.delete("/api/admin/teams/{team_id}/sites/{site_id}")
+def admin_remove_team_site(
+    team_id: int,
+    site_id: int,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    with db_conn() as conn:
+        # ลบ team_credentials ที่เกี่ยวกับ site นี้ก่อน
+        conn.execute(
+            "DELETE FROM team_credentials WHERE team_id = ? AND credential_id IN "
+            "(SELECT id FROM credentials WHERE site_id = ?)",
+            (team_id, site_id),
+        )
+        cur = conn.execute(
+            "DELETE FROM team_sites WHERE team_id = ? AND site_id = ?",
+            (team_id, site_id),
+        )
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"ok": True}
+
+
+# ===========================================================================
 # Members management (admin-only)
 # ===========================================================================
 class MemberAdminPatch(BaseModel):
@@ -1541,9 +1833,18 @@ def delete_credential(cred_id: int, _sess: dict = Depends(require_admin)) -> dic
 @app.get("/api/extension/match")
 def extension_match(
     url: str,
+    member_id: Optional[int] = None,
     _auth: str = Depends(require_admin_or_api_key),
 ) -> dict[str, Any]:
-    """ตรวจว่า URL ตรงกับ site ใดที่ลงทะเบียนไว้ ถ้าใช่ คืน credentials"""
+    """ตรวจว่า URL ตรงกับ site ใดที่ลงทะเบียนไว้ ถ้าใช่ คืน credentials.
+
+    Filter ด้วย team:
+    - ถ้า site ไม่ถูกผูกกับทีมใดเลย → ทุก member + admin เห็น credentials ทั้งหมด
+    - ถ้า site ถูกผูกกับทีม → เฉพาะ member ในทีมที่มีสิทธิ์ + admin (member_id=None)
+    - access_type='all'   → เห็น credentials ทั้งหมดของ site
+    - access_type='select' → เห็นเฉพาะ credentials ที่ team_credentials ระบุ
+    - Member ในหลายทีม → union (ถ้าทีมใดทีมหนึ่งมี 'all' → เห็นทั้งหมด)
+    """
     with db_conn() as conn:
         sites = conn.execute("SELECT id, name, url_pattern FROM sites").fetchall()
         matched_id = None
@@ -1555,11 +1856,52 @@ def extension_match(
                 break
         if matched_id is None:
             return {"matched": False}
-        creds = conn.execute(
-            "SELECT id, label, username, password "
-            "FROM credentials WHERE site_id = ? ORDER BY last_used_at DESC NULLS LAST, created_at DESC",
-            (matched_id,),
-        ).fetchall()
+
+        team_restricted = conn.execute(
+            "SELECT 1 FROM team_sites WHERE site_id = ? LIMIT 1", (matched_id,)
+        ).fetchone() is not None
+
+        if not team_restricted or member_id is None:
+            # Public site OR caller ไม่ใช่ member (admin-paired) → คืนทุก credential
+            creds = conn.execute(
+                "SELECT id, label, username, password "
+                "FROM credentials WHERE site_id = ? "
+                "ORDER BY last_used_at DESC NULLS LAST, created_at DESC",
+                (matched_id,),
+            ).fetchall()
+        else:
+            # Site ถูก restrict + caller เป็น member → เช็คว่าเข้าได้มั้ย
+            access_rows = conn.execute(
+                "SELECT ts.access_type FROM team_members tm "
+                "JOIN team_sites ts ON ts.team_id = tm.team_id "
+                "WHERE ts.site_id = ? AND tm.member_id = ?",
+                (matched_id, member_id),
+            ).fetchall()
+            if not access_rows:
+                # Member ไม่อยู่ในทีมที่มีสิทธิ์ → คืน credentials ว่าง
+                creds = []
+            elif any(r["access_type"] == "all" for r in access_rows):
+                # อย่างน้อย 1 ทีมให้ access 'all' → คืนทุก credential
+                creds = conn.execute(
+                    "SELECT id, label, username, password "
+                    "FROM credentials WHERE site_id = ? "
+                    "ORDER BY last_used_at DESC NULLS LAST, created_at DESC",
+                    (matched_id,),
+                ).fetchall()
+            else:
+                # ทุกทีมเป็น 'select' → เอา credentials ที่ team_credentials ระบุไว้ (union)
+                creds = conn.execute(
+                    "SELECT DISTINCT c.id, c.label, c.username, c.password "
+                    "FROM credentials c "
+                    "WHERE c.site_id = ? AND c.id IN ("
+                    "  SELECT tc.credential_id FROM team_credentials tc "
+                    "  JOIN team_members tm ON tm.team_id = tc.team_id "
+                    "  WHERE tm.member_id = ?"
+                    ") "
+                    "ORDER BY c.last_used_at DESC NULLS LAST, c.created_at DESC",
+                    (matched_id, member_id),
+                ).fetchall()
+
     return {
         "matched": True,
         "site": matched_site,

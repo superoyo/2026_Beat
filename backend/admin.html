@@ -524,6 +524,7 @@
           <span>ภาพรวมระบบ</span>
         </div>
         <a href="#/members" data-route="members">👥 Members</a>
+        <a href="#/teams" data-route="teams">👨‍👩‍👧 Teams</a>
         <a href="#/sites" data-route="sites">🛠 Config</a>
         <a href="#/logs" data-route="logs">📜 Logs</a>
         <a href="#/security" data-route="security">🔑 API Key</a>
@@ -591,9 +592,9 @@ async function fetchJson(path, opts = {}) {
 }
 
 // admin-only routes — member ห้ามเข้า (bounce ไป default)
-const ADMIN_ONLY_ROUTES = new Set(['security', 'members', 'sites', 'logs']);
+const ADMIN_ONLY_ROUTES = new Set(['security', 'members', 'sites', 'logs', 'teams']);
 // menu items ที่ซ่อนใน sidebar สำหรับ member
-const HIDE_FROM_MEMBER_NAV = new Set(['dashboard', 'security', 'members', 'sites', 'logs']);
+const HIDE_FROM_MEMBER_NAV = new Set(['dashboard', 'security', 'members', 'sites', 'logs', 'teams']);
 
 // ---------- routing ----------
 const routes = {
@@ -601,6 +602,7 @@ const routes = {
   'platforms': renderPlatformsPage,
   'sites':     renderSitesList,
   'members':   renderMembersPage,
+  'teams':     renderTeamsPage,
   'logs':      renderLogsPage,
   'extension': renderExtensionPage,
   'security':  renderSecurityPage,
@@ -634,6 +636,9 @@ async function navigate() {
   if (route === 'sites' && parts[1]) {
     setActive('sites');
     await renderSiteDetail(parseInt(parts[1], 10));
+  } else if (route === 'teams' && parts[1]) {
+    setActive('teams');
+    await renderTeamDetail(parseInt(parts[1], 10));
   } else if (routes[route]) {
     setActive(route);
     await routes[route]();
@@ -1055,6 +1060,412 @@ async function renderPlatformsPage() {
       }).join('')}
     </div>
   `;
+}
+
+// ============== Teams ==============
+
+async function renderTeamsPage() {
+  $('main').innerHTML = `
+    <div class="page-head">
+      <h2 class="page-title">👨‍👩‍👧 Teams</h2>
+      <button class="btn primary" id="add-team-btn">+ สร้าง Team ใหม่</button>
+    </div>
+    <div class="hint" style="margin-bottom:18px;color:var(--text-muted);font-size:13px">
+      จัดกลุ่ม member เพื่อกำหนดสิทธิ์เข้าถึง platform — site ที่ผูกกับทีมจะ visible เฉพาะคนในทีมเท่านั้น
+    </div>
+    <div id="teams-list"><div class="empty">กำลังโหลด…</div></div>
+  `;
+  $('add-team-btn').addEventListener('click', showAddTeamModal);
+  await loadTeamsList();
+}
+
+async function loadTeamsList() {
+  let data;
+  try {
+    data = await fetchJson('/api/admin/teams');
+  } catch (e) {
+    $('teams-list').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  const teams = data.teams;
+  if (teams.length === 0) {
+    $('teams-list').innerHTML = `<div class="empty">ยังไม่มี team — กด <strong>+ สร้าง Team ใหม่</strong> ด้านบน</div>`;
+    return;
+  }
+  $('teams-list').innerHTML = teams.map(t => `
+    <div class="card card-clickable" data-id="${t.id}">
+      <div>
+        <div class="card-title">${escapeHtml(t.name)}</div>
+        <div class="card-sub">
+          ${t.member_count} member · ${t.site_count} site
+          ${t.description ? '· ' + escapeHtml(t.description) : ''}
+        </div>
+      </div>
+      <div style="color:var(--text-muted)">→</div>
+    </div>
+  `).join('');
+  document.querySelectorAll('#teams-list .card[data-id]').forEach(card => {
+    card.addEventListener('click', () => { location.hash = '#/teams/' + card.dataset.id; });
+  });
+}
+
+function showAddTeamModal() {
+  showModal({
+    title: 'สร้าง Team ใหม่',
+    body: `
+      <div class="field">
+        <label>ชื่อทีม</label>
+        <input id="m-name" type="text" placeholder="เช่น Marketing, Sales" />
+      </div>
+      <div class="field">
+        <label>คำอธิบาย (optional)</label>
+        <input id="m-desc" type="text" placeholder="ทีมเกี่ยวกับ..." />
+      </div>
+    `,
+    onSubmit: async () => {
+      const name = $('m-name').value.trim();
+      if (!name) throw new Error('กรอกชื่อทีม');
+      await fetchJson('/api/admin/teams', {
+        method: 'POST',
+        body: JSON.stringify({ name, description: $('m-desc').value.trim() || null }),
+      });
+      await loadTeamsList();
+    },
+  });
+}
+
+async function renderTeamDetail(teamId) {
+  $('main').innerHTML = `
+    <div class="crumb"><a href="#/teams">← Teams</a></div>
+    <div class="page-head">
+      <h2 class="page-title" id="team-name">…</h2>
+      <div style="display:flex;gap:8px">
+        <button class="btn" id="edit-team-btn">✏️ แก้ไขข้อมูล</button>
+        <button class="btn danger" id="delete-team-btn">ลบ Team</button>
+      </div>
+    </div>
+    <div id="team-meta"></div>
+    <div id="team-tabs" style="display:flex;gap:6px;margin:20px 0 14px;border-bottom:1px solid var(--border)">
+      <button class="team-tab active" data-tab="members" style="background:none;border:none;padding:10px 14px;font-size:13.5px;color:var(--primary);font-weight:600;cursor:pointer;border-bottom:2px solid var(--primary)">👥 Members</button>
+      <button class="team-tab" data-tab="sites" style="background:none;border:none;padding:10px 14px;font-size:13.5px;color:var(--text-muted);cursor:pointer">🌐 Site Access</button>
+    </div>
+    <div id="tab-members" class="team-tab-pane"></div>
+    <div id="tab-sites" class="team-tab-pane" style="display:none"></div>
+  `;
+  await loadTeamDetail(teamId);
+
+  document.querySelectorAll('.team-tab').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.team-tab').forEach(x => {
+        x.classList.toggle('active', x === b);
+        x.style.color = x === b ? 'var(--primary)' : 'var(--text-muted)';
+        x.style.fontWeight = x === b ? '600' : '500';
+        x.style.borderBottom = x === b ? '2px solid var(--primary)' : '';
+      });
+      document.querySelectorAll('.team-tab-pane').forEach(p => p.style.display = 'none');
+      const target = b.dataset.tab;
+      document.getElementById('tab-' + target).style.display = '';
+    });
+  });
+
+  $('edit-team-btn').addEventListener('click', () => {
+    if (_currentTeam) showEditTeamModal(_currentTeam, teamId);
+  });
+  $('delete-team-btn').addEventListener('click', async () => {
+    if (!confirm('ลบทีมนี้? (member ที่อยู่ในทีมจะหลุด, site access ที่ผูกไว้จะถูกถอน)')) return;
+    await fetchJson('/api/admin/teams/' + teamId, { method: 'DELETE' });
+    location.hash = '#/teams';
+  });
+}
+
+let _currentTeam = null;
+let _allMembers = null;   // cache list of all members for "add to team" picker
+let _allSites = null;     // cache list of all sites
+
+async function loadTeamDetail(teamId) {
+  let data;
+  try {
+    data = await fetchJson('/api/admin/teams/' + teamId);
+  } catch (e) {
+    $('team-name').textContent = 'โหลดไม่สำเร็จ: ' + e.message;
+    return;
+  }
+  _currentTeam = data.team;
+  $('team-name').textContent = data.team.name;
+  $('team-meta').innerHTML = `
+    <div class="card" style="display:block">
+      <div class="card-sub" style="margin-bottom:4px">คำอธิบาย</div>
+      <div>${escapeHtml(data.team.description || '(ไม่มี)')}</div>
+    </div>
+  `;
+
+  renderTeamMembers(teamId, data.members);
+  renderTeamSites(teamId, data.sites);
+}
+
+function renderTeamMembers(teamId, members) {
+  const html = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <span class="card-sub">${members.length} member</span>
+      <button class="btn primary" id="add-member-btn" style="font-size:12.5px;padding:6px 12px">+ เพิ่ม Member</button>
+    </div>
+    ${members.length === 0
+      ? '<div class="empty">ยังไม่มี member ในทีม</div>'
+      : members.map(m => {
+          const display = m.display_name || m.email || m.phone;
+          return `
+            <div class="card" style="display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <div class="card-title">${escapeHtml(display)}</div>
+                <div class="card-sub">${escapeHtml(m.phone)}${m.email ? ' · ' + escapeHtml(m.email) : ''}${m.enabled === 0 ? ' · <span style="color:var(--critical)">⛔ ระงับ</span>' : ''}</div>
+              </div>
+              <button class="btn danger" data-rm="${m.id}" style="font-size:12.5px;padding:6px 12px">ลบออก</button>
+            </div>
+          `;
+        }).join('')}
+  `;
+  $('tab-members').innerHTML = html;
+
+  $('add-member-btn').addEventListener('click', () => showAddMemberToTeamModal(teamId, members));
+  document.querySelectorAll('#tab-members button[data-rm]').forEach(b => {
+    b.addEventListener('click', async () => {
+      if (!confirm('ลบ member ออกจากทีม?')) return;
+      await fetchJson(`/api/admin/teams/${teamId}/members/${b.dataset.rm}`, { method: 'DELETE' });
+      await loadTeamDetail(teamId);
+    });
+  });
+}
+
+async function showAddMemberToTeamModal(teamId, currentMembers) {
+  if (!_allMembers) {
+    try { _allMembers = (await fetchJson('/api/admin/members')).members; } catch { _allMembers = []; }
+  }
+  const inIds = new Set(currentMembers.map(m => m.id));
+  const candidates = _allMembers.filter(m => !inIds.has(m.id));
+  if (candidates.length === 0) {
+    alert('ไม่มี member เพิ่มเติม — สมาชิกทั้งหมดอยู่ในทีมแล้ว');
+    return;
+  }
+  showModal({
+    title: 'เพิ่ม Member เข้าทีม',
+    body: `
+      <div class="field">
+        <label>เลือก member</label>
+        <select id="m-pick" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
+          ${candidates.map(m => {
+            const label = (m.display_name || m.email || m.phone) + ' · ' + m.phone;
+            return `<option value="${m.id}">${escapeHtml(label)}</option>`;
+          }).join('')}
+        </select>
+      </div>
+    `,
+    onSubmit: async () => {
+      const memberId = parseInt($('m-pick').value, 10);
+      await fetchJson(`/api/admin/teams/${teamId}/members`, {
+        method: 'POST', body: JSON.stringify({ member_id: memberId }),
+      });
+      await loadTeamDetail(teamId);
+    },
+  });
+}
+
+function renderTeamSites(teamId, sites) {
+  const html = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <span class="card-sub">${sites.length} site</span>
+      <button class="btn primary" id="add-site-btn" style="font-size:12.5px;padding:6px 12px">+ เพิ่ม Site Access</button>
+    </div>
+    <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:12px">
+      <strong>All</strong> = ทีมเข้าถึงทุก credential ของ site นี้  |
+      <strong>Select</strong> = ระบุ credentials เฉพาะที่ต้องการ
+    </div>
+    ${sites.length === 0
+      ? '<div class="empty">ยังไม่ได้ผูก site กับทีมนี้</div>'
+      : sites.map(s => {
+          const accessBadge = s.access_type === 'all'
+            ? '<span style="display:inline-flex;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(37,99,235,.12);color:var(--primary)">All credentials</span>'
+            : '<span style="display:inline-flex;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(124,58,237,.12);color:var(--accent)">Select (' + (s.credentials.length) + ')</span>';
+          const credsList = s.access_type === 'select' && s.credentials.length > 0
+            ? '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">' +
+              s.credentials.map(c => `
+                <div style="font-size:12.5px;color:var(--text-muted);margin-top:3px">
+                  • ${escapeHtml(c.label || '(no label)')} <span style="color:var(--text-soft)">— ${escapeHtml(c.username)}</span>
+                </div>
+              `).join('') +
+              '</div>'
+            : '';
+          return `
+            <div class="card" style="display:block">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+                <div style="flex:1;min-width:0">
+                  <div class="card-title">${escapeHtml(s.name)}</div>
+                  <div class="card-sub">${escapeHtml(s.url_pattern)} · ${accessBadge}</div>
+                </div>
+                <div style="display:flex;gap:6px">
+                  <button class="btn" data-edit-site="${s.id}" style="font-size:12px;padding:5px 10px">✏️ แก้ไข</button>
+                  <button class="btn danger" data-rm-site="${s.id}" style="font-size:12px;padding:5px 10px">ถอด</button>
+                </div>
+              </div>
+              ${credsList}
+            </div>
+          `;
+        }).join('')}
+  `;
+  $('tab-sites').innerHTML = html;
+
+  $('add-site-btn').addEventListener('click', () => showAddSiteToTeamModal(teamId, sites));
+
+  document.querySelectorAll('#tab-sites button[data-rm-site]').forEach(b => {
+    b.addEventListener('click', async () => {
+      if (!confirm('ถอด site นี้ออกจากทีม?')) return;
+      await fetchJson(`/api/admin/teams/${teamId}/sites/${b.dataset.rmSite}`, { method: 'DELETE' });
+      await loadTeamDetail(teamId);
+    });
+  });
+
+  document.querySelectorAll('#tab-sites button[data-edit-site]').forEach(b => {
+    b.addEventListener('click', () => {
+      const sid = parseInt(b.dataset.editSite, 10);
+      const site = sites.find(s => s.id === sid);
+      if (site) showEditTeamSiteModal(teamId, site);
+    });
+  });
+}
+
+async function showAddSiteToTeamModal(teamId, currentSites) {
+  if (!_allSites) {
+    try { _allSites = (await fetchJson('/api/admin/sites')).sites; } catch { _allSites = []; }
+  }
+  const inIds = new Set(currentSites.map(s => s.id));
+  const candidates = _allSites.filter(s => !inIds.has(s.id));
+  if (candidates.length === 0) {
+    alert('ไม่มี site เพิ่มเติม — site ทั้งหมดถูกผูกแล้ว');
+    return;
+  }
+  showModal({
+    title: 'เพิ่ม Site Access ให้ทีม',
+    body: `
+      <div class="field">
+        <label>เลือก Site</label>
+        <select id="m-site" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
+          ${candidates.map(s => `<option value="${s.id}">${escapeHtml(s.name)} (${s.cred_count} credentials)</option>`).join('')}
+        </select>
+      </div>
+      <div class="field">
+        <label>วิธีเข้าถึง credential</label>
+        <select id="m-access" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
+          <option value="all">All credentials — เข้าถึงทุก credential ของ site นี้</option>
+          <option value="select">Select — ระบุ credentials เฉพาะที่จะให้</option>
+        </select>
+      </div>
+      <div class="hint" id="m-select-hint" style="display:none;color:var(--text-muted);font-size:12px;padding:10px;background:var(--bg-soft);border-radius:6px">
+        หลังกดบันทึก ให้ไป "✏️ แก้ไข" ที่ site นั้น เพื่อเลือก credentials ที่จะให้
+      </div>
+    `,
+    onSubmit: async () => {
+      const siteId = parseInt($('m-site').value, 10);
+      const access = $('m-access').value;
+      await fetchJson(`/api/admin/teams/${teamId}/sites`, {
+        method: 'POST',
+        body: JSON.stringify({ site_id: siteId, access_type: access }),
+      });
+      await loadTeamDetail(teamId);
+    },
+  });
+  // toggle hint
+  setTimeout(() => {
+    const acc = document.getElementById('m-access');
+    const hint = document.getElementById('m-select-hint');
+    if (acc && hint) {
+      acc.addEventListener('change', () => { hint.style.display = acc.value === 'select' ? '' : 'none'; });
+    }
+  }, 0);
+}
+
+async function showEditTeamSiteModal(teamId, site) {
+  // Need full credentials list of the site to pick from
+  let allCreds = [];
+  try {
+    const r = await fetchJson('/api/admin/sites/' + site.id);
+    allCreds = r.credentials || [];
+  } catch (e) {
+    alert('โหลด credentials ไม่ได้: ' + e.message);
+    return;
+  }
+  const selectedIds = new Set((site.credentials || []).map(c => c.id));
+
+  showModal({
+    title: `แก้ไข Access — ${site.name}`,
+    body: `
+      <div class="field">
+        <label>วิธีเข้าถึง</label>
+        <select id="m-access" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
+          <option value="all" ${site.access_type === 'all' ? 'selected' : ''}>All credentials — ทุก credential ของ site</option>
+          <option value="select" ${site.access_type === 'select' ? 'selected' : ''}>Select — เลือก credentials เฉพาะ</option>
+        </select>
+      </div>
+      <div class="field" id="m-cred-list-wrap" ${site.access_type === 'all' ? 'style="display:none"' : ''}>
+        <label>เลือก credentials ที่ทีมเข้าถึงได้ (${allCreds.length} ทั้งหมด)</label>
+        <div style="border:1px solid var(--border);border-radius:8px;padding:8px;max-height:240px;overflow-y:auto;background:var(--bg-soft)">
+          ${allCreds.length === 0 ? '<div class="hint">site นี้ยังไม่มี credential</div>' :
+            allCreds.map(c => `
+              <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:13px" class="cred-pick-row">
+                <input type="checkbox" name="m-cred" value="${c.id}" ${selectedIds.has(c.id) ? 'checked' : ''}>
+                <span><strong>${escapeHtml(c.label || '(no label)')}</strong> — ${escapeHtml(c.username)}</span>
+              </label>
+            `).join('')}
+        </div>
+      </div>
+    `,
+    onSubmit: async () => {
+      const access = document.getElementById('m-access').value;
+      const body = { access_type: access };
+      if (access === 'select') {
+        const checked = Array.from(document.querySelectorAll('input[name="m-cred"]:checked'))
+          .map(i => parseInt(i.value, 10));
+        body.credential_ids = checked;
+      } else {
+        body.credential_ids = [];   // clear selections (not used)
+      }
+      await fetchJson(`/api/admin/teams/${teamId}/sites/${site.id}`, {
+        method: 'PATCH', body: JSON.stringify(body),
+      });
+      await loadTeamDetail(teamId);
+    },
+  });
+  // toggle credential list visibility
+  setTimeout(() => {
+    const acc = document.getElementById('m-access');
+    const wrap = document.getElementById('m-cred-list-wrap');
+    if (acc && wrap) {
+      acc.addEventListener('change', () => { wrap.style.display = acc.value === 'select' ? '' : 'none'; });
+    }
+  }, 0);
+}
+
+function showEditTeamModal(team, teamId) {
+  showModal({
+    title: 'แก้ไขข้อมูล Team',
+    body: `
+      <div class="field">
+        <label>ชื่อทีม</label>
+        <input id="m-name" type="text" value="${escapeHtml(team.name)}" />
+      </div>
+      <div class="field">
+        <label>คำอธิบาย</label>
+        <input id="m-desc" type="text" value="${escapeHtml(team.description || '')}" />
+      </div>
+    `,
+    onSubmit: async () => {
+      const name = $('m-name').value.trim();
+      if (!name) throw new Error('กรอกชื่อทีม');
+      await fetchJson('/api/admin/teams/' + teamId, {
+        method: 'PATCH',
+        body: JSON.stringify({ name, description: $('m-desc').value.trim() || null }),
+      });
+      await loadTeamDetail(teamId);
+    },
+  });
 }
 
 async function renderLogsPage() {

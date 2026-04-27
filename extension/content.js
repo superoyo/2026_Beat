@@ -9,7 +9,7 @@
 //   - English for technical / library code
 
 const TAG = '[FCT]';
-const SCRIPT_VERSION = 'v12-device-label';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
+const SCRIPT_VERSION = 'v13-team-filter';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
 
 // Hostname ที่ extension จะทำหน้าที่ scrape credit (mode A)
 // เว็บอื่นที่ user เพิ่มใน admin จะได้แค่ prefill (mode B) — ไม่ scrape credit
@@ -500,11 +500,20 @@ async function checkPrefill() {
     }
     prefillFormInfo = formInfo;
 
-    // Query backend ผ่าน background proxy (เลี่ยง CORS)
+    // Query backend ผ่าน background proxy (เลี่ยง CORS) — ส่ง member_id ถ้า paired
+    let pairedUserMatch = null;
+    try {
+      const r = await chrome.storage.sync.get(['pairedUser']);
+      pairedUserMatch = r.pairedUser || null;
+    } catch {}
+    const memberQ = pairedUserMatch && pairedUserMatch.member_id
+      ? '&member_id=' + encodeURIComponent(pairedUserMatch.member_id)
+      : '';
+
     let data;
     try {
       data = await backendFetch(
-        '/api/extension/match?url=' + encodeURIComponent(location.href)
+        '/api/extension/match?url=' + encodeURIComponent(location.href) + memberQ
       );
     } catch (e) {
       console.debug(TAG, 'prefill: backend unreachable, hiding widget:', e.message);
