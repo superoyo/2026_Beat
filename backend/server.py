@@ -1925,6 +1925,62 @@ class MemberTeamsPatch(BaseModel):
     team_ids: list[int]
 
 
+@app.get("/api/admin/members/{member_id}/stats")
+def admin_member_stats(
+    member_id: int,
+    days: int = 30,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """สถิติ platform usage ของ member 1 คน — group by site, count clicks
+    Query: ?days=7|30|90|180
+    """
+    days = max(1, min(365, days))
+    cutoff = (utc_now() - timedelta(days=days)).isoformat()
+    with db_conn() as conn:
+        member = conn.execute(
+            "SELECT id, display_name, email, phone FROM members WHERE id = ?",
+            (member_id,),
+        ).fetchone()
+        if not member:
+            raise HTTPException(status_code=404, detail="member not found")
+        rows = conn.execute(
+            """
+            SELECT
+                s.id AS site_id,
+                COALESCE(s.name, ul.site_name) AS site_name,
+                s.url_pattern,
+                COUNT(ul.id) AS click_count,
+                MAX(ul.timestamp) AS last_used_at
+            FROM usage_logs ul
+            LEFT JOIN sites s ON s.id = ul.site_id
+            WHERE ul.member_id = ?
+              AND ul.timestamp >= ?
+            GROUP BY ul.site_id
+            ORDER BY click_count DESC
+            """,
+            (member_id, cutoff),
+        ).fetchall()
+        total_row = conn.execute(
+            "SELECT COUNT(*) AS n FROM usage_logs WHERE member_id = ? AND timestamp >= ?",
+            (member_id, cutoff),
+        ).fetchone()
+    return {
+        "member": dict(member),
+        "days": days,
+        "total_clicks": total_row["n"] if total_row else 0,
+        "platforms": [
+            {
+                "site_id": r["site_id"],
+                "site_name": r["site_name"] or "(ลบแล้ว)",
+                "url_pattern": r["url_pattern"],
+                "click_count": r["click_count"],
+                "last_used_at": r["last_used_at"],
+            }
+            for r in rows
+        ],
+    }
+
+
 @app.put("/api/admin/members/{member_id}/teams")
 def admin_set_member_teams(
     member_id: int,
