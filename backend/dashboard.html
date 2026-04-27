@@ -309,34 +309,40 @@
     </div>
 
     <div id="main-view">
-      <section class="panel">
+      <!-- Overview view: accounts grid (default) -->
+      <section class="panel" id="accounts-section">
         <h2>เครดิตแต่ละบัญชี (จัดกลุ่มตามเว็บ)</h2>
         <div id="accounts-by-site">
           <div class="empty">กำลังโหลด…</div>
         </div>
       </section>
 
-      <section class="panel">
-        <h2>การใช้งานรายวัน (30 วันล่าสุด)</h2>
-        <div class="chart-wrap"><canvas id="usage-chart"></canvas></div>
-      </section>
+      <!-- Account detail view: chart + snapshots specific to one account -->
+      <section class="panel" id="account-detail" style="display:none">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+          <button id="back-to-accounts" class="btn-back" style="background:var(--bg-soft);border:1px solid var(--border);border-radius:8px;padding:7px 12px;font-size:13px;color:var(--text);cursor:pointer">← กลับ</button>
+          <h2 id="acct-title" style="margin:0;flex:1;min-width:200px"></h2>
+        </div>
+        <div id="acct-summary" style="display:flex;gap:14px;margin-bottom:18px;flex-wrap:wrap"></div>
 
-      <section class="panel">
-        <h2>Snapshot ล่าสุด</h2>
+        <div style="font-weight:600;margin-bottom:8px;color:var(--text-muted);font-size:13px;text-transform:uppercase;letter-spacing:.04em">ยอดคงเหลือรายวัน (30 วันล่าสุด)</div>
+        <div class="chart-wrap" style="margin-bottom:22px"><canvas id="acct-chart"></canvas></div>
+
+        <div style="font-weight:600;margin-bottom:8px;color:var(--text-muted);font-size:13px;text-transform:uppercase;letter-spacing:.04em">รายละเอียดการเก็บข้อมูล (50 ครั้งล่าสุด)</div>
         <div style="overflow-x:auto">
-        <table id="snapshots-table">
-          <thead>
-            <tr>
-              <th>วันที่ / เวลา</th>
-              <th>บัญชี</th>
-              <th>เครื่อง</th>
-              <th>คงเหลือ</th>
-              <th>เปลี่ยนแปลง</th>
-              <th>หน้า</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+          <table id="acct-snapshots-table">
+            <thead>
+              <tr>
+                <th>วันที่ / เวลา</th>
+                <th>คงเหลือ</th>
+                <th>Spent</th>
+                <th>เปลี่ยนแปลง</th>
+                <th>เครื่อง</th>
+                <th>หน้า</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
         </div>
       </section>
 
@@ -467,111 +473,6 @@ function renderSummary(s) {
     'สถานะ: ' + (labels[s.alert_level] || 'ปกติ');
 }
 
-function renderChart(history, summary) {
-  const days = history.days.slice().reverse();
-  const labels = [];
-  const values = [];
-  for (let i = 1; i < days.length; i++) {
-    const used = Math.max(0, days[i - 1].balance - days[i].balance);
-    labels.push(days[i].date);
-    values.push(used);
-  }
-
-  const avg = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
-  const colors = values.map(v =>
-    v > avg * 1.5 ? 'rgba(245, 158, 11, .85)' : 'rgba(37, 99, 235, .8)'
-  );
-
-  const ctx = document.getElementById('usage-chart').getContext('2d');
-  if (chart) chart.destroy();
-
-  if (values.length === 0) {
-    ctx.fillStyle = '#8895ab';
-    ctx.font = '14px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('ยังไม่มีข้อมูลย้อนหลังเพียงพอ — ต้องการอย่างน้อย 2 วัน',
-      ctx.canvas.width / 2 / window.devicePixelRatio,
-      80);
-    return;
-  }
-
-  chart = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: labels.map(d => fmtThaiDate(d)),
-      datasets: [{
-        label: 'เครดิตที่ใช้',
-        data: values,
-        backgroundColor: colors,
-        borderRadius: 6,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: '#0f172a',
-          titleColor: '#fff',
-          bodyColor: '#e6ebf3',
-          padding: 10,
-          callbacks: {
-            label(ctx) {
-              const v = ctx.parsed.y;
-              const pctOfAvg = avg > 0 ? Math.round(v / avg * 100) : 0;
-              return ` ${fmtInt(v)} เครดิต  (${pctOfAvg}% ของค่าเฉลี่ย)`;
-            },
-          },
-        },
-      },
-      scales: {
-        x: { ticks: { color: '#5b6b85' }, grid: { color: '#e3eaf5' } },
-        y: { ticks: { color: '#5b6b85' }, grid: { color: '#e3eaf5' }, beginAtZero: true },
-      },
-    },
-  });
-}
-
-function renderSnapshots(snapshots) {
-  const tbody = document.querySelector('#snapshots-table tbody');
-  tbody.innerHTML = '';
-  const list = snapshots.snapshots || [];
-  if (list.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:32px">ยังไม่มี snapshot</td></tr>';
-    return;
-  }
-  list.forEach((s, i) => {
-    const prev = list[i + 1];
-    let delta = '—';
-    let cls = 'delta-zero';
-    if (prev) {
-      const d = s.balance - prev.balance;
-      if (d < 0) { delta = fmtInt(d); cls = 'delta-down'; }
-      else if (d > 0) { delta = '+' + fmtInt(d); cls = 'delta-up'; }
-      else { delta = '0'; }
-    }
-    const tr = document.createElement('tr');
-    const profileCell = s.profile_name
-      ? `<span title="${escapeHtml(s.profile_name)}">${escapeHtml(s.profile_name)}</span>`
-      : '<span style="color:var(--text-muted)">—</span>';
-    const hostLabel = s.host_name || '—';
-    const hostTitle = s.host_name ? `${s.host_name}${s.host_ip ? ' · ' + s.host_ip : ''}` : '';
-    const hostCell = s.host_name
-      ? `<span title="${escapeHtml(hostTitle)}">${escapeHtml(hostLabel)}</span>`
-      : '<span style="color:var(--text-muted)">—</span>';
-    tr.innerHTML = `
-      <td>${fmtDateTime(s.timestamp)}</td>
-      <td style="font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${profileCell}</td>
-      <td style="font-size:12px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted)">${hostCell}</td>
-      <td class="num">${fmtInt(s.balance)}</td>
-      <td class="num ${cls}">${delta}</td>
-      <td style="color:var(--text-muted);font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(s.source_url || '')}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -651,13 +552,15 @@ function renderAccountCard(a) {
        </div>`
     : '';
   return `
-    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:var(--shadow-sm)">
+    <div class="account-card-clickable" data-account-key="${escapeHtml(a.account_key)}"
+         style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:var(--shadow-sm);cursor:pointer;transition:all .15s">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
         <span style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:14px;display:inline-flex;align-items:center;justify-content:center">${escapeHtml(initial)}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(display)}</div>
           ${emailLine}
         </div>
+        <span style="color:var(--text-soft);font-size:18px;line-height:1">›</span>
       </div>
       <div style="font-size:26px;font-weight:700;letter-spacing:-0.02em;line-height:1.1;margin-bottom:4px">${fmtInt(a.balance)}</div>
       <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:10px">Available · เห็นล่าสุด ${fmtRelative(a.last_seen)}</div>
@@ -696,14 +599,32 @@ function renderAccountsGrid(data) {
       </div>
     `;
   }).join('');
+
+  // wire click → open account detail
+  const accountsByKey = Object.fromEntries(accounts.map(a => [a.account_key, a]));
+  wrap.querySelectorAll('.account-card-clickable').forEach(card => {
+    card.addEventListener('click', () => {
+      const key = card.dataset.accountKey;
+      const acct = accountsByKey[key];
+      if (acct) openAccountDetail(acct);
+    });
+    card.addEventListener('mouseenter', () => {
+      card.style.borderColor = 'var(--primary)';
+      card.style.transform = 'translateY(-2px)';
+      card.style.boxShadow = '0 4px 12px rgba(37,99,235,.12)';
+    });
+    card.addEventListener('mouseleave', () => {
+      card.style.borderColor = '';
+      card.style.transform = '';
+      card.style.boxShadow = '';
+    });
+  });
 }
 
 async function refresh() {
   try {
-    const [summary, history, snaps, accounts] = await Promise.all([
+    const [summary, accounts] = await Promise.all([
       fetchJson('/api/summary'),
-      fetchJson('/api/history?days=30'),
-      fetchJson('/api/snapshots?limit=20'),
       fetchJson('/api/credits-by-account'),
     ]);
     if (summary.current_balance == null) {
@@ -713,16 +634,148 @@ async function refresh() {
     renderMain();
     renderSummary(summary);
     renderAccountsGrid(accounts);
-    renderChart(history, summary);
-    renderSnapshots(snaps);
+    // ถ้ากำลังดู account detail อยู่ → ก็ refresh detail ของมันด้วย
+    if (currentAccountKey) {
+      const acct = (accounts.accounts || []).find(a => a.account_key === currentAccountKey);
+      if (acct) await openAccountDetail(acct);
+    }
   } catch (err) {
     document.getElementById('subtitle').textContent =
       'เกิดข้อผิดพลาด: ' + err.message;
   }
 }
 
-document.getElementById('refresh-btn').addEventListener('click', refresh);
+// ============== Account Detail (drill-in view) ==============
+let currentAccountKey = null;
+let acctChartInstance = null;
+
+async function openAccountDetail(acct) {
+  currentAccountKey = acct.account_key;
+  // ซ่อน list, แสดง detail
+  document.getElementById('accounts-section').style.display = 'none';
+  document.getElementById('account-detail').style.display = '';
+  // scroll to top
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+
+  const display = acct.profile_name || acct.profile_email || acct.account_key || '(unknown)';
+  const host = (() => { try { return new URL(acct.source_url).hostname.replace(/^www\./, ''); } catch { return '—'; } })();
+  document.getElementById('acct-title').innerHTML =
+    `🌐 <span style="color:var(--text-muted);font-weight:500">${escapeHtml(host)}</span> / ${escapeHtml(display)}` +
+    (acct.profile_email && acct.profile_email !== display
+      ? `<span style="font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--text-muted);font-weight:400;display:block;margin-top:2px">${escapeHtml(acct.profile_email)}</span>`
+      : '');
+
+  // Summary chips
+  const chips = [];
+  chips.push(`<div class="card" style="display:block;flex:1;min-width:140px;padding:14px"><div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em">Available</div><div style="font-size:22px;font-weight:700">${fmtInt(acct.balance)}</div></div>`);
+  if (acct.credits_spent != null) {
+    chips.push(`<div class="card" style="display:block;flex:1;min-width:140px;padding:14px"><div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em">Spent</div><div style="font-size:22px;font-weight:700;color:#dc2626">${fmtInt(acct.credits_spent)}</div></div>`);
+  }
+  if (acct.estimated_quota != null) {
+    chips.push(`<div class="card" style="display:block;flex:1;min-width:140px;padding:14px"><div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em">Quota รวม</div><div style="font-size:22px;font-weight:700">${fmtInt(acct.estimated_quota)}</div></div>`);
+  }
+  if (acct.credential_label) {
+    chips.push(`<div class="card" style="display:block;flex:1;min-width:140px;padding:14px"><div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em">Credential ผูก</div><div style="font-size:14px;font-weight:600;color:var(--ok)">✓ ${escapeHtml(acct.credential_label)}</div></div>`);
+  }
+  document.getElementById('acct-summary').innerHTML = chips.join('');
+
+  // Build query for filtered endpoints — prefer email, fallback to name
+  const qs = new URLSearchParams();
+  if (acct.profile_email) qs.set('profile_email', acct.profile_email);
+  else if (acct.profile_name) qs.set('profile_name', acct.profile_name);
+
+  // Fetch history + snapshots for this account
+  const [history, snaps] = await Promise.all([
+    fetchJson('/api/history?days=30&' + qs.toString()),
+    fetchJson('/api/snapshots?limit=50&' + qs.toString()),
+  ]);
+
+  renderAcctChart(history);
+  renderAcctSnapshots(snaps);
+}
+
+function closeAccountDetail() {
+  currentAccountKey = null;
+  if (acctChartInstance) { try { acctChartInstance.destroy(); } catch {} acctChartInstance = null; }
+  document.getElementById('account-detail').style.display = 'none';
+  document.getElementById('accounts-section').style.display = '';
+}
+
+function renderAcctChart(history) {
+  const days = (history.days || []).slice().reverse();
+  const labels = days.map(d => d.date);
+  const values = days.map(d => Math.round(d.balance));
+
+  const canvas = document.getElementById('acct-chart');
+  if (!canvas) return;
+  if (acctChartInstance) { try { acctChartInstance.destroy(); } catch {} }
+  // eslint-disable-next-line no-undef
+  acctChartInstance = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'ยอดคงเหลือ',
+        data: values,
+        borderColor: '#2563eb',
+        backgroundColor: 'rgba(37,99,235,.12)',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.3,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+        y: { beginAtZero: false, ticks: { font: { size: 11 }, callback: v => fmtInt(v) } },
+      },
+    },
+  });
+}
+
+function renderAcctSnapshots(data) {
+  const tbody = document.querySelector('#acct-snapshots-table tbody');
+  const snaps = data.snapshots || [];
+  if (snaps.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">ยังไม่มี snapshot</td></tr>';
+    return;
+  }
+  tbody.innerHTML = snaps.map((s, idx) => {
+    const prev = snaps[idx + 1];   // older one
+    let diffTxt = '<span style="color:var(--text-muted)">—</span>';
+    if (prev) {
+      const d = s.balance - prev.balance;
+      if (d === 0) diffTxt = '<span style="color:var(--text-muted)">0</span>';
+      else if (d > 0) diffTxt = `<span style="color:var(--ok)">+${fmtInt(d)}</span>`;
+      else diffTxt = `<span style="color:var(--critical)">${fmtInt(d)}</span>`;
+    }
+    const spentTxt = s.credits_spent != null ? fmtInt(s.credits_spent) : '<span style="color:var(--text-muted)">—</span>';
+    return `
+      <tr>
+        <td style="font-variant-numeric:tabular-nums">${escapeHtml(fmtDateTime(s.timestamp))}</td>
+        <td class="num">${fmtInt(s.balance)}</td>
+        <td class="num" style="color:#dc2626">${spentTxt}</td>
+        <td class="num">${diffTxt}</td>
+        <td style="font-size:12px;color:var(--text-muted)">${escapeHtml(s.host_name || '—')}</td>
+        <td style="color:var(--text-muted);font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(s.source_url || '')}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// refresh-btn อาจถูกซ่อน (ในโหมด embedded) — เช็คก่อน
+{
+  const rb = document.getElementById('refresh-btn');
+  if (rb) rb.addEventListener('click', refresh);
+}
 document.getElementById('save-config').addEventListener('click', saveConfig);
+
+// Back button — กลับไปหน้า accounts grid
+document.getElementById('back-to-accounts').addEventListener('click', closeAccountDetail);
 
 (async () => {
   await loadConfig();

@@ -818,11 +818,28 @@ def post_snapshot(
 # History
 # ---------------------------------------------------------------------------
 @app.get("/api/history")
-def get_history(days: int = 30, _auth: str = Depends(require_any_auth)) -> dict[str, Any]:
+def get_history(
+    days: int = 30,
+    profile_email: Optional[str] = None,
+    profile_name: Optional[str] = None,
+    _auth: str = Depends(require_any_auth),
+) -> dict[str, Any]:
+    """ประวัติยอดคงเหลือรายวัน — กรองด้วย profile_email หรือ profile_name (account)
+    ได้ ถ้าไม่ส่งจะเป็น aggregate ของทั้งระบบ
+    """
     days = max(1, min(365, days))
     cutoff = (utc_now() - timedelta(days=days)).isoformat()
 
-    sql = """
+    where_extra = ""
+    params: list[Any] = [cutoff]
+    if profile_email:
+        where_extra += " AND LOWER(profile_email) = LOWER(?)"
+        params.append(profile_email)
+    elif profile_name:
+        where_extra += " AND profile_name = ?"
+        params.append(profile_name)
+
+    sql = f"""
         WITH ranked AS (
             SELECT
                 DATE(timestamp) AS day,
@@ -831,7 +848,7 @@ def get_history(days: int = 30, _auth: str = Depends(require_any_auth)) -> dict[
                 ROW_NUMBER() OVER (PARTITION BY DATE(timestamp) ORDER BY timestamp DESC) AS rn,
                 COUNT(*) OVER (PARTITION BY DATE(timestamp)) AS cnt
             FROM snapshots
-            WHERE timestamp >= ?
+            WHERE timestamp >= ?{where_extra}
         )
         SELECT day, balance, cnt
         FROM ranked
@@ -839,7 +856,7 @@ def get_history(days: int = 30, _auth: str = Depends(require_any_auth)) -> dict[
         ORDER BY day DESC
     """
     with db_conn() as conn:
-        rows = conn.execute(sql, (cutoff,)).fetchall()
+        rows = conn.execute(sql, params).fetchall()
 
     return {
         "days": [
@@ -855,25 +872,43 @@ def get_history(days: int = 30, _auth: str = Depends(require_any_auth)) -> dict[
 @app.get("/api/snapshots")
 def list_snapshots(
     limit: int = 20,
+    profile_email: Optional[str] = None,
+    profile_name: Optional[str] = None,
     _auth: str = Depends(require_any_auth),
 ) -> dict[str, Any]:
+    """รายการ snapshots ล่าสุด — กรองด้วย profile_email หรือ profile_name ได้"""
     limit = max(1, min(500, limit))
+    where: list[str] = []
+    params: list[Any] = []
+    if profile_email:
+        where.append("LOWER(profile_email) = LOWER(?)")
+        params.append(profile_email)
+    elif profile_name:
+        where.append("profile_name = ?")
+        params.append(profile_name)
+    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+    params.append(limit)
+
+    sql = (
+        "SELECT id, timestamp, balance, credits_spent, source_url, profile_name, profile_email, "
+        "       host_name, host_ip, user_agent "
+        "FROM snapshots" + where_sql + " ORDER BY timestamp DESC LIMIT ?"
+    )
     with db_conn() as conn:
-        rows = conn.execute(
-            "SELECT id, timestamp, balance, source_url, profile_name, host_name, host_ip "
-            "FROM snapshots ORDER BY timestamp DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
+        rows = conn.execute(sql, params).fetchall()
     return {
         "snapshots": [
             {
                 "id": r["id"],
                 "timestamp": r["timestamp"],
                 "balance": r["balance"],
+                "credits_spent": r["credits_spent"],
                 "source_url": r["source_url"],
                 "profile_name": r["profile_name"],
+                "profile_email": r["profile_email"],
                 "host_name": r["host_name"],
                 "host_ip": r["host_ip"],
+                "user_agent": r["user_agent"],
             }
             for r in rows
         ]
