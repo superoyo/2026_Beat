@@ -2139,53 +2139,138 @@ function fmtRelativeTh(iso) {
   return Math.floor(sec/86400) + ' วันที่แล้ว';
 }
 
+// ดึง pairing status จาก extension ผ่าน postMessage (รอผล + timeout)
+function probePairing(timeoutMs = 1500) {
+  return new Promise((resolve) => {
+    const requestId = 'fct_pairing_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    const handler = (ev) => {
+      if (ev.source !== window) return;
+      const d = ev.data;
+      if (!d || d.type !== 'FCT_PAIRING_RESULT' || d.requestId !== requestId) return;
+      cleanup();
+      resolve({ found: true, pairedUser: d.pairedUser });
+    };
+    const cleanup = () => {
+      window.removeEventListener('message', handler);
+      clearTimeout(timer);
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve({ found: false });   // extension ไม่ตอบ
+    }, timeoutMs);
+    window.addEventListener('message', handler);
+    window.postMessage({ type: 'FCT_GET_PAIRING', requestId }, '*');
+  });
+}
+
 async function loadExtensionStatus() {
-  let s;
+  // เรียกพร้อมกัน: backend status + extension pairing probe
+  let s = null, p = null;
   try {
-    s = await fetchJson('/api/admin/extension/status');
+    [s, p] = await Promise.all([
+      fetchJson('/api/admin/extension/status').catch(() => null),
+      probePairing(1500),
+    ]);
   } catch { return; }
 
-  const dot = document.getElementById('ext-status-dot');
+  const card = document.getElementById('ext-status-card');
+  const icon = document.getElementById('ext-status-icon');
   const text = document.getElementById('ext-status-text');
   const sub = document.getElementById('ext-status-sub');
   const meta = document.getElementById('ext-status-meta');
-  if (!dot) return;  // หน้าเปลี่ยนแล้ว
+  const cta = document.getElementById('ext-status-cta');
+  if (!card) return;  // หน้าเปลี่ยนแล้ว
 
-  if (s.connected) {
-    dot.style.background = 'var(--green)';
-    dot.style.boxShadow = '0 0 0 6px rgba(16,185,129,.15)';
-    text.textContent = '✓ Extension เชื่อมต่อแล้ว';
-    text.style.color = 'var(--green)';
-    sub.textContent = `เห็นล่าสุด ${fmtRelativeTh(s.last_seen)}`;
-  } else if (s.last_seen) {
-    dot.style.background = 'var(--warning)';
-    dot.style.boxShadow = '0 0 0 6px rgba(245,158,11,.15)';
-    text.textContent = '⚠️ เคยเชื่อมต่อแต่หายไปสักพัก';
-    text.style.color = '#b45309';
-    sub.textContent = `เห็นล่าสุด ${fmtRelativeTh(s.last_seen)} — ลอง reload extension`;
+  // ====== ตัดสินสถานะรวม (5 states) ======
+  // ext-alive: backend เห็น heartbeat ภายใน 5 นาที
+  // pair-found: postMessage ตอบกลับ (extension รันอยู่จริงในเครื่องนี้)
+  const extAlive = !!(s && s.connected);
+  const pairFound = p && p.found;
+  const pairedUser = (p && p.pairedUser) || null;
+  const isAdminPair = pairedUser && (pairedUser.role === 'admin' || pairedUser.member_id == null);
+  const isMemberPair = pairedUser && pairedUser.role === 'member' && pairedUser.member_id != null;
+
+  // กำหนดสไตล์ตาม state
+  let bgColor, borderColor, textColor;
+  let iconStr, mainText, subText, ctaHtml = '';
+
+  if (!s || (!s.last_seen && !pairFound)) {
+    // ============================ State 1: ยังไม่พบเลย ============================
+    bgColor = '#fef2f2'; borderColor = '#fca5a5'; textColor = '#991b1b';
+    iconStr = '❌';
+    mainText = 'ยังไม่พบ Extension';
+    subText = 'ติดตั้ง extension จากปุ่มดาวน์โหลดด้านล่าง + Reload หน้านี้';
+  } else if (pairFound && !pairedUser) {
+    // ============================ State 2: ติดตั้งแล้ว แต่ Unpaired ============================
+    bgColor = '#fff7ed'; borderColor = '#fdba74'; textColor = '#9a3412';
+    iconStr = '🔒';
+    mainText = 'ยังใช้งานไม่ได้ — ต้อง Pair ก่อน';
+    subText = 'Extension ติดตั้งแล้ว แต่ยังไม่ได้เชื่อมกับบัญชี → autofill จะไม่แสดงบนเว็บใดเลย';
+    ctaHtml = '<a href="#" id="ext-cta-scroll" style="display:inline-block;padding:8px 14px;background:var(--primary);color:#fff;border-radius:8px;font-size:12.5px;font-weight:600;text-decoration:none">↓ ไปที่ปุ่ม Pair</a>';
+  } else if (pairFound && isAdminPair) {
+    // ============================ State 3: Paired เป็น Admin (bypass) ============================
+    bgColor = '#fefce8'; borderColor = '#fcd34d'; textColor = '#854d0e';
+    iconStr = '⚠️';
+    mainText = `ใช้งานได้แบบ Admin — เห็นทุก site (bypass team filter)`;
+    subText = `Paired เป็น <strong>${escapeHtml(pairedUser.label || 'admin')}</strong> (member_id=null) · หากต้องการทดสอบ team filter ให้กด Unpair แล้ว pair ใหม่ในฐานะ member`;
+  } else if (pairFound && isMemberPair) {
+    // ============================ State 4: พร้อมใช้งาน (member-paired) ============================
+    bgColor = '#f0fdf4'; borderColor = '#86efac'; textColor = '#15803d';
+    iconStr = '✅';
+    mainText = 'พร้อมใช้งาน';
+    subText = `Paired กับ <strong>${escapeHtml(pairedUser.label)}</strong> (member, ID ${escapeHtml(String(pairedUser.member_id))}) · autofill แสดงตามสิทธิ์ใน Team`;
+  } else if (s.connected && !pairFound) {
+    // ============================ State 5: Backend เห็น heartbeat แต่หน้านี้ไม่เจอ extension ============================
+    // (น่าจะเปิดอีก browser/profile หรือ extension ของหน้านี้ปิดอยู่)
+    bgColor = '#fefce8'; borderColor = '#fcd34d'; textColor = '#854d0e';
+    iconStr = '⚠️';
+    mainText = 'Extension ทำงานบนเครื่องอื่น';
+    subText = `Backend เห็น heartbeat ล่าสุด ${fmtRelativeTh(s.last_seen)} แต่หน้านี้ไม่เจอ extension — อาจเปิดบน browser/profile อื่น หรือต้อง Reload extension ในเครื่องนี้`;
   } else {
-    dot.style.background = 'var(--critical)';
-    dot.style.boxShadow = '0 0 0 6px rgba(220,38,38,.12)';
-    text.textContent = '❌ ยังไม่เคยเห็น Extension';
-    text.style.color = 'var(--critical)';
-    sub.textContent = 'ติดตั้ง extension + ตั้งค่า Backend URL + API Key ตามขั้นตอนด้านล่าง';
+    // ============================ State 6: เคยทำงาน แต่หายไป ============================
+    bgColor = '#fff7ed'; borderColor = '#fdba74'; textColor = '#9a3412';
+    iconStr = '⚠️';
+    mainText = 'Extension ไม่ตอบ';
+    subText = `เห็นล่าสุด ${fmtRelativeTh(s.last_seen)} — ไป chrome://extensions แล้วกด Reload`;
   }
 
-  // metadata
+  // เขียน UI
+  card.style.background = bgColor;
+  card.style.borderColor = borderColor;
+  icon.textContent = iconStr;
+  text.style.color = textColor;
+  text.innerHTML = mainText;
+  sub.style.color = textColor;
+  sub.innerHTML = subText;
+  cta.innerHTML = ctaHtml;
+
+  // metadata (small text below)
   const parts = [];
-  if (s.call_count > 0) parts.push(`<strong>${s.call_count.toLocaleString('th-TH')}</strong> request`);
-  if (s.last_snapshot) {
+  if (s && s.last_seen) parts.push(`เห็นล่าสุด ${fmtRelativeTh(s.last_seen)}`);
+  if (s && s.call_count > 0) parts.push(`${s.call_count.toLocaleString('th-TH')} requests`);
+  if (s && s.last_snapshot) {
     const snap = s.last_snapshot;
     if (snap.host_name) parts.push(`💻 ${escapeHtml(snap.host_name)}`);
-    if (snap.host_ip)   parts.push(`📡 ${escapeHtml(snap.host_ip)}`);
     if (snap.user_agent) {
-      // ตัด user-agent ให้สั้นลง — เอาเฉพาะส่วน Chrome/xxx
-      const ua = snap.user_agent;
-      const m = ua.match(/Chrome\/[\d.]+/);
+      const m = snap.user_agent.match(/Chrome\/[\d.]+/);
       if (m) parts.push(`🌐 ${m[0]}`);
     }
   }
   meta.innerHTML = parts.length ? parts.join(' &nbsp;·&nbsp; ') : '';
+
+  // wire CTA scroll
+  const scrollBtn = document.getElementById('ext-cta-scroll');
+  if (scrollBtn) {
+    scrollBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const pairBtn = document.getElementById('pair-btn');
+      if (pairBtn) {
+        pairBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        pairBtn.style.outline = '3px solid var(--primary)';
+        setTimeout(() => { pairBtn.style.outline = ''; }, 2000);
+      }
+    });
+  }
 }
 
 function startExtStatusPolling() {
@@ -2382,15 +2467,16 @@ async function renderExtensionPage() {
       <button class="btn" id="ext-refresh" style="font-size:12px;padding:6px 12px">🔄 รีเฟรช status</button>
     </div>
 
-    <!-- Status widget -->
-    <div class="card" style="display:block;margin-bottom:14px;padding:18px 22px">
-      <div style="display:flex;align-items:center;gap:18px">
-        <span id="ext-status-dot" style="width:14px;height:14px;border-radius:50%;background:#94a3b8;flex-shrink:0;transition:all .25s"></span>
+    <!-- Unified status widget — รวม connectivity + pairing ในกล่องเดียว -->
+    <div id="ext-status-card" class="card" style="display:block;margin-bottom:14px;padding:20px 24px;border-width:2px;transition:all .25s">
+      <div style="display:flex;align-items:center;gap:16px">
+        <div id="ext-status-icon" style="font-size:32px;line-height:1;flex-shrink:0">⏳</div>
         <div style="flex:1;min-width:0">
-          <div id="ext-status-text" style="font-size:15px;font-weight:600;color:var(--text-muted)">กำลังตรวจสอบ…</div>
-          <div id="ext-status-sub" style="font-size:12.5px;color:var(--text-muted);margin-top:3px">—</div>
-          <div id="ext-status-meta" style="font-size:11.5px;color:var(--text-soft);margin-top:6px"></div>
+          <div id="ext-status-text" style="font-size:17px;font-weight:700;color:var(--text-muted);letter-spacing:-0.01em">กำลังตรวจสอบ…</div>
+          <div id="ext-status-sub" style="font-size:13px;color:var(--text-muted);margin-top:4px;line-height:1.5">—</div>
+          <div id="ext-status-meta" style="font-size:11.5px;color:var(--text-soft);margin-top:8px"></div>
         </div>
+        <div id="ext-status-cta" style="flex-shrink:0"></div>
       </div>
     </div>
 
@@ -2445,11 +2531,10 @@ async function renderExtensionPage() {
         <button class="btn" id="unpair-btn" style="display:inline-flex;align-items:center;gap:8px;background:#fef2f2;color:#991b1b;border-color:#fecaca">
           🔌 ยกเลิกการเชื่อมบัญชี (Unpair)
         </button>
-        <button class="btn" id="check-pairing-btn" style="display:inline-flex;align-items:center;gap:8px">
-          🔍 ดูสถานะ pairing ปัจจุบัน
-        </button>
       </div>
-      <div id="pairing-current" style="margin-top:10px;font-size:13px;display:none;padding:10px 12px;border-radius:8px;background:var(--bg-soft);border:1px solid var(--border)"></div>
+      <div class="hint" style="margin-top:8px;font-size:11.5px;color:var(--text-muted)">
+        💡 สถานะ Pairing ปัจจุบันแสดงในกล่องสถานะด้านบน
+      </div>
       <div id="pair-status" style="margin-top:10px;font-size:13px;display:none"></div>
 
       <details style="margin-top:14px">
@@ -2655,8 +2740,8 @@ async function renderExtensionPage() {
         if (d.ok) {
           status.style.color = '#15803d';
           status.innerHTML = '✓ Unpaired แล้ว — extension จะ <strong>ไม่แสดง autofill widget</strong> บนเว็บใดทั้งสิ้น จนกว่าจะ pair ใหม่<br/><span style="color:var(--text-muted);font-size:12px">หาก reload หน้าเว็บที่เคยมี widget แล้วยังโผล่ ให้ <code>chrome://extensions</code> → Reload extension อีกครั้ง</span>';
-          // refresh status display
-          setTimeout(() => $('check-pairing-btn').click(), 300);
+          // refresh top status widget
+          setTimeout(() => loadExtensionStatus(), 300);
         } else {
           status.style.color = 'var(--critical)';
           status.textContent = '❌ Unpair ไม่สำเร็จ: ' + (d.error || 'extension ไม่ตอบ');
@@ -2676,70 +2761,6 @@ async function renderExtensionPage() {
       window.addEventListener('message', handler);
       window.postMessage({ type: 'FCT_UNPAIR', requestId }, '*');
     });
-  }
-
-  // ----- Check pairing button -----
-  const checkBtn = $('check-pairing-btn');
-  if (checkBtn) {
-    const showPairing = (pairedUser) => {
-      const box = $('pairing-current');
-      box.style.display = '';
-      if (!pairedUser) {
-        box.style.background = '#fee2e2';
-        box.style.borderColor = '#fca5a5';
-        box.innerHTML = '<strong>🔒 Unpaired — autofill disabled</strong>' +
-          '<div style="margin-top:6px;font-size:12px;color:#7f1d1d;line-height:1.6">' +
-          'Extension ไม่มี pairing context → จะไม่แสดง prefill widget บนเว็บใดเลย' +
-          '<br/>กดปุ่ม <strong>"🔗 เชื่อมบัญชีของฉัน"</strong> ด้านบน เพื่อ pair กับบัญชีปัจจุบัน' +
-          '</div>';
-        return;
-      }
-      const role = pairedUser.role || 'unknown';
-      const isAdminPair = (role === 'admin') || pairedUser.member_id == null;
-      box.style.background = isAdminPair ? '#fef3c7' : '#dcfce7';
-      box.style.borderColor = isAdminPair ? '#fcd34d' : '#86efac';
-      box.innerHTML = `
-        <div style="font-weight:600;margin-bottom:4px">${isAdminPair ? '⚠ Paired as ADMIN' : '✓ Paired as MEMBER'}</div>
-        <div style="font-size:12px;color:#6b7280;line-height:1.7">
-          <div><strong>Label:</strong> ${escapeHtml(pairedUser.label || '?')}</div>
-          <div><strong>Role:</strong> ${escapeHtml(role)}</div>
-          <div><strong>member_id:</strong> ${pairedUser.member_id == null ? '<em>null (admin)</em>' : escapeHtml(String(pairedUser.member_id))}</div>
-          <div><strong>Device:</strong> ${escapeHtml(pairedUser.deviceLabel || '—')}</div>
-          <div><strong>Paired at:</strong> ${escapeHtml(pairedUser.paired_at || '—')}</div>
-        </div>
-        ${isAdminPair ? '<div style="margin-top:8px;font-size:12px;color:#92400e"><strong>หมายเหตุ:</strong> admin-paired = bypass team filter ทุก site → กด Unpair แล้ว pair ใหม่ในฐานะ member</div>' : ''}
-      `;
-    };
-
-    checkBtn.addEventListener('click', () => {
-      const requestId = 'fct_pairing_' + Date.now();
-      const handler = (ev) => {
-        if (ev.source !== window) return;
-        const d = ev.data;
-        if (!d || d.type !== 'FCT_PAIRING_RESULT' || d.requestId !== requestId) return;
-        cleanup();
-        if (d.ok) {
-          showPairing(d.pairedUser);
-        } else {
-          $('pairing-current').style.display = '';
-          $('pairing-current').innerHTML = '❌ ตรวจไม่ได้: ' + escapeHtml(d.error || 'extension ไม่ตอบ');
-        }
-      };
-      const timer = setTimeout(() => {
-        cleanup();
-        $('pairing-current').style.display = '';
-        $('pairing-current').innerHTML = '❌ Extension ไม่ตอบ — reload ที่ chrome://extensions';
-      }, 3000);
-      const cleanup = () => {
-        window.removeEventListener('message', handler);
-        clearTimeout(timer);
-      };
-      window.addEventListener('message', handler);
-      window.postMessage({ type: 'FCT_GET_PAIRING', requestId }, '*');
-    });
-
-    // auto-check ตอนเปิดหน้า — ให้ user เห็นทันทีว่า paired กับใคร
-    setTimeout(() => checkBtn.click(), 500);
   }
 
   // wire copy buttons
