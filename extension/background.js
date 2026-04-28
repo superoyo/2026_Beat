@@ -31,6 +31,11 @@ async function authHeaders(extra = {}) {
   const apiKey = await getApiKey();
   const headers = { ...extra };
   if (apiKey) headers['X-API-Key'] = apiKey;
+  // v1.17 — แนบ extension version เพื่อให้ backend track ต่อ member
+  try {
+    const m = chrome.runtime.getManifest();
+    if (m && m.version) headers['X-FCT-Version'] = m.version;
+  } catch {}
   return headers;
 }
 

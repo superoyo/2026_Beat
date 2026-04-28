@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.7",
+      "date": "2026-04-28",
+      "title": "Send X-FCT-Version header",
+      "summary": "ติดเลข version ใน HTTP header ทุก backend call เพื่อให้ admin ดูได้ว่า member แต่ละคนใช้ extension version ไหน",
+      "changes": [
+        "background.js authHeaders: เพิ่ม X-FCT-Version จาก chrome.runtime.getManifest().version",
+        "Backend record_member_extension_use: บันทึก version + timestamp ใน members.extension_version / extension_last_used_at",
+        "Admin Members page: แสดงคอลัมน์ Extension version ของแต่ละ member"
+      ]
+    },
+    {
       "version": "1.9.6",
       "date": "2026-04-27",
       "title": "all_frames + match_about_blank — fix iframe-based logins",

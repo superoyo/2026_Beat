@@ -3388,6 +3388,19 @@ async function renderMembersPage() {
       <h2 class="page-title">👥 Members</h2>
       <span class="card-sub" id="m-count">—</span>
     </div>
+
+    <!-- Recent members bubbles (top, scrollable) -->
+    <div style="margin-bottom:18px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <h3 style="margin:0;font-size:13px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em">🆕 Member ใหม่ล่าสุด</h3>
+        <span style="font-size:11.5px;color:var(--text-soft)">— เรียงจากล่าสุด · คลิก bubble เพื่อดูสถิติ</span>
+      </div>
+      <div id="m-bubbles" style="display:flex;gap:14px;overflow-x:auto;padding:6px 4px 12px;scroll-behavior:smooth">
+        <div class="empty" style="flex:1;font-size:13px">กำลังโหลด…</div>
+      </div>
+    </div>
+
+    <!-- Filters -->
     <div style="display:grid;grid-template-columns:1fr auto;gap:10px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
       <div style="position:relative">
         <input id="m-search" type="text" placeholder="🔍 ค้นหา member (ชื่อ / email / เบอร์)..." autocomplete="off"
@@ -3408,6 +3421,69 @@ async function renderMembersPage() {
     </div>
   `;
   await loadMembersList();
+}
+
+function fmtMemberJoinTimeAdmin(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yest = new Date(today.getTime() - 86400000);
+  const dDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const time = d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+  if (dDay.getTime() === today.getTime()) return `วันนี้ ${time}`;
+  if (dDay.getTime() === yest.getTime()) return `เมื่อวาน ${time}`;
+  const monthShort = d.toLocaleDateString('th-TH', { month: 'short' });
+  return `${d.getDate()} ${monthShort} ${time}`;
+}
+
+function renderMemberBubbles(members) {
+  const wrap = $('m-bubbles');
+  if (!wrap) return;
+  // เรียงจากล่าสุด — created_at DESC
+  const recent = members.slice()
+    .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+    .slice(0, 30);
+  if (recent.length === 0) {
+    wrap.innerHTML = `<div class="empty" style="flex:1;font-size:13px;padding:18px">ยังไม่มี member</div>`;
+    return;
+  }
+  wrap.innerHTML = recent.map(m => {
+    const display = m.display_name || m.email || m.phone || '?';
+    const initial = display.trim().charAt(0).toUpperCase();
+    const safeName = escapeHtml(display);
+    const avatar = m.avatar_data
+      ? `<img src="${m.avatar_data}" alt="${safeName}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid var(--bg-card);box-shadow:var(--shadow-sm);transition:transform .15s,box-shadow .15s" />`
+      : `<div style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:22px;display:inline-flex;align-items:center;justify-content:center;border:2px solid var(--bg-card);box-shadow:var(--shadow-sm);transition:transform .15s,box-shadow .15s">${escapeHtml(initial)}</div>`;
+    const joinedTxt = fmtMemberJoinTimeAdmin(m.created_at);
+    return `
+      <div class="m-bubble" data-act="stats" data-id="${m.id}" data-name="${safeName}"
+           style="flex:0 0 96px;text-align:center;cursor:pointer" title="คลิกดูสถิติของ ${safeName}">
+        ${avatar}
+        <div style="margin-top:8px;font-size:12.5px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:96px">${escapeHtml(display)}</div>
+        <div style="font-size:10.5px;color:var(--text-muted);margin-top:1px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:96px">${escapeHtml(joinedTxt)}</div>
+      </div>
+    `;
+  }).join('');
+
+  // Hover + click
+  wrap.querySelectorAll('.m-bubble').forEach(b => {
+    const img = b.querySelector('img, div[style*="border-radius:50%"]');
+    b.addEventListener('mouseenter', () => {
+      if (img) {
+        img.style.transform = 'scale(1.06)';
+        img.style.boxShadow = '0 6px 18px rgba(37,99,235,.25)';
+      }
+    });
+    b.addEventListener('mouseleave', () => {
+      if (img) {
+        img.style.transform = '';
+        img.style.boxShadow = 'var(--shadow-sm)';
+      }
+    });
+    b.addEventListener('click', () => handleMemberAction(b));
+  });
 }
 
 // State สำหรับ filter
@@ -3515,10 +3591,12 @@ async function loadMembersList() {
   if (_membersCache.length === 0) {
     $('m-list').innerHTML = `<div class="empty">ยังไม่มี member ในระบบ — สมัครได้ที่ <a href="/login" target="_blank" style="color:var(--primary)">/login</a></div>`;
     $('m-count').textContent = '0 คน';
+    renderMemberBubbles([]);
     return;
   }
 
-  applyMemberFilter();   // render with current filter
+  renderMemberBubbles(_membersCache);   // bubble row บนสุด (ไม่ filter)
+  applyMemberFilter();                   // render table ด้านล่าง (ใช้ filter)
 }
 
 function renderMembersTable(members) {
@@ -3532,10 +3610,11 @@ function renderMembersTable(members) {
       <table class="members-table">
         <thead>
           <tr>
-            <th style="width:36%">Member</th>
-            <th style="width:24%">ทีม</th>
-            <th style="width:18%">สถานะ</th>
-            <th style="width:22%;text-align:right">การกระทำ</th>
+            <th style="width:30%">Member</th>
+            <th style="width:21%">ทีม</th>
+            <th style="width:14%">Extension</th>
+            <th style="width:15%">สถานะ</th>
+            <th style="width:20%;text-align:right">การกระทำ</th>
           </tr>
         </thead>
         <tbody id="m-tbody"></tbody>
@@ -3609,6 +3688,22 @@ function renderMembersTable(members) {
       </div>
     `;
 
+    // === Extension version cell ===
+    let extensionCell;
+    if (m.extension_version) {
+      const lastUsed = m.extension_last_used_at ? fmtRelativeTh(m.extension_last_used_at) : '—';
+      extensionCell = `
+        <div style="display:flex;flex-direction:column;gap:3px;align-items:flex-start">
+          <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(37,99,235,.10);color:var(--primary);font-family:ui-monospace,Menlo,monospace">🧩 v${escapeHtml(m.extension_version)}</span>
+          <div style="font-size:10.5px;color:var(--text-muted)" title="${escapeHtml(m.extension_last_used_at || '')}">ใช้ล่าสุด ${escapeHtml(lastUsed)}</div>
+        </div>
+      `;
+    } else {
+      extensionCell = `
+        <div style="font-size:11.5px;color:var(--text-muted);font-style:italic">ยังไม่เคยใช้</div>
+      `;
+    }
+
     // === Actions cell (vertical button group) ===
     const adminBtn = currentIsSuper ? `
       <button class="btn ${m.is_admin ? 'danger' : ''}" data-act="role" data-id="${m.id}" data-current="${m.is_admin ? 1 : 0}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px" title="${m.is_admin ? 'ถอด admin' : 'แต่งตั้ง admin'}">${m.is_admin ? '↓ Demote' : '↑ Make Admin'}</button>
@@ -3627,6 +3722,7 @@ function renderMembersTable(members) {
       <tr data-id="${m.id}">
         <td>${identityCell}</td>
         <td>${teamsCell}</td>
+        <td>${extensionCell}</td>
         <td>${statusCell}</td>
         <td style="text-align:right">${actionsCell}</td>
       </tr>

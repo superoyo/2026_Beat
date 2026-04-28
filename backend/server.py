@@ -334,6 +334,9 @@ def init_db() -> None:
             ("is_admin",    "INTEGER NOT NULL DEFAULT 0"),
             # v1.15 — avatar (square photo, base64 data URL)
             ("avatar_data", "TEXT"),
+            # v1.17 — extension version tracking (per-member)
+            ("extension_version",      "TEXT"),
+            ("extension_last_used_at", "TEXT"),
         ]:
             if col_name not in member_cols:
                 conn.execute(f"ALTER TABLE members ADD COLUMN {col_name} {col_def}")
@@ -496,6 +499,28 @@ def update_extension_heartbeat() -> None:
             )
     except Exception:
         pass  # heartbeat fail ห้ามกระทบ business logic
+
+
+def record_member_extension_use(member_id: Optional[int], version: Optional[str]) -> None:
+    """บันทึก extension version ของ member นี้ + timestamp ล่าสุดที่ใช้ extension
+    เรียกจาก endpoint ที่ extension ส่ง member_id มา (paired-as-member)
+    Header: X-FCT-Version จาก background.js
+    """
+    if not member_id or not version:
+        return
+    # validation อย่างหลวม — version ควรเป็น semver-ish, ไม่ยาวเกิน
+    v = (version or "").strip()
+    if not v or len(v) > 60:
+        return
+    try:
+        with db_conn() as conn:
+            conn.execute(
+                "UPDATE members SET extension_version = ?, extension_last_used_at = ? "
+                "WHERE id = ?",
+                (v, utc_now().isoformat(), member_id),
+            )
+    except Exception:
+        pass  # ห้ามกระทบ business logic
 
 
 def require_admin_or_api_key(
@@ -2051,6 +2076,7 @@ def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
     with db_conn() as conn:
         rows = conn.execute(
             "SELECT id, phone, email, display_name, enabled, is_admin, avatar_data, "
+            "       extension_version, extension_last_used_at, "
             "       (pw_hash IS NOT NULL) AS has_password, "
             "       created_at, last_login_at "
             "FROM members ORDER BY created_at DESC"
@@ -2077,6 +2103,8 @@ def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
                 "is_admin": bool(r["is_admin"]) if r["is_admin"] is not None else False,
                 "has_password": bool(r["has_password"]),
                 "avatar_data": r["avatar_data"] if "avatar_data" in r.keys() else None,
+                "extension_version": r["extension_version"] if "extension_version" in r.keys() else None,
+                "extension_last_used_at": r["extension_last_used_at"] if "extension_last_used_at" in r.keys() else None,
                 "created_at": r["created_at"],
                 "last_login_at": r["last_login_at"],
                 "teams": teams_by_member.get(r["id"], []),
@@ -3106,6 +3134,7 @@ def set_credential_access(
 def extension_match(
     url: str,
     member_id: Optional[int] = None,
+    x_fct_version: Optional[str] = Header(default=None, alias="X-FCT-Version"),
     _auth: str = Depends(require_admin_or_api_key),
 ) -> dict[str, Any]:
     """ตรวจว่า URL ตรงกับ site ใดที่ลงทะเบียนไว้ ถ้าใช่ คืน credentials.
@@ -3237,6 +3266,9 @@ def extension_match(
                         f" + direct grant {len(direct_cred_rows)} credential"
                     )
 
+    # v1.17 — บันทึก extension version ของ member นี้ (ถ้า paired-as-member)
+    record_member_extension_use(member_id, x_fct_version)
+
     return {
         "matched": True,
         "site": matched_site,
@@ -3263,6 +3295,7 @@ def mark_used(
     cred_id: int,
     request: Request,
     payload: Optional[CredentialUsedIn] = None,
+    x_fct_version: Optional[str] = Header(default=None, alias="X-FCT-Version"),
     _auth: str = Depends(require_admin_or_api_key),
 ) -> dict[str, Any]:
     """แจ้ง backend ว่า credential ถูกใช้ — update last_used_at + insert usage log"""
@@ -3273,6 +3306,8 @@ def mark_used(
     device_label = payload.device_label if payload else None
     user_agent = request.headers.get("user-agent", "")[:500] if request else ""
     client_ip = (request.client.host if request and request.client else "")[:64]
+    # v1.17 — บันทึก extension version ของ member นี้
+    record_member_extension_use(member_id, x_fct_version)
 
     with db_conn() as conn:
         cred = conn.execute(
