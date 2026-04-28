@@ -234,9 +234,26 @@ def init_db() -> None:
                 added_at       TEXT NOT NULL,
                 PRIMARY KEY (credential_id, member_id)
             );
+
+            -- v1.13 — ขอสิทธิ์เข้าถึง site (member request → admin accept/reject)
+            CREATE TABLE IF NOT EXISTS access_requests (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                member_id      INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+                site_id        INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+                requested_at   TEXT NOT NULL,
+                status         TEXT NOT NULL DEFAULT 'pending',   -- 'pending' | 'accepted' | 'rejected'
+                note           TEXT,                              -- เหตุผล/ข้อความจาก member
+                decided_at     TEXT,
+                decided_by     TEXT                               -- 'admin:username' หรือ 'member:N'
+            );
             CREATE INDEX IF NOT EXISTS idx_team_members_member ON team_members(member_id);
             CREATE INDEX IF NOT EXISTS idx_team_sites_site ON team_sites(site_id);
             CREATE INDEX IF NOT EXISTS idx_credential_members_member ON credential_members(member_id);
+            CREATE INDEX IF NOT EXISTS idx_access_requests_status ON access_requests(status);
+            CREATE INDEX IF NOT EXISTS idx_access_requests_member ON access_requests(member_id);
+            -- ป้องกัน duplicate pending request (1 member ต่อ 1 site ต่อ 1 pending)
+            CREATE UNIQUE INDEX IF NOT EXISTS uniq_access_request_pending
+                ON access_requests(member_id, site_id) WHERE status = 'pending';
             """
         )
 
@@ -2348,40 +2365,62 @@ def list_sites(_sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]
 
 @app.get("/api/my-platforms")
 def my_platforms(sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
-    """Strict opt-in: คืน site เฉพาะที่ user ปัจจุบันได้รับสิทธิ์ผ่าน team_sites
+    """คืน sites แยก 2 กลุ่ม:
+    - accessible: site ที่ user เข้าถึงได้ (ผ่าน team หรือ direct grant)
+    - no_access: site ที่ user ยังไม่มีสิทธิ์ → กดขอ access ได้
 
-    กฎ:
-    - Member (ทั้ง member ปกติ + member ที่ is_admin=1) → เห็นเฉพาะ site ที่อยู่ใน
-      team_sites และ user เป็นสมาชิกของ team นั้น (ไม่มี public site)
-    - Super admin (admin_users) → ไม่มี member_id, ไม่อยู่ใน team ใด → คืน site ว่าง
-      พร้อม viewer='super_admin' เพื่อให้ UI แสดง notice
+    Super admin → accessible = all, no_access = []
+    แต่ละ site แนบ click stats:
+    - my_clicks: จำนวนที่ user นี้คลิก prefill (30 วัน)
+    - global_clicks: จำนวนรวมในระบบ (30 วัน)
     """
     member_id = sess.get("member_id")
-    if not member_id:
-        # Super admin → ไม่ใช่ member, ไม่อยู่ใน team → ไม่มี platform ที่ "ตน" เข้าถึง
-        # คืน list ทั้งหมดพร้อม flag เพื่อให้ UI แจ้งว่า "ดู Config เพื่อจัดการ"
-        with db_conn() as conn:
-            sites = conn.execute(
-                "SELECT s.id, s.name, s.url_pattern, s.created_at, s.logo_data, "
-                "       (SELECT COUNT(*) FROM credentials c WHERE c.site_id = s.id) AS cred_count "
-                "FROM sites s ORDER BY s.created_at DESC"
-            ).fetchall()
-        return {
-            "sites": [dict(r) for r in sites],
-            "viewer": "super_admin",
-            "note": "Super admin ไม่อยู่ในทีมใด — แสดงทั้งหมด",
-        }
+    cutoff = (utc_now() - timedelta(days=30)).isoformat()
 
+    # query click stats เป็น dict: {site_id: count}
     with db_conn() as conn:
-        # Member เห็น site ถ้า:
-        # - อยู่ในทีมที่มี team_sites สำหรับ site นั้น (ผ่าน team) — เดิม
-        # - มี direct credential grant สำหรับ credential ใดของ site นั้น (ใหม่ v1.11)
-        sites = conn.execute(
+        global_click_rows = conn.execute(
+            "SELECT site_id, COUNT(*) AS n FROM usage_logs "
+            "WHERE timestamp >= ? AND site_id IS NOT NULL GROUP BY site_id",
+            (cutoff,),
+        ).fetchall()
+        global_clicks = {r["site_id"]: r["n"] for r in global_click_rows}
+
+        my_clicks = {}
+        if member_id:
+            my_click_rows = conn.execute(
+                "SELECT site_id, COUNT(*) AS n FROM usage_logs "
+                "WHERE timestamp >= ? AND member_id = ? AND site_id IS NOT NULL GROUP BY site_id",
+                (cutoff, member_id),
+            ).fetchall()
+            my_clicks = {r["site_id"]: r["n"] for r in my_click_rows}
+
+        # ทุก site ในระบบ
+        all_sites = conn.execute(
+            "SELECT s.id, s.name, s.url_pattern, s.created_at, s.logo_data, "
+            "       (SELECT COUNT(*) FROM credentials c WHERE c.site_id = s.id) AS cred_count "
+            "FROM sites s ORDER BY s.created_at DESC"
+        ).fetchall()
+
+        # Super admin → ทุก site = accessible
+        if not member_id:
+            sites_data = []
+            for r in all_sites:
+                d = dict(r)
+                d["my_clicks"] = 0
+                d["global_clicks"] = global_clicks.get(d["id"], 0)
+                sites_data.append(d)
+            return {
+                "accessible": sites_data,
+                "no_access": [],
+                "viewer": "super_admin",
+                "note": "Super admin ไม่อยู่ในทีมใด — แสดงทั้งหมดเพื่อการจัดการ",
+            }
+
+        # Member: หา site_ids ที่เข้าถึงได้
+        accessible_id_rows = conn.execute(
             """
-            SELECT DISTINCT s.id, s.name, s.url_pattern, s.created_at, s.logo_data,
-                   (SELECT COUNT(*) FROM credentials c WHERE c.site_id = s.id) AS cred_count
-            FROM sites s
-            WHERE s.id IN (
+            SELECT DISTINCT site_id FROM (
                 SELECT ts.site_id FROM team_sites ts
                 JOIN team_members tm ON tm.team_id = ts.team_id
                 WHERE tm.member_id = ?
@@ -2390,14 +2429,178 @@ def my_platforms(sess: dict = Depends(require_admin_or_member)) -> dict[str, Any
                 JOIN credential_members cm ON cm.credential_id = c.id
                 WHERE cm.member_id = ?
             )
-            ORDER BY s.created_at DESC
             """,
             (member_id, member_id),
         ).fetchall()
+        accessible_ids = {r["site_id"] for r in accessible_id_rows}
+
+        # Pending requests ของ member นี้
+        pending_rows = conn.execute(
+            "SELECT site_id FROM access_requests WHERE member_id = ? AND status = 'pending'",
+            (member_id,),
+        ).fetchall()
+        pending_ids = {r["site_id"] for r in pending_rows}
+
+    accessible = []
+    no_access = []
+    for r in all_sites:
+        d = dict(r)
+        d["my_clicks"] = my_clicks.get(d["id"], 0)
+        d["global_clicks"] = global_clicks.get(d["id"], 0)
+        if d["id"] in accessible_ids:
+            accessible.append(d)
+        else:
+            d["request_pending"] = d["id"] in pending_ids
+            no_access.append(d)
+
     return {
-        "sites": [dict(r) for r in sites],
+        "accessible": accessible,
+        "no_access": no_access,
         "viewer": "member",
     }
+
+
+# === Access requests (member → admin approval flow) ===
+
+class AccessRequestIn(BaseModel):
+    site_id: int
+    note: Optional[str] = Field(None, max_length=500)
+
+
+class AccessRequestDecide(BaseModel):
+    action: str = Field(..., pattern="^(accept|reject)$")
+    note: Optional[str] = Field(None, max_length=500)
+
+
+@app.post("/api/access-requests")
+def create_access_request(
+    payload: AccessRequestIn,
+    sess: dict = Depends(require_admin_or_member),
+) -> dict[str, Any]:
+    """Member ขอสิทธิ์เข้าถึง site"""
+    member_id = sess.get("member_id")
+    if not member_id:
+        raise HTTPException(status_code=400, detail="ต้องเป็น member เท่านั้น (super admin ใช้ Config โดยตรง)")
+    with db_conn() as conn:
+        if not conn.execute("SELECT 1 FROM sites WHERE id = ?", (payload.site_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="site not found")
+        # ตรวจ pending ซ้ำ
+        existing = conn.execute(
+            "SELECT id FROM access_requests WHERE member_id = ? AND site_id = ? AND status = 'pending'",
+            (member_id, payload.site_id),
+        ).fetchone()
+        if existing:
+            raise HTTPException(status_code=409, detail="คุณมี request ที่ pending อยู่แล้ว")
+        cur = conn.execute(
+            "INSERT INTO access_requests(member_id, site_id, requested_at, status, note) "
+            "VALUES (?, ?, ?, 'pending', ?)",
+            (member_id, payload.site_id, utc_now().isoformat(), payload.note),
+        )
+    return {"ok": True, "id": cur.lastrowid}
+
+
+@app.get("/api/me/access-requests")
+def list_my_access_requests(
+    sess: dict = Depends(require_admin_or_member),
+) -> dict[str, Any]:
+    """Member ดู requests ของตัวเอง (ทุก status)"""
+    member_id = sess.get("member_id")
+    if not member_id:
+        return {"requests": []}
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT ar.id, ar.site_id, s.name AS site_name, ar.status, ar.note, "
+            "       ar.requested_at, ar.decided_at, ar.decided_by "
+            "FROM access_requests ar JOIN sites s ON s.id = ar.site_id "
+            "WHERE ar.member_id = ? "
+            "ORDER BY ar.requested_at DESC",
+            (member_id,),
+        ).fetchall()
+    return {"requests": [dict(r) for r in rows]}
+
+
+@app.get("/api/admin/access-requests")
+def admin_list_access_requests(
+    status: str = "pending",
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """Admin ดู requests — default แสดง pending"""
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT ar.id, ar.member_id, m.display_name, m.email, m.phone, "
+            "       ar.site_id, s.name AS site_name, s.url_pattern, s.logo_data, "
+            "       ar.status, ar.note, ar.requested_at, ar.decided_at, ar.decided_by "
+            "FROM access_requests ar "
+            "JOIN members m ON m.id = ar.member_id "
+            "JOIN sites s ON s.id = ar.site_id "
+            "WHERE ar.status = ? "
+            "ORDER BY ar.requested_at DESC",
+            (status,),
+        ).fetchall()
+        # นับจำนวนแยกตาม status — สำหรับแสดงเป็น tab counts
+        counts = dict(conn.execute(
+            "SELECT status, COUNT(*) AS n FROM access_requests GROUP BY status"
+        ).fetchall() and [(r["status"], r["n"]) for r in conn.execute(
+            "SELECT status, COUNT(*) AS n FROM access_requests GROUP BY status"
+        ).fetchall()])
+    return {"requests": [dict(r) for r in rows], "counts": counts}
+
+
+@app.patch("/api/admin/access-requests/{req_id}")
+def admin_decide_access_request(
+    req_id: int,
+    payload: AccessRequestDecide,
+    sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """Admin accept/reject request
+
+    Accept = ให้ direct grant ทุก credential ของ site นั้นๆ ผ่าน credential_members
+            (admin สามารถ refine ทีหลังได้ใน Config → Credential edit)
+    Reject = แค่ mark status, ไม่ทำอะไร
+    """
+    now = utc_now().isoformat()
+    decided_by = f"admin:{sess.get('username') or sess.get('member_id') or '?'}"
+    new_status = "accepted" if payload.action == "accept" else "rejected"
+
+    with db_conn() as conn:
+        req = conn.execute(
+            "SELECT id, member_id, site_id, status FROM access_requests WHERE id = ?",
+            (req_id,),
+        ).fetchone()
+        if not req:
+            raise HTTPException(status_code=404, detail="request not found")
+        if req["status"] != "pending":
+            raise HTTPException(status_code=409, detail=f"request นี้ตัดสินแล้ว (status={req['status']})")
+
+        if payload.action == "accept":
+            # Grant access ผ่าน credential_members ทุก credential ของ site
+            cred_ids = [r["id"] for r in conn.execute(
+                "SELECT id FROM credentials WHERE site_id = ?", (req["site_id"],)
+            ).fetchall()]
+            for cid in cred_ids:
+                conn.execute(
+                    "INSERT OR IGNORE INTO credential_members(credential_id, member_id, added_at) "
+                    "VALUES (?, ?, ?)",
+                    (cid, req["member_id"], now),
+                )
+
+        conn.execute(
+            "UPDATE access_requests SET status = ?, decided_at = ?, decided_by = ?, note = COALESCE(?, note) "
+            "WHERE id = ?",
+            (new_status, now, decided_by, payload.note, req_id),
+        )
+
+    return {"ok": True, "status": new_status}
+
+
+@app.get("/api/admin/access-requests/pending-count")
+def admin_pending_request_count(_sess: dict = Depends(require_admin)) -> dict[str, int]:
+    """แสดงเลข badge ในเมนู — เร็ว, ไม่ดึง list"""
+    with db_conn() as conn:
+        n = conn.execute(
+            "SELECT COUNT(*) AS n FROM access_requests WHERE status = 'pending'"
+        ).fetchone()["n"]
+    return {"count": n}
 
 
 @app.post("/api/admin/sites")

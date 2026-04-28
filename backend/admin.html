@@ -659,6 +659,7 @@
         </div>
         <a href="#/members" data-route="members">👥 Members</a>
         <a href="#/teams" data-route="teams">👨‍👩‍👧 Teams</a>
+        <a href="#/access-requests" data-route="access-requests">🔔 Access Requests <span id="nav-req-badge" style="display:none;margin-left:6px;background:var(--critical);color:#fff;font-size:10.5px;padding:1px 7px;border-radius:999px;font-weight:700"></span></a>
         <a href="#/sites" data-route="sites">🛠 Config</a>
         <a href="#/logs" data-route="logs">📜 Logs</a>
         <a href="#/security" data-route="security">🔑 API Key</a>
@@ -730,22 +731,23 @@ async function fetchJson(path, opts = {}) {
 }
 
 // admin-only routes — member ห้ามเข้า (bounce ไป default)
-const ADMIN_ONLY_ROUTES = new Set(['security', 'members', 'sites', 'logs', 'teams']);
+const ADMIN_ONLY_ROUTES = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests']);
 // menu items ที่ซ่อนใน sidebar สำหรับ member
 // (dashboard เห็นได้ทุกบทบาท — ใช้เป็นหน้าแรกของ member ด้วย)
-const HIDE_FROM_MEMBER_NAV = new Set(['security', 'members', 'sites', 'logs', 'teams']);
+const HIDE_FROM_MEMBER_NAV = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests']);
 
 // ---------- routing ----------
 const routes = {
-  'dashboard': renderDashboardEmbed,
-  'platforms': renderPlatformsPage,
-  'sites':     renderSitesList,
-  'members':   renderMembersPage,
-  'teams':     renderTeamsPage,
-  'logs':      renderLogsPage,
-  'extension': renderExtensionPage,
-  'security':  renderSecurityPage,
-  'account':   renderAccountPage,
+  'dashboard':        renderDashboardEmbed,
+  'platforms':        renderPlatformsPage,
+  'sites':            renderSitesList,
+  'members':          renderMembersPage,
+  'teams':            renderTeamsPage,
+  'access-requests':  renderAccessRequestsPage,
+  'logs':             renderLogsPage,
+  'extension':        renderExtensionPage,
+  'security':         renderSecurityPage,
+  'account':          renderAccountPage,
 };
 
 function setActive(route) {
@@ -1976,18 +1978,31 @@ function patternToUrl(pattern) {
   return url;
 }
 
+// State สำหรับ Platforms page
+let _platformsData = null;
+let _platformSort = 'mine';   // 'az' | 'mine' | 'global'
+
 async function renderPlatformsPage() {
   $('main').innerHTML = `
     <div class="page-head">
       <h2 class="page-title">🚀 Platforms</h2>
       <span class="card-sub" id="p-count">—</span>
     </div>
-    <div id="p-hint" class="hint" style="margin-bottom:18px;color:var(--text-muted);font-size:13px"></div>
-    <div style="margin-bottom:16px;position:relative">
-      <input id="p-search" type="text" placeholder="🔍 ค้นหา platform (ชื่อ หรือ URL)" autocomplete="off"
-             style="width:100%;padding:10px 14px;font-size:14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-input);color:var(--text)" />
-      <span id="p-search-clear" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--text-muted);display:none;padding:4px 8px;border-radius:6px">×</span>
+    <div id="p-hint" class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px"></div>
+
+    <div style="display:grid;grid-template-columns:1fr auto;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+      <div style="position:relative">
+        <input id="p-search" type="text" placeholder="🔍 ค้นหา platform (ชื่อ หรือ URL)" autocomplete="off"
+               style="width:100%;padding:10px 14px;font-size:14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-input);color:var(--text)" />
+        <span id="p-search-clear" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--text-muted);display:none;padding:4px 8px;border-radius:6px">×</span>
+      </div>
+      <select id="p-sort" style="padding:10px 14px;font-size:13.5px;border:1px solid var(--border);border-radius:10px;background:var(--bg-input);color:var(--text);min-width:200px;cursor:pointer">
+        <option value="mine">🔥 ที่ฉันใช้บ่อย (30 วัน)</option>
+        <option value="global">🌐 ใช้บ่อยในระบบ (30 วัน)</option>
+        <option value="az">🔤 A → Z (ตามชื่อ)</option>
+      </select>
     </div>
+
     <div id="p-list">
       <div class="empty">กำลังโหลด…</div>
     </div>
@@ -2000,87 +2015,197 @@ async function renderPlatformsPage() {
     $('p-list').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
     return;
   }
-  const sites = data.sites || [];
-  const viewer = data.viewer;  // 'super_admin' | 'member'
-  $('p-count').textContent = `${sites.length} แพลตฟอร์ม`;
+  _platformsData = data;
+  const accessible = data.accessible || [];
+  const noAccess = data.no_access || [];
+  const viewer = data.viewer;
 
-  // Hint แตกต่างตาม viewer
+  // Hint
   if (viewer === 'super_admin') {
     $('p-hint').innerHTML = `
-      <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:8px;padding:10px 14px;margin-bottom:8px;color:#92400e">
-        🔒 <strong>Super admin view</strong> — ไม่อยู่ใน Team ใด ระบบแสดง <strong>ทั้งหมด</strong> เพื่อการจัดการ.
-        เพื่อทดสอบ team filtering: login เป็น member ที่ผูกกับ Team
+      <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:8px;padding:10px 14px;color:#92400e">
+        🔒 <strong>Super admin view</strong> — แสดง platforms ทั้งหมด · ดูในมุม member ให้ login เป็น member ที่ผูก team
       </div>
-      เว็บไซต์/แพลตฟอร์มทั้งหมดในระบบ — คลิก card เพื่อเปิดเว็บนั้นใน tab ใหม่
     `;
   } else {
-    $('p-hint').textContent =
-      'เว็บไซต์/แพลตฟอร์มที่คุณมีสิทธิ์เข้าถึง (ตาม Team config) — คลิก card เพื่อเปิดเว็บนั้นใน tab ใหม่';
+    $('p-hint').innerHTML = `เว็บที่คุณ <strong>เข้าถึงได้</strong> และ <strong>ขอสิทธิ์</strong> เพิ่มได้`;
   }
 
-  if (sites.length === 0) {
-    let emptyMsg;
-    if (viewer === 'super_admin') {
-      emptyMsg = 'ยังไม่มีแพลตฟอร์มในระบบ — เพิ่มได้ที่เมนู <strong>🛠 Config</strong>';
-    } else {
-      emptyMsg = 'คุณยังไม่ได้รับสิทธิ์เข้าถึงแพลตฟอร์มใดเลย — แจ้ง admin ให้เพิ่มคุณเข้า Team ที่ผูกกับ platform ที่ต้องการใช้';
-    }
-    $('p-list').innerHTML = `<div class="empty">${emptyMsg}</div>`;
-    return;
-  }
+  // wire sort dropdown
+  $('p-sort').value = _platformSort;
+  $('p-sort').addEventListener('change', (e) => {
+    _platformSort = e.target.value;
+    renderPlatformsList();
+  });
 
-  $('p-list').innerHTML = `
-    <div class="platform-grid">
-      ${sites.map(s => {
-        const url = patternToUrl(s.url_pattern);
-        const initial = (s.name || '?').trim().charAt(0).toUpperCase();
-        const displayUrl = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
-        const credLabel = s.cred_count > 0
-          ? `${s.cred_count} บัญชี`
-          : '<span style="color:var(--warning);">ยังไม่มีบัญชี</span>';
-        const searchKey = (s.name + ' ' + s.url_pattern).toLowerCase();
-        const avatar = s.logo_data
-          ? `<div class="platform-avatar" style="background:#fff;padding:6px;overflow:hidden"><img src="${s.logo_data}" alt="${escapeHtml(s.name)}" style="width:100%;height:100%;object-fit:contain;border-radius:8px" /></div>`
-          : `<div class="platform-avatar">${escapeHtml(initial)}</div>`;
-        return `
-          <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="platform-card" data-search="${escapeHtml(searchKey)}">
-            ${avatar}
-            <div class="platform-name">${escapeHtml(s.name)}</div>
-            <div class="platform-url">${escapeHtml(displayUrl)}</div>
-            <div class="platform-meta">
-              <span>${credLabel}</span>
-              <span class="open">เปิดเว็บ →</span>
-            </div>
-          </a>
-        `;
-      }).join('')}
-    </div>
-    <div id="p-no-results" class="empty" style="display:none">ไม่เจอ platform ที่ตรงกับคำค้น</div>
-  `;
-
-  // wire search box
+  // wire search
   const searchInput = $('p-search');
-  const clearBtn = $('p-search-clear');
-  const noResults = $('p-no-results');
-  const applyFilter = () => {
-    const q = searchInput.value.toLowerCase().trim();
-    clearBtn.style.display = q ? '' : 'none';
-    let shown = 0;
-    document.querySelectorAll('.platform-card').forEach(card => {
-      const key = card.dataset.search || '';
-      const match = !q || key.includes(q);
-      card.style.display = match ? '' : 'none';
-      if (match) shown++;
-    });
-    noResults.style.display = (q && shown === 0) ? '' : 'none';
-    $('p-count').textContent = q
-      ? `${shown} / ${sites.length} แพลตฟอร์ม (filter: "${q}")`
-      : `${sites.length} แพลตฟอร์ม`;
-  };
-  if (searchInput) {
-    searchInput.addEventListener('input', applyFilter);
-    clearBtn.addEventListener('click', () => { searchInput.value = ''; applyFilter(); searchInput.focus(); });
+  searchInput.addEventListener('input', applyPlatformFilter);
+  $('p-search-clear').addEventListener('click', () => {
+    searchInput.value = ''; applyPlatformFilter(); searchInput.focus();
+  });
+
+  renderPlatformsList();
+}
+
+function sortPlatforms(list, mode) {
+  const arr = list.slice();
+  if (mode === 'az') {
+    arr.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'th'));
+  } else if (mode === 'mine') {
+    // มากสุดก่อน — เท่ากันเรียง global, แล้วชื่อ
+    arr.sort((a, b) =>
+      (b.my_clicks - a.my_clicks) ||
+      (b.global_clicks - a.global_clicks) ||
+      (a.name || '').localeCompare(b.name || '', 'th')
+    );
+  } else {  // 'global'
+    arr.sort((a, b) =>
+      (b.global_clicks - a.global_clicks) ||
+      (a.name || '').localeCompare(b.name || '', 'th')
+    );
   }
+  return arr;
+}
+
+function renderPlatformCard(s, opts) {
+  // opts: {disabled?: bool, showRequest?: bool, requestPending?: bool}
+  opts = opts || {};
+  const url = patternToUrl(s.url_pattern);
+  const initial = (s.name || '?').trim().charAt(0).toUpperCase();
+  const displayUrl = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const searchKey = (s.name + ' ' + s.url_pattern).toLowerCase();
+
+  const credLabel = s.cred_count > 0
+    ? `${s.cred_count} บัญชี`
+    : '<span style="color:var(--warning);">ยังไม่มีบัญชี</span>';
+
+  // Click stats badges
+  const stats = [];
+  if (s.my_clicks > 0) stats.push(`<span style="color:var(--primary);font-weight:600">🔥 ${s.my_clicks} ของฉัน</span>`);
+  if (s.global_clicks > 0) stats.push(`<span style="color:var(--text-muted)">🌐 ${s.global_clicks}</span>`);
+
+  const avatarStyle = opts.disabled
+    ? 'filter:grayscale(0.85);opacity:.55'
+    : '';
+  const avatar = s.logo_data
+    ? `<div class="platform-avatar" style="background:#fff;padding:6px;overflow:hidden;${avatarStyle}"><img src="${s.logo_data}" alt="${escapeHtml(s.name)}" style="width:100%;height:100%;object-fit:contain;border-radius:8px" /></div>`
+    : `<div class="platform-avatar" style="${avatarStyle}">${escapeHtml(initial)}</div>`;
+
+  if (opts.disabled) {
+    // No-access card — gray + Request button
+    const requestBtn = opts.requestPending
+      ? `<button class="btn" disabled style="font-size:11.5px;padding:5px 10px;margin-top:8px;background:var(--bg-soft);color:var(--text-muted);cursor:not-allowed" title="รออนุมัติ">⏳ รออนุมัติ</button>`
+      : `<button class="btn primary" data-req-id="${s.id}" data-req-name="${escapeHtml(s.name)}" style="font-size:11.5px;padding:5px 10px;margin-top:8px">🙏 ขอสิทธิ์</button>`;
+    return `
+      <div class="platform-card platform-card-disabled" data-search="${escapeHtml(searchKey)}"
+           style="background:var(--bg-soft);border:1px dashed var(--border);cursor:default;text-decoration:none">
+        ${avatar}
+        <div class="platform-name" style="color:var(--text-muted)">${escapeHtml(s.name)}</div>
+        <div class="platform-url">${escapeHtml(displayUrl)}</div>
+        <div class="platform-meta" style="color:var(--text-soft)">
+          ${stats.length ? stats.join(' · ') : '<span>' + credLabel + '</span>'}
+        </div>
+        ${requestBtn}
+      </div>
+    `;
+  }
+
+  // Accessible card
+  return `
+    <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="platform-card" data-search="${escapeHtml(searchKey)}">
+      ${avatar}
+      <div class="platform-name">${escapeHtml(s.name)}</div>
+      <div class="platform-url">${escapeHtml(displayUrl)}</div>
+      <div class="platform-meta">
+        ${stats.length ? `<span>${stats.join(' · ')}</span>` : `<span>${credLabel}</span>`}
+        <span class="open">เปิดเว็บ →</span>
+      </div>
+    </a>
+  `;
+}
+
+function renderPlatformsList() {
+  if (!_platformsData) return;
+  const accessible = sortPlatforms(_platformsData.accessible || [], _platformSort);
+  const noAccess = sortPlatforms(_platformsData.no_access || [], _platformSort);
+
+  const totalCount = accessible.length + noAccess.length;
+  $('p-count').textContent = `${accessible.length} เข้าถึงได้${noAccess.length > 0 ? ` · ${noAccess.length} ต้องขอ` : ''}`;
+
+  let html = '';
+  if (accessible.length > 0) {
+    html += `<div class="platform-grid" id="p-grid-yes">`;
+    html += accessible.map(s => renderPlatformCard(s, { disabled: false })).join('');
+    html += `</div>`;
+  } else if (totalCount > 0) {
+    html += `<div class="empty" style="margin-bottom:16px">คุณยังไม่ได้รับสิทธิ์เข้าถึง platform ใด — กดขอสิทธิ์ที่ section ด้านล่าง</div>`;
+  }
+
+  if (noAccess.length > 0) {
+    html += `
+      <div style="margin-top:28px;margin-bottom:12px;display:flex;align-items:center;gap:10px">
+        <h3 style="margin:0;font-size:14px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em">🔒 Platforms ที่ยังไม่มีสิทธิ์</h3>
+        <span style="font-size:12px;color:var(--text-muted)">— กด "🙏 ขอสิทธิ์" → admin จะได้รับแจ้ง</span>
+      </div>
+      <div class="platform-grid" id="p-grid-no">
+        ${noAccess.map(s => renderPlatformCard(s, { disabled: true, requestPending: s.request_pending })).join('')}
+      </div>
+    `;
+  }
+
+  if (totalCount === 0) {
+    html = `<div class="empty">ยังไม่มีแพลตฟอร์มในระบบ${currentRole === 'admin' ? ' — เพิ่มได้ที่ <strong>🛠 Config</strong>' : ''}</div>`;
+  }
+
+  html += `<div id="p-no-results" class="empty" style="display:none;margin-top:14px">ไม่เจอ platform ที่ตรงกับคำค้น</div>`;
+  $('p-list').innerHTML = html;
+
+  // Wire request buttons
+  document.querySelectorAll('button[data-req-id]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const siteId = parseInt(btn.dataset.reqId, 10);
+      const name = btn.dataset.reqName;
+      const note = prompt(`ขอสิทธิ์เข้าถึง "${name}"?\n\nเหตุผล (ไม่บังคับ — admin จะเห็น):`, '');
+      if (note === null) return;   // cancelled
+      btn.disabled = true;
+      btn.textContent = '⏳ กำลังส่ง...';
+      try {
+        await fetchJson('/api/access-requests', {
+          method: 'POST',
+          body: JSON.stringify({ site_id: siteId, note: note.trim() || null }),
+        });
+        btn.textContent = '⏳ รออนุมัติ';
+        btn.style.background = 'var(--bg-soft)';
+        btn.style.color = 'var(--text-muted)';
+        btn.title = 'admin ได้รับแจ้งแล้ว — รอตอบกลับ';
+        showSavedToast('✓ ส่งคำขอแล้ว — admin จะตรวจสอบ');
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = '🙏 ขอสิทธิ์';
+        showSavedToast('❌ ' + err.message, 'error');
+      }
+    });
+  });
+
+  applyPlatformFilter();
+}
+
+function applyPlatformFilter() {
+  const searchInput = $('p-search');
+  if (!searchInput) return;
+  const q = searchInput.value.toLowerCase().trim();
+  $('p-search-clear').style.display = q ? '' : 'none';
+  let shown = 0;
+  document.querySelectorAll('.platform-card').forEach(card => {
+    const key = card.dataset.search || '';
+    const match = !q || key.includes(q);
+    card.style.display = match ? '' : 'none';
+    if (match) shown++;
+  });
+  const noResults = $('p-no-results');
+  if (noResults) noResults.style.display = (q && shown === 0) ? '' : 'none';
 }
 
 // ============== Teams ==============
@@ -2681,6 +2806,196 @@ function showEditTeamModal(team, teamId) {
       await renderTeamsPage(teamId);
     },
   });
+}
+
+// ============== Access Requests (admin) ==============
+let _arCurrentTab = 'pending';
+
+async function renderAccessRequestsPage() {
+  $('main').innerHTML = `
+    <div class="page-head">
+      <h2 class="page-title">🔔 Access Requests</h2>
+      <span class="card-sub" id="ar-count">—</span>
+    </div>
+    <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px">
+      Member ขอสิทธิ์เข้าถึง platform — accept = ให้ direct grant ทุก credential ของ site นั้น (refine ได้ภายหลังที่ Config)
+    </div>
+
+    <div id="ar-tabs" style="display:flex;gap:6px;margin-bottom:14px;border-bottom:1px solid var(--border)">
+      <button class="ar-tab" data-tab="pending"  data-default="1" style="background:none;border:none;padding:10px 14px;font-size:13.5px;cursor:pointer">⏳ Pending <span class="ar-tab-count"></span></button>
+      <button class="ar-tab" data-tab="accepted" style="background:none;border:none;padding:10px 14px;font-size:13.5px;cursor:pointer">✓ Accepted <span class="ar-tab-count"></span></button>
+      <button class="ar-tab" data-tab="rejected" style="background:none;border:none;padding:10px 14px;font-size:13.5px;cursor:pointer">✗ Rejected <span class="ar-tab-count"></span></button>
+    </div>
+
+    <div id="ar-list">
+      <div class="empty">กำลังโหลด…</div>
+    </div>
+  `;
+
+  // Wire tab clicks
+  document.querySelectorAll('.ar-tab').forEach(b => {
+    b.addEventListener('click', () => {
+      _arCurrentTab = b.dataset.tab;
+      loadAccessRequests();
+    });
+  });
+
+  await loadAccessRequests();
+}
+
+async function loadAccessRequests() {
+  const listEl = $('ar-list');
+  listEl.innerHTML = '<div class="empty">กำลังโหลด…</div>';
+
+  let data;
+  try {
+    data = await fetchJson('/api/admin/access-requests?status=' + _arCurrentTab);
+  } catch (e) {
+    listEl.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+
+  const requests = data.requests || [];
+  const counts = data.counts || {};
+  $('ar-count').textContent = `${requests.length} รายการ (${_arCurrentTab})`;
+
+  // Update tab styles + counts
+  document.querySelectorAll('.ar-tab').forEach(b => {
+    const isActive = b.dataset.tab === _arCurrentTab;
+    b.style.color = isActive ? 'var(--primary)' : 'var(--text-muted)';
+    b.style.fontWeight = isActive ? '600' : '500';
+    b.style.borderBottom = isActive ? '2px solid var(--primary)' : '2px solid transparent';
+    const cnt = counts[b.dataset.tab] || 0;
+    const cntSpan = b.querySelector('.ar-tab-count');
+    if (cntSpan) cntSpan.textContent = cnt > 0 ? `(${cnt})` : '';
+  });
+
+  if (requests.length === 0) {
+    const messages = {
+      pending: 'ยังไม่มี request ที่รออนุมัติ 🎉',
+      accepted: 'ยังไม่มี request ที่ผ่านการอนุมัติ',
+      rejected: 'ยังไม่มี request ที่ถูกปฏิเสธ',
+    };
+    listEl.innerHTML = `<div class="empty">${messages[_arCurrentTab] || 'ไม่มีข้อมูล'}</div>`;
+    return;
+  }
+
+  listEl.innerHTML = `<div style="display:flex;flex-direction:column;gap:10px">
+    ${requests.map(r => renderAccessRequestRow(r)).join('')}
+  </div>`;
+
+  // Wire action buttons
+  listEl.querySelectorAll('button[data-ar-action]').forEach(btn => {
+    btn.addEventListener('click', () => handleAccessRequestAction(btn));
+  });
+}
+
+function renderAccessRequestRow(r) {
+  const memberName = r.display_name || r.email || r.phone || `Member #${r.member_id}`;
+  const memberInitial = memberName.trim().charAt(0).toUpperCase();
+  const siteInitial = (r.site_name || '?').trim().charAt(0).toUpperCase();
+  const requestedAgo = fmtRelativeTh(r.requested_at);
+  const decided = r.decided_at
+    ? `${fmtRelativeTh(r.decided_at)}${r.decided_by ? ' โดย ' + escapeHtml(r.decided_by) : ''}`
+    : '';
+
+  const siteAvatar = r.logo_data
+    ? `<div style="width:40px;height:40px;border-radius:10px;background:#fff;border:1px solid var(--border);overflow:hidden;flex-shrink:0;padding:4px"><img src="${r.logo_data}" alt="${escapeHtml(r.site_name)}" style="width:100%;height:100%;object-fit:contain" /></div>`
+    : `<div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;font-weight:700;font-size:15px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(siteInitial)}</div>`;
+
+  const statusBadge = {
+    pending: '<span style="display:inline-flex;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(245,158,11,.12);color:#92400e">⏳ Pending</span>',
+    accepted: '<span style="display:inline-flex;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(16,185,129,.12);color:var(--green)">✓ Accepted</span>',
+    rejected: '<span style="display:inline-flex;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(220,38,38,.10);color:var(--critical)">✗ Rejected</span>',
+  }[r.status] || '';
+
+  const actions = r.status === 'pending'
+    ? `<div style="display:flex;gap:6px">
+        <button class="btn primary" data-ar-action="accept" data-ar-id="${r.id}" style="font-size:12.5px;padding:6px 14px">✓ Accept</button>
+        <button class="btn danger" data-ar-action="reject" data-ar-id="${r.id}" style="font-size:12.5px;padding:6px 14px">✗ Reject</button>
+      </div>`
+    : '';
+
+  return `
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <!-- Member -->
+      <div style="display:flex;align-items:center;gap:10px;min-width:200px;flex:1">
+        <div style="width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:14px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(memberInitial)}</div>
+        <div style="flex:1;min-width:0;overflow:hidden">
+          <div style="font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(memberName)}</div>
+          <div style="font-size:11.5px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(r.email || r.phone || '')}</div>
+        </div>
+      </div>
+
+      <!-- Arrow -->
+      <div style="font-size:18px;color:var(--text-soft);flex-shrink:0">→</div>
+
+      <!-- Site -->
+      <div style="display:flex;align-items:center;gap:10px;min-width:200px;flex:1">
+        ${siteAvatar}
+        <div style="flex:1;min-width:0;overflow:hidden">
+          <div style="font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(r.site_name)}</div>
+          <div style="font-size:11.5px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:ui-monospace,Menlo,monospace">${escapeHtml(r.url_pattern)}</div>
+        </div>
+      </div>
+
+      <!-- Status + meta -->
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;min-width:180px">
+        ${statusBadge}
+        <div style="font-size:11px;color:var(--text-muted)">ขอเมื่อ ${escapeHtml(requestedAgo)}</div>
+        ${decided ? `<div style="font-size:11px;color:var(--text-muted)">ตัดสิน ${decided}</div>` : ''}
+      </div>
+
+      <!-- Note -->
+      ${r.note ? `<div style="flex-basis:100%;padding:10px 12px;background:var(--bg-soft);border-radius:8px;font-size:12.5px;color:var(--text-muted);font-style:italic">💬 ${escapeHtml(r.note)}</div>` : ''}
+
+      ${actions ? `<div style="flex-basis:100%;display:flex;justify-content:flex-end">${actions}</div>` : ''}
+    </div>
+  `;
+}
+
+async function handleAccessRequestAction(btn) {
+  const id = btn.dataset.arId;
+  const action = btn.dataset.arAction;
+  const verb = action === 'accept' ? 'อนุมัติ' : 'ปฏิเสธ';
+  if (!confirm(`ยืนยัน${verb} request นี้?`)) return;
+  let note = null;
+  if (action === 'reject') {
+    note = prompt('เหตุผลที่ปฏิเสธ (ไม่บังคับ):', '') || null;
+  }
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = '⏳';
+  try {
+    await fetchJson(`/api/admin/access-requests/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ action, note }),
+    });
+    showSavedToast(action === 'accept' ? '✓ อนุมัติแล้ว' : '✗ ปฏิเสธแล้ว');
+    await loadAccessRequests();
+    refreshAccessRequestBadge();
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = orig;
+    showSavedToast('❌ ' + e.message, 'error');
+  }
+}
+
+// Refresh badge ในเมนูซ้าย
+async function refreshAccessRequestBadge() {
+  if (currentRole !== 'admin') return;
+  try {
+    const r = await fetchJson('/api/admin/access-requests/pending-count');
+    const badge = $('nav-req-badge');
+    if (badge) {
+      if (r.count > 0) {
+        badge.textContent = String(r.count);
+        badge.style.display = '';
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+  } catch {}
 }
 
 async function renderLogsPage() {
@@ -4432,6 +4747,12 @@ function attachSidebarHandlers() {
     location.hash = '#/dashboard';
   }
   await navigate();
+
+  // Admin: poll Access Request badge ทุก 60 วินาที
+  if (currentRole === 'admin') {
+    refreshAccessRequestBadge();
+    setInterval(refreshAccessRequestBadge, 60_000);
+  }
 })();
 </script>
 </body>
