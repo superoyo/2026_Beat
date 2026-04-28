@@ -1069,6 +1069,101 @@ function openCropModal(srcDataUrl, onSave) {
 }
 
 // === Logo search modal — fetch suggestions and let user pick ===
+// === Camera modal — ถ่ายรูปจากกล้อง → crop modal ===
+function openCameraModal(onSave) {
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.style.zIndex = '1100';
+  bg.innerHTML = `
+    <div class="modal modal-wide">
+      <h3 style="margin:0 0 14px;font-size:17px;font-weight:700">📸 ถ่ายรูปจากกล้อง</h3>
+      <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:12.5px">
+        Browser อาจขอสิทธิ์เข้าถึงกล้อง — กด Allow
+      </div>
+      <div id="cam-status" style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px">⏳ เปิดกล้อง...</div>
+      <video id="cam-video" autoplay playsinline muted style="display:none;width:100%;max-height:420px;background:#0f172a;border-radius:10px;object-fit:cover"></video>
+      <canvas id="cam-canvas" style="display:none"></canvas>
+      <div style="display:flex;gap:8px;margin-top:14px;align-items:center;flex-wrap:wrap">
+        <button class="btn" id="cam-flip" type="button" style="font-size:13px;padding:7px 14px;display:none">🔄 สลับกล้อง</button>
+        <div style="flex:1"></div>
+        <button class="btn" id="cam-cancel" type="button" style="font-size:13px;padding:7px 14px">ยกเลิก</button>
+        <button class="btn primary" id="cam-snap" type="button" style="font-size:13px;padding:7px 18px;display:none">📸 ถ่ายรูป</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(bg);
+
+  let stream = null;
+  let facingMode = 'user';   // 'user' = หน้า, 'environment' = หลัง
+
+  const cleanup = () => {
+    if (stream) { try { stream.getTracks().forEach(t => t.stop()); } catch {} stream = null; }
+    bg.remove();
+  };
+  bg.querySelector('#cam-cancel').addEventListener('click', cleanup);
+  bg.addEventListener('click', e => { if (e.target === bg) cleanup(); });
+
+  const video = bg.querySelector('#cam-video');
+  const status = bg.querySelector('#cam-status');
+  const snapBtn = bg.querySelector('#cam-snap');
+  const flipBtn = bg.querySelector('#cam-flip');
+
+  const startCamera = async () => {
+    status.textContent = '⏳ เปิดกล้อง...';
+    status.style.color = 'var(--text-muted)';
+    if (stream) { try { stream.getTracks().forEach(t => t.stop()); } catch {} stream = null; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      status.textContent = '❌ Browser นี้ไม่รองรับกล้อง — ลอง Chrome/Edge หรือ HTTPS';
+      status.style.color = 'var(--critical)';
+      return;
+    }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode, width: { ideal: 1280 }, height: { ideal: 1280 } },
+        audio: false,
+      });
+      video.srcObject = stream;
+      status.style.display = 'none';
+      video.style.display = 'block';
+      snapBtn.style.display = '';
+      // ตรวจว่ามีหลายกล้อง → แสดงปุ่ม flip
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cams = devices.filter(d => d.kind === 'videoinput');
+        if (cams.length > 1) flipBtn.style.display = '';
+      } catch {}
+    } catch (e) {
+      status.textContent = '❌ เปิดกล้องไม่สำเร็จ: ' + (e.message || e.name) + '\n(ตรวจ permissions ในเบราว์เซอร์ + ต้องใช้ HTTPS)';
+      status.style.color = 'var(--critical)';
+      status.style.whiteSpace = 'pre-wrap';
+    }
+  };
+
+  flipBtn.addEventListener('click', () => {
+    facingMode = facingMode === 'user' ? 'environment' : 'user';
+    startCamera();
+  });
+
+  snapBtn.addEventListener('click', () => {
+    if (!stream) return;
+    const canvas = bg.querySelector('#cam-canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    // mirror image ถ้าเป็นกล้องหน้า (เหมือนที่ user เห็น)
+    if (facingMode === 'user') {
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+    }
+    ctx.drawImage(video, 0, 0);
+    const dataUrl = canvas.toDataURL('image/png');
+    cleanup();
+    openCropModal(dataUrl, onSave);
+  });
+
+  startCamera();
+}
+
 function openLogoSearchModal(domain, onSave) {
   // onSave: callback ที่ส่งต่อให้ openCropModal — ถ้าไม่กำหนด ใช้ default (form)
   const bg = document.createElement('div');
@@ -3915,6 +4010,26 @@ async function renderMemberAccountPage() {
     <div id="member-loading" style="padding:30px;text-align:center;color:var(--text-muted)">กำลังโหลด…</div>
 
     <div id="member-content" style="display:none">
+      <!-- Avatar section -->
+      <div class="card" style="display:block;margin-bottom:14px">
+        <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">รูปประจำตัว</h3>
+        <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+          <div id="m-avatar-preview" style="width:120px;height:120px;border-radius:50%;border:2px dashed var(--border);background:var(--bg-soft);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0">
+            <span style="color:var(--text-muted);font-size:12px;text-align:center">ยังไม่มี<br/>รูปประจำตัว</span>
+          </div>
+          <div style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:8px">
+            <button type="button" class="btn" id="m-avatar-upload-btn" style="font-size:13px;padding:8px 14px;text-align:left">📷 อัพโหลดรูปจากเครื่อง</button>
+            <button type="button" class="btn" id="m-avatar-camera-btn" style="font-size:13px;padding:8px 14px;text-align:left">📸 ถ่ายจากกล้อง</button>
+            <button type="button" class="btn danger" id="m-avatar-remove-btn" style="font-size:13px;padding:8px 14px;text-align:left;display:none">🗑 ลบรูป</button>
+            <div class="hint" style="font-size:11.5px;color:var(--text-muted);line-height:1.5">
+              รูปจะถูก crop เป็นสี่เหลี่ยมจัตุรัสก่อนบันทึก<br/>
+              แสดงในเมนูซ้ายและในรายการสมาชิก
+            </div>
+          </div>
+          <input type="file" id="m-avatar-file-input" accept="image/*" style="display:none" />
+        </div>
+      </div>
+
       <div class="card" style="display:block;margin-bottom:14px">
         <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">ข้อมูลบัญชี</h3>
         <div style="display:grid;grid-template-columns:140px 1fr;gap:10px 16px;font-size:13.5px">
@@ -3985,7 +4100,60 @@ async function renderMemberAccountPage() {
     $('m-info-created').textContent = fmtDate(member.created_at);
     $('m-display_name').value = member.display_name || '';
     $('m-email').value = member.email || '';
+    // Avatar preview
+    updateMyAvatarPreview(member.avatar_data || '');
   }
+
+  function updateMyAvatarPreview(dataUrl) {
+    const box = $('m-avatar-preview');
+    const removeBtn = $('m-avatar-remove-btn');
+    if (!box) return;
+    if (dataUrl) {
+      box.style.background = 'transparent';
+      box.style.borderStyle = 'solid';
+      box.innerHTML = `<img src="${dataUrl}" alt="avatar" style="width:100%;height:100%;object-fit:cover" />`;
+      if (removeBtn) removeBtn.style.display = '';
+    } else {
+      box.style.background = 'var(--bg-soft)';
+      box.style.borderStyle = 'dashed';
+      box.innerHTML = `<span style="color:var(--text-muted);font-size:12px;text-align:center">ยังไม่มี<br/>รูปประจำตัว</span>`;
+      if (removeBtn) removeBtn.style.display = 'none';
+    }
+  }
+
+  // Save callback — PATCH /api/member/profile with avatar_data, then update preview + reload member
+  async function saveAvatar(dataUrl) {
+    try {
+      const r = await fetchJson('/api/member/profile', {
+        method: 'PATCH',
+        body: JSON.stringify({ avatar_data: dataUrl }),
+      });
+      member = r.member;
+      updateMyAvatarPreview(member.avatar_data || '');
+      showSavedToast(dataUrl ? '✓ บันทึกรูปแล้ว' : '✓ ลบรูปแล้ว');
+    } catch (e) {
+      showSavedToast('❌ ' + e.message, 'error');
+    }
+  }
+
+  // Wire avatar buttons
+  setTimeout(() => {
+    const fileInput = $('m-avatar-file-input');
+    $('m-avatar-upload-btn').addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => openCropModal(ev.target.result, saveAvatar);
+      reader.readAsDataURL(f);
+      fileInput.value = '';
+    });
+    $('m-avatar-camera-btn').addEventListener('click', () => openCameraModal(saveAvatar));
+    $('m-avatar-remove-btn').addEventListener('click', () => {
+      if (!confirm('ลบรูปประจำตัว?')) return;
+      saveAvatar('');
+    });
+  }, 0);
 
   function setMsg(elId, text, isErr) {
     const el = $(elId);
@@ -4782,6 +4950,7 @@ function removeProfile(token) { saveProfiles(getProfiles().filter(p => p.token !
 let currentLabel = null;       // ชื่อ active profile
 let currentLogoutPath = null;  // /api/admin/logout หรือ /api/member/logout
 let currentIsSuper = false;    // true ถ้า super admin (admin_users), false ถ้า admin-member
+let currentAvatar = null;      // base64 data URL ของ avatar (member)
 
 async function detectActiveSession() {
   // ลอง super admin ก่อน
@@ -4798,7 +4967,7 @@ async function detectActiveSession() {
       const md = m.member;
       const display = md.display_name || md.email || md.phone;
       const role = md.is_admin ? 'admin' : 'member';
-      return { role, label: display, logoutPath: '/api/member/logout', isSuper: false, memberId: md.id };
+      return { role, label: display, logoutPath: '/api/member/logout', isSuper: false, memberId: md.id, avatar: md.avatar_data };
     }
   } catch {}
   return null;
@@ -4810,7 +4979,19 @@ function renderProfileSwitcherFooter() {
   $('who-role').textContent = currentIsSuper
     ? 'super admin'
     : currentRole === 'admin' ? 'admin (member)' : 'สมาชิก';
-  $('profile-avatar').textContent = (currentLabel || '?').trim().charAt(0).toUpperCase();
+  const avatarEl = $('profile-avatar');
+  if (currentAvatar) {
+    // Replace text with image
+    avatarEl.style.background = '#fff';
+    avatarEl.style.padding = '0';
+    avatarEl.style.overflow = 'hidden';
+    avatarEl.innerHTML = `<img src="${currentAvatar}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit" />`;
+  } else {
+    avatarEl.style.background = '';
+    avatarEl.style.padding = '';
+    avatarEl.style.overflow = '';
+    avatarEl.textContent = (currentLabel || '?').trim().charAt(0).toUpperCase();
+  }
 
   // dropdown content
   const list = $('profile-list');
@@ -4942,6 +5123,7 @@ function attachSidebarHandlers() {
   currentLabel = session.label;
   currentLogoutPath = session.logoutPath;
   currentIsSuper = !!session.isSuper;
+  currentAvatar = session.avatar || null;
 
   // ซ่อน admin-only ทั้ง section + items ถ้าเป็น member
   if (currentRole === 'member') {

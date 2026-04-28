@@ -327,11 +327,13 @@ def init_db() -> None:
             row["name"] for row in conn.execute("PRAGMA table_info(members)").fetchall()
         }
         for col_name, col_def in [
-            ("email",    "TEXT"),
-            ("pw_hash",  "TEXT"),
-            ("pw_salt",  "TEXT"),
-            ("enabled",  "INTEGER NOT NULL DEFAULT 1"),
-            ("is_admin", "INTEGER NOT NULL DEFAULT 0"),
+            ("email",       "TEXT"),
+            ("pw_hash",     "TEXT"),
+            ("pw_salt",     "TEXT"),
+            ("enabled",     "INTEGER NOT NULL DEFAULT 1"),
+            ("is_admin",    "INTEGER NOT NULL DEFAULT 0"),
+            # v1.15 — avatar (square photo, base64 data URL)
+            ("avatar_data", "TEXT"),
         ]:
             if col_name not in member_cols:
                 conn.execute(f"ALTER TABLE members ADD COLUMN {col_name} {col_def}")
@@ -2048,7 +2050,7 @@ class MemberRolePatch(BaseModel):
 def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
     with db_conn() as conn:
         rows = conn.execute(
-            "SELECT id, phone, email, display_name, enabled, is_admin, "
+            "SELECT id, phone, email, display_name, enabled, is_admin, avatar_data, "
             "       (pw_hash IS NOT NULL) AS has_password, "
             "       created_at, last_login_at "
             "FROM members ORDER BY created_at DESC"
@@ -2074,6 +2076,7 @@ def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
                 "enabled": bool(r["enabled"]) if r["enabled"] is not None else True,
                 "is_admin": bool(r["is_admin"]) if r["is_admin"] is not None else False,
                 "has_password": bool(r["has_password"]),
+                "avatar_data": r["avatar_data"] if "avatar_data" in r.keys() else None,
                 "created_at": r["created_at"],
                 "last_login_at": r["last_login_at"],
                 "teams": teams_by_member.get(r["id"], []),
@@ -3371,6 +3374,7 @@ class MemberProfileIn(BaseModel):
     display_name: Optional[str] = Field(None, max_length=120)
     email: Optional[str] = Field(None, max_length=200)
     password: Optional[str] = Field(None, min_length=4, max_length=200)
+    avatar_data: Optional[str] = Field(None, max_length=700_000)   # data:image/png;base64,...
 
 
 def _require_member_session(token: Optional[str]) -> dict[str, Any]:
@@ -3386,6 +3390,10 @@ def _member_row_to_profile(row: sqlite3.Row) -> dict[str, Any]:
         is_admin = bool(row["is_admin"])
     except (KeyError, IndexError):
         is_admin = False
+    try:
+        avatar_data = row["avatar_data"]
+    except (KeyError, IndexError):
+        avatar_data = None
     return {
         "id": row["id"],
         "phone": row["phone"],
@@ -3393,6 +3401,7 @@ def _member_row_to_profile(row: sqlite3.Row) -> dict[str, Any]:
         "display_name": row["display_name"],
         "has_password": bool(row["pw_hash"]),
         "is_admin": is_admin,
+        "avatar_data": avatar_data,
         "created_at": row["created_at"],
         "last_login_at": row["last_login_at"],
     }
@@ -3528,6 +3537,9 @@ def member_update_profile(
         pw_hash, pw_salt = hash_password(payload.password)
         updates["pw_hash"] = pw_hash
         updates["pw_salt"] = pw_salt
+    if payload.avatar_data is not None:
+        # ส่ง '' (empty string) → ลบ avatar (NULL)
+        updates["avatar_data"] = payload.avatar_data or None
 
     if not updates:
         raise HTTPException(status_code=400, detail="ไม่มีอะไรให้บันทึก")
@@ -3538,7 +3550,8 @@ def member_update_profile(
         with db_conn() as conn:
             conn.execute(f"UPDATE members SET {set_clause} WHERE id = ?", values)
             row = conn.execute(
-                "SELECT id, phone, email, display_name, pw_hash, is_admin, created_at, last_login_at "
+                "SELECT id, phone, email, display_name, pw_hash, is_admin, avatar_data, "
+                "       created_at, last_login_at "
                 "FROM members WHERE id = ?",
                 (member_id,),
             ).fetchone()
@@ -3560,6 +3573,38 @@ def member_logout(
     return {"ok": True}
 
 
+@app.get("/api/members/recent")
+def members_recent(
+    limit: int = 20,
+    _auth: str = Depends(require_any_auth),
+) -> dict[str, Any]:
+    """Member ที่เข้ามาใหม่ — sort created_at DESC, ใช้ใน Dashboard
+
+    เปิดให้ admin และ member อ่านได้ — แต่จะ filter เอาเฉพาะ enabled members
+    """
+    limit = max(1, min(100, limit))
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, display_name, email, phone, avatar_data, created_at "
+            "FROM members WHERE COALESCE(enabled, 1) = 1 "
+            "ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return {
+        "members": [
+            {
+                "id": r["id"],
+                "display_name": r["display_name"],
+                "email": r["email"],
+                "phone": r["phone"],
+                "avatar_data": r["avatar_data"],
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ],
+    }
+
+
 @app.get("/api/member/me")
 def member_me(
     fct_member_session: Optional[str] = Cookie(default=None),
@@ -3569,7 +3614,8 @@ def member_me(
         return {"logged_in": False}
     with db_conn() as conn:
         row = conn.execute(
-            "SELECT id, phone, email, display_name, pw_hash, is_admin, created_at, last_login_at "
+            "SELECT id, phone, email, display_name, pw_hash, is_admin, avatar_data, "
+            "       created_at, last_login_at "
             "FROM members WHERE id = ?",
             (sess["member_id"],),
         ).fetchone()

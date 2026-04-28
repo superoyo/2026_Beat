@@ -346,6 +346,13 @@
         </div>
       </section>
 
+      <section class="panel" id="recent-members-section">
+        <h2>🆕 Member ใหม่ <span style="font-size:13px;color:var(--text-muted);font-weight:400">(เรียงจากล่าสุด)</span></h2>
+        <div id="recent-members-scroll" style="display:flex;gap:14px;overflow-x:auto;padding:6px 4px 14px;scroll-behavior:smooth">
+          <div class="empty">กำลังโหลด…</div>
+        </div>
+      </section>
+
       <section class="panel" id="top-platforms-section">
         <h2>🔥 Platforms ที่ใช้บ่อย <span id="top-platforms-sub" style="font-size:13px;color:var(--text-muted);font-weight:400">(30 วันล่าสุด)</span></h2>
         <div id="top-platforms-list">
@@ -466,6 +473,59 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
+}
+
+async function renderRecentMembers() {
+  const wrap = document.getElementById('recent-members-scroll');
+  if (!wrap) return;
+  let data;
+  try {
+    data = await fetchJson('/api/members/recent?limit=30');
+  } catch (e) {
+    wrap.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  const members = data.members || [];
+  if (members.length === 0) {
+    wrap.innerHTML = `<div class="empty" style="flex:1;padding:30px 16px">ยังไม่มี member — สมัครได้ที่ <a href="/login" target="_blank" style="color:var(--primary)">/login</a></div>`;
+    return;
+  }
+  wrap.innerHTML = members.map(m => {
+    const display = m.display_name || m.email || m.phone || '?';
+    const initial = display.trim().charAt(0).toUpperCase();
+    const avatar = m.avatar_data
+      ? `<img src="${m.avatar_data}" alt="${escapeHtml(display)}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid var(--bg-card);box-shadow:var(--shadow-sm)" />`
+      : `<div style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:22px;display:inline-flex;align-items:center;justify-content:center;border:2px solid var(--bg-card);box-shadow:var(--shadow-sm)">${escapeHtml(initial)}</div>`;
+    const joinedTxt = fmtMemberJoinTime(m.created_at);
+    return `
+      <div style="flex:0 0 96px;text-align:center" title="${escapeHtml(display)}">
+        ${avatar}
+        <div style="margin-top:8px;font-size:12.5px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:96px">${escapeHtml(display)}</div>
+        <div style="font-size:10.5px;color:var(--text-muted);margin-top:1px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:96px">${escapeHtml(joinedTxt)}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+// Format time: วันนี้ HH:MM / เมื่อวาน HH:MM / D MMM HH:MM
+function fmtMemberJoinTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yest = new Date(today.getTime() - 86400000);
+  const dDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const time = d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+  if (dDay.getTime() === today.getTime()) return `วันนี้ ${time}`;
+  if (dDay.getTime() === yest.getTime()) return `เมื่อวาน ${time}`;
+  // ปีต่างกัน → ใส่ปี (พ.ศ. ลด 2)
+  const monthShort = d.toLocaleDateString('th-TH', { month: 'short' });
+  const dateStr = `${d.getDate()} ${monthShort}`;
+  if (d.getFullYear() !== now.getFullYear()) {
+    return `${dateStr} ${(d.getFullYear() + 543) % 100} ${time}`;
+  }
+  return `${dateStr} ${time}`;
 }
 
 async function renderTopPlatforms() {
@@ -660,7 +720,8 @@ async function refresh() {
     renderMain();
     renderSummary(summary);
     renderAccountsGrid(accounts);
-    // โหลด top platforms (ทำพร้อมกัน — ไม่ block ถ้า fail)
+    // โหลด recent members + top platforms (ทำพร้อมกัน — ไม่ block ถ้า fail)
+    renderRecentMembers().catch(() => {});
     renderTopPlatforms().catch(() => {});
     // ถ้ากำลังดู account detail อยู่ → ก็ refresh detail ของมันด้วย
     if (currentAccountKey) {
