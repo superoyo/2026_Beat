@@ -3573,6 +3573,37 @@ def member_logout(
     return {"ok": True}
 
 
+@app.get("/api/teams-overview")
+def teams_overview(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
+    """รายชื่อทีม + site_ids ที่แต่ละทีมเข้าถึงได้ — ใช้ใน Platforms page (spotlight)
+    เปิดให้ทุก authenticated user เพื่อให้ member เห็นภาพรวมแผนกได้
+    """
+    with db_conn() as conn:
+        teams = conn.execute(
+            "SELECT id, name, description, "
+            "  (SELECT COUNT(*) FROM team_members tm WHERE tm.team_id = t.id) AS member_count "
+            "FROM teams t ORDER BY name COLLATE NOCASE"
+        ).fetchall()
+        ts_rows = conn.execute(
+            "SELECT team_id, site_id FROM team_sites"
+        ).fetchall()
+    site_by_team: dict[int, list[int]] = {}
+    for r in ts_rows:
+        site_by_team.setdefault(r["team_id"], []).append(r["site_id"])
+    return {
+        "teams": [
+            {
+                "id": t["id"],
+                "name": t["name"],
+                "description": t["description"],
+                "member_count": t["member_count"],
+                "site_ids": site_by_team.get(t["id"], []),
+            }
+            for t in teams
+        ]
+    }
+
+
 @app.get("/api/members/recent")
 def members_recent(
     limit: int = 20,

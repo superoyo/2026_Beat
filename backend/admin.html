@@ -573,6 +573,62 @@
       transform: translateY(-2px);
       text-decoration: none;
     }
+
+    /* === Spotlight team filter — highlight platforms that selected team uses === */
+    /* Team badge — มุมขวาบนของ card */
+    .p-team-badge {
+      position: absolute; top: 10px; right: 10px;
+      background: rgba(124, 58, 237, .14);
+      color: #6d28d9;
+      font-size: 10.5px; font-weight: 700;
+      padding: 2px 9px;
+      border-radius: 999px;
+      border: 1px solid rgba(124, 58, 237, .25);
+      pointer-events: none;
+      z-index: 2;
+    }
+    /* When spotlight is on, dim cards that team doesn't use */
+    #p-list.spotlight-on .platform-card[data-team-uses="0"] {
+      opacity: 0.4;
+      filter: saturate(0.5);
+    }
+    #p-list.spotlight-on .platform-card[data-team-uses="0"]:hover {
+      opacity: 0.85;
+      filter: saturate(1);
+    }
+    /* Team uses + I can use → solid green spotlight */
+    #p-list.spotlight-on .platform-card[data-team-uses="1"]:not(.platform-card-disabled) {
+      border-color: #10b981 !important;
+      box-shadow:
+        0 0 0 2px rgba(16, 185, 129, .14),
+        0 8px 24px rgba(16, 185, 129, .15);
+      background: linear-gradient(180deg, rgba(16,185,129,.04), var(--bg-card));
+    }
+    #p-list.spotlight-on .platform-card[data-team-uses="1"]:not(.platform-card-disabled):hover {
+      box-shadow:
+        0 0 0 3px rgba(16, 185, 129, .22),
+        0 12px 32px rgba(16, 185, 129, .25);
+    }
+    #p-list.spotlight-on .platform-card[data-team-uses="1"]:not(.platform-card-disabled) .p-team-badge {
+      background: rgba(16, 185, 129, .15);
+      color: #15803d;
+      border-color: rgba(16, 185, 129, .35);
+    }
+    /* Team uses + I can't use → orange/amber spotlight (highlighted but disabled) */
+    #p-list.spotlight-on .platform-card.platform-card-disabled[data-team-uses="1"] {
+      opacity: 1 !important;
+      filter: none !important;
+      border: 2px solid #f59e0b !important;
+      box-shadow:
+        0 0 0 2px rgba(245, 158, 11, .14),
+        0 6px 18px rgba(245, 158, 11, .18);
+      background: linear-gradient(180deg, rgba(245,158,11,.06), var(--bg-soft));
+    }
+    #p-list.spotlight-on .platform-card.platform-card-disabled[data-team-uses="1"] .p-team-badge {
+      background: rgba(245, 158, 11, .18);
+      color: #b45309;
+      border-color: rgba(245, 158, 11, .40);
+    }
     .platform-avatar {
       width: 44px; height: 44px; border-radius: 11px;
       background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
@@ -2076,6 +2132,8 @@ function patternToUrl(pattern) {
 // State สำหรับ Platforms page
 let _platformsData = null;
 let _platformSort = 'mine';   // 'az' | 'mine' | 'global'
+let _teamsOverview = null;     // [{id, name, site_ids}, ...]
+let _spotlightTeamId = null;   // null = ไม่เลือก spotlight
 
 async function renderPlatformsPage() {
   $('main').innerHTML = `
@@ -2085,17 +2143,26 @@ async function renderPlatformsPage() {
     </div>
     <div id="p-hint" class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px"></div>
 
-    <div style="display:grid;grid-template-columns:1fr auto;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+    <div style="display:grid;grid-template-columns:1fr auto auto;gap:10px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
       <div style="position:relative">
         <input id="p-search" type="text" placeholder="🔍 ค้นหา platform (ชื่อ หรือ URL)" autocomplete="off"
                style="width:100%;padding:10px 14px;font-size:14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-input);color:var(--text)" />
         <span id="p-search-clear" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--text-muted);display:none;padding:4px 8px;border-radius:6px">×</span>
       </div>
-      <select id="p-sort" style="padding:10px 14px;font-size:13.5px;border:1px solid var(--border);border-radius:10px;background:var(--bg-input);color:var(--text);min-width:200px;cursor:pointer">
-        <option value="mine">🔥 ที่ฉันใช้บ่อย (30 วัน)</option>
-        <option value="global">🌐 ใช้บ่อยในระบบ (30 วัน)</option>
-        <option value="az">🔤 A → Z (ตามชื่อ)</option>
+      <select id="p-sort" style="padding:10px 14px;font-size:13.5px;border:1px solid var(--border);border-radius:10px;background:var(--bg-input);color:var(--text);min-width:180px;cursor:pointer">
+        <option value="mine">🔥 ที่ฉันใช้บ่อย</option>
+        <option value="global">🌐 ใช้บ่อยในระบบ</option>
+        <option value="az">🔤 A → Z</option>
       </select>
+      <select id="p-spotlight" style="padding:10px 14px;font-size:13.5px;border:1px solid var(--border);border-radius:10px;background:var(--bg-input);color:var(--text);min-width:200px;cursor:pointer">
+        <option value="">🔦 Spotlight: — ไม่เลือก —</option>
+      </select>
+    </div>
+    <div id="p-spotlight-legend" style="display:none;margin-bottom:14px;padding:10px 14px;background:var(--bg-soft);border-radius:10px;font-size:12px;color:var(--text-muted);line-height:1.7">
+      <strong style="color:var(--text)" id="p-spotlight-team-name"></strong> ใช้:
+      <span style="display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;background:rgba(16,185,129,.15);color:#15803d;font-weight:600;margin:0 4px">💚 ทีมใช้ + คุณใช้ได้</span>
+      <span style="display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;background:rgba(245,158,11,.15);color:#92400e;font-weight:600;margin:0 4px">💛 ทีมใช้ แต่คุณยังไม่มีสิทธิ์</span>
+      <span style="color:var(--text-soft);margin-left:8px">• ที่เหลือ = ทีมไม่ได้ใช้</span>
     </div>
 
     <div id="p-list">
@@ -2140,7 +2207,31 @@ async function renderPlatformsPage() {
     searchInput.value = ''; applyPlatformFilter(); searchInput.focus();
   });
 
+  // โหลด teams overview (background, ไม่ block UI)
+  fetchJson('/api/teams-overview').then(td => {
+    _teamsOverview = td.teams || [];
+    populateSpotlightDropdown();
+  }).catch(() => {});
+
+  // wire spotlight dropdown
+  $('p-spotlight').addEventListener('change', (e) => {
+    _spotlightTeamId = e.target.value ? parseInt(e.target.value, 10) : null;
+    renderPlatformsList();
+  });
+
   renderPlatformsList();
+}
+
+function populateSpotlightDropdown() {
+  const sel = $('p-spotlight');
+  if (!sel || !_teamsOverview) return;
+  // เก็บ value ปัจจุบัน
+  const cur = _spotlightTeamId;
+  sel.innerHTML = '<option value="">🔦 Spotlight: — ไม่เลือก —</option>' +
+    _teamsOverview.map(t =>
+      `<option value="${t.id}">🏷 ${escapeHtml(t.name)} (${t.site_ids.length} site)</option>`
+    ).join('');
+  if (cur) sel.value = String(cur);
 }
 
 function sortPlatforms(list, mode) {
@@ -2164,7 +2255,7 @@ function sortPlatforms(list, mode) {
 }
 
 function renderPlatformCard(s, opts) {
-  // opts: {disabled?: bool, showRequest?: bool, requestPending?: bool}
+  // opts: {disabled?: bool, requestPending?: bool, teamUses?: bool, teamName?: string}
   opts = opts || {};
   const url = patternToUrl(s.url_pattern);
   const initial = (s.name || '?').trim().charAt(0).toUpperCase();
@@ -2187,14 +2278,22 @@ function renderPlatformCard(s, opts) {
     ? `<div class="platform-avatar" style="background:#fff;padding:6px;overflow:hidden;${avatarStyle}"><img src="${s.logo_data}" alt="${escapeHtml(s.name)}" style="width:100%;height:100%;object-fit:contain;border-radius:8px" /></div>`
     : `<div class="platform-avatar" style="${avatarStyle}">${escapeHtml(initial)}</div>`;
 
+  // Spotlight team badge — มุมขวาบน
+  const teamBadge = opts.teamUses
+    ? `<div class="p-team-badge" title="${escapeHtml(opts.teamName || '')} ใช้ platform นี้">🏷 ${escapeHtml(opts.teamName || '')}</div>`
+    : '';
+
+  const dataAttrs = `data-search="${escapeHtml(searchKey)}" data-team-uses="${opts.teamUses ? '1' : '0'}"`;
+
   if (opts.disabled) {
-    // No-access card — gray + Request button
+    // No-access card
     const requestBtn = opts.requestPending
       ? `<button class="btn" disabled style="font-size:11.5px;padding:5px 10px;margin-top:8px;background:var(--bg-soft);color:var(--text-muted);cursor:not-allowed" title="รออนุมัติ">⏳ รออนุมัติ</button>`
       : `<button class="btn primary" data-req-id="${s.id}" data-req-name="${escapeHtml(s.name)}" style="font-size:11.5px;padding:5px 10px;margin-top:8px">🙏 ขอสิทธิ์</button>`;
     return `
-      <div class="platform-card platform-card-disabled" data-search="${escapeHtml(searchKey)}"
-           style="background:var(--bg-soft);border:1px dashed var(--border);cursor:default;text-decoration:none">
+      <div class="platform-card platform-card-disabled" ${dataAttrs}
+           style="background:var(--bg-soft);border:1px dashed var(--border);cursor:default;text-decoration:none;position:relative">
+        ${teamBadge}
         ${avatar}
         <div class="platform-name" style="color:var(--text-muted)">${escapeHtml(s.name)}</div>
         <div class="platform-url">${escapeHtml(displayUrl)}</div>
@@ -2208,7 +2307,8 @@ function renderPlatformCard(s, opts) {
 
   // Accessible card
   return `
-    <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="platform-card" data-search="${escapeHtml(searchKey)}">
+    <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="platform-card" ${dataAttrs} style="position:relative">
+      ${teamBadge}
       ${avatar}
       <div class="platform-name">${escapeHtml(s.name)}</div>
       <div class="platform-url">${escapeHtml(displayUrl)}</div>
@@ -2222,16 +2322,58 @@ function renderPlatformCard(s, opts) {
 
 function renderPlatformsList() {
   if (!_platformsData) return;
-  const accessible = sortPlatforms(_platformsData.accessible || [], _platformSort);
-  const noAccess = sortPlatforms(_platformsData.no_access || [], _platformSort);
+
+  // === Spotlight: คำนวณว่า site ไหน team ใช้บ้าง ===
+  let spotlightTeam = null;
+  let spotlightSiteIds = new Set();
+  if (_spotlightTeamId && _teamsOverview) {
+    spotlightTeam = _teamsOverview.find(t => t.id === _spotlightTeamId);
+    if (spotlightTeam) spotlightSiteIds = new Set(spotlightTeam.site_ids || []);
+  }
+
+  // Sort: ถ้า spotlight on → team ใช้ก่อน, ภายในนั้นค่อย sort ตาม mode
+  const sortBySpotlight = (list) => {
+    if (!spotlightTeam) return sortPlatforms(list, _platformSort);
+    const inTeam = sortPlatforms(list.filter(s => spotlightSiteIds.has(s.id)), _platformSort);
+    const others = sortPlatforms(list.filter(s => !spotlightSiteIds.has(s.id)), _platformSort);
+    return [...inTeam, ...others];
+  };
+  const accessible = sortBySpotlight(_platformsData.accessible || []);
+  const noAccess = sortBySpotlight(_platformsData.no_access || []);
+
+  // Apply spotlight class to root + show legend
+  const listEl = $('p-list');
+  if (listEl) listEl.classList.toggle('spotlight-on', !!spotlightTeam);
+  const legendEl = $('p-spotlight-legend');
+  if (legendEl) {
+    if (spotlightTeam) {
+      legendEl.style.display = '';
+      $('p-spotlight-team-name').textContent = `🏷 ${spotlightTeam.name}`;
+    } else {
+      legendEl.style.display = 'none';
+    }
+  }
+
+  const cardOpts = (s, baseOpts) => ({
+    ...baseOpts,
+    teamUses: spotlightSiteIds.has(s.id),
+    teamName: spotlightTeam ? spotlightTeam.name : '',
+  });
 
   const totalCount = accessible.length + noAccess.length;
-  $('p-count').textContent = `${accessible.length} เข้าถึงได้${noAccess.length > 0 ? ` · ${noAccess.length} ต้องขอ` : ''}`;
+  // count spotlight breakdown
+  let cnt = `${accessible.length} เข้าถึงได้${noAccess.length > 0 ? ` · ${noAccess.length} ต้องขอ` : ''}`;
+  if (spotlightTeam) {
+    const teamUseAccessible = accessible.filter(s => spotlightSiteIds.has(s.id)).length;
+    const teamUseNoAccess = noAccess.filter(s => spotlightSiteIds.has(s.id)).length;
+    cnt += ` · 🔦 ${teamUseAccessible}+${teamUseNoAccess} (ทีมใช้)`;
+  }
+  $('p-count').textContent = cnt;
 
   let html = '';
   if (accessible.length > 0) {
     html += `<div class="platform-grid" id="p-grid-yes">`;
-    html += accessible.map(s => renderPlatformCard(s, { disabled: false })).join('');
+    html += accessible.map(s => renderPlatformCard(s, cardOpts(s, { disabled: false }))).join('');
     html += `</div>`;
   } else if (totalCount > 0) {
     html += `<div class="empty" style="margin-bottom:16px">คุณยังไม่ได้รับสิทธิ์เข้าถึง platform ใด — กดขอสิทธิ์ที่ section ด้านล่าง</div>`;
@@ -2244,7 +2386,7 @@ function renderPlatformsList() {
         <span style="font-size:12px;color:var(--text-muted)">— กด "🙏 ขอสิทธิ์" → admin จะได้รับแจ้ง</span>
       </div>
       <div class="platform-grid" id="p-grid-no">
-        ${noAccess.map(s => renderPlatformCard(s, { disabled: true, requestPending: s.request_pending })).join('')}
+        ${noAccess.map(s => renderPlatformCard(s, cardOpts(s, { disabled: true, requestPending: s.request_pending }))).join('')}
       </div>
     `;
   }
