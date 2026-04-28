@@ -1125,20 +1125,21 @@ function openLogoSearchModal(domain, onSave) {
       thumb.addEventListener('mouseleave', () => { thumb.style.borderColor = 'var(--border)'; thumb.style.background = 'var(--bg-soft)'; });
       thumb.addEventListener('click', async () => {
         const url = thumb.dataset.url;
-        // Convert URL → DataURL via fetch + blob (cross-origin OK if image is no-cors readable)
+        // Show loading state
+        const orig = thumb.innerHTML;
+        thumb.style.pointerEvents = 'none';
+        thumb.style.opacity = '0.5';
+        thumb.innerHTML = '<div style="font-size:11px;color:var(--text-muted);text-align:center">⏳ กำลังโหลด...</div>';
+        // Use backend proxy to fetch image — bypass CORS
         try {
-          const resp = await fetch(url);
-          const blob = await resp.blob();
-          const dataUrl = await new Promise((resolve, reject) => {
-            const r = new FileReader();
-            r.onload = () => resolve(r.result);
-            r.onerror = reject;
-            r.readAsDataURL(blob);
-          });
+          const resp = await fetchJson('/api/admin/proxy-image?url=' + encodeURIComponent(url));
           close();
-          openCropModal(dataUrl, onSave);
+          openCropModal(resp.data_url, onSave);
         } catch (e) {
-          alert('โหลดภาพไม่สำเร็จ (CORS): ' + e.message + '\nลองดาวน์โหลดภาพแล้วอัพโหลดเอง');
+          thumb.style.pointerEvents = '';
+          thumb.style.opacity = '';
+          thumb.innerHTML = orig;
+          alert('โหลดภาพไม่สำเร็จ: ' + e.message + '\nลอง suggestion อื่น หรือดาวน์โหลดภาพแล้วอัพโหลดเอง');
         }
       });
     });

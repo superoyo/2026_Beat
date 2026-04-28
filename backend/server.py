@@ -2272,6 +2272,65 @@ def site_logo_suggestions(
     }
 
 
+# === Image proxy — แก้ CORS เมื่อ frontend อยาก fetch logo จาก external source ===
+import base64 as _b64
+from urllib import request as _urlreq
+from urllib.parse import urlparse as _urlparse
+
+_PROXY_ALLOWED_HOSTS = (
+    "logo.clearbit.com",
+    "www.google.com",
+    "icons.duckduckgo.com",
+    "icon.horse",
+    "external-content.duckduckgo.com",
+)
+_PROXY_MAX_BYTES = 2_000_000   # 2 MB
+_PROXY_TIMEOUT_SEC = 10
+
+
+@app.get("/api/admin/proxy-image")
+def proxy_image(
+    url: str,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """Proxy image fetch — bypass browser CORS เมื่อจะโหลด logo มา crop
+
+    Whitelist เฉพาะ host ที่ใช้สำหรับ logo suggestions
+    คืน data URL (base64) สำหรับ frontend ใช้ใน Cropper.js โดยตรง
+    """
+    if not (url.startswith("https://") or url.startswith("http://")):
+        raise HTTPException(status_code=400, detail="invalid URL scheme")
+    host = (_urlparse(url).hostname or "").lower()
+    if not any(host == h or host.endswith("." + h) for h in _PROXY_ALLOWED_HOSTS):
+        raise HTTPException(status_code=400, detail=f"host not allowed: {host}")
+
+    try:
+        req = _urlreq.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 FEFL-Beat/1.0",
+            "Accept": "image/png,image/jpeg,image/webp,image/svg+xml,image/*,*/*;q=0.8",
+        })
+        with _urlreq.urlopen(req, timeout=_PROXY_TIMEOUT_SEC) as resp:
+            ct = (resp.headers.get("Content-Type") or "image/png").split(";")[0].strip().lower()
+            if not ct.startswith("image/"):
+                # บาง endpoint ส่ง octet-stream มา — เดา PNG
+                ct = "image/png"
+            # Read with size limit
+            data = resp.read(_PROXY_MAX_BYTES + 1)
+            if len(data) > _PROXY_MAX_BYTES:
+                raise HTTPException(status_code=413, detail="image too large (>2MB)")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"fetch failed: {e.__class__.__name__}: {e}")
+
+    b64 = _b64.b64encode(data).decode("ascii")
+    return {
+        "data_url": f"data:{ct};base64,{b64}",
+        "size": len(data),
+        "content_type": ct,
+    }
+
+
 @app.get("/api/admin/sites")
 def list_sites(_sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
     """List ALL sites — ใช้กับหน้า Config (admin-only ในฝั่ง UI)
