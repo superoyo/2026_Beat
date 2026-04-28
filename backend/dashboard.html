@@ -570,70 +570,216 @@ async function openMemberSitesModal(memberId) {
     return;
   }
 
-  const m = data.member;
-  const display = m.display_name || m.email || m.phone || '?';
-  const initial = display.trim().charAt(0).toUpperCase();
-  const avatar = m.avatar_data
-    ? `<img src="${m.avatar_data}" alt="${escapeHtml(display)}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid var(--bg-card);box-shadow:var(--shadow-sm)" />`
-    : `<div style="width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:28px;display:inline-flex;align-items:center;justify-content:center">${escapeHtml(initial)}</div>`;
+  // เก็บ memberId + reload function สำหรับ drag/drop
+  let _modalMemberId = memberId;
+  const reloadModal = async () => {
+    try {
+      const fresh = await fetchJson(`/api/members/${memberId}/accessible-sites`);
+      data = fresh;
+      renderModalContent();
+    } catch (e) {
+      // ใช้ alert เพราะ dashboard ไม่มี toast helper เหมือน admin
+      alert('โหลดใหม่ไม่สำเร็จ: ' + e.message);
+    }
+  };
 
-  const teamBadges = (data.teams || []).length === 0
-    ? '<span style="color:var(--text-muted);font-size:12px;font-style:italic">— ยังไม่มีทีม —</span>'
-    : data.teams.map(t =>
-        `<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:500;background:rgba(37,99,235,.10);color:var(--primary);border:1px solid rgba(37,99,235,.20);margin-right:4px">${escapeHtml(t.name)}</span>`
-      ).join('');
+  const renderModalContent = () => {
+    const m = data.member;
+    const display = m.display_name || m.email || m.phone || '?';
+    const initial = display.trim().charAt(0).toUpperCase();
+    const avatar = m.avatar_data
+      ? `<img src="${m.avatar_data}" alt="${escapeHtml(display)}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid var(--bg-card);box-shadow:var(--shadow-sm)" />`
+      : `<div style="width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:28px;display:inline-flex;align-items:center;justify-content:center">${escapeHtml(initial)}</div>`;
 
-  const sites = data.sites || [];
-  const sitesGrid = sites.length === 0
-    ? `<div class="empty" style="padding:30px;background:var(--bg-soft);border-radius:10px">
-         🔒 ยังไม่มี platform ที่เข้าถึงได้<br/>
-         <span style="font-size:12px;color:var(--text-muted)">admin ยังไม่ได้ผูกทีม/ไม่ได้ direct grant</span>
-       </div>`
-    : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px">
-         ${sites.map(s => {
-           const sInitial = (s.name || '?').trim().charAt(0).toUpperCase();
-           const sAvatar = s.logo_data
-             ? `<div style="width:32px;height:32px;border-radius:8px;background:#fff;border:1px solid var(--border);overflow:hidden;flex-shrink:0;padding:3px"><img src="${s.logo_data}" alt="${escapeHtml(s.name)}" style="width:100%;height:100%;object-fit:contain" /></div>`
-             : `<div style="width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;font-weight:700;font-size:13px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(sInitial)}</div>`;
-           return `
-             <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px" title="${escapeHtml(s.name + ' · ' + (s.url_pattern || ''))}">
-               ${sAvatar}
-               <div style="flex:1;min-width:0;overflow:hidden">
-                 <div style="font-weight:600;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(s.name)}</div>
-                 <div style="font-size:10.5px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.cred_count || 0} บัญชี</div>
-               </div>
-             </div>
-           `;
-         }).join('')}
-       </div>`;
+    const teamBadges = (data.teams || []).length === 0
+      ? '<span style="color:var(--text-muted);font-size:12px;font-style:italic">— ยังไม่มีทีม —</span>'
+      : data.teams.map(t =>
+          `<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:500;background:rgba(37,99,235,.10);color:var(--primary);border:1px solid rgba(37,99,235,.20);margin-right:4px">${escapeHtml(t.name)}</span>`
+        ).join('');
 
-  bg.querySelector('#rm-modal-content').innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:18px;flex-wrap:wrap">
-      <div style="display:flex;align-items:center;gap:14px;flex:1;min-width:0">
-        ${avatar}
-        <div style="flex:1;min-width:0;overflow:hidden">
-          <div style="font-size:18px;font-weight:700;letter-spacing:-0.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(display)}</div>
-          ${m.email ? `<div style="font-size:13px;color:var(--text-muted);font-family:ui-monospace,Menlo,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">📧 ${escapeHtml(m.email)}</div>` : ''}
-          ${m.phone ? `<div style="font-size:12.5px;color:var(--text-muted);font-family:ui-monospace,Menlo,monospace">📞 ${escapeHtml(m.phone)}</div>` : ''}
-          <div style="font-size:11.5px;color:var(--text-soft);margin-top:2px">เข้ามา ${escapeHtml(fmtMemberJoinTime(m.created_at))}</div>
+    const sites = data.sites || [];
+    const noAccess = data.sites_no_access || [];
+    const canManage = !!data.viewer_can_manage;
+
+    // Render mini-card สำหรับแต่ละ site
+    const siteMiniCard = (s, draggable, side) => {
+      const sInitial = (s.name || '?').trim().charAt(0).toUpperCase();
+      const sAvatar = s.logo_data
+        ? `<div style="width:30px;height:30px;border-radius:7px;background:#fff;border:1px solid var(--border);overflow:hidden;flex-shrink:0;padding:3px"><img src="${s.logo_data}" alt="${escapeHtml(s.name)}" style="width:100%;height:100%;object-fit:contain" /></div>`
+        : `<div style="width:30px;height:30px;border-radius:7px;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;font-weight:700;font-size:12.5px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(sInitial)}</div>`;
+      const dragHandle = draggable
+        ? '<span style="color:var(--text-muted);font-size:13px;line-height:1;cursor:grab" title="ลาก">⋮⋮</span>'
+        : '';
+      const searchKey = (s.name + ' ' + (s.url_pattern || '')).toLowerCase();
+      return `
+        <div class="rm-site-item" ${draggable ? 'draggable="true"' : ''} data-site-id="${s.id}" data-side="${side}" data-search="${escapeHtml(searchKey)}"
+             style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;${draggable ? 'cursor:grab;' : ''}font-size:12.5px;transition:all .15s"
+             title="${escapeHtml(s.name + ' · ' + (s.url_pattern || ''))}">
+          ${dragHandle}
+          ${sAvatar}
+          <div style="flex:1;min-width:0;overflow:hidden">
+            <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(s.name)}</div>
+            <div style="font-size:10.5px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.cred_count || 0} บัญชี</div>
+          </div>
         </div>
-      </div>
-      <button id="rm-modal-close" style="background:var(--bg-soft);border:1px solid var(--border);border-radius:8px;padding:7px 14px;cursor:pointer;flex-shrink:0;font-family:inherit;font-size:13px">✕ ปิด</button>
-    </div>
+      `;
+    };
 
-    <div style="margin-bottom:14px">
-      <div style="font-size:11.5px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">🏷 ทีม</div>
-      <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center">${teamBadges}</div>
-    </div>
+    let sitesContent;
+    if (canManage) {
+      // === 2-zone layout (admin only) ===
+      const accessibleHtml = sites.length === 0
+        ? '<div class="empty" style="padding:18px 12px;font-size:12px">ยังไม่มี — ลากจากด้านขวามาที่นี่</div>'
+        : sites.map(s => siteMiniCard(s, false, 'accessible')).join('');
+      const noAccessHtml = noAccess.length === 0
+        ? '<div class="empty" style="padding:18px 12px;font-size:12px">เข้าถึงครบทุก site แล้ว 🎉</div>'
+        : noAccess.map(s => siteMiniCard(s, true, 'no-access')).join('');
 
-    <div>
-      <div style="font-size:11.5px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">
-        🌐 Platform ที่เข้าถึงได้ <span style="font-weight:500;color:var(--text-soft)">(${sites.length})</span>
+      sitesContent = `
+        <div class="hint" style="margin-bottom:10px;font-size:12px;color:var(--text-muted);line-height:1.5">
+          💡 ลาก site จาก <strong>"ใช้ไม่ได้"</strong> ขวามือ มาที่ <strong>"ใช้ได้"</strong> ซ้ายมือ → ระบบจะให้ direct grant ทุก credential ของ site นั้นกับ ${escapeHtml(display)}
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+
+          <!-- ใช้ได้ -->
+          <div class="rm-zone" data-zone-side="accessible"
+               style="background:rgba(16,185,129,.04);border:1.5px dashed rgba(16,185,129,.30);border-radius:10px;padding:10px;min-height:240px;transition:all .2s">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <div style="font-weight:700;font-size:13px;color:#15803d">✓ ใช้ได้</div>
+              <span style="font-size:11px;color:var(--text-muted)" id="rm-acc-count">(${sites.length})</span>
+            </div>
+            <div class="rm-zone-list" data-list-side="accessible" style="display:flex;flex-direction:column;gap:5px;max-height:340px;overflow-y:auto">
+              ${accessibleHtml}
+            </div>
+          </div>
+
+          <!-- ใช้ไม่ได้ (drag source) -->
+          <div class="rm-zone" data-zone-side="no-access"
+               style="background:var(--bg-soft);border:1.5px dashed var(--border);border-radius:10px;padding:10px;min-height:240px;transition:all .2s">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <div style="font-weight:700;font-size:13px;color:var(--text-muted)">🔒 ใช้ไม่ได้</div>
+              <span style="font-size:11px;color:var(--text-muted)" id="rm-noacc-count">(${noAccess.length})</span>
+            </div>
+            <input type="text" id="rm-noacc-search" placeholder="🔍 ค้นหา site..." autocomplete="off"
+                   style="width:100%;padding:6px 9px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text);margin-bottom:6px;font-family:inherit" />
+            <div class="rm-zone-list" data-list-side="no-access" style="display:flex;flex-direction:column;gap:5px;max-height:340px;overflow-y:auto">
+              ${noAccessHtml}
+            </div>
+          </div>
+
+        </div>
+      `;
+    } else {
+      // === 1-zone layout (read-only, member viewer) ===
+      sitesContent = sites.length === 0
+        ? `<div class="empty" style="padding:30px;background:var(--bg-soft);border-radius:10px">
+             🔒 ยังไม่มี platform ที่เข้าถึงได้<br/>
+             <span style="font-size:12px;color:var(--text-muted)">admin ยังไม่ได้ผูกทีม/ไม่ได้ direct grant</span>
+           </div>`
+        : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px">
+             ${sites.map(s => siteMiniCard(s, false, 'accessible')).join('')}
+           </div>`;
+    }
+
+    bg.querySelector('#rm-modal-content').innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:18px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:14px;flex:1;min-width:0">
+          ${avatar}
+          <div style="flex:1;min-width:0;overflow:hidden">
+            <div style="font-size:18px;font-weight:700;letter-spacing:-0.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(display)}</div>
+            ${m.email ? `<div style="font-size:13px;color:var(--text-muted);font-family:ui-monospace,Menlo,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">📧 ${escapeHtml(m.email)}</div>` : ''}
+            ${m.phone ? `<div style="font-size:12.5px;color:var(--text-muted);font-family:ui-monospace,Menlo,monospace">📞 ${escapeHtml(m.phone)}</div>` : ''}
+            <div style="font-size:11.5px;color:var(--text-soft);margin-top:2px">เข้ามา ${escapeHtml(fmtMemberJoinTime(m.created_at))}</div>
+          </div>
+        </div>
+        <button id="rm-modal-close" style="background:var(--bg-soft);border:1px solid var(--border);border-radius:8px;padding:7px 14px;cursor:pointer;flex-shrink:0;font-family:inherit;font-size:13px">✕ ปิด</button>
       </div>
-      ${sitesGrid}
-    </div>
-  `;
-  bg.querySelector('#rm-modal-close').addEventListener('click', close);
+
+      <div style="margin-bottom:14px">
+        <div style="font-size:11.5px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">🏷 ทีม</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center">${teamBadges}</div>
+      </div>
+
+      <div>
+        <div style="font-size:11.5px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">
+          🌐 Platform ที่เข้าถึงได้ <span style="font-weight:500;color:var(--text-soft)">(${sites.length}${canManage ? ' / ' + (sites.length + noAccess.length) : ''})</span>
+        </div>
+        ${sitesContent}
+      </div>
+    `;
+    bg.querySelector('#rm-modal-close').addEventListener('click', close);
+
+    if (canManage) wireDragDrop();
+  };
+
+  const wireDragDrop = () => {
+    const root = bg.querySelector('#rm-modal-content');
+
+    // Search filter for no-access zone
+    const searchEl = bg.querySelector('#rm-noacc-search');
+    if (searchEl) {
+      searchEl.addEventListener('input', () => {
+        const q = searchEl.value.toLowerCase().trim();
+        root.querySelectorAll('.rm-zone-list[data-list-side="no-access"] .rm-site-item').forEach(item => {
+          const key = item.dataset.search || '';
+          item.style.display = (!q || key.includes(q)) ? '' : 'none';
+        });
+      });
+    }
+
+    // Drag handlers
+    root.querySelectorAll('.rm-site-item[draggable="true"]').forEach(item => {
+      item.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', JSON.stringify({
+          siteId: parseInt(item.dataset.siteId, 10),
+          fromSide: item.dataset.side,
+        }));
+        e.dataTransfer.effectAllowed = 'move';
+        item.style.opacity = '0.4';
+      });
+      item.addEventListener('dragend', () => { item.style.opacity = ''; });
+    });
+
+    root.querySelectorAll('.rm-zone').forEach(zone => {
+      const side = zone.dataset.zoneSide;
+      zone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        zone.style.borderStyle = 'solid';
+        if (side === 'accessible') {
+          zone.style.background = 'rgba(16,185,129,.10)';
+        }
+      });
+      zone.addEventListener('dragleave', (e) => {
+        if (!zone.contains(e.relatedTarget)) {
+          zone.style.borderStyle = 'dashed';
+          zone.style.background = side === 'accessible' ? 'rgba(16,185,129,.04)' : 'var(--bg-soft)';
+        }
+      });
+      zone.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        zone.style.borderStyle = 'dashed';
+        zone.style.background = side === 'accessible' ? 'rgba(16,185,129,.04)' : 'var(--bg-soft)';
+        let payload;
+        try { payload = JSON.parse(e.dataTransfer.getData('text/plain')); } catch { return; }
+        if (payload.fromSide === side) return;   // drop ใน zone เดิม
+        // เฉพาะ no-access → accessible (grant) — เป็น direction หลักที่ user ขอ
+        if (payload.fromSide !== 'no-access' || side !== 'accessible') return;
+
+        try {
+          await fetchJson(`/api/admin/members/${_modalMemberId}/site-direct-access/${payload.siteId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ grant: true }),
+          });
+          await reloadModal();
+        } catch (err) {
+          alert('ให้สิทธิ์ไม่สำเร็จ: ' + err.message);
+        }
+      });
+    });
+  };
+
+  renderModalContent();
 }
 
 // Format time: วันนี้ HH:MM / เมื่อวาน HH:MM / D MMM HH:MM

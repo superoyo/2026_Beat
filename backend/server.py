@@ -3607,11 +3607,21 @@ def teams_overview(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
 @app.get("/api/members/{member_id}/accessible-sites")
 def member_accessible_sites(
     member_id: int,
-    _auth: str = Depends(require_any_auth),
+    sess: dict = Depends(require_admin_or_member),
 ) -> dict[str, Any]:
     """รายชื่อ platform ที่ member นี้เข้าถึงได้ — เปิดให้ทุก logged-in user
-    (ใช้ใน Dashboard "Member ใหม่" → คลิก profile)
+
+    Admin viewer (super หรือ member-admin) จะได้รับ:
+      - sites_no_access[]: site ที่ member ยังไม่มีสิทธิ์ → drag-drop เพิ่มได้
+      - viewer_can_manage = true
+    Member viewer (ปกติ) จะได้รับเฉพาะ accessible (read-only)
     """
+    # ตรวจ role ของ viewer
+    can_manage = (
+        sess.get("role") == "admin"
+        or (sess.get("role") == "member" and _member_is_admin(sess.get("member_id", 0)))
+    )
+
     with db_conn() as conn:
         member = conn.execute(
             "SELECT id, display_name, email, phone, avatar_data, created_at "
@@ -3621,7 +3631,7 @@ def member_accessible_sites(
         if not member:
             raise HTTPException(status_code=404, detail="member not found")
 
-        sites = conn.execute(
+        accessible = conn.execute(
             """
             SELECT DISTINCT s.id, s.name, s.url_pattern, s.logo_data,
                    (SELECT COUNT(*) FROM credentials c WHERE c.site_id = s.id) AS cred_count
@@ -3648,10 +3658,34 @@ def member_accessible_sites(
             (member_id,),
         ).fetchall()
 
+        # Admin viewer → ดึง no_access ด้วย
+        no_access = []
+        if can_manage:
+            no_access = conn.execute(
+                """
+                SELECT s.id, s.name, s.url_pattern, s.logo_data,
+                       (SELECT COUNT(*) FROM credentials c WHERE c.site_id = s.id) AS cred_count
+                FROM sites s
+                WHERE s.id NOT IN (
+                    SELECT ts.site_id FROM team_sites ts
+                    JOIN team_members tm ON tm.team_id = ts.team_id
+                    WHERE tm.member_id = ?
+                    UNION
+                    SELECT c.site_id FROM credentials c
+                    JOIN credential_members cm ON cm.credential_id = c.id
+                    WHERE cm.member_id = ?
+                )
+                ORDER BY s.name COLLATE NOCASE
+                """,
+                (member_id, member_id),
+            ).fetchall()
+
     return {
         "member": dict(member),
         "teams": [dict(t) for t in teams],
-        "sites": [dict(s) for s in sites],
+        "sites": [dict(s) for s in accessible],
+        "sites_no_access": [dict(s) for s in no_access] if can_manage else [],
+        "viewer_can_manage": can_manage,
     }
 
 
