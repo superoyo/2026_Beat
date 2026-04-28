@@ -3646,12 +3646,10 @@ def member_accessible_sites(
 ) -> dict[str, Any]:
     """รายชื่อ platform ที่ member นี้เข้าถึงได้ — เปิดให้ทุก logged-in user
 
-    Admin viewer (super หรือ member-admin) จะได้รับ:
-      - sites_no_access[]: site ที่ member ยังไม่มีสิทธิ์ → drag-drop เพิ่มได้
-      - viewer_can_manage = true
-    Member viewer (ปกติ) จะได้รับเฉพาะ accessible (read-only)
+    คืนแต่ละ site พร้อม access breakdown:
+      - via_teams: [{id, name, access_type}, ...] — ทีมที่ grant site นี้
+      - direct_credentials: int — จำนวน credential ที่ direct grant
     """
-    # ตรวจ role ของ viewer
     can_manage = (
         sess.get("role") == "admin"
         or (sess.get("role") == "member" and _member_is_admin(sess.get("member_id", 0)))
@@ -3685,7 +3683,6 @@ def member_accessible_sites(
             (member_id, member_id),
         ).fetchall()
 
-        # ดึงทีมที่ member นี้อยู่ — ให้ context
         teams = conn.execute(
             "SELECT t.id, t.name "
             "FROM team_members tm JOIN teams t ON t.id = tm.team_id "
@@ -3693,7 +3690,35 @@ def member_accessible_sites(
             (member_id,),
         ).fetchall()
 
-        # Admin viewer → ดึง no_access ด้วย
+        # Per-site access breakdown — เพื่อแสดงว่า "ใช้ได้เพราะ team / direct" ในแต่ละ card
+        team_access_rows = conn.execute(
+            """
+            SELECT ts.site_id, t.id AS team_id, t.name AS team_name, ts.access_type
+            FROM team_members tm
+            JOIN team_sites ts ON ts.team_id = tm.team_id
+            JOIN teams t ON t.id = tm.team_id
+            WHERE tm.member_id = ?
+            """,
+            (member_id,),
+        ).fetchall()
+        team_by_site: dict[int, list[dict[str, Any]]] = {}
+        for r in team_access_rows:
+            team_by_site.setdefault(r["site_id"], []).append({
+                "id": r["team_id"], "name": r["team_name"], "access_type": r["access_type"],
+            })
+
+        direct_rows = conn.execute(
+            """
+            SELECT c.site_id, COUNT(DISTINCT c.id) AS n
+            FROM credential_members cm
+            JOIN credentials c ON c.id = cm.credential_id
+            WHERE cm.member_id = ?
+            GROUP BY c.site_id
+            """,
+            (member_id,),
+        ).fetchall()
+        direct_by_site = {r["site_id"]: r["n"] for r in direct_rows}
+
         no_access = []
         if can_manage:
             no_access = conn.execute(
@@ -3715,10 +3740,18 @@ def member_accessible_sites(
                 (member_id, member_id),
             ).fetchall()
 
+    # แนบ via_teams + direct_credentials ให้แต่ละ accessible site
+    accessible_data = []
+    for s in accessible:
+        sd = dict(s)
+        sd["via_teams"] = team_by_site.get(sd["id"], [])
+        sd["direct_credentials"] = direct_by_site.get(sd["id"], 0)
+        accessible_data.append(sd)
+
     return {
         "member": dict(member),
         "teams": [dict(t) for t in teams],
-        "sites": [dict(s) for s in accessible],
+        "sites": accessible_data,
         "sites_no_access": [dict(s) for s in no_access] if can_manage else [],
         "viewer_can_manage": can_manage,
     }

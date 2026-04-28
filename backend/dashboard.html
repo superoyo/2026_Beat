@@ -609,12 +609,19 @@ async function openMemberSitesModal(memberId) {
       : data.teams.map(t =>
           `<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:500;background:rgba(37,99,235,.10);color:var(--primary);border:1px solid rgba(37,99,235,.20);margin-right:4px">${escapeHtml(t.name)}</span>`
         ).join('');
+    // Admin only: button "+ เพิ่มทีม" + popover รายชื่อทีมที่ยังไม่ได้อยู่
+    const addTeamUI = data.viewer_can_manage ? `
+      <div style="position:relative;display:inline-block;margin-left:4px">
+        <button id="rm-add-team-btn" type="button" style="background:var(--bg-soft);border:1px dashed var(--border);color:var(--text-muted);font-size:11px;font-weight:500;padding:2px 9px;border-radius:999px;cursor:pointer;font-family:inherit">+ เพิ่มทีม</button>
+        <div id="rm-add-team-popover" hidden style="position:absolute;top:100%;left:0;margin-top:4px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:6px;box-shadow:0 6px 18px rgba(0,0,0,.12);z-index:1100;min-width:220px;max-height:300px;overflow-y:auto"></div>
+      </div>
+    ` : '';
 
     const sites = data.sites || [];
     const noAccess = data.sites_no_access || [];
     const canManage = !!data.viewer_can_manage;
 
-    // Render mini-card สำหรับแต่ละ site
+    // Render mini-card สำหรับแต่ละ site (พร้อม access source badges)
     const siteMiniCard = (s, draggable, side) => {
       const sInitial = (s.name || '?').trim().charAt(0).toUpperCase();
       const sAvatar = s.logo_data
@@ -624,15 +631,32 @@ async function openMemberSitesModal(memberId) {
         ? '<span style="color:var(--text-muted);font-size:13px;line-height:1;cursor:grab" title="ลาก">⋮⋮</span>'
         : '';
       const searchKey = (s.name + ' ' + (s.url_pattern || '')).toLowerCase();
+
+      // Access source badges (เฉพาะ accessible side)
+      let badges = '';
+      if (side === 'accessible') {
+        const teamBadges = (s.via_teams || []).map(t =>
+          `<span style="display:inline-flex;align-items:center;gap:2px;padding:1px 6px;border-radius:999px;font-size:9.5px;font-weight:600;background:rgba(16,185,129,.10);color:#15803d;border:1px solid rgba(16,185,129,.20);white-space:nowrap" title="ทีม ${escapeHtml(t.name)} (${t.access_type})">🟢 ${escapeHtml(t.name)}</span>`
+        ).join('');
+        const directBadge = (s.direct_credentials > 0)
+          ? `<span style="display:inline-flex;align-items:center;gap:2px;padding:1px 6px;border-radius:999px;font-size:9.5px;font-weight:600;background:rgba(37,99,235,.10);color:var(--primary);border:1px solid rgba(37,99,235,.20);white-space:nowrap" title="Direct grant ${s.direct_credentials} credential">🔵 Direct</span>`
+          : '';
+        const allBadges = [teamBadges, directBadge].filter(Boolean).join('');
+        if (allBadges) {
+          badges = `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px;line-height:1.3">${allBadges}</div>`;
+        }
+      }
+
       return `
         <div class="rm-site-item" ${draggable ? 'draggable="true"' : ''} data-site-id="${s.id}" data-side="${side}" data-search="${escapeHtml(searchKey)}"
-             style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;${draggable ? 'cursor:grab;' : ''}font-size:12.5px;transition:all .15s"
+             style="display:flex;align-items:flex-start;gap:8px;padding:7px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;${draggable ? 'cursor:grab;' : ''}font-size:12.5px;transition:all .15s"
              title="${escapeHtml(s.name + ' · ' + (s.url_pattern || ''))}">
           ${dragHandle}
           ${sAvatar}
           <div style="flex:1;min-width:0;overflow:hidden">
             <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(s.name)}</div>
             <div style="font-size:10.5px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.cred_count || 0} บัญชี</div>
+            ${badges}
           </div>
         </div>
       `;
@@ -710,7 +734,7 @@ async function openMemberSitesModal(memberId) {
 
       <div style="margin-bottom:14px">
         <div style="font-size:11.5px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">🏷 ทีม</div>
-        <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center">${teamBadges}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center">${teamBadges}${addTeamUI}</div>
       </div>
 
       <div>
@@ -722,7 +746,75 @@ async function openMemberSitesModal(memberId) {
     `;
     bg.querySelector('#rm-modal-close').addEventListener('click', close);
 
-    if (canManage) wireDragDrop();
+    if (canManage) {
+      wireDragDrop();
+      wireAddTeamPopover();
+    }
+  };
+
+  // Add Team popover — load all teams, exclude already-in, click to add
+  const wireAddTeamPopover = () => {
+    const btn = bg.querySelector('#rm-add-team-btn');
+    const popover = bg.querySelector('#rm-add-team-popover');
+    if (!btn || !popover) return;
+
+    const closePopover = () => { popover.hidden = true; };
+    const openPopover = async () => {
+      popover.hidden = false;
+      popover.innerHTML = '<div style="padding:14px;color:var(--text-muted);font-size:12px;text-align:center">กำลังโหลด…</div>';
+      try {
+        const tov = await fetchJson('/api/teams-overview');
+        const allTeams = tov.teams || [];
+        const inIds = new Set((data.teams || []).map(t => t.id));
+        const candidates = allTeams.filter(t => !inIds.has(t.id));
+        if (candidates.length === 0) {
+          popover.innerHTML = '<div style="padding:14px;color:var(--text-muted);font-size:12px;text-align:center">อยู่ในทุกทีมแล้ว 🎉</div>';
+          return;
+        }
+        popover.innerHTML = candidates.map(t => `
+          <button class="rm-team-opt" data-team-id="${t.id}"
+                  style="display:block;width:100%;text-align:left;padding:8px 11px;background:transparent;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-size:12.5px;color:var(--text);transition:background .12s">
+            <div style="font-weight:600">${escapeHtml(t.name)}</div>
+            <div style="font-size:10.5px;color:var(--text-muted);margin-top:1px">${t.member_count} member · ${(t.site_ids || []).length} site${t.description ? ' · ' + escapeHtml(t.description) : ''}</div>
+          </button>
+        `).join('');
+        // Wire click on each option
+        popover.querySelectorAll('.rm-team-opt').forEach(opt => {
+          opt.addEventListener('mouseenter', () => { opt.style.background = 'var(--bg-hover)'; });
+          opt.addEventListener('mouseleave', () => { opt.style.background = 'transparent'; });
+          opt.addEventListener('click', async () => {
+            const tid = parseInt(opt.dataset.teamId, 10);
+            opt.disabled = true;
+            opt.innerHTML = '<div style="padding:6px;font-size:12px;color:var(--text-muted)">⏳ กำลังเพิ่ม...</div>';
+            try {
+              await fetchJson(`/api/admin/teams/${tid}/members`, {
+                method: 'POST',
+                body: JSON.stringify({ member_id: _modalMemberId }),
+              });
+              closePopover();
+              await reloadModal();
+            } catch (err) {
+              alert('เพิ่มไม่สำเร็จ: ' + err.message);
+              await openPopover();   // refresh list
+            }
+          });
+        });
+      } catch (e) {
+        popover.innerHTML = `<div style="padding:14px;color:var(--critical);font-size:12px;text-align:center">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+      }
+    };
+
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (popover.hidden) openPopover();
+      else closePopover();
+    });
+    // Close on outside click
+    document.addEventListener('click', function outsideClose(e) {
+      if (!btn.contains(e.target) && !popover.contains(e.target)) {
+        closePopover();
+      }
+    }, { once: false });
   };
 
   const wireDragDrop = () => {
