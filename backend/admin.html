@@ -550,42 +550,52 @@
       background: rgba(146, 64, 14, .12); padding: 1px 5px; border-radius: 4px;
     }
 
-    /* Platforms grid */
+    /* Platforms grid — compact 2-col rows (logo | info) */
     .platform-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-      gap: 14px;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 10px;
     }
     .platform-card {
-      display: block;
+      display: flex;
+      align-items: center;
+      gap: 12px;
       background: var(--bg-card);
       border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 18px;
+      border-radius: 12px;
+      padding: 12px 14px;
       text-decoration: none;
       color: var(--text);
       box-shadow: var(--shadow-sm);
       transition: all .15s;
+      min-height: 64px;
     }
     .platform-card:hover {
       border-color: var(--primary);
       box-shadow: var(--shadow-md);
-      transform: translateY(-2px);
+      transform: translateY(-1px);
       text-decoration: none;
+    }
+    .platform-card-info {
+      flex: 1;
+      min-width: 0;       /* IMPORTANT — ทำให้ truncate ทำงาน */
+      overflow: hidden;
     }
 
     /* === Spotlight team filter — highlight platforms that selected team uses === */
-    /* Team badge — มุมขวาบนของ card */
+    /* Team badge — มุมขวาบนของ card (เล็กลง สำหรับ compact layout) */
     .p-team-badge {
-      position: absolute; top: 10px; right: 10px;
+      position: absolute; top: 6px; right: 8px;
       background: rgba(124, 58, 237, .14);
       color: #6d28d9;
-      font-size: 10.5px; font-weight: 700;
-      padding: 2px 9px;
+      font-size: 9.5px; font-weight: 700;
+      padding: 1px 7px;
       border-radius: 999px;
       border: 1px solid rgba(124, 58, 237, .25);
       pointer-events: none;
       z-index: 2;
+      max-width: 110px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     /* When spotlight is on, dim cards that team doesn't use */
     #p-list.spotlight-on .platform-card[data-team-uses="0"] {
@@ -630,29 +640,35 @@
       border-color: rgba(245, 158, 11, .40);
     }
     .platform-avatar {
-      width: 44px; height: 44px; border-radius: 11px;
+      width: 44px; height: 44px; border-radius: 10px;
       background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
-      color: #fff; font-weight: 700; font-size: 18px;
+      color: #fff; font-weight: 700; font-size: 17px;
       display: inline-flex; align-items: center; justify-content: center;
-      margin-bottom: 12px;
-      box-shadow: 0 4px 10px rgba(37, 99, 235, .25);
+      flex-shrink: 0;
+      box-shadow: 0 3px 8px rgba(37, 99, 235, .20);
     }
     .platform-name {
-      font-size: 15.5px; font-weight: 600; letter-spacing: -0.01em;
+      font-size: 14px; font-weight: 600; letter-spacing: -0.01em;
+      line-height: 1.3;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .platform-url {
-      font-size: 12px; color: var(--text-muted);
+      font-size: 11.5px; color: var(--text-muted);
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      margin-top: 4px; word-break: break-all;
+      margin-top: 1px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .platform-meta {
-      font-size: 11.5px; color: var(--text-soft);
-      margin-top: 12px; padding-top: 10px;
-      border-top: 1px solid var(--border);
-      display: flex; justify-content: space-between; align-items: center;
+      font-size: 11px; color: var(--text-soft);
+      margin-top: 5px;
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+      white-space: nowrap; overflow: hidden;
+    }
+    .platform-meta > span:first-child {
+      overflow: hidden; text-overflow: ellipsis;
     }
     .platform-meta .open {
-      color: var(--primary); font-weight: 500;
+      color: var(--primary); font-weight: 500; flex-shrink: 0;
     }
 
     /* Code/key display block */
@@ -2275,7 +2291,7 @@ function renderPlatformCard(s, opts) {
     ? 'filter:grayscale(0.85);opacity:.55'
     : '';
   const avatar = s.logo_data
-    ? `<div class="platform-avatar" style="background:#fff;padding:6px;overflow:hidden;${avatarStyle}"><img src="${s.logo_data}" alt="${escapeHtml(s.name)}" style="width:100%;height:100%;object-fit:contain;border-radius:8px" /></div>`
+    ? `<div class="platform-avatar" style="background:#fff;padding:5px;overflow:hidden;${avatarStyle}"><img src="${s.logo_data}" alt="${escapeHtml(s.name)}" style="width:100%;height:100%;object-fit:contain;border-radius:7px" /></div>`
     : `<div class="platform-avatar" style="${avatarStyle}">${escapeHtml(initial)}</div>`;
 
   // Spotlight team badge — มุมขวาบน
@@ -2284,37 +2300,42 @@ function renderPlatformCard(s, opts) {
     : '';
 
   const dataAttrs = `data-search="${escapeHtml(searchKey)}" data-team-uses="${opts.teamUses ? '1' : '0'}"`;
+  const titleAttr = `title="${escapeHtml(s.name + ' · ' + displayUrl)}"`;
 
   if (opts.disabled) {
-    // No-access card
+    // No-access card — compact layout
     const requestBtn = opts.requestPending
-      ? `<button class="btn" disabled style="font-size:11.5px;padding:5px 10px;margin-top:8px;background:var(--bg-soft);color:var(--text-muted);cursor:not-allowed" title="รออนุมัติ">⏳ รออนุมัติ</button>`
-      : `<button class="btn primary" data-req-id="${s.id}" data-req-name="${escapeHtml(s.name)}" style="font-size:11.5px;padding:5px 10px;margin-top:8px">🙏 ขอสิทธิ์</button>`;
+      ? `<button class="btn" disabled style="font-size:10.5px;padding:3px 8px;background:var(--bg-soft);color:var(--text-muted);cursor:not-allowed;flex-shrink:0" title="รออนุมัติ">⏳ รออนุมัติ</button>`
+      : `<button class="btn primary" data-req-id="${s.id}" data-req-name="${escapeHtml(s.name)}" style="font-size:10.5px;padding:3px 8px;flex-shrink:0">🙏 ขอสิทธิ์</button>`;
     return `
-      <div class="platform-card platform-card-disabled" ${dataAttrs}
+      <div class="platform-card platform-card-disabled" ${dataAttrs} ${titleAttr}
            style="background:var(--bg-soft);border:1px dashed var(--border);cursor:default;text-decoration:none;position:relative">
         ${teamBadge}
         ${avatar}
-        <div class="platform-name" style="color:var(--text-muted)">${escapeHtml(s.name)}</div>
-        <div class="platform-url">${escapeHtml(displayUrl)}</div>
-        <div class="platform-meta" style="color:var(--text-soft)">
-          ${stats.length ? stats.join(' · ') : '<span>' + credLabel + '</span>'}
+        <div class="platform-card-info">
+          <div class="platform-name" style="color:var(--text-muted)">${escapeHtml(s.name)}</div>
+          <div class="platform-url">${escapeHtml(displayUrl)}</div>
+          <div class="platform-meta" style="color:var(--text-soft)">
+            <span>${stats.length ? stats.join(' · ') : credLabel}</span>
+            ${requestBtn}
+          </div>
         </div>
-        ${requestBtn}
       </div>
     `;
   }
 
-  // Accessible card
+  // Accessible card — compact layout
   return `
-    <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="platform-card" ${dataAttrs} style="position:relative">
+    <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="platform-card" ${dataAttrs} ${titleAttr} style="position:relative">
       ${teamBadge}
       ${avatar}
-      <div class="platform-name">${escapeHtml(s.name)}</div>
-      <div class="platform-url">${escapeHtml(displayUrl)}</div>
-      <div class="platform-meta">
-        ${stats.length ? `<span>${stats.join(' · ')}</span>` : `<span>${credLabel}</span>`}
-        <span class="open">เปิดเว็บ →</span>
+      <div class="platform-card-info">
+        <div class="platform-name">${escapeHtml(s.name)}</div>
+        <div class="platform-url">${escapeHtml(displayUrl)}</div>
+        <div class="platform-meta">
+          <span>${stats.length ? stats.join(' · ') : credLabel}</span>
+          <span class="open">→</span>
+        </div>
       </div>
     </a>
   `;
