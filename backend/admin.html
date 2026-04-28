@@ -2418,13 +2418,30 @@ function renderTeamMembers(teamId, members) {
       ? '<div class="empty">ยังไม่มี member ในทีม</div>'
       : members.map(m => {
           const display = m.display_name || m.email || m.phone;
+          // v1.14 — extra direct grants (sites ที่ member มีสิทธิ์โดยตรง แต่ team ไม่ได้ผูกไว้)
+          const extras = m.extra_sites || [];
+          const extraCapsules = extras.length === 0 ? '' : `
+            <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:5px;align-items:center">
+              <span style="font-size:11px;color:var(--text-muted);font-weight:500">นอกเหนือจากทีม:</span>
+              ${extras.map(es => `
+                <span class="extra-cap" data-mid="${m.id}" data-sid="${es.id}" data-sname="${escapeHtml(es.name)}"
+                      style="display:inline-flex;align-items:center;gap:5px;padding:2px 4px 2px 9px;border-radius:999px;font-size:11px;font-weight:500;background:rgba(124,58,237,.10);color:var(--accent);border:1px solid rgba(124,58,237,.20)">
+                  🔵 ${escapeHtml(es.name)}
+                  <button class="extra-cap-x" data-mid="${m.id}" data-sid="${es.id}" data-sname="${escapeHtml(es.name)}"
+                          title="ลบ direct grant ของ ${escapeHtml(es.name)}"
+                          style="border:none;background:rgba(220,38,38,.10);color:var(--critical);width:16px;height:16px;border-radius:999px;cursor:pointer;font-size:10px;line-height:1;padding:0;display:inline-flex;align-items:center;justify-content:center">×</button>
+                </span>
+              `).join('')}
+            </div>
+          `;
           return `
-            <div class="card" style="display:flex;justify-content:space-between;align-items:center">
-              <div>
+            <div class="card" style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px">
+              <div style="flex:1;min-width:0">
                 <div class="card-title">${escapeHtml(display)}</div>
                 <div class="card-sub">${escapeHtml(m.phone)}${m.email ? ' · ' + escapeHtml(m.email) : ''}${m.enabled === 0 ? ' · <span style="color:var(--critical)">⛔ ระงับ</span>' : ''}</div>
+                ${extraCapsules}
               </div>
-              <button class="btn danger" data-rm="${m.id}" style="font-size:12.5px;padding:6px 12px">ลบออก</button>
+              <button class="btn danger" data-rm="${m.id}" style="font-size:12.5px;padding:6px 12px;flex-shrink:0">ลบออก</button>
             </div>
           `;
         }).join('')}
@@ -2437,6 +2454,26 @@ function renderTeamMembers(teamId, members) {
       if (!confirm('ลบ member ออกจากทีม?')) return;
       await fetchJson(`/api/admin/teams/${teamId}/members/${b.dataset.rm}`, { method: 'DELETE' });
       await loadTeamDetail(teamId);
+    });
+  });
+  // x button on extra-cap → confirm + revoke direct grant
+  document.querySelectorAll('#tab-members .extra-cap-x').forEach(b => {
+    b.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const mid = parseInt(b.dataset.mid, 10);
+      const sid = parseInt(b.dataset.sid, 10);
+      const sname = b.dataset.sname;
+      if (!confirm(`ลบสิทธิ์ direct grant ของ "${sname}" สำหรับ member นี้?`)) return;
+      try {
+        await fetchJson(`/api/admin/members/${mid}/site-direct-access/${sid}`, {
+          method: 'PUT',
+          body: JSON.stringify({ grant: false }),
+        });
+        showSavedToast('✓ ลบสิทธิ์แล้ว');
+        await loadTeamDetail(teamId);
+      } catch (err) {
+        showSavedToast('❌ ' + err.message, 'error');
+      }
     });
   });
 }
@@ -3093,15 +3130,21 @@ async function renderMembersPage() {
       <h2 class="page-title">👥 Members</h2>
       <span class="card-sub" id="m-count">—</span>
     </div>
-    <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
-      <label style="font-size:13px;color:var(--text-muted);font-weight:500">Filter:</label>
-      <select id="m-team-filter" style="padding:8px 12px;font-size:13px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);min-width:200px">
-        <option value="">— ทุกคน (default) —</option>
-        <option value="__none__">🚫 ยังไม่มีทีม</option>
-        <!-- options ของ teams โหลดด้วย JS -->
-      </select>
-      <span id="m-filter-info" style="font-size:12px;color:var(--text-muted)"></span>
+    <div style="display:grid;grid-template-columns:1fr auto;gap:10px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
+      <div style="position:relative">
+        <input id="m-search" type="text" placeholder="🔍 ค้นหา member (ชื่อ / email / เบอร์)..." autocomplete="off"
+               style="width:100%;padding:9px 14px;font-size:13.5px;border:1px solid var(--border);border-radius:10px;background:var(--bg-input);color:var(--text)" />
+        <span id="m-search-clear" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--text-muted);display:none;padding:4px 8px;border-radius:6px">×</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <label style="font-size:13px;color:var(--text-muted);font-weight:500">ทีม:</label>
+        <select id="m-team-filter" style="padding:9px 12px;font-size:13px;border:1px solid var(--border);border-radius:10px;background:var(--bg-input);color:var(--text);min-width:200px">
+          <option value="">— ทุกคน —</option>
+          <option value="__none__">🚫 ยังไม่มีทีม</option>
+        </select>
+      </div>
     </div>
+    <div id="m-filter-info" style="font-size:12px;color:var(--text-muted);margin-bottom:8px"></div>
     <div id="m-list">
       <div class="empty">กำลังโหลด…</div>
     </div>
@@ -3115,8 +3158,14 @@ let _teamsCache = [];
 
 function applyMemberFilter() {
   const filterEl = $('m-team-filter');
+  const searchEl = $('m-search');
+  const clearBtn = $('m-search-clear');
   if (!filterEl) return;
   const filter = filterEl.value;
+  const q = (searchEl ? searchEl.value : '').toLowerCase().trim();
+  if (clearBtn) clearBtn.style.display = q ? '' : 'none';
+
+  // Step 1: filter ตามทีม
   let filtered;
   if (filter === '') {
     filtered = _membersCache;
@@ -3126,17 +3175,36 @@ function applyMemberFilter() {
     const teamId = parseInt(filter, 10);
     filtered = _membersCache.filter(m => (m.teams || []).some(t => t.id === teamId));
   }
+
+  // Step 2: filter ตาม search query (ชื่อ / email / phone)
+  if (q) {
+    filtered = filtered.filter(m => {
+      const hay = ((m.display_name || '') + ' ' + (m.email || '') + ' ' + (m.phone || '')).toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
   renderMembersTable(filtered);
-  $('m-count').textContent = filter
-    ? `${filtered.length} / ${_membersCache.length} คน`
-    : `รวม ${_membersCache.length} คน`;
+
+  const total = _membersCache.length;
+  let count;
+  if (filter || q) {
+    count = `${filtered.length} / ${total} คน`;
+  } else {
+    count = `รวม ${total} คน`;
+  }
+  $('m-count').textContent = count;
+
   const info = $('m-filter-info');
   if (info) {
-    if (filter === '__none__') info.textContent = '— เฉพาะ member ที่ยังไม่อยู่ในทีมใด';
+    const parts = [];
+    if (filter === '__none__') parts.push('🚫 ยังไม่มีทีม');
     else if (filter) {
       const t = _teamsCache.find(tt => tt.id === parseInt(filter, 10));
-      info.textContent = t ? `— สมาชิกของทีม "${t.name}"` : '';
-    } else info.textContent = '';
+      if (t) parts.push(`ทีม: ${t.name}`);
+    }
+    if (q) parts.push(`ค้นหา: "${q}"`);
+    info.textContent = parts.length ? '— filter: ' + parts.join(', ') : '';
   }
 }
 
@@ -3176,6 +3244,15 @@ async function loadMembersList() {
     // wire change handler (idempotent — ใส่ใหม่ทุก load)
     filterEl.onchange = applyMemberFilter;
   }
+
+  // wire search input + clear button
+  const searchEl = $('m-search');
+  if (searchEl) searchEl.oninput = applyMemberFilter;
+  const clearBtn = $('m-search-clear');
+  if (clearBtn) clearBtn.onclick = () => {
+    if (searchEl) { searchEl.value = ''; searchEl.focus(); }
+    applyMemberFilter();
+  };
 
   if (_membersCache.length === 0) {
     $('m-list').innerHTML = `<div class="empty">ยังไม่มี member ในระบบ — สมัครได้ที่ <a href="/login" target="_blank" style="color:var(--primary)">/login</a></div>`;
@@ -3281,6 +3358,7 @@ function renderMembersTable(members) {
     const actionsCell = `
       <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">
         ${adminBtn}
+        <button class="btn" data-act="sites" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px" title="ดูและแก้สิทธิ์เข้าถึง site">🌐 Site Access</button>
         <button class="btn" data-act="reset" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px">🔑 Reset PW</button>
         <button class="btn ${m.enabled ? 'danger' : ''}" data-act="toggle" data-id="${m.id}" data-enabled="${m.enabled ? 1 : 0}" style="font-size:11.5px;padding:5px 10px">${m.enabled ? '⛔ Disable' : '✓ Enable'}</button>
         <button class="btn danger" data-act="delete" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px">🗑 ลบ</button>
@@ -3437,6 +3515,138 @@ const _MEM_FMT = new Intl.NumberFormat('th-TH');
 function fmtMemberInt(n) { return n == null ? '—' : _MEM_FMT.format(Math.round(n)); }
 
 // === Modal: edit member's teams (multi-select) ===
+// === Modal: member's site access (view + add/remove direct grants) ===
+async function showMemberSitesModal(memberId, memberName) {
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal modal-wide">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:14px;flex-wrap:wrap">
+        <div>
+          <h3 style="margin:0 0 4px;font-size:17px;font-weight:700">🌐 สิทธิ์เข้าถึง Platform</h3>
+          <div style="font-size:13px;color:var(--text-muted)">${escapeHtml(memberName)}</div>
+        </div>
+        <button class="btn" id="ms-close" style="font-size:13px;padding:6px 14px">✕ ปิด</button>
+      </div>
+
+      <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:12.5px;line-height:1.6">
+        🟢 = เข้าถึงผ่าน <strong>ทีม</strong> (ลบไม่ได้จากนี่ — ต้องไปหน้า Teams)<br/>
+        🔵 = <strong>Direct grant</strong> โดยตรง (กดเพิ่ม/ลบได้)<br/>
+        ⚪ = ยังไม่มีสิทธิ์ — กด "เพิ่มสิทธิ์" จะให้ direct grant ทุก credential ของ site
+      </div>
+
+      <div style="position:relative;margin-bottom:12px">
+        <input id="ms-search" type="text" placeholder="🔍 ค้นหา site..." autocomplete="off"
+               style="width:100%;padding:9px 12px;font-size:13px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text)" />
+      </div>
+
+      <div id="ms-list" style="display:flex;flex-direction:column;gap:6px;max-height:480px;overflow-y:auto;padding:2px">
+        <div class="empty" style="padding:30px">กำลังโหลด…</div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(bg);
+
+  const close = () => bg.remove();
+  bg.querySelector('#ms-close').addEventListener('click', close);
+  bg.addEventListener('click', e => { if (e.target === bg) close(); });
+
+  let sites = [];
+  const reload = async () => {
+    try {
+      const data = await fetchJson(`/api/admin/members/${memberId}/site-access`);
+      sites = data.sites || [];
+      renderList();
+    } catch (e) {
+      bg.querySelector('#ms-list').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+    }
+  };
+
+  const renderList = () => {
+    const q = bg.querySelector('#ms-search').value.toLowerCase().trim();
+    const filtered = q
+      ? sites.filter(s => (s.name + ' ' + s.url_pattern).toLowerCase().includes(q))
+      : sites;
+    const listEl = bg.querySelector('#ms-list');
+    if (filtered.length === 0) {
+      listEl.innerHTML = `<div class="empty" style="padding:24px">${q ? 'ไม่เจอ site ที่ตรงกับคำค้น' : 'ยังไม่มี site ในระบบ'}</div>`;
+      return;
+    }
+    listEl.innerHTML = filtered.map(s => renderMsRow(s)).join('');
+    listEl.querySelectorAll('button[data-ms-action]').forEach(btn => {
+      btn.addEventListener('click', () => handleMsToggle(btn, memberId, reload));
+    });
+  };
+
+  const search = bg.querySelector('#ms-search');
+  search.addEventListener('input', renderList);
+
+  await reload();
+}
+
+function renderMsRow(s) {
+  const initial = (s.name || '?').trim().charAt(0).toUpperCase();
+  const avatar = s.logo_data
+    ? `<div style="width:36px;height:36px;border-radius:9px;background:#fff;border:1px solid var(--border);overflow:hidden;flex-shrink:0;padding:4px"><img src="${s.logo_data}" alt="${escapeHtml(s.name)}" style="width:100%;height:100%;object-fit:contain" /></div>`
+    : `<div style="width:36px;height:36px;border-radius:9px;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;font-weight:700;font-size:14px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(initial)}</div>`;
+
+  const teamBadges = (s.via_teams || []).map(t =>
+    `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:600;background:rgba(16,185,129,.10);color:var(--green)">🟢 ${escapeHtml(t.name)} (${t.access_type})</span>`
+  ).join(' ');
+  const directBadge = s.direct_credentials > 0
+    ? `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:600;background:rgba(37,99,235,.10);color:var(--primary)">🔵 Direct (${s.direct_credentials}/${s.total_creds || 0})</span>`
+    : '';
+  const noAccessBadge = !s.has_access
+    ? `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:500;background:var(--bg-soft);color:var(--text-muted)">⚪ ไม่มีสิทธิ์</span>`
+    : '';
+  const badges = [teamBadges, directBadge, noAccessBadge].filter(Boolean).join(' ');
+
+  // Action button — เพิ่ม/ลบ direct grant
+  let actionBtn;
+  if (s.direct_credentials > 0) {
+    actionBtn = `<button class="btn danger" data-ms-action="revoke" data-site-id="${s.id}" data-site-name="${escapeHtml(s.name)}" style="font-size:11.5px;padding:5px 11px;white-space:nowrap">✕ ถอน Direct</button>`;
+  } else if (s.via_teams && s.via_teams.length > 0) {
+    actionBtn = `<button class="btn primary" data-ms-action="grant" data-site-id="${s.id}" data-site-name="${escapeHtml(s.name)}" style="font-size:11.5px;padding:5px 11px;white-space:nowrap" title="เพิ่มสิทธิ์โดยตรง (เผื่อ team เปลี่ยน)">+ Direct grant</button>`;
+  } else {
+    actionBtn = `<button class="btn primary" data-ms-action="grant" data-site-id="${s.id}" data-site-name="${escapeHtml(s.name)}" style="font-size:11.5px;padding:5px 11px;white-space:nowrap">+ ให้สิทธิ์</button>`;
+  }
+
+  return `
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px">
+      ${avatar}
+      <div style="flex:1;min-width:0;overflow:hidden">
+        <div style="font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(s.name)}</div>
+        <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:ui-monospace,Menlo,monospace">${escapeHtml(s.url_pattern)}</div>
+        ${badges ? `<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px">${badges}</div>` : ''}
+      </div>
+      ${actionBtn}
+    </div>
+  `;
+}
+
+async function handleMsToggle(btn, memberId, reload) {
+  const action = btn.dataset.msAction;
+  const siteId = parseInt(btn.dataset.siteId, 10);
+  const siteName = btn.dataset.siteName;
+  const verb = action === 'grant' ? 'ให้สิทธิ์' : 'ถอนสิทธิ์ direct';
+  if (!confirm(`ยืนยัน${verb} "${siteName}"?`)) return;
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = '⏳';
+  try {
+    await fetchJson(`/api/admin/members/${memberId}/site-direct-access/${siteId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ grant: action === 'grant' }),
+    });
+    showSavedToast(action === 'grant' ? '✓ ให้สิทธิ์แล้ว' : '✓ ถอนสิทธิ์แล้ว');
+    await reload();
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = orig;
+    showSavedToast('❌ ' + e.message, 'error');
+  }
+}
+
 function showEditMemberTeamsModal(memberId, memberName) {
   const member = _membersCache.find(m => m.id === memberId);
   if (!member) return;
@@ -3500,6 +3710,12 @@ async function handleMemberAction(btn) {
   if (act === 'stats') {
     const name = btn.dataset.name;
     showMemberStatsModal(parseInt(id, 10), name);
+    return;
+  }
+
+  if (act === 'sites') {
+    const name = btn.dataset.name;
+    showMemberSitesModal(parseInt(id, 10), name);
     return;
   }
 

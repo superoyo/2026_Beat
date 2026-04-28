@@ -1723,14 +1723,144 @@ def admin_get_team(team_id: int, _sess: dict = Depends(require_admin)) -> dict[s
                 ).fetchall()
                 site_creds[s["id"]] = [dict(r) for r in rows]
 
+        # === v1.14 — สำหรับแต่ละ member: หาว่ามี direct grant ที่อยู่นอก team_sites ===
+        team_site_ids = {s["id"] for s in sites}
+        members_data = [dict(m) for m in members]
+        for mem in members_data:
+            extra_rows = conn.execute(
+                """
+                SELECT DISTINCT s.id, s.name
+                FROM credential_members cm
+                JOIN credentials c ON c.id = cm.credential_id
+                JOIN sites s ON s.id = c.site_id
+                WHERE cm.member_id = ?
+                ORDER BY s.name
+                """,
+                (mem["id"],),
+            ).fetchall()
+            mem["extra_sites"] = [
+                {"id": r["id"], "name": r["name"]}
+                for r in extra_rows
+                if r["id"] not in team_site_ids
+            ]
+
     return {
         "team": dict(team),
-        "members": [dict(m) for m in members],
+        "members": members_data,
         "sites": [
             {**dict(s), "credentials": site_creds.get(s["id"], [])}
             for s in sites
         ],
     }
+
+
+# === v1.14 — Per-member site access management ===
+
+@app.get("/api/admin/members/{member_id}/site-access")
+def admin_member_site_access(
+    member_id: int,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """List all sites + access status สำหรับ member นี้
+    - via_teams: ถ้าเข้าถึงผ่าน team(s)
+    - direct_credentials: จำนวน credential ที่ grant ตรง (ใน credential_members)
+    """
+    with db_conn() as conn:
+        member = conn.execute(
+            "SELECT id, phone, email, display_name FROM members WHERE id = ?",
+            (member_id,),
+        ).fetchone()
+        if not member:
+            raise HTTPException(status_code=404, detail="member not found")
+
+        all_sites = conn.execute(
+            "SELECT s.id, s.name, s.url_pattern, s.logo_data, "
+            "       (SELECT COUNT(*) FROM credentials c WHERE c.site_id = s.id) AS total_creds "
+            "FROM sites s ORDER BY s.name COLLATE NOCASE"
+        ).fetchall()
+
+        # via_teams: site → list of teams ที่ member อยู่ + ทีมนั้นมี team_sites
+        team_access_rows = conn.execute(
+            """
+            SELECT ts.site_id, t.id AS team_id, t.name AS team_name, ts.access_type
+            FROM team_members tm
+            JOIN team_sites ts ON ts.team_id = tm.team_id
+            JOIN teams t ON t.id = tm.team_id
+            WHERE tm.member_id = ?
+            """,
+            (member_id,),
+        ).fetchall()
+        team_access: dict[int, list[dict[str, Any]]] = {}
+        for r in team_access_rows:
+            team_access.setdefault(r["site_id"], []).append({
+                "id": r["team_id"], "name": r["team_name"], "access_type": r["access_type"],
+            })
+
+        # direct grants: site → count of credentials ที่อยู่ใน credential_members
+        direct_rows = conn.execute(
+            """
+            SELECT c.site_id, COUNT(DISTINCT c.id) AS n
+            FROM credential_members cm
+            JOIN credentials c ON c.id = cm.credential_id
+            WHERE cm.member_id = ?
+            GROUP BY c.site_id
+            """,
+            (member_id,),
+        ).fetchall()
+        direct_counts = {r["site_id"]: r["n"] for r in direct_rows}
+
+    sites_data = []
+    for s in all_sites:
+        sd = dict(s)
+        via_teams = team_access.get(sd["id"], [])
+        direct_n = direct_counts.get(sd["id"], 0)
+        sd["via_teams"] = via_teams
+        sd["direct_credentials"] = direct_n
+        sd["has_access"] = bool(via_teams) or direct_n > 0
+        sites_data.append(sd)
+
+    return {"member": dict(member), "sites": sites_data}
+
+
+class MemberSiteAccessIn(BaseModel):
+    grant: bool
+
+
+@app.put("/api/admin/members/{member_id}/site-direct-access/{site_id}")
+def admin_member_set_direct_site_access(
+    member_id: int,
+    site_id: int,
+    payload: MemberSiteAccessIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """Toggle direct grant สำหรับ member นี้ + site นี้
+    grant=true: INSERT credential_members ทุก credential ของ site นั้น (idempotent)
+    grant=false: DELETE credential_members ทุก credential ของ site นี้สำหรับ member นี้
+    """
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        if not conn.execute("SELECT 1 FROM members WHERE id = ?", (member_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="member not found")
+        cred_ids = [r["id"] for r in conn.execute(
+            "SELECT id FROM credentials WHERE site_id = ?", (site_id,)
+        ).fetchall()]
+        if not cred_ids:
+            raise HTTPException(status_code=404, detail="site has no credentials yet")
+
+        if payload.grant:
+            for cid in cred_ids:
+                conn.execute(
+                    "INSERT OR IGNORE INTO credential_members(credential_id, member_id, added_at) VALUES (?, ?, ?)",
+                    (cid, member_id, now),
+                )
+            return {"ok": True, "action": "granted", "credentials": len(cred_ids)}
+        else:
+            placeholders = ",".join("?" * len(cred_ids))
+            cur = conn.execute(
+                f"DELETE FROM credential_members WHERE member_id = ? AND credential_id IN ({placeholders})",
+                (member_id, *cred_ids),
+            )
+            return {"ok": True, "action": "revoked", "removed": cur.rowcount}
 
 
 @app.patch("/api/admin/teams/{team_id}")
