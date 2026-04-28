@@ -594,6 +594,9 @@
       flex: 1; word-break: break-all; user-select: all; color: var(--text);
     }
   </style>
+  <!-- Cropper.js for square logo cropping -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.1/dist/cropper.min.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.1/dist/cropper.min.js"></script>
 </head>
 <body>
   <aside>
@@ -795,15 +798,22 @@ async function loadSites() {
     list.innerHTML = '<div class="empty">ยังไม่มีเว็บ — กด <strong>+ เพิ่มเว็บใหม่</strong> ด้านบน</div>';
     return;
   }
-  list.innerHTML = sites.map(s => `
-    <div class="card card-clickable" data-id="${s.id}">
-      <div>
-        <div class="card-title">${escapeHtml(s.name)}</div>
-        <div class="card-sub">URL pattern: <code>${escapeHtml(s.url_pattern)}</code> · ${s.cred_count} credentials</div>
+  list.innerHTML = sites.map(s => {
+    const initial = (s.name || '?').trim().charAt(0).toUpperCase();
+    const avatar = s.logo_data
+      ? `<img src="${s.logo_data}" alt="${escapeHtml(s.name)}" style="width:42px;height:42px;border-radius:10px;object-fit:cover;background:#fff;flex-shrink:0;border:1px solid var(--border)" />`
+      : `<div style="width:42px;height:42px;border-radius:10px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:16px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(initial)}</div>`;
+    return `
+      <div class="card card-clickable" data-id="${s.id}" style="display:flex;align-items:center;gap:14px">
+        ${avatar}
+        <div style="flex:1;min-width:0">
+          <div class="card-title">${escapeHtml(s.name)}</div>
+          <div class="card-sub">URL pattern: <code>${escapeHtml(s.url_pattern)}</code> · ${s.cred_count} credentials</div>
+        </div>
+        <div style="color:var(--text-muted)">→</div>
       </div>
-      <div style="color:var(--text-muted)">→</div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
   list.querySelectorAll('.card[data-id]').forEach(card => {
     card.addEventListener('click', () => {
       location.hash = '#/sites/' + card.dataset.id;
@@ -835,8 +845,9 @@ async function getCardOwners() {
 
 function siteFormHTML(site) {
   // site อาจเป็น null (โหมด add) หรือ object (โหมด edit)
-  // ข้อมูลการเงิน/billing ย้ายไปอยู่ที่ credential แล้ว — ฟอร์ม site เก็บแค่ name + url_pattern
+  // ข้อมูลการเงิน/billing ย้ายไปอยู่ที่ credential แล้ว — ฟอร์ม site เก็บ name + url_pattern + logo
   const s = site || {};
+  const hasLogo = !!s.logo_data;
   return `
     <div class="field">
       <label>ชื่อเว็บ</label>
@@ -847,6 +858,27 @@ function siteFormHTML(site) {
       <input id="m-pattern" type="text" value="${escapeHtml(s.url_pattern || '')}" placeholder="*.example.com/*" />
       <div class="hint">เช่น <code>*.freepik.com/*</code></div>
     </div>
+
+    <!-- Logo section -->
+    <div class="field">
+      <label>โลโก้ (รูปสี่เหลี่ยมจัตุรัส)</label>
+      <div style="display:flex;gap:14px;align-items:flex-start;margin-top:6px">
+        <div id="m-logo-preview" style="width:96px;height:96px;border-radius:12px;border:1.5px dashed var(--border);background:${hasLogo ? 'var(--bg-card)' : 'var(--bg-soft)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden">
+          ${hasLogo
+            ? `<img src="${s.logo_data}" alt="logo" style="width:100%;height:100%;object-fit:cover" />`
+            : `<span style="color:var(--text-muted);font-size:11.5px;text-align:center;line-height:1.4">ยังไม่มี<br/>โลโก้</span>`
+          }
+        </div>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px">
+          <button type="button" class="btn" id="m-logo-upload-btn" style="font-size:12.5px;padding:7px 12px;text-align:left">📷 อัพโหลดไฟล์...</button>
+          <button type="button" class="btn" id="m-logo-search-btn" style="font-size:12.5px;padding:7px 12px;text-align:left">🔍 ค้นหาโลโก้จาก URL</button>
+          <button type="button" class="btn danger" id="m-logo-remove-btn" style="font-size:12.5px;padding:7px 12px;text-align:left;${hasLogo ? '' : 'display:none'}">🗑 ลบโลโก้</button>
+          <input type="file" id="m-logo-file-input" accept="image/*" style="display:none" />
+        </div>
+      </div>
+      <input type="hidden" id="m-logo-data" value="${escapeHtml(s.logo_data || '')}" />
+    </div>
+
     <div class="hint" style="background:var(--bg-soft);padding:10px 12px;border-radius:8px;color:var(--text-muted);font-size:12px;margin-top:8px">
       💡 ข้อมูลการเงิน (ค่าใช้จ่าย, รอบบิล, ใช้บัตรของ ฯลฯ) ตอนนี้กำหนดที่ <strong>แต่ละ credential</strong>
       เพราะ credential เดียวกันอาจจ่ายโดยคนละคน หรือคนละรอบ
@@ -855,15 +887,245 @@ function siteFormHTML(site) {
 }
 
 function siteFormCollect() {
-  return {
+  const data = {
     name: $('m-name').value.trim(),
     url_pattern: $('m-pattern').value.trim(),
   };
+  // Logo — ส่งเฉพาะถ้าผู้ใช้มีการเปลี่ยนแปลง
+  // - hidden input value ที่ต่างจาก initial → ส่ง
+  // - empty string → ลบ logo (PATCH set NULL)
+  const logoEl = $('m-logo-data');
+  if (logoEl) {
+    const cur = logoEl.value;
+    const initial = logoEl.dataset.initial || '';
+    if (cur !== initial) {
+      data.logo_data = cur;   // empty string = clear
+    }
+  }
+  return data;
 }
 
 async function bindSiteFormDynamic() {
-  // ฟอร์ม site ไม่มี billing fields แล้ว — ไม่ต้อง bind อะไรเพิ่ม
-  // (เก็บฟังก์ชันไว้เพราะถูกเรียกใน flow add/edit site)
+  // เก็บค่าเริ่มต้นของ logo เพื่อ diff ตอน save
+  const logoEl = $('m-logo-data');
+  if (logoEl) logoEl.dataset.initial = logoEl.value;
+
+  // อัพโหลดไฟล์
+  const fileInput = $('m-logo-file-input');
+  $('m-logo-upload-btn').addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => openCropModal(ev.target.result);
+    reader.readAsDataURL(file);
+    fileInput.value = '';   // reset เผื่อเลือกไฟล์เดิมซ้ำได้
+  });
+
+  // ค้นหาโลโก้จาก URL pattern
+  $('m-logo-search-btn').addEventListener('click', () => {
+    const pattern = $('m-pattern').value.trim();
+    if (!pattern) {
+      alert('กรอก URL pattern ก่อน (เช่น *.freepik.com/*)');
+      return;
+    }
+    openLogoSearchModal(pattern);
+  });
+
+  // ลบโลโก้
+  $('m-logo-remove-btn').addEventListener('click', () => {
+    if (!confirm('ลบโลโก้ของเว็บนี้?')) return;
+    setSiteLogoInForm('');   // empty = clear
+  });
+}
+
+// ตั้งค่า logo (ทั้ง hidden input + preview + show/hide remove btn)
+function setSiteLogoInForm(dataUrl) {
+  const logoEl = $('m-logo-data');
+  const preview = $('m-logo-preview');
+  const removeBtn = $('m-logo-remove-btn');
+  if (!logoEl || !preview) return;
+  logoEl.value = dataUrl;
+  if (dataUrl) {
+    preview.style.background = 'var(--bg-card)';
+    preview.innerHTML = `<img src="${dataUrl}" alt="logo" style="width:100%;height:100%;object-fit:cover" />`;
+    if (removeBtn) removeBtn.style.display = '';
+  } else {
+    preview.style.background = 'var(--bg-soft)';
+    preview.innerHTML = `<span style="color:var(--text-muted);font-size:11.5px;text-align:center;line-height:1.4">ยังไม่มี<br/>โลโก้</span>`;
+    if (removeBtn) removeBtn.style.display = 'none';
+  }
+}
+
+// === Crop modal — Cropper.js ===
+let _cropper = null;
+
+function openCropModal(srcDataUrl) {
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.style.zIndex = '1100';   // เหนือ site form modal
+  bg.innerHTML = `
+    <div class="modal modal-wide">
+      <h3 style="margin:0 0 14px;font-size:17px;font-weight:700">✂️ Crop โลโก้ (สี่เหลี่ยมจัตุรัส)</h3>
+      <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:12.5px">
+        ลากเพื่อเลือกพื้นที่ • ใช้ scroll wheel เพื่อ zoom • ปุ่ม +/- สำหรับ zoom
+      </div>
+      <div style="background:#0f172a;border-radius:10px;overflow:hidden;max-height:400px">
+        <img id="m-crop-img" src="${srcDataUrl}" style="display:block;max-width:100%" alt="crop" crossorigin="anonymous" />
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px;align-items:center;flex-wrap:wrap">
+        <button class="btn" id="m-crop-zoom-out" type="button" style="font-size:14px;padding:6px 12px">−</button>
+        <button class="btn" id="m-crop-zoom-in" type="button" style="font-size:14px;padding:6px 12px">+</button>
+        <button class="btn" id="m-crop-reset" type="button" style="font-size:12.5px;padding:6px 12px">↺ Reset</button>
+        <div style="flex:1"></div>
+        <button class="btn" id="m-crop-cancel" type="button" style="font-size:13px;padding:7px 14px">ยกเลิก</button>
+        <button class="btn primary" id="m-crop-save" type="button" style="font-size:13px;padding:7px 14px">✓ ใช้ภาพนี้</button>
+      </div>
+      <div class="hint" id="m-crop-err" style="color:var(--critical);margin-top:8px;display:none"></div>
+    </div>
+  `;
+  document.body.appendChild(bg);
+
+  const cleanup = () => {
+    if (_cropper) { try { _cropper.destroy(); } catch {} _cropper = null; }
+    bg.remove();
+  };
+
+  bg.querySelector('#m-crop-cancel').addEventListener('click', cleanup);
+  bg.addEventListener('click', e => { if (e.target === bg) cleanup(); });
+
+  const initCropper = () => {
+    const img = bg.querySelector('#m-crop-img');
+    _cropper = new Cropper(img, {
+      aspectRatio: 1,         // square
+      viewMode: 1,            // restrict crop box to canvas
+      dragMode: 'move',
+      autoCropArea: 0.8,
+      background: false,
+      responsive: true,
+      modal: true,
+      guides: true,
+      center: true,
+      highlight: true,
+      cropBoxResizable: true,
+      cropBoxMovable: true,
+      toggleDragModeOnDblclick: false,
+      minCropBoxWidth: 50,
+      minCropBoxHeight: 50,
+    });
+    bg.querySelector('#m-crop-zoom-in').addEventListener('click', () => _cropper.zoom(0.15));
+    bg.querySelector('#m-crop-zoom-out').addEventListener('click', () => _cropper.zoom(-0.15));
+    bg.querySelector('#m-crop-reset').addEventListener('click', () => _cropper.reset());
+  };
+
+  // wait for image to load
+  const img = bg.querySelector('#m-crop-img');
+  if (img.complete && img.naturalWidth > 0) initCropper();
+  else img.addEventListener('load', initCropper);
+  img.addEventListener('error', () => {
+    const err = bg.querySelector('#m-crop-err');
+    err.textContent = '❌ โหลดภาพไม่สำเร็จ — อาจเป็นเพราะ CORS (โดเมน image search ไม่ allow). ลองอัพโหลดไฟล์โดยตรง';
+    err.style.display = '';
+  });
+
+  bg.querySelector('#m-crop-save').addEventListener('click', () => {
+    if (!_cropper) return;
+    try {
+      const canvas = _cropper.getCroppedCanvas({
+        width: 256, height: 256,
+        imageSmoothingEnabled: true, imageSmoothingQuality: 'high',
+      });
+      const dataUrl = canvas.toDataURL('image/png');
+      setSiteLogoInForm(dataUrl);
+      cleanup();
+    } catch (e) {
+      const err = bg.querySelector('#m-crop-err');
+      err.textContent = '❌ Crop ไม่สำเร็จ: ' + e.message;
+      err.style.display = '';
+    }
+  });
+}
+
+// === Logo search modal — fetch suggestions and let user pick ===
+function openLogoSearchModal(domain) {
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.style.zIndex = '1100';
+  bg.innerHTML = `
+    <div class="modal" style="width:560px;max-width:92vw">
+      <h3 style="margin:0 0 8px;font-size:17px;font-weight:700">🔍 ค้นหาโลโก้</h3>
+      <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:12.5px">
+        ระบบดึงโลโก้จาก public sources — คลิกที่ภาพที่ใช่ แล้วจะไปหน้า crop
+      </div>
+      <div class="field" style="margin-bottom:12px">
+        <label>โดเมนที่จะค้น</label>
+        <input id="m-logo-domain" type="text" value="${escapeHtml(domain)}" placeholder="freepik.com" />
+      </div>
+      <button class="btn primary" id="m-logo-search-go" type="button" style="font-size:13px;padding:7px 14px;margin-bottom:14px">🔍 ค้นหา</button>
+      <div id="m-logo-results" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(110px, 1fr));gap:10px;min-height:120px"></div>
+      <div style="text-align:right;margin-top:14px">
+        <button class="btn" id="m-logo-cancel" type="button" style="font-size:13px;padding:7px 14px">ยกเลิก</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(bg);
+  const close = () => bg.remove();
+  bg.querySelector('#m-logo-cancel').addEventListener('click', close);
+  bg.addEventListener('click', e => { if (e.target === bg) close(); });
+
+  const doSearch = async () => {
+    const d = bg.querySelector('#m-logo-domain').value.trim();
+    const results = bg.querySelector('#m-logo-results');
+    if (!d) { results.innerHTML = '<div class="empty" style="grid-column:1/-1">กรอก domain</div>'; return; }
+    results.innerHTML = '<div class="empty" style="grid-column:1/-1">กำลังค้นหา…</div>';
+    let data;
+    try {
+      data = await fetchJson('/api/admin/site-logo-suggestions?domain=' + encodeURIComponent(d));
+    } catch (e) {
+      results.innerHTML = `<div class="empty" style="grid-column:1/-1;color:var(--critical)">ผิดพลาด: ${escapeHtml(e.message)}</div>`;
+      return;
+    }
+    if (!data.suggestions || data.suggestions.length === 0) {
+      results.innerHTML = '<div class="empty" style="grid-column:1/-1">ไม่เจอ suggestion</div>';
+      return;
+    }
+    results.innerHTML = data.suggestions.map((s, i) => `
+      <div class="m-logo-thumb" data-url="${escapeHtml(s.url)}" data-name="${escapeHtml(s.name)}"
+           style="aspect-ratio:1;border:1.5px solid var(--border);border-radius:10px;background:var(--bg-soft);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px;transition:all .15s;overflow:hidden;position:relative">
+        <img src="${escapeHtml(s.url)}" alt="${escapeHtml(s.name)}" referrerpolicy="no-referrer"
+             style="max-width:100%;max-height:70%;object-fit:contain"
+             onerror="this.parentElement.style.display='none'" />
+        <div style="font-size:9.5px;color:var(--text-muted);text-align:center;margin-top:4px;line-height:1.2">${escapeHtml(s.name)}</div>
+      </div>
+    `).join('');
+    // wire click on thumbs
+    results.querySelectorAll('.m-logo-thumb').forEach(thumb => {
+      thumb.addEventListener('mouseenter', () => { thumb.style.borderColor = 'var(--primary)'; thumb.style.background = 'var(--primary-soft)'; });
+      thumb.addEventListener('mouseleave', () => { thumb.style.borderColor = 'var(--border)'; thumb.style.background = 'var(--bg-soft)'; });
+      thumb.addEventListener('click', async () => {
+        const url = thumb.dataset.url;
+        // Convert URL → DataURL via fetch + blob (cross-origin OK if image is no-cors readable)
+        try {
+          const resp = await fetch(url);
+          const blob = await resp.blob();
+          const dataUrl = await new Promise((resolve, reject) => {
+            const r = new FileReader();
+            r.onload = () => resolve(r.result);
+            r.onerror = reject;
+            r.readAsDataURL(blob);
+          });
+          close();
+          openCropModal(dataUrl);
+        } catch (e) {
+          alert('โหลดภาพไม่สำเร็จ (CORS): ' + e.message + '\nลองดาวน์โหลดภาพแล้วอัพโหลดเอง');
+        }
+      });
+    });
+  };
+
+  bg.querySelector('#m-logo-search-go').addEventListener('click', doSearch);
+  // auto-search ทันทีถ้ามี domain
+  if (domain) doSearch();
 }
 
 function showAddSiteModal() {
@@ -1588,9 +1850,12 @@ async function renderPlatformsPage() {
           ? `${s.cred_count} บัญชี`
           : '<span style="color:var(--warning);">ยังไม่มีบัญชี</span>';
         const searchKey = (s.name + ' ' + s.url_pattern).toLowerCase();
+        const avatar = s.logo_data
+          ? `<div class="platform-avatar" style="background:#fff;padding:6px;overflow:hidden"><img src="${s.logo_data}" alt="${escapeHtml(s.name)}" style="width:100%;height:100%;object-fit:contain;border-radius:8px" /></div>`
+          : `<div class="platform-avatar">${escapeHtml(initial)}</div>`;
         return `
           <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="platform-card" data-search="${escapeHtml(searchKey)}">
-            <div class="platform-avatar">${escapeHtml(initial)}</div>
+            ${avatar}
             <div class="platform-name">${escapeHtml(s.name)}</div>
             <div class="platform-url">${escapeHtml(displayUrl)}</div>
             <div class="platform-meta">

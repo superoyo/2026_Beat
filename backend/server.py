@@ -278,6 +278,8 @@ def init_db() -> None:
             ("cost_currency", "TEXT"),                              # 'THB' | 'USD' | etc.
             ("start_date",    "TEXT"),                              # ISO date — วันเริ่มต้น
             ("end_date",      "TEXT"),                              # ISO date — วันสิ้นสุด (NULL = ongoing)
+            # v1.12 — site logo (square, base64 data URL)
+            ("logo_data",     "TEXT"),                              # data:image/png;base64,...
         ]:
             if col_name not in site_cols:
                 conn.execute(f"ALTER TABLE sites ADD COLUMN {col_name} {col_def}")
@@ -2147,6 +2149,8 @@ class SiteIn(BaseModel):
     cost_currency: Optional[str] = Field(None, max_length=10)
     start_date: Optional[str] = Field(None, max_length=40)   # ISO YYYY-MM-DD
     end_date: Optional[str] = Field(None, max_length=40)     # ISO YYYY-MM-DD
+    # v1.12 — logo data URL (data:image/png;base64,...) ขนาด max 500 KB
+    logo_data: Optional[str] = Field(None, max_length=700_000)
 
 
 class SitePatchIn(BaseModel):
@@ -2164,6 +2168,8 @@ class SitePatchIn(BaseModel):
     cost_currency: Optional[str] = Field(None, max_length=10)
     start_date: Optional[str] = Field(None, max_length=40)
     end_date: Optional[str] = Field(None, max_length=40)
+    # v1.12 — ส่ง '' เพื่อลบ logo
+    logo_data: Optional[str] = Field(None, max_length=700_000)
 
 
 def _resolve_card_owner_id(name: Optional[str]) -> Optional[int]:
@@ -2238,6 +2244,34 @@ def list_payment_types(_sess: dict = Depends(require_admin)) -> dict[str, list[s
     return {"payment_types": PAYMENT_TYPES}
 
 
+@app.get("/api/admin/site-logo-suggestions")
+def site_logo_suggestions(
+    domain: str,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, list[dict[str, str]]]:
+    """ข้อเสนอ logo จาก URL/domain — frontend ลองโหลดและ filter ที่ failed
+    ใช้ public APIs ที่ไม่ต้อง key
+    """
+    # Normalize domain
+    d = (domain or "").strip().lower()
+    d = d.replace("https://", "").replace("http://", "")
+    d = d.split("/")[0]
+    d = d.replace("www.", "")
+    # ตัด wildcard pattern (* และ : port)
+    d = d.replace("*.", "").replace("*", "").split(":")[0].strip()
+    if not d or "." not in d:
+        return {"suggestions": []}
+    return {
+        "suggestions": [
+            {"name": "Clearbit Logo", "url": f"https://logo.clearbit.com/{d}", "size": "256"},
+            {"name": "Google Favicon (256)", "url": f"https://www.google.com/s2/favicons?domain={d}&sz=256", "size": "256"},
+            {"name": "Google Favicon (128)", "url": f"https://www.google.com/s2/favicons?domain={d}&sz=128", "size": "128"},
+            {"name": "DuckDuckGo Icon", "url": f"https://icons.duckduckgo.com/ip3/{d}.ico", "size": "?"},
+            {"name": "Icon Horse", "url": f"https://icon.horse/icon/{d}", "size": "?"},
+        ]
+    }
+
+
 @app.get("/api/admin/sites")
 def list_sites(_sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
     """List ALL sites — ใช้กับหน้า Config (admin-only ในฝั่ง UI)
@@ -2246,7 +2280,7 @@ def list_sites(_sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]
     """
     with db_conn() as conn:
         sites = conn.execute(
-            "SELECT s.id, s.name, s.url_pattern, s.created_at, "
+            "SELECT s.id, s.name, s.url_pattern, s.created_at, s.logo_data, "
             "       (SELECT COUNT(*) FROM credentials c WHERE c.site_id = s.id) AS cred_count "
             "FROM sites s ORDER BY s.created_at DESC"
         ).fetchall()
@@ -2269,7 +2303,7 @@ def my_platforms(sess: dict = Depends(require_admin_or_member)) -> dict[str, Any
         # คืน list ทั้งหมดพร้อม flag เพื่อให้ UI แจ้งว่า "ดู Config เพื่อจัดการ"
         with db_conn() as conn:
             sites = conn.execute(
-                "SELECT s.id, s.name, s.url_pattern, s.created_at, "
+                "SELECT s.id, s.name, s.url_pattern, s.created_at, s.logo_data, "
                 "       (SELECT COUNT(*) FROM credentials c WHERE c.site_id = s.id) AS cred_count "
                 "FROM sites s ORDER BY s.created_at DESC"
             ).fetchall()
@@ -2285,7 +2319,7 @@ def my_platforms(sess: dict = Depends(require_admin_or_member)) -> dict[str, Any
         # - มี direct credential grant สำหรับ credential ใดของ site นั้น (ใหม่ v1.11)
         sites = conn.execute(
             """
-            SELECT DISTINCT s.id, s.name, s.url_pattern, s.created_at,
+            SELECT DISTINCT s.id, s.name, s.url_pattern, s.created_at, s.logo_data,
                    (SELECT COUNT(*) FROM credentials c WHERE c.site_id = s.id) AS cred_count
             FROM sites s
             WHERE s.id IN (
@@ -2315,14 +2349,15 @@ def create_site(payload: SiteIn, _sess: dict = Depends(require_admin)) -> dict[s
         cur = conn.execute(
             "INSERT INTO sites(name, url_pattern, created_at, "
             "  renew_day, card_owner_id, cancelled, cancelled_at, payment_type, usage_reason, "
-            "  billing_cycle, cost_amount, cost_currency, start_date, end_date) "
-            "VALUES (?, ?, ?,  ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?)",
+            "  billing_cycle, cost_amount, cost_currency, start_date, end_date, logo_data) "
+            "VALUES (?, ?, ?,  ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?)",
             (
                 payload.name, payload.url_pattern, utc_now().isoformat(),
                 payload.renew_day, card_owner_id, cancelled_int,
                 payload.cancelled_at, payload.payment_type, payload.usage_reason,
                 payload.billing_cycle, payload.cost_amount, payload.cost_currency,
                 payload.start_date, payload.end_date,
+                payload.logo_data or None,
             ),
         )
         new_id = cur.lastrowid
@@ -2409,6 +2444,9 @@ def update_site(
         updates["start_date"] = payload.start_date or None
     if payload.end_date is not None:
         updates["end_date"] = payload.end_date or None
+    if payload.logo_data is not None:
+        # ส่ง '' (empty string) → ลบ logo (set NULL); ส่ง data:image/... → save
+        updates["logo_data"] = payload.logo_data or None
     if not updates:
         raise HTTPException(status_code=400, detail="ไม่มีอะไรให้บันทึก")
     set_clause = ", ".join(f"{k} = ?" for k in updates)
