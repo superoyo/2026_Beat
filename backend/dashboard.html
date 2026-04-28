@@ -424,8 +424,13 @@ function dotClass(level) {
        : 'dot-ok';
 }
 
-async function fetchJson(path) {
+async function fetchJson(path, opts) {
+  opts = opts || {};
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
   const res = await fetch(API + path, {
+    method: opts.method || 'GET',
+    headers,
+    body: opts.body,
     cache: 'no-store',
     credentials: 'same-origin',
   });
@@ -434,7 +439,15 @@ async function fetchJson(path) {
     location.replace('/login');
     throw new Error('unauthorized');
   }
-  if (!res.ok) throw new Error('HTTP ' + res.status);
+  if (!res.ok) {
+    // ลอง parse error message จาก body ถ้าเป็น JSON
+    let detail = 'HTTP ' + res.status;
+    try {
+      const j = await res.json();
+      if (j && j.detail) detail = j.detail;
+    } catch {}
+    throw new Error(detail);
+  }
   return res.json();
 }
 
