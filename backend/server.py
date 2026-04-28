@@ -3604,6 +3604,57 @@ def teams_overview(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
     }
 
 
+@app.get("/api/members/{member_id}/accessible-sites")
+def member_accessible_sites(
+    member_id: int,
+    _auth: str = Depends(require_any_auth),
+) -> dict[str, Any]:
+    """รายชื่อ platform ที่ member นี้เข้าถึงได้ — เปิดให้ทุก logged-in user
+    (ใช้ใน Dashboard "Member ใหม่" → คลิก profile)
+    """
+    with db_conn() as conn:
+        member = conn.execute(
+            "SELECT id, display_name, email, phone, avatar_data, created_at "
+            "FROM members WHERE id = ?",
+            (member_id,),
+        ).fetchone()
+        if not member:
+            raise HTTPException(status_code=404, detail="member not found")
+
+        sites = conn.execute(
+            """
+            SELECT DISTINCT s.id, s.name, s.url_pattern, s.logo_data,
+                   (SELECT COUNT(*) FROM credentials c WHERE c.site_id = s.id) AS cred_count
+            FROM sites s
+            WHERE s.id IN (
+                SELECT ts.site_id FROM team_sites ts
+                JOIN team_members tm ON tm.team_id = ts.team_id
+                WHERE tm.member_id = ?
+                UNION
+                SELECT c.site_id FROM credentials c
+                JOIN credential_members cm ON cm.credential_id = c.id
+                WHERE cm.member_id = ?
+            )
+            ORDER BY s.name COLLATE NOCASE
+            """,
+            (member_id, member_id),
+        ).fetchall()
+
+        # ดึงทีมที่ member นี้อยู่ — ให้ context
+        teams = conn.execute(
+            "SELECT t.id, t.name "
+            "FROM team_members tm JOIN teams t ON t.id = tm.team_id "
+            "WHERE tm.member_id = ? ORDER BY t.name",
+            (member_id,),
+        ).fetchall()
+
+    return {
+        "member": dict(member),
+        "teams": [dict(t) for t in teams],
+        "sites": [dict(s) for s in sites],
+    }
+
+
 @app.get("/api/members/recent")
 def members_recent(
     limit: int = 20,
