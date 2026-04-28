@@ -604,11 +604,17 @@ async function openMemberSitesModal(memberId) {
       ? `<img src="${m.avatar_data}" alt="${escapeHtml(display)}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid var(--bg-card);box-shadow:var(--shadow-sm)" />`
       : `<div style="width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:28px;display:inline-flex;align-items:center;justify-content:center">${escapeHtml(initial)}</div>`;
 
+    const canManage = !!data.viewer_can_manage;
     const teamBadges = (data.teams || []).length === 0
       ? '<span style="color:var(--text-muted);font-size:12px;font-style:italic">— ยังไม่มีทีม —</span>'
-      : data.teams.map(t =>
-          `<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:500;background:rgba(37,99,235,.10);color:var(--primary);border:1px solid rgba(37,99,235,.20);margin-right:4px">${escapeHtml(t.name)}</span>`
-        ).join('');
+      : data.teams.map(t => {
+          const removeBtn = canManage
+            ? `<button class="rm-team-x" data-team-id="${t.id}" data-team-name="${escapeHtml(t.name)}"
+                       title="ลบ ${escapeHtml(t.name)} ออกจากสมาชิก"
+                       style="margin-left:5px;border:none;background:rgba(220,38,38,.10);color:var(--critical);width:16px;height:16px;border-radius:999px;cursor:pointer;font-size:10px;line-height:1;padding:0;display:inline-flex;align-items:center;justify-content:center;vertical-align:middle">×</button>`
+            : '';
+          return `<span style="display:inline-flex;align-items:center;padding:2px 4px 2px 9px;border-radius:999px;font-size:11px;font-weight:500;background:rgba(37,99,235,.10);color:var(--primary);border:1px solid rgba(37,99,235,.20);margin-right:4px">${escapeHtml(t.name)}${removeBtn}</span>`;
+        }).join('');
     // Admin only: button "+ เพิ่มทีม" + popover รายชื่อทีมที่ยังไม่ได้อยู่
     const addTeamUI = data.viewer_can_manage ? `
       <div style="position:relative;display:inline-block;margin-left:4px">
@@ -749,7 +755,33 @@ async function openMemberSitesModal(memberId) {
     if (canManage) {
       wireDragDrop();
       wireAddTeamPopover();
+      wireRemoveTeam();
     }
+  };
+
+  // Click × on team badge → confirm + DELETE member from team
+  const wireRemoveTeam = () => {
+    bg.querySelectorAll('.rm-team-x').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const tid = parseInt(btn.dataset.teamId, 10);
+        const tname = btn.dataset.teamName;
+        if (!confirm(`เอา member นี้ออกจากทีม "${tname}"?\n\n(สิทธิ์เข้าถึง platform ที่ได้จากทีมนี้จะหายไป — ยกเว้น direct grant)`)) return;
+        btn.disabled = true;
+        const orig = btn.textContent;
+        btn.textContent = '⏳';
+        try {
+          await fetchJson(`/api/admin/teams/${tid}/members/${_modalMemberId}`, {
+            method: 'DELETE',
+          });
+          await reloadModal();
+        } catch (err) {
+          btn.disabled = false;
+          btn.textContent = orig;
+          alert('ลบไม่สำเร็จ: ' + err.message);
+        }
+      });
+    });
   };
 
   // Add Team popover — load all teams, exclude already-in, click to add
