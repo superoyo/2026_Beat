@@ -439,6 +439,24 @@
       text-decoration: underline;
     }
 
+    /* Inline editable fields (Notion-style click-to-edit) */
+    .inline-edit {
+      cursor: text;
+      transition: background .12s, box-shadow .12s;
+    }
+    .inline-edit:hover { background: var(--bg-hover) !important; }
+    .inline-edit:focus { background: var(--primary-soft) !important; box-shadow: 0 0 0 2px rgba(37,99,235,.18); }
+    .inline-edit:empty::before {
+      content: attr(data-empty-msg);
+      color: var(--text-soft);
+      font-style: italic;
+    }
+    /* Logo box hover hint */
+    #sd-logo:hover {
+      border-color: var(--primary) !important;
+      background: var(--primary-soft) !important;
+    }
+
     /* Credential access rows (in modal) — Notion/Linear style */
     .m-access-row {
       display: flex; align-items: center; gap: 12px;
@@ -960,7 +978,9 @@ function setSiteLogoInForm(dataUrl) {
 // === Crop modal — Cropper.js ===
 let _cropper = null;
 
-function openCropModal(srcDataUrl) {
+function openCropModal(srcDataUrl, onSave) {
+  // onSave: (dataUrl) => void — callback เมื่อ user crop สำเร็จ
+  if (!onSave) onSave = setSiteLogoInForm;   // default: เขียนลง form (สำหรับ Add site modal)
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   bg.style.zIndex = '1100';   // เหนือ site form modal
@@ -1036,7 +1056,7 @@ function openCropModal(srcDataUrl) {
         imageSmoothingEnabled: true, imageSmoothingQuality: 'high',
       });
       const dataUrl = canvas.toDataURL('image/png');
-      setSiteLogoInForm(dataUrl);
+      onSave(dataUrl);
       cleanup();
     } catch (e) {
       const err = bg.querySelector('#m-crop-err');
@@ -1047,7 +1067,8 @@ function openCropModal(srcDataUrl) {
 }
 
 // === Logo search modal — fetch suggestions and let user pick ===
-function openLogoSearchModal(domain) {
+function openLogoSearchModal(domain, onSave) {
+  // onSave: callback ที่ส่งต่อให้ openCropModal — ถ้าไม่กำหนด ใช้ default (form)
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   bg.style.zIndex = '1100';
@@ -1115,7 +1136,7 @@ function openLogoSearchModal(domain) {
             r.readAsDataURL(blob);
           });
           close();
-          openCropModal(dataUrl);
+          openCropModal(dataUrl, onSave);
         } catch (e) {
           alert('โหลดภาพไม่สำเร็จ (CORS): ' + e.message + '\nลองดาวน์โหลดภาพแล้วอัพโหลดเอง');
         }
@@ -1148,50 +1169,217 @@ let _currentSite = null;
 async function renderSiteDetail(siteId) {
   $('main').innerHTML = `
     <div class="crumb"><a href="#/sites">← Websites</a></div>
-    <div class="page-head">
-      <h2 class="page-title" id="site-name">…</h2>
-      <div style="display:flex;gap:8px">
-        <button class="btn primary" id="add-cred-btn">+ เพิ่ม Credential</button>
-        <button class="btn" id="edit-site-btn">✏️ แก้ไขข้อมูลเว็บ</button>
-        <button class="btn danger" id="delete-site-btn">ลบเว็บนี้</button>
+
+    <!-- Inline-editable site header (Notion style) -->
+    <div id="site-header" style="display:flex;gap:18px;align-items:flex-start;margin-bottom:14px;padding:18px 20px;background:var(--bg-card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow-sm)">
+      <!-- Logo + actions -->
+      <div style="position:relative;flex-shrink:0">
+        <div id="sd-logo" style="width:80px;height:80px;border-radius:14px;border:1.5px dashed var(--border);background:var(--bg-soft);display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;transition:border-color .15s"
+             title="คลิกเพื่อเปลี่ยนโลโก้">
+          <span style="color:var(--text-muted);font-size:11px">โลโก้</span>
+        </div>
+        <div id="sd-logo-actions" style="position:absolute;top:84px;left:0;display:none;gap:4px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:4px;box-shadow:0 4px 12px rgba(0,0,0,.08);z-index:10">
+          <button class="btn" id="sd-logo-upload" title="อัพโหลดไฟล์" style="font-size:11px;padding:5px 8px;line-height:1">📷</button>
+          <button class="btn" id="sd-logo-search" title="ค้นหาจาก domain" style="font-size:11px;padding:5px 8px;line-height:1">🔍</button>
+          <button class="btn danger" id="sd-logo-remove" title="ลบโลโก้" style="font-size:11px;padding:5px 8px;line-height:1;display:none">🗑</button>
+        </div>
+        <input type="file" id="sd-logo-file" accept="image/*" style="display:none" />
+      </div>
+
+      <!-- Inline-editable text fields -->
+      <div style="flex:1;min-width:0;overflow:hidden">
+        <div style="font-size:10.5px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px">ชื่อเว็บ</div>
+        <h2 id="sd-name" class="inline-edit"
+            contenteditable="true" spellcheck="false"
+            data-empty-msg="ใส่ชื่อเว็บ..."
+            style="margin:0 0 12px;font-size:24px;font-weight:700;letter-spacing:-0.01em;line-height:1.25;outline:none;border-radius:6px;padding:2px 6px;margin-left:-6px;transition:background .12s;min-height:1.4em">…</h2>
+
+        <div style="font-size:10.5px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px">URL pattern</div>
+        <code id="sd-url" class="inline-edit"
+              contenteditable="true" spellcheck="false"
+              data-empty-msg="ใส่ URL pattern..."
+              style="display:inline-block;min-width:220px;font-size:13px;padding:4px 8px;background:var(--bg-soft);border-radius:6px;outline:none;line-height:1.5;transition:background .12s;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">…</code>
+      </div>
+
+      <!-- Action buttons (top right) -->
+      <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+        <button class="btn primary" id="add-cred-btn" style="font-size:12.5px;padding:7px 12px;white-space:nowrap">+ เพิ่ม Credential</button>
+        <button class="btn danger" id="delete-site-btn" style="font-size:12.5px;padding:7px 12px;white-space:nowrap">🗑 ลบเว็บ</button>
       </div>
     </div>
+
     <div class="warning-box">
       ⚠️ <strong>หมายเหตุ:</strong> Password ถูกเก็บแบบ plaintext ใน SQLite (จำเป็นเพื่อ prefill) —
-      ใครเข้าถึงไฟล์ <code>freepik_tracker.db</code> ในเครื่องนี้ก็เห็นได้ทั้งหมด
+      ใครเข้าถึงไฟล์ DB ในเครื่องนี้ก็เห็นได้ทั้งหมด
     </div>
-    <div id="site-meta"></div>
+
     <h3 style="margin-top:22px;font-size:14px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.05em">Credentials</h3>
     <div id="creds-list"></div>
   `;
   await loadSite(siteId);
 
   $('add-cred-btn').addEventListener('click', () => showAddCredModal(siteId));
-  $('edit-site-btn').addEventListener('click', () => {
-    if (_currentSite) showEditSiteModal(_currentSite, siteId);
-  });
   $('delete-site-btn').addEventListener('click', async () => {
     if (!confirm('ลบเว็บนี้และ credentials ทั้งหมด?')) return;
     await fetchJson('/api/admin/sites/' + siteId, { method: 'DELETE' });
     location.hash = '#/sites';
   });
+
+  // === Inline edit wiring ===
+  wireInlineEdit($('sd-name'), 'name', siteId);
+  wireInlineEdit($('sd-url'), 'url_pattern', siteId);
+
+  // === Logo wiring ===
+  wireSiteLogoActions(siteId);
 }
 
-function showEditSiteModal(site, siteId) {
-  showModal({
-    title: 'แก้ไขข้อมูลเว็บ',
-    body: siteFormHTML(site),
-    onSubmit: async () => {
-      const data = siteFormCollect();
-      if (!data.name || !data.url_pattern) throw new Error('กรอกชื่อและ URL pattern');
+// === Inline editable field helper ===
+// On blur or Enter → PATCH ฟิลด์ของ site, แสดง toast
+function wireInlineEdit(el, field, siteId) {
+  if (!el) return;
+  const saveAndShow = async () => {
+    const val = el.textContent.trim();
+    const original = el.dataset.original || '';
+    if (val === original) return;
+    if (!val) {
+      el.textContent = original;
+      showSavedToast('⚠ ห้ามเว้นว่าง', 'warning');
+      return;
+    }
+    try {
       await fetchJson('/api/admin/sites/' + siteId, {
-        method: 'PATCH', body: JSON.stringify(data),
+        method: 'PATCH',
+        body: JSON.stringify({ [field]: val }),
       });
-      _cardOwnersCache = null;
-      await loadSite(siteId);
-    },
+      el.dataset.original = val;
+      showSavedToast('✓ บันทึกแล้ว');
+    } catch (e) {
+      el.textContent = original;
+      showSavedToast('❌ ' + e.message, 'error');
+    }
+  };
+  el.addEventListener('blur', saveAndShow);
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      el.blur();
+    } else if (e.key === 'Escape') {
+      el.textContent = el.dataset.original || '';
+      el.blur();
+    }
   });
-  setTimeout(bindSiteFormDynamic, 0);
+  el.addEventListener('focus', () => { el.style.background = 'var(--primary-soft)'; });
+  el.addEventListener('blur', () => { el.style.background = ''; });
+}
+
+// === Site logo actions (inline on site detail page) ===
+function wireSiteLogoActions(siteId) {
+  const logoBox = $('sd-logo');
+  const actionsBox = $('sd-logo-actions');
+  const fileInput = $('sd-logo-file');
+
+  // toggle action menu on logo click
+  logoBox.addEventListener('click', () => {
+    actionsBox.style.display = actionsBox.style.display === 'flex' ? 'none' : 'flex';
+  });
+  // close menu on click outside
+  document.addEventListener('click', (e) => {
+    if (!logoBox.contains(e.target) && !actionsBox.contains(e.target)) {
+      actionsBox.style.display = 'none';
+    }
+  });
+
+  // Save callback — PATCH to backend + update logo preview
+  const saveLogoToBackend = async (dataUrl) => {
+    try {
+      await fetchJson('/api/admin/sites/' + siteId, {
+        method: 'PATCH',
+        body: JSON.stringify({ logo_data: dataUrl }),   // empty string = clear
+      });
+      updateSdLogoPreview(dataUrl);
+      showSavedToast(dataUrl ? '✓ บันทึกโลโก้แล้ว' : '✓ ลบโลโก้แล้ว');
+    } catch (e) {
+      showSavedToast('❌ ' + e.message, 'error');
+    }
+  };
+
+  $('sd-logo-upload').addEventListener('click', (e) => {
+    e.stopPropagation();
+    actionsBox.style.display = 'none';
+    fileInput.click();
+  });
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => openCropModal(ev.target.result, saveLogoToBackend);
+    reader.readAsDataURL(file);
+    fileInput.value = '';
+  });
+
+  $('sd-logo-search').addEventListener('click', (e) => {
+    e.stopPropagation();
+    actionsBox.style.display = 'none';
+    const pattern = (_currentSite && _currentSite.url_pattern) || '';
+    if (!pattern) { alert('ใส่ URL pattern ก่อน'); return; }
+    openLogoSearchModal(pattern, saveLogoToBackend);
+  });
+
+  $('sd-logo-remove').addEventListener('click', (e) => {
+    e.stopPropagation();
+    actionsBox.style.display = 'none';
+    if (!confirm('ลบโลโก้ของเว็บนี้?')) return;
+    saveLogoToBackend('');
+  });
+}
+
+function updateSdLogoPreview(dataUrl) {
+  const logoBox = $('sd-logo');
+  const removeBtn = $('sd-logo-remove');
+  if (!logoBox) return;
+  if (dataUrl) {
+    logoBox.style.background = '#fff';
+    logoBox.style.borderStyle = 'solid';
+    logoBox.innerHTML = `<img src="${dataUrl}" alt="logo" style="width:100%;height:100%;object-fit:cover" />`;
+    if (removeBtn) removeBtn.style.display = '';
+  } else {
+    logoBox.style.background = 'var(--bg-soft)';
+    logoBox.style.borderStyle = 'dashed';
+    logoBox.innerHTML = '<span style="color:var(--text-muted);font-size:11px">+ โลโก้</span>';
+    if (removeBtn) removeBtn.style.display = 'none';
+  }
+}
+
+// === Toast helper for inline-edit feedback ===
+let _savedToastTimer = null;
+function showSavedToast(message, kind) {
+  // kind: undefined (success/green) | 'warning' (orange) | 'error' (red)
+  let toast = document.getElementById('saved-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'saved-toast';
+    toast.style.cssText = `
+      position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(20px);
+      padding: 10px 18px; border-radius: 999px;
+      font-family: inherit; font-size: 13px; font-weight: 600;
+      background: var(--ok); color: #fff;
+      box-shadow: 0 6px 20px rgba(0,0,0,.18);
+      z-index: 1200;
+      opacity: 0; transition: opacity .25s, transform .25s;
+      pointer-events: none;
+    `;
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.style.background = kind === 'error' ? 'var(--critical)'
+                          : kind === 'warning' ? 'var(--warning)' : 'var(--ok)';
+  toast.style.opacity = '1';
+  toast.style.transform = 'translateX(-50%) translateY(0)';
+  if (_savedToastTimer) clearTimeout(_savedToastTimer);
+  _savedToastTimer = setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(-50%) translateY(20px)';
+  }, 1800);
 }
 
 function fmtPaymentTypeTh(v) {
@@ -1322,18 +1510,7 @@ async function bindBillingFieldsDynamic() {
   }
 }
 
-function siteInfoCard(site) {
-  // ข้อมูลการเงิน/billing ย้ายไปที่ระดับ credential แล้ว
-  // site card เก็บแค่ URL pattern + จำนวน credentials
-  return `
-    <div class="card" style="display:block">
-      <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 16px;font-size:13.5px">
-        <div style="color:var(--text-muted)">URL pattern</div>
-        <div><code>${escapeHtml(site.url_pattern)}</code></div>
-      </div>
-    </div>
-  `;
-}
+// (siteInfoCard ลบแล้ว — ใช้ inline-editable fields ใน renderSiteDetail แทน)
 
 // แสดงสรุปข้อมูลการเงินของ credential แบบ chip ใต้แถว credential
 // (เฉพาะข้อมูลที่กรอกแล้ว — ไม่กรอก = ไม่โชว์)
@@ -1378,8 +1555,19 @@ function credBillingSummary(c) {
 async function loadSite(siteId) {
   const { site, credentials } = await fetchJson('/api/admin/sites/' + siteId);
   _currentSite = site;
-  $('site-name').textContent = site.name;
-  $('site-meta').innerHTML = siteInfoCard(site);
+  // populate inline-editable fields
+  const nameEl = $('sd-name');
+  const urlEl = $('sd-url');
+  if (nameEl) {
+    nameEl.textContent = site.name;
+    nameEl.dataset.original = site.name;
+  }
+  if (urlEl) {
+    urlEl.textContent = site.url_pattern;
+    urlEl.dataset.original = site.url_pattern;
+  }
+  // populate logo preview
+  updateSdLogoPreview(site.logo_data || '');
 
   const list = $('creds-list');
   if (credentials.length === 0) {
