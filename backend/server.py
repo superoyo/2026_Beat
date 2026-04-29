@@ -12,8 +12,10 @@ import json as _json
 import os
 import re
 import secrets
+import shutil
 import socket
 import sqlite3
+import subprocess
 import urllib.error
 import urllib.request
 import zipfile
@@ -3877,6 +3879,128 @@ def admin_delete_renewal(
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="renewal not found")
     return {"ok": True}
+
+
+# =============================================================================
+# Domain lookup tools — nslookup / DNS records (admin only)
+# =============================================================================
+
+_DOMAIN_RE = re.compile(
+    r"^(?=.{1,253}$)"
+    r"([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)"
+    r"(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)+$"
+)
+
+
+def _sanitize_domain(name: str) -> str:
+    """Strip protocol/port/path and validate as a domain name."""
+    n = (name or "").strip().lower()
+    for prefix in ("https://", "http://"):
+        if n.startswith(prefix):
+            n = n[len(prefix):]
+    n = n.split("/", 1)[0]
+    n = n.split(":", 1)[0]
+    n = n.rstrip(".")
+    if not n or not _DOMAIN_RE.match(n):
+        raise HTTPException(status_code=400, detail="invalid domain name")
+    return n
+
+
+def _run_dig(name: str, record_type: str, *, extra_args: Optional[list[str]] = None) -> dict[str, Any]:
+    """Run `dig +short` for one record type. Returns {records, raw, error}."""
+    dig = shutil.which("dig")
+    if not dig:
+        return {"records": [], "raw": "", "error": "dig not installed on server"}
+    args = [dig, "+short", "+timeout=3", "+tries=2"]
+    if extra_args:
+        args.extend(extra_args)
+    args.extend([record_type, name])
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=8)
+        raw = result.stdout
+        records = [ln.strip() for ln in raw.strip().split("\n") if ln.strip()]
+        err = result.stderr.strip() if result.returncode != 0 else None
+        return {"records": records, "raw": raw, "error": err}
+    except subprocess.TimeoutExpired:
+        return {"records": [], "raw": "", "error": "timeout"}
+    except Exception as e:
+        return {"records": [], "raw": "", "error": str(e)}
+
+
+def _reverse_dns(ip: str) -> Optional[str]:
+    """Reverse DNS via `dig -x` (with timeout). Returns first PTR or None."""
+    dig = shutil.which("dig")
+    if not dig:
+        return None
+    try:
+        result = subprocess.run(
+            [dig, "+short", "+timeout=2", "+tries=1", "-x", ip],
+            capture_output=True, text=True, timeout=5,
+        )
+        for ln in result.stdout.strip().split("\n"):
+            ln = ln.strip().rstrip(".")
+            if ln:
+                return ln
+    except Exception:
+        return None
+    return None
+
+
+@app.get("/api/admin/domains/lookup/nslookup")
+def admin_domain_nslookup(
+    name: str,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """nslookup-style: resolve hostname → IPs + reverse DNS"""
+    domain = _sanitize_domain(name)
+    out: dict[str, Any] = {
+        "domain": domain,
+        "hostname": None,
+        "aliases": [],
+        "ips": [],
+        "ipv6": [],
+        "reverse": [],
+        "error": None,
+    }
+    # IPv4 via socket.gethostbyname_ex (cross-platform, fast)
+    try:
+        hostname, aliases, ips = socket.gethostbyname_ex(domain)
+        out["hostname"] = hostname
+        out["aliases"] = aliases
+        out["ips"] = ips
+    except socket.gaierror as e:
+        out["error"] = f"DNS resolution failed: {e}"
+    except Exception as e:
+        out["error"] = str(e)
+    # IPv6 via getaddrinfo
+    try:
+        infos = socket.getaddrinfo(domain, None, socket.AF_INET6)
+        seen = set()
+        for info in infos:
+            ip6 = info[4][0]
+            if ip6 not in seen:
+                seen.add(ip6)
+                out["ipv6"].append(ip6)
+    except Exception:
+        pass
+    # Reverse DNS for first few IPs (uses dig with timeout)
+    for ip in out["ips"][:5]:
+        out["reverse"].append({"ip": ip, "ptr": _reverse_dns(ip)})
+    return out
+
+
+@app.get("/api/admin/domains/lookup/dns")
+def admin_domain_dns(
+    name: str,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """ดึง DNS records (A, AAAA, CNAME, MX, NS, TXT, SOA)"""
+    domain = _sanitize_domain(name)
+    record_types = ["A", "AAAA", "CNAME", "MX", "NS", "TXT", "SOA"]
+    records: dict[str, Any] = {}
+    for rt in record_types:
+        records[rt] = _run_dig(domain, rt)
+    return {"domain": domain, "records": records}
 
 
 @app.get("/api/teams-overview")

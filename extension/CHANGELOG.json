@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.8",
+      "date": "2026-04-29",
+      "title": "Domain Config: nslookup + DNS lookup buttons",
+      "summary": "หน้า Domain Config — ดู IP/PTR + DNS records ของแต่ละ domain ได้จากปุ่มในแถวเลย",
+      "changes": [
+        "Backend: เพิ่ม GET /api/admin/domains/lookup/nslookup — IPv4 + IPv6 + reverse DNS (PTR)",
+        "Backend: เพิ่ม GET /api/admin/domains/lookup/dns — A, AAAA, CNAME, MX, NS, TXT, SOA records (ใช้ dig)",
+        "Backend: เพิ่ม _sanitize_domain validator (กัน path/port/protocol injection)",
+        "Frontend: ปุ่ม 🔍 nslookup + 🌐 DNS ในแต่ละ domain row (admin only)",
+        "Frontend: modal แสดงผลสีสวย + ปุ่ม Copy/Refresh"
+      ]
+    },
+    {
       "version": "1.9.7",
       "date": "2026-04-28",
       "title": "Send X-FCT-Version header",

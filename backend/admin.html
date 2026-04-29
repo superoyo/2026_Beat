@@ -3968,6 +3968,8 @@ async function loadDomainsConfigList() {
             <div style="margin-top:8px">${statusBadge}</div>
           </div>
           <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
+            <button class="btn" data-d-act="nslookup" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" style="font-size:12px;padding:6px 12px" title="ดู IP + reverse DNS">🔍 nslookup</button>
+            <button class="btn" data-d-act="dns" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" style="font-size:12px;padding:6px 12px" title="ดู DNS records (A, MX, NS, TXT, ...)">🌐 DNS</button>
             <button class="btn primary" data-d-act="renew" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" data-d-expire="${escapeHtml(d.expire_date || '')}" style="font-size:12px;padding:6px 12px">🔄 Renew</button>
             <button class="btn" data-d-act="history" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" style="font-size:12px;padding:6px 12px">📜 ประวัติ</button>
             <button class="btn" data-d-act="edit" data-d-id="${d.id}" style="font-size:12px;padding:6px 12px">✏️ แก้ไข</button>
@@ -4002,7 +4004,240 @@ async function handleDomainAction(btn, list) {
     showRenewModal(id, name, expire);
   } else if (act === 'history') {
     showRenewalHistoryModal(id, name);
+  } else if (act === 'nslookup' || act === 'dns') {
+    showLookupModal(name, act);
   }
+}
+
+// ============== nslookup / DNS lookup modal ==============
+
+function showLookupModal(domainName, kind) {
+  // kind: 'nslookup' | 'dns'
+  // Inject the once-only CSS for cleaning trailing row borders
+  if (!document.getElementById('lookup-css')) {
+    const css = document.createElement('style');
+    css.id = 'lookup-css';
+    css.textContent = `.lookup-rows > .lookup-row:last-child { border-bottom: 0 !important; }`;
+    document.head.appendChild(css);
+  }
+  const title = kind === 'nslookup'
+    ? `🔍 nslookup: ${domainName}`
+    : `🌐 DNS records: ${domainName}`;
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal modal-wide">
+      <h3>${escapeHtml(title)}</h3>
+      <div id="lookup-body" style="font-size:13px;min-height:120px">
+        <div style="text-align:center;padding:30px;color:var(--text-muted)">
+          <div style="font-size:24px;margin-bottom:8px">⏳</div>
+          กำลังค้นหา…
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="lk-refresh">🔄 ค้นหาใหม่</button>
+        <button class="btn" id="lk-copy">📋 คัดลอก</button>
+        <button class="btn primary" id="lk-close">ปิด</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(bg);
+  const close = () => bg.remove();
+  bg.querySelector('#lk-close').addEventListener('click', close);
+  bg.addEventListener('click', e => { if (e.target === bg) close(); });
+
+  let _lastRawText = '';
+
+  const renderResult = async () => {
+    const body = bg.querySelector('#lookup-body');
+    body.innerHTML = `
+      <div style="text-align:center;padding:30px;color:var(--text-muted)">
+        <div style="font-size:24px;margin-bottom:8px">⏳</div>
+        กำลังค้นหา ${escapeHtml(domainName)}…
+      </div>
+    `;
+    try {
+      const url = '/api/admin/domains/lookup/' + kind + '?name=' + encodeURIComponent(domainName);
+      const data = await fetchJson(url);
+      const rendered = (kind === 'nslookup')
+        ? renderNslookupResult(data)
+        : renderDnsResult(data);
+      body.innerHTML = rendered.html;
+      _lastRawText = rendered.text;
+    } catch (e) {
+      body.innerHTML = `<div class="empty" style="color:var(--critical)">ค้นหาไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+      _lastRawText = '';
+    }
+  };
+
+  bg.querySelector('#lk-refresh').addEventListener('click', renderResult);
+  bg.querySelector('#lk-copy').addEventListener('click', async () => {
+    if (!_lastRawText) return;
+    try {
+      await navigator.clipboard.writeText(_lastRawText);
+      const btn = bg.querySelector('#lk-copy');
+      const old = btn.textContent;
+      btn.textContent = '✓ คัดลอกแล้ว';
+      setTimeout(() => { btn.textContent = old; }, 1500);
+    } catch (e) {
+      alert('คัดลอกไม่สำเร็จ: ' + e.message);
+    }
+  });
+
+  renderResult();
+}
+
+function renderNslookupResult(data) {
+  const lines = [];   // for copy
+  lines.push('Domain: ' + data.domain);
+  if (data.error) {
+    lines.push('Error: ' + data.error);
+    return {
+      html: `
+        <div style="background:rgba(220,38,38,.08);border:1px solid var(--critical);border-radius:8px;padding:14px;color:var(--critical);font-weight:600">
+          ⛔ ${escapeHtml(data.error)}
+        </div>
+      `,
+      text: lines.join('\n'),
+    };
+  }
+  let html = '';
+  // Hostname / aliases
+  if (data.hostname) {
+    lines.push('Hostname: ' + data.hostname);
+    html += `
+      <div style="margin-bottom:14px">
+        <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Hostname</div>
+        <div style="font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--text)">${escapeHtml(data.hostname)}</div>
+      </div>
+    `;
+  }
+  if (data.aliases && data.aliases.length) {
+    lines.push('Aliases: ' + data.aliases.join(', '));
+    html += `
+      <div style="margin-bottom:14px">
+        <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Aliases (CNAME chain)</div>
+        <div style="font-family:ui-monospace,Menlo,monospace;font-size:13px">
+          ${data.aliases.map(a => `<div>${escapeHtml(a)}</div>`).join('')}
+        </div>
+      </div>
+    `;
+  }
+  // IPv4 + reverse DNS
+  if (data.ips && data.ips.length) {
+    lines.push('');
+    lines.push('IPv4 addresses:');
+    html += `
+      <div style="margin-bottom:14px">
+        <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">IPv4 + reverse DNS (PTR)</div>
+        <div class="lookup-rows" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;overflow:hidden">
+          ${data.ips.map(ip => {
+            const rev = (data.reverse || []).find(r => r.ip === ip);
+            const ptr = rev && rev.ptr ? rev.ptr : '— ไม่มี PTR';
+            lines.push('  ' + ip + (rev && rev.ptr ? '   →  ' + rev.ptr : ''));
+            return `
+              <div class="lookup-row" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border);font-family:ui-monospace,Menlo,monospace;font-size:13px">
+                <span style="font-weight:600;color:var(--primary-dark)">${escapeHtml(ip)}</span>
+                <span style="color:${rev && rev.ptr ? 'var(--text)' : 'var(--text-muted)'};font-size:12px">${escapeHtml(ptr)}</span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  } else {
+    html += `<div class="empty" style="margin-bottom:14px">— ไม่มี IPv4</div>`;
+  }
+  // IPv6
+  if (data.ipv6 && data.ipv6.length) {
+    lines.push('');
+    lines.push('IPv6 addresses:');
+    html += `
+      <div style="margin-bottom:14px">
+        <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">IPv6</div>
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px">
+          ${data.ipv6.map(ip => { lines.push('  ' + ip); return `<div>${escapeHtml(ip)}</div>`; }).join('')}
+        </div>
+      </div>
+    `;
+  }
+  return { html, text: lines.join('\n') };
+}
+
+function renderDnsResult(data) {
+  const lines = [];
+  lines.push('Domain: ' + data.domain);
+  lines.push('');
+  const recs = data.records || {};
+  const labels = {
+    A: 'A (IPv4)',
+    AAAA: 'AAAA (IPv6)',
+    CNAME: 'CNAME (alias)',
+    MX: 'MX (mail server)',
+    NS: 'NS (name server)',
+    TXT: 'TXT (text)',
+    SOA: 'SOA (zone authority)',
+  };
+  const colors = {
+    A: '#2563eb',
+    AAAA: '#7c3aed',
+    CNAME: '#0891b2',
+    MX: '#db2777',
+    NS: '#16a34a',
+    TXT: '#ca8a04',
+    SOA: '#64748b',
+  };
+  let html = '<div style="display:flex;flex-direction:column;gap:10px">';
+  let totalRecords = 0;
+  for (const [type, info] of Object.entries(recs)) {
+    const records = info.records || [];
+    const err = info.error;
+    totalRecords += records.length;
+    lines.push(`${type}:`);
+    if (err) {
+      lines.push('  (' + err + ')');
+    } else if (records.length === 0) {
+      lines.push('  (none)');
+    } else {
+      records.forEach(r => lines.push('  ' + r));
+    }
+    lines.push('');
+
+    const color = colors[type] || '#64748b';
+    const isEmpty = records.length === 0 && !err;
+    html += `
+      <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg);border-bottom:${isEmpty ? '0' : '1px solid var(--border)'}">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color}"></span>
+            <span style="font-weight:700;font-size:12.5px;color:var(--text)">${escapeHtml(type)}</span>
+            <span style="font-size:11.5px;color:var(--text-muted)">${escapeHtml(labels[type] || type)}</span>
+          </div>
+          <span style="font-size:11px;color:var(--text-muted);font-weight:600">
+            ${err ? '<span style="color:var(--critical)">⚠ ' + escapeHtml(err) + '</span>' : (records.length + ' record' + (records.length !== 1 ? 's' : ''))}
+          </span>
+        </div>
+        ${records.length > 0 ? `
+          <div class="lookup-rows" style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px">
+            ${records.map(r => `
+              <div class="lookup-row" style="padding:6px 12px;border-bottom:1px solid var(--border);word-break:break-all">${escapeHtml(r)}</div>
+            `).join('')}
+          </div>
+        ` : (err ? '' : `
+          <div style="padding:8px 12px;font-size:11.5px;color:var(--text-muted);font-style:italic">— ไม่มี record</div>
+        `)}
+      </div>
+    `;
+  }
+  html += '</div>';
+  if (totalRecords === 0) {
+    html += `
+      <div style="margin-top:12px;padding:10px 14px;background:rgba(245,158,11,.10);border:1px solid #f59e0b;border-radius:8px;font-size:12.5px;color:#92400e">
+        ⚠ ไม่พบ DNS record ใด ๆ — domain อาจไม่ resolve / DNS server ไม่ตอบ / firewall block
+      </div>
+    `;
+  }
+  return { html, text: lines.join('\n') };
 }
 
 function showDomainModal(domain) {
