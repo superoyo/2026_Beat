@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.9",
+      "date": "2026-04-29",
+      "title": "Domain lookups: pure-Python fallback (dnspython)",
+      "summary": "ทำให้ปุ่ม nslookup/DNS ใช้งานได้แม้ server ไม่มี dig — ใช้ dnspython เป็น primary, fallback เป็น dig binary",
+      "changes": [
+        "Backend: เพิ่ม dnspython เป็น dependency (pip install dnspython)",
+        "Backend: _run_dig() + _reverse_dns() ใช้ dnspython ก่อน — ไม่ต้องลง dig บน server",
+        "Backend: ถ้าไม่มี dnspython → fallback เป็น dig binary → fallback เป็น error message ที่บอกวิธีแก้",
+        "DNS errors แสดง NXDOMAIN / NoAnswer / timeout / no nameservers แยกชัดเจน"
+      ]
+    },
+    {
       "version": "1.9.8",
       "date": "2026-04-29",
       "title": "Domain Config: nslookup + DNS lookup buttons",

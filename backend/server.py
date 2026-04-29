@@ -3906,29 +3906,92 @@ def _sanitize_domain(name: str) -> str:
     return n
 
 
-def _run_dig(name: str, record_type: str, *, extra_args: Optional[list[str]] = None) -> dict[str, Any]:
-    """Run `dig +short` for one record type. Returns {records, raw, error}."""
-    dig = shutil.which("dig")
-    if not dig:
-        return {"records": [], "raw": "", "error": "dig not installed on server"}
-    args = [dig, "+short", "+timeout=3", "+tries=2"]
-    if extra_args:
-        args.extend(extra_args)
-    args.extend([record_type, name])
+# Try to import dnspython once at module load — pure-Python DNS, no external binary
+try:
+    import dns.resolver as _dns_resolver  # type: ignore
+    import dns.reversename as _dns_reverse  # type: ignore
+    import dns.exception as _dns_exc  # type: ignore
+    _HAS_DNSPYTHON = True
+except Exception:
+    _HAS_DNSPYTHON = False
+
+
+def _format_dnspython_record(rdata, record_type: str) -> str:
+    """Format an rdata object the same way `dig +short` would print it."""
+    s = rdata.to_text()
+    # `to_text()` already gives canonical form for most types
+    return s
+
+
+def _query_dns_python(name: str, record_type: str) -> dict[str, Any]:
+    """Use dnspython for a single record-type query."""
     try:
-        result = subprocess.run(args, capture_output=True, text=True, timeout=8)
-        raw = result.stdout
-        records = [ln.strip() for ln in raw.strip().split("\n") if ln.strip()]
-        err = result.stderr.strip() if result.returncode != 0 else None
-        return {"records": records, "raw": raw, "error": err}
-    except subprocess.TimeoutExpired:
+        resolver = _dns_resolver.Resolver()
+        resolver.lifetime = 5.0
+        resolver.timeout = 3.0
+        answers = resolver.resolve(name, record_type, raise_on_no_answer=False)
+        records = [_format_dnspython_record(r, record_type) for r in answers]
+        return {"records": records, "raw": "\n".join(records), "error": None}
+    except _dns_resolver.NXDOMAIN:
+        return {"records": [], "raw": "", "error": "NXDOMAIN (domain ไม่มีอยู่)"}
+    except _dns_resolver.NoAnswer:
+        return {"records": [], "raw": "", "error": None}
+    except _dns_resolver.NoNameservers:
+        return {"records": [], "raw": "", "error": "no nameservers responded"}
+    except _dns_exc.Timeout:
         return {"records": [], "raw": "", "error": "timeout"}
     except Exception as e:
         return {"records": [], "raw": "", "error": str(e)}
 
 
+def _run_dig(name: str, record_type: str, *, extra_args: Optional[list[str]] = None) -> dict[str, Any]:
+    """Resolve a single record type. Tries dnspython first → falls back to `dig` binary."""
+    # Path 1: dnspython (preferred — no external binary needed)
+    if _HAS_DNSPYTHON:
+        return _query_dns_python(name, record_type)
+    # Path 2: dig binary fallback
+    dig = shutil.which("dig")
+    if dig:
+        args = [dig, "+short", "+timeout=3", "+tries=2"]
+        if extra_args:
+            args.extend(extra_args)
+        args.extend([record_type, name])
+        try:
+            result = subprocess.run(args, capture_output=True, text=True, timeout=8)
+            raw = result.stdout
+            records = [ln.strip() for ln in raw.strip().split("\n") if ln.strip()]
+            err = result.stderr.strip() if result.returncode != 0 else None
+            return {"records": records, "raw": raw, "error": err}
+        except subprocess.TimeoutExpired:
+            return {"records": [], "raw": "", "error": "timeout"}
+        except Exception as e:
+            return {"records": [], "raw": "", "error": str(e)}
+    # Path 3: nothing available
+    return {
+        "records": [],
+        "raw": "",
+        "error": "DNS lookup unavailable — pip install dnspython (หรือลง dig บน server)",
+    }
+
+
 def _reverse_dns(ip: str) -> Optional[str]:
-    """Reverse DNS via `dig -x` (with timeout). Returns first PTR or None."""
+    """Reverse DNS lookup. Tries dnspython first → falls back to `dig -x`."""
+    # Path 1: dnspython
+    if _HAS_DNSPYTHON:
+        try:
+            ptr_name = _dns_reverse.from_address(ip)
+            resolver = _dns_resolver.Resolver()
+            resolver.lifetime = 3.0
+            resolver.timeout = 2.0
+            answers = resolver.resolve(ptr_name, "PTR")
+            for r in answers:
+                txt = r.to_text().rstrip(".")
+                if txt:
+                    return txt
+        except Exception:
+            return None
+        return None
+    # Path 2: dig binary fallback
     dig = shutil.which("dig")
     if not dig:
         return None
