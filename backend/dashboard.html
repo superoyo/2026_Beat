@@ -625,7 +625,7 @@ async function openMemberSitesModal(memberId) {
 
     const sites = data.sites || [];
     const noAccess = data.sites_no_access || [];
-    const canManage = !!data.viewer_can_manage;
+    // canManage ประกาศไว้แล้วด้านบน (line ~607) — ไม่ต้องประกาศซ้ำ
 
     // Render mini-card สำหรับแต่ละ site (พร้อม access source badges)
     const siteMiniCard = (s, draggable, side) => {
