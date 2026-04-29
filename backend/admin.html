@@ -5550,8 +5550,8 @@ async function loadAllServices() {
 function renderServicesRows() {
   const listEl = $('svc-list');
   if (!listEl) return;
-  const tab = SERVICE_TYPES.find(t => t.id === _svcActiveTab);
-  const all = _svcCache[_svcActiveTab] || [];
+  const tab = SERVICE_TYPES.find(t => t.id === _scActiveTab);
+  const all = _svcCache[_scActiveTab] || [];
   const q = _svcSearch.trim().toLowerCase();
   const list = !q ? all : all.filter(s =>
     (s.name || '').toLowerCase().includes(q)
@@ -5628,9 +5628,9 @@ async function handleServiceAction(btn) {
   const id = parseInt(btn.dataset.svcId, 10);
   const act = btn.dataset.svcAct;
   if (act === 'edit') {
-    const list = _svcCache[_svcActiveTab] || [];
+    const list = _svcCache[_scActiveTab] || [];
     const s = list.find(x => x.id === id);
-    if (s) showServiceModal(s, _svcActiveTab);
+    if (s) showServiceModal(s, _scActiveTab);
   } else if (act === 'delete') {
     const name = btn.dataset.svcName;
     const linked = parseInt(btn.dataset.svcLinked, 10) || 0;
@@ -5702,10 +5702,11 @@ function showServiceModal(svc, defaultType) {
         method: isEdit ? 'PATCH' : 'POST',
         body: JSON.stringify(data),
       });
-      // หากเปลี่ยน type → switch tab ให้
-      _svcActiveTab = data.service_type;
-      _updateSvcTabsUI();
-      await loadAllServices();
+      // หากเปลี่ยน type → switch tab ให้ + rebuild content
+      _scActiveTab = data.service_type;
+      _updateScTabsUI();
+      _updateScAddButton();
+      await renderActiveScContent();
     },
   });
 }

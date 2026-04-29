@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.32",
+      "date": "2026-04-29",
+      "title": "Fix: stale references _svcActiveTab / _updateSvcTabsUI หลัง refactor",
+      "summary": "ตอนเพิ่ม service ใน Services Config ขึ้น ReferenceError — แก้แล้ว",
+      "changes": [
+        "ตอน v1.9.26 ผม rename _svcActiveTab → _scActiveTab + _updateSvcTabsUI → _updateScTabsUI",
+        "แต่ลืมแก้ใน 6 ที่ ทำให้ตอน save service ขึ้น 'ReferenceError: _updateSvcTabsUI is not defined'",
+        "แก้: รวมทั้ง renderServicesRows / handleServiceAction / showServiceModal onSubmit",
+        "Bonus: หลัง save ใช้ renderActiveScContent() แทน loadAllServices() เพื่อ rebuild HTML structure ครบ + อัพเดท add button label"
+      ]
+    },
+    {
       "version": "1.9.31",
       "date": "2026-04-29",
       "title": "Domain registrar dropdown + Websites page filters",
