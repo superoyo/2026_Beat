@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.28",
+      "date": "2026-04-29",
+      "title": "Sidebar: รวม Logs + API Key เป็น sub-menu 'Setting'",
+      "summary": "Setting parent group — มี 2 sub: Logs / API Key (เหมือน pattern ของ Members group)",
+      "changes": [
+        "เพิ่ม nav-group 'Setting' ที่ส่วนล่างของ ภาพรวมระบบ",
+        "Sub: 📜 Logs / 🔑 API Key",
+        "Auto-expand เมื่อ child route active + parent highlight",
+        "ใช้ CSS+JS เดิมของ nav-group ที่ทำไว้ตอน Members → ไม่ต้องเขียนเพิ่ม"
+      ]
+    },
+    {
       "version": "1.9.27",
       "date": "2026-04-29",
       "title": "Sidebar: รวม Members/Teams/Access Requests เป็น sub-menu (collapsible)",

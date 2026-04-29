@@ -798,8 +798,18 @@
         <a href="#/sites" data-route="sites">🛠 Config</a>
         <a href="#/services-config" data-route="services-config">🛠️ Services Config</a>
         <a href="#/websites" data-route="websites">🔗 Websites</a>
-        <a href="#/logs" data-route="logs">📜 Logs</a>
-        <a href="#/security" data-route="security">🔑 API Key</a>
+        <!-- Setting group: รวม Logs + API Key -->
+        <div class="nav-group" id="nav-group-setting" data-group-routes="logs,security">
+          <button type="button" class="nav-group-toggle" data-group-toggle="setting">
+            <span style="font-size:14px">⚙️</span>
+            <span class="nav-group-label">Setting</span>
+            <span class="nav-group-caret">▼</span>
+          </button>
+          <div class="nav-group-children">
+            <a href="#/logs" data-route="logs">📜 Logs</a>
+            <a href="#/security" data-route="security">🔑 API Key</a>
+          </div>
+        </div>
       </div>
     </nav>
     <div class="sidebar-footer">
