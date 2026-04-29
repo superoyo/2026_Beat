@@ -5934,10 +5934,15 @@ function renderWebsiteCard(w, today) {
     }
     const tip = `${escapeHtml(s.name)}${s.provider ? ' · ' + escapeHtml(s.provider) : ''}${s.price != null ? ' · ' + fmtMoneyOrNumber(s.price) + ' ' + escapeHtml(s.currency || '') : ''}${s.expire_date ? ' · หมด ' + escapeHtml(fmtDateThai(s.expire_date)) : ''}`;
     const typeIcon = s.service_type === 'hosting' ? '🖥️' : s.service_type === 'ssl' ? '🔒' : '📦';
+    // ชื่อบริการ + provider — provider ต่อท้ายแบบ muted ให้อ่านง่าย
+    // เช่น "DigitalOcean Droplet · DigitalOcean"
+    const nameLabel = s.provider
+      ? `${escapeHtml(s.name)} <span style="color:var(--text-muted);font-weight:500">· ${escapeHtml(s.provider)}</span>`
+      : escapeHtml(s.name);
     return `
-      <span class="ws-svc-chip" title="${tip}" style="display:inline-flex;align-items:center;gap:5px;padding:3px 7px 3px 9px;border:1px solid var(--border);background:var(--bg);border-radius:999px;font-size:11.5px;line-height:1.4;max-width:240px">
+      <span class="ws-svc-chip" title="${tip}" style="display:inline-flex;align-items:center;gap:5px;padding:3px 7px 3px 9px;border:1px solid var(--border);background:var(--bg);border-radius:999px;font-size:11.5px;line-height:1.4;max-width:340px">
         <span>${typeIcon}</span>
-        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px;font-weight:600;color:var(--text)">${escapeHtml(s.name)}</span>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px;font-weight:600;color:var(--text)">${nameLabel}</span>
         ${svcExpire}
         <button class="btn" data-ws-act="unlink" data-ws-domain-id="${d.id}" data-ws-service-id="${s.id}" data-ws-name="${escapeHtml(s.name)}" style="font-size:9.5px;padding:0 4px;line-height:1;border-radius:50%;height:16px;min-width:16px;background:transparent;border-color:transparent;color:var(--text-muted)" title="ยกเลิกการผูก">✕</button>
       </span>

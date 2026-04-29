@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.34",
+      "date": "2026-04-30",
+      "title": "Websites: chip ของแต่ละ service ต่อท้ายชื่อ Provider",
+      "summary": "Service chips ใน Websites page แสดง 'ServiceName · Provider' — อ่านเข้าใจง่ายขึ้น",
+      "changes": [
+        "ก่อน: '🖥️ DigitalOcean Droplet 30d ✕' — เห็นแค่ชื่อ service อาจจำไม่ได้ว่าเป็นของใคร",
+        "หลัง: '🖥️ DigitalOcean Droplet · DigitalOcean 30d ✕' — provider muted ต่อท้าย",
+        "ใช้ทั้ง Hosting / SSL / Others ครบ 3 type",
+        "Provider ซ่อนถ้าไม่มี (แสดงแค่ชื่อ service เหมือนเดิม)",
+        "Chip max-width ปรับจาก 240px → 340px เพื่อรองรับชื่อยาวขึ้น"
+      ]
+    },
+    {
       "version": "1.9.33",
       "date": "2026-04-29",
       "title": "Websites page: compact card + Lookup button + clickable logo",
