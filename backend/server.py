@@ -263,6 +263,29 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_domains_expire ON domains(expire_date);
             CREATE INDEX IF NOT EXISTS idx_domain_renewals_domain ON domain_renewals(domain_id);
 
+            -- v1.9.25 — บริการ Hosting / SSL / Others + ผูกกับ domain (Website)
+            CREATE TABLE IF NOT EXISTS services (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                service_type  TEXT NOT NULL,   -- 'hosting' | 'ssl' | 'others'
+                name          TEXT NOT NULL,   -- ชื่อบริการ เช่น "DigitalOcean Droplet"
+                provider      TEXT,            -- ผู้ให้บริการ
+                price         REAL,            -- ราคา
+                currency      TEXT DEFAULT 'THB',   -- THB / USD
+                expire_date   TEXT,            -- ISO YYYY-MM-DD
+                notes         TEXT,
+                created_at    TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_services_type ON services(service_type);
+            CREATE INDEX IF NOT EXISTS idx_services_expire ON services(expire_date);
+            -- Many-to-many: 1 domain ผูกกับหลาย service ได้ และ 1 service ผูกได้หลาย domain
+            CREATE TABLE IF NOT EXISTS domain_services (
+                domain_id   INTEGER NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
+                service_id  INTEGER NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+                created_at  TEXT NOT NULL,
+                PRIMARY KEY (domain_id, service_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_domain_services_service ON domain_services(service_id);
+
             -- v1.13 — ขอสิทธิ์เข้าถึง site (member request → admin accept/reject)
             CREATE TABLE IF NOT EXISTS access_requests (
                 id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3932,6 +3955,231 @@ def admin_delete_renewal(
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="renewal not found")
     return {"ok": True}
+
+
+# =============================================================================
+# Services (hosting / ssl / others) + Websites (domain ↔ services pairing)
+# =============================================================================
+
+_VALID_SERVICE_TYPES = {"hosting", "ssl", "others"}
+
+
+class ServiceIn(BaseModel):
+    service_type: str = Field(..., min_length=1, max_length=20)
+    name: str = Field(..., min_length=1, max_length=200)
+    provider: Optional[str] = Field(None, max_length=120)
+    price: Optional[float] = Field(None, ge=0)
+    currency: Optional[str] = Field(None, max_length=10)
+    expire_date: Optional[str] = Field(None, max_length=40)
+    notes: Optional[str] = Field(None, max_length=2000)
+
+    @field_validator("service_type")
+    @classmethod
+    def _check_type(cls, v: str) -> str:
+        v = (v or "").strip().lower()
+        if v not in _VALID_SERVICE_TYPES:
+            raise ValueError(f"service_type ต้องเป็น {sorted(_VALID_SERVICE_TYPES)}")
+        return v
+
+
+class ServicePatchIn(BaseModel):
+    service_type: Optional[str] = Field(None, min_length=1, max_length=20)
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    provider: Optional[str] = Field(None, max_length=120)
+    price: Optional[float] = Field(None, ge=0)
+    currency: Optional[str] = Field(None, max_length=10)
+    expire_date: Optional[str] = Field(None, max_length=40)
+    notes: Optional[str] = Field(None, max_length=2000)
+
+    @field_validator("service_type")
+    @classmethod
+    def _check_type(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = (v or "").strip().lower()
+        if v not in _VALID_SERVICE_TYPES:
+            raise ValueError(f"service_type ต้องเป็น {sorted(_VALID_SERVICE_TYPES)}")
+        return v
+
+
+@app.get("/api/admin/services")
+def admin_list_services(
+    type: Optional[str] = None,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """รายการ services (filter ตาม type ได้)"""
+    sql = (
+        "SELECT s.*, "
+        "  (SELECT COUNT(*) FROM domain_services ds WHERE ds.service_id = s.id) AS linked_domains "
+        "FROM services s"
+    )
+    params: list[Any] = []
+    if type:
+        type_norm = type.strip().lower()
+        if type_norm not in _VALID_SERVICE_TYPES:
+            raise HTTPException(status_code=400, detail=f"invalid type: {type}")
+        sql += " WHERE service_type = ?"
+        params.append(type_norm)
+    sql += " ORDER BY expire_date ASC NULLS LAST, name COLLATE NOCASE ASC"
+    with db_conn() as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return {"services": [dict(r) for r in rows]}
+
+
+@app.post("/api/admin/services")
+def admin_create_service(
+    payload: ServiceIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    with db_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO services(service_type, name, provider, price, currency, "
+            "                     expire_date, notes, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                payload.service_type,
+                payload.name.strip(),
+                (payload.provider or "").strip() or None,
+                payload.price,
+                (payload.currency or "").strip() or None,
+                payload.expire_date or None,
+                (payload.notes or "").strip() or None,
+                utc_now().isoformat(),
+            ),
+        )
+    return {"ok": True, "id": cur.lastrowid}
+
+
+@app.patch("/api/admin/services/{service_id}")
+def admin_update_service(
+    service_id: int,
+    payload: ServicePatchIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    updates: dict[str, Any] = {}
+    if payload.service_type is not None: updates["service_type"] = payload.service_type
+    if payload.name is not None:         updates["name"] = payload.name.strip()
+    if payload.provider is not None:     updates["provider"] = payload.provider.strip() or None
+    if payload.price is not None:        updates["price"] = payload.price
+    if payload.currency is not None:     updates["currency"] = payload.currency.strip() or None
+    if payload.expire_date is not None:  updates["expire_date"] = payload.expire_date or None
+    if payload.notes is not None:        updates["notes"] = payload.notes.strip() or None
+    if not updates:
+        raise HTTPException(status_code=400, detail="ไม่มีอะไรให้บันทึก")
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [service_id]
+    with db_conn() as conn:
+        cur = conn.execute(f"UPDATE services SET {set_clause} WHERE id = ?", values)
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="service not found")
+    return {"ok": True}
+
+
+@app.delete("/api/admin/services/{service_id}")
+def admin_delete_service(
+    service_id: int,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    with db_conn() as conn:
+        cur = conn.execute("DELETE FROM services WHERE id = ?", (service_id,))
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="service not found")
+    return {"ok": True}
+
+
+# ---- Domain ↔ Service pairing (Website) ----
+
+@app.post("/api/admin/domains/{domain_id}/services/{service_id}")
+def admin_link_service(
+    domain_id: int,
+    service_id: int,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """ผูก service กับ domain"""
+    with db_conn() as conn:
+        d = conn.execute("SELECT 1 FROM domains WHERE id = ?", (domain_id,)).fetchone()
+        if not d:
+            raise HTTPException(status_code=404, detail="domain not found")
+        s = conn.execute("SELECT 1 FROM services WHERE id = ?", (service_id,)).fetchone()
+        if not s:
+            raise HTTPException(status_code=404, detail="service not found")
+        try:
+            conn.execute(
+                "INSERT INTO domain_services(domain_id, service_id, created_at) VALUES (?, ?, ?)",
+                (domain_id, service_id, utc_now().isoformat()),
+            )
+        except sqlite3.IntegrityError:
+            # ผูกไว้แล้ว
+            return {"ok": True, "already_linked": True}
+    return {"ok": True}
+
+
+@app.delete("/api/admin/domains/{domain_id}/services/{service_id}")
+def admin_unlink_service(
+    domain_id: int,
+    service_id: int,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """ยกเลิกการผูก service จาก domain"""
+    with db_conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM domain_services WHERE domain_id = ? AND service_id = ?",
+            (domain_id, service_id),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="link not found")
+    return {"ok": True}
+
+
+def _websites_data(conn: sqlite3.Connection, admin: bool) -> list[dict[str, Any]]:
+    """รวม domain + linked services เป็น 'website' entity"""
+    domain_rows = conn.execute(
+        "SELECT id, name, register_date, expire_date, provider, notes "
+        "FROM domains ORDER BY name COLLATE NOCASE ASC"
+    ).fetchall()
+    # Pre-load mappings
+    link_rows = conn.execute("SELECT domain_id, service_id FROM domain_services").fetchall()
+    services_by_id = {
+        r["id"]: dict(r) for r in conn.execute(
+            "SELECT * FROM services"
+        ).fetchall()
+    }
+    links_by_domain: dict[int, list[int]] = {}
+    for row in link_rows:
+        links_by_domain.setdefault(row["domain_id"], []).append(row["service_id"])
+
+    out: list[dict[str, Any]] = []
+    for d in domain_rows:
+        svc_ids = links_by_domain.get(d["id"], [])
+        services = [services_by_id[sid] for sid in svc_ids if sid in services_by_id]
+        # Group by type for convenient frontend rendering
+        grouped: dict[str, list[dict[str, Any]]] = {"hosting": [], "ssl": [], "others": []}
+        for s in services:
+            t = s.get("service_type") or "others"
+            grouped.setdefault(t, []).append(s)
+        out.append({
+            "domain": dict(d),
+            "services": services,
+            "by_type": grouped,
+            "service_count": len(services),
+        })
+    return out
+
+
+@app.get("/api/admin/websites")
+def admin_list_websites(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    """รายการ websites = domain + services ที่ผูกอยู่"""
+    with db_conn() as conn:
+        websites = _websites_data(conn, admin=True)
+    return {"websites": websites}
+
+
+@app.get("/api/websites")
+def list_websites_public(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
+    """รายการ websites — เปิดให้ทุก logged-in user"""
+    with db_conn() as conn:
+        websites = _websites_data(conn, admin=False)
+    return {"websites": websites}
 
 
 # =============================================================================

@@ -740,6 +740,8 @@
         <a href="#/access-requests" data-route="access-requests">🔔 Access Requests <span id="nav-req-badge" style="display:none;margin-left:6px;background:var(--critical);color:#fff;font-size:10.5px;padding:1px 7px;border-radius:999px;font-weight:700"></span></a>
         <a href="#/sites" data-route="sites">🛠 Config</a>
         <a href="#/domains-config" data-route="domains-config">🌐 Domain Config</a>
+        <a href="#/services-config" data-route="services-config">🛠️ Services Config</a>
+        <a href="#/websites" data-route="websites">🔗 Websites</a>
         <a href="#/logs" data-route="logs">📜 Logs</a>
         <a href="#/security" data-route="security">🔑 API Key</a>
       </div>
@@ -810,10 +812,10 @@ async function fetchJson(path, opts = {}) {
 }
 
 // admin-only routes — member ห้ามเข้า (bounce ไป default)
-const ADMIN_ONLY_ROUTES = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config']);
+const ADMIN_ONLY_ROUTES = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites']);
 // menu items ที่ซ่อนใน sidebar สำหรับ member
 // (dashboard เห็นได้ทุกบทบาท — ใช้เป็นหน้าแรกของ member ด้วย)
-const HIDE_FROM_MEMBER_NAV = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config']);
+const HIDE_FROM_MEMBER_NAV = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites']);
 
 // ---------- routing ----------
 const routes = {
@@ -821,6 +823,8 @@ const routes = {
   'platforms':        renderPlatformsPage,
   'domains':          renderDomainsPage,
   'domains-config':   renderDomainsConfigPage,
+  'services-config':  renderServicesConfigPage,
+  'websites':         renderWebsitesPage,
   'sites':            renderSitesList,
   'members':          renderMembersPage,
   'teams':            renderTeamsPage,
@@ -5149,6 +5153,452 @@ async function showRenewalHistoryModal(domainId, domainName) {
         bg.remove();
       } catch (e) { alert('ลบไม่สำเร็จ: ' + e.message); }
     });
+  });
+}
+
+
+// ============== Services Config (Hosting / SSL / Others — admin only) ==============
+
+const SERVICE_TYPES = [
+  { id: 'hosting', label: 'Hosting',  icon: '🖥️',  emptyText: 'ยังไม่มี Hosting service' },
+  { id: 'ssl',     label: 'SSL',      icon: '🔒',  emptyText: 'ยังไม่มี SSL certificate' },
+  { id: 'others',  label: 'Others',   icon: '📦',  emptyText: 'ยังไม่มี service อื่น ๆ' },
+];
+
+let _svcCache = { hosting: [], ssl: [], others: [] };
+let _svcActiveTab = 'hosting';
+let _svcSearch = '';
+
+async function renderServicesConfigPage() {
+  $('main').innerHTML = `
+    <div class="page-head">
+      <h2 class="page-title">🛠️ Services Config</h2>
+      <button class="btn primary" id="svc-add-btn">+ เพิ่ม Service</button>
+    </div>
+    <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px">
+      จัดการ Hosting / SSL / Others — ใช้ในหน้า <a href="#/websites" style="color:var(--primary)">Websites</a> เพื่อจับคู่กับ Domain
+    </div>
+    <div style="display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:14px">
+      ${SERVICE_TYPES.map(t => `
+        <button class="svc-tab" data-svc-tab="${t.id}" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:9px 16px;font-size:13px;font-weight:600;color:var(--text-muted);cursor:pointer;font-family:inherit;transition:color .15s,border-color .15s">${t.icon} ${t.label}</button>
+      `).join('')}
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+      <div style="flex:1;min-width:240px;position:relative">
+        <input id="svc-search" type="text" placeholder="🔍 ค้นหาชื่อ / provider / note..." autocomplete="off"
+          style="width:100%;padding:8px 32px 8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--bg-card);color:var(--text);box-sizing:border-box" />
+      </div>
+      <span id="svc-count" style="color:var(--text-muted);font-size:12.5px;font-weight:600;white-space:nowrap">— รายการ</span>
+    </div>
+    <div id="svc-list"><div class="empty">กำลังโหลด…</div></div>
+  `;
+  // wire tabs
+  document.querySelectorAll('.svc-tab').forEach(b => {
+    b.addEventListener('click', () => {
+      _svcActiveTab = b.dataset.svcTab;
+      _updateSvcTabsUI();
+      renderServicesRows();
+    });
+  });
+  $('svc-add-btn').addEventListener('click', () => showServiceModal(null, _svcActiveTab));
+  $('svc-search').addEventListener('input', e => {
+    _svcSearch = e.target.value;
+    renderServicesRows();
+  });
+  _updateSvcTabsUI();
+  await loadAllServices();
+}
+
+function _updateSvcTabsUI() {
+  document.querySelectorAll('.svc-tab').forEach(b => {
+    const isActive = b.dataset.svcTab === _svcActiveTab;
+    b.style.color = isActive ? 'var(--primary)' : 'var(--text-muted)';
+    b.style.borderBottomColor = isActive ? 'var(--primary)' : 'transparent';
+  });
+}
+
+async function loadAllServices() {
+  // 1 endpoint, filter on client → simpler, only needs 1 query
+  let data;
+  try {
+    data = await fetchJson('/api/admin/services');
+  } catch (e) {
+    if ($('svc-list')) $('svc-list').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  _svcCache = { hosting: [], ssl: [], others: [] };
+  for (const s of (data.services || [])) {
+    if (_svcCache[s.service_type]) _svcCache[s.service_type].push(s);
+  }
+  renderServicesRows();
+}
+
+function renderServicesRows() {
+  const listEl = $('svc-list');
+  if (!listEl) return;
+  const tab = SERVICE_TYPES.find(t => t.id === _svcActiveTab);
+  const all = _svcCache[_svcActiveTab] || [];
+  const q = _svcSearch.trim().toLowerCase();
+  const list = !q ? all : all.filter(s =>
+    (s.name || '').toLowerCase().includes(q)
+    || (s.provider || '').toLowerCase().includes(q)
+    || (s.notes || '').toLowerCase().includes(q)
+  );
+  if ($('svc-count')) {
+    $('svc-count').textContent = q
+      ? `${list.length} / ${all.length} รายการ`
+      : `${all.length} รายการ`;
+  }
+  if (all.length === 0) {
+    listEl.innerHTML = `<div class="empty">${escapeHtml(tab.emptyText)} — กด <strong>+ เพิ่ม Service</strong></div>`;
+    return;
+  }
+  if (list.length === 0) {
+    listEl.innerHTML = `<div class="empty">ไม่พบ service ที่ตรงกับ "<strong>${escapeHtml(_svcSearch)}</strong>"</div>`;
+    return;
+  }
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  listEl.innerHTML = list.map(s => renderServiceRow(s, today, tab.icon)).join('');
+  listEl.querySelectorAll('button[data-svc-act]').forEach(btn => {
+    btn.addEventListener('click', () => handleServiceAction(btn));
+  });
+}
+
+function renderServiceRow(s, today, typeIcon) {
+  let statusBadge = '<span style="color:var(--text-muted);font-size:11px">— ไม่มีวันหมดอายุ</span>';
+  if (s.expire_date) {
+    const exp = new Date(s.expire_date);
+    const days = Math.floor((exp - today) / 86400000);
+    if (days < 0) {
+      statusBadge = `<span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(220,38,38,.10);color:var(--critical)">⛔ หมด ${-days} วันแล้ว</span>`;
+    } else if (days <= 30) {
+      statusBadge = `<span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(245,158,11,.12);color:#92400e">⚠ เหลือ ${days} วัน</span>`;
+    } else {
+      statusBadge = `<span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(16,185,129,.12);color:var(--green)">✓ เหลือ ${days} วัน</span>`;
+    }
+  }
+  const meta = [];
+  if (s.provider) meta.push(`🏢 ${escapeHtml(s.provider)}`);
+  if (s.price != null) meta.push(`💰 ${fmtMoneyOrNumber(s.price)} ${escapeHtml(s.currency || 'THB')}`);
+  if (s.expire_date) meta.push(`⏰ หมด ${escapeHtml(fmtDateThai(s.expire_date))}`);
+  if (s.linked_domains > 0) meta.push(`🔗 ผูก ${s.linked_domains} domain`);
+  if (s.notes) {
+    const n = s.notes.length > 50 ? s.notes.slice(0, 47) + '…' : s.notes;
+    meta.push(`<span title="${escapeHtml(s.notes)}">📝 ${escapeHtml(n)}</span>`);
+  }
+  const metaLine = meta.length ? meta.join(' <span style="color:var(--border)">·</span> ') : '<span style="color:var(--text-muted);font-style:italic">— ไม่มีข้อมูลเพิ่มเติม</span>';
+  return `
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px;padding:10px 14px">
+      <div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:3px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-weight:700;font-size:14.5px;color:var(--text)">${typeIcon} ${escapeHtml(s.name)}</span>
+          ${statusBadge}
+        </div>
+        <div style="font-size:12px;color:var(--text-muted);line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${metaLine}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
+        <button class="btn" data-svc-act="edit" data-svc-id="${s.id}" style="font-size:12px;padding:5px 10px">✏️ แก้ไข</button>
+        <button class="btn danger" data-svc-act="delete" data-svc-id="${s.id}" data-svc-name="${escapeHtml(s.name)}" data-svc-linked="${s.linked_domains || 0}" style="font-size:12px;padding:5px 10px">🗑 ลบ</button>
+      </div>
+    </div>
+  `;
+}
+
+function fmtMoneyOrNumber(n) {
+  if (n == null) return '—';
+  try { return Number(n).toLocaleString('th-TH', { maximumFractionDigits: 2 }); }
+  catch { return String(n); }
+}
+
+async function handleServiceAction(btn) {
+  const id = parseInt(btn.dataset.svcId, 10);
+  const act = btn.dataset.svcAct;
+  if (act === 'edit') {
+    const list = _svcCache[_svcActiveTab] || [];
+    const s = list.find(x => x.id === id);
+    if (s) showServiceModal(s, _svcActiveTab);
+  } else if (act === 'delete') {
+    const name = btn.dataset.svcName;
+    const linked = parseInt(btn.dataset.svcLinked, 10) || 0;
+    const warn = linked > 0 ? `\n\n⚠ service นี้ผูกอยู่กับ ${linked} domain — การลบจะตัดความเชื่อมโยงทั้งหมด` : '';
+    if (!confirm(`ลบ service "${name}"?${warn}`)) return;
+    try {
+      await fetchJson('/api/admin/services/' + id, { method: 'DELETE' });
+      await loadAllServices();
+    } catch (e) { alert('ลบไม่สำเร็จ: ' + e.message); }
+  }
+}
+
+function showServiceModal(svc, defaultType) {
+  const isEdit = !!svc;
+  const t = svc ? svc.service_type : (defaultType || 'hosting');
+  showModal({
+    title: isEdit ? `แก้ไข ${SERVICE_TYPES.find(x => x.id === svc.service_type)?.label || 'Service'}: ${svc.name}` : '+ เพิ่ม Service ใหม่',
+    body: `
+      <div class="field">
+        <label>ประเภท *</label>
+        <select id="sm-type" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
+          ${SERVICE_TYPES.map(x => `<option value="${x.id}"${x.id === t ? ' selected' : ''}>${x.icon} ${x.label}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field">
+        <label>ชื่อบริการ *</label>
+        <input id="sm-name" type="text" value="${isEdit ? escapeHtml(svc.name) : ''}" placeholder="เช่น DigitalOcean Droplet, Let's Encrypt" />
+      </div>
+      <div class="field">
+        <label>Provider (ผู้ให้บริการ)</label>
+        <input id="sm-provider" type="text" value="${isEdit ? escapeHtml(svc.provider || '') : ''}" placeholder="เช่น DigitalOcean, AWS, Cloudflare" />
+      </div>
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px">
+        <div class="field">
+          <label>ราคา</label>
+          <input id="sm-price" type="number" step="0.01" min="0" value="${isEdit && svc.price != null ? svc.price : ''}" placeholder="0.00" />
+        </div>
+        <div class="field">
+          <label>สกุลเงิน</label>
+          <select id="sm-currency" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
+            <option value="THB"${(isEdit && svc.currency === 'THB') || !isEdit ? ' selected' : ''}>THB</option>
+            <option value="USD"${isEdit && svc.currency === 'USD' ? ' selected' : ''}>USD</option>
+            <option value="EUR"${isEdit && svc.currency === 'EUR' ? ' selected' : ''}>EUR</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>วันหมดอายุ</label>
+          <input id="sm-expire" type="date" value="${isEdit ? escapeHtml((svc.expire_date || '').slice(0, 10)) : ''}" />
+        </div>
+      </div>
+      <div class="field">
+        <label>หมายเหตุ</label>
+        <textarea id="sm-notes" rows="2" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical">${isEdit ? escapeHtml(svc.notes || '') : ''}</textarea>
+      </div>
+    `,
+    onSubmit: async () => {
+      const data = {
+        service_type: $('sm-type').value,
+        name: $('sm-name').value.trim(),
+        provider: $('sm-provider').value.trim() || null,
+        price: $('sm-price').value ? parseFloat($('sm-price').value) : null,
+        currency: $('sm-currency').value,
+        expire_date: $('sm-expire').value || null,
+        notes: $('sm-notes').value.trim() || null,
+      };
+      if (!data.name) throw new Error('กรอกชื่อบริการ');
+      const url = isEdit ? `/api/admin/services/${svc.id}` : '/api/admin/services';
+      await fetchJson(url, {
+        method: isEdit ? 'PATCH' : 'POST',
+        body: JSON.stringify(data),
+      });
+      // หากเปลี่ยน type → switch tab ให้
+      _svcActiveTab = data.service_type;
+      _updateSvcTabsUI();
+      await loadAllServices();
+    },
+  });
+}
+
+
+// ============== Websites — pair Domain with Hosting/SSL/Others ==============
+
+let _wsCache = [];
+let _wsSearch = '';
+
+async function renderWebsitesPage() {
+  $('main').innerHTML = `
+    <div class="page-head">
+      <h2 class="page-title">🔗 Websites</h2>
+      <span class="card-sub" id="ws-count">—</span>
+    </div>
+    <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px">
+      จับคู่ <strong>Domain</strong> กับ <strong>Hosting / SSL / Others</strong> — เพิ่ม Domain ที่ <a href="#/domains-config" style="color:var(--primary)">Domain Config</a>, เพิ่ม service ที่ <a href="#/services-config" style="color:var(--primary)">Services Config</a>
+    </div>
+    <div style="margin-bottom:14px">
+      <input id="ws-search" type="text" placeholder="🔍 ค้นหาชื่อ domain / service..." autocomplete="off"
+        style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--bg-card);color:var(--text);box-sizing:border-box" />
+    </div>
+    <div id="ws-list"><div class="empty">กำลังโหลด…</div></div>
+  `;
+  $('ws-search').addEventListener('input', (e) => {
+    _wsSearch = e.target.value;
+    renderWebsitesList();
+  });
+  await loadWebsites();
+}
+
+async function loadWebsites() {
+  let data;
+  try {
+    data = await fetchJson('/api/admin/websites');
+  } catch (e) {
+    $('ws-list').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  _wsCache = data.websites || [];
+  // โหลด services list ด้วย — ใช้ใน "Add link" picker
+  try {
+    const sd = await fetchJson('/api/admin/services');
+    _svcCache = { hosting: [], ssl: [], others: [] };
+    for (const s of (sd.services || [])) {
+      if (_svcCache[s.service_type]) _svcCache[s.service_type].push(s);
+    }
+  } catch (e) {
+    /* ignore — จะแสดง warning ตอนกด Add link */
+  }
+  renderWebsitesList();
+}
+
+function renderWebsitesList() {
+  const listEl = $('ws-list');
+  if (!listEl) return;
+  const q = _wsSearch.trim().toLowerCase();
+  const filtered = !q ? _wsCache : _wsCache.filter(w => {
+    if ((w.domain.name || '').toLowerCase().includes(q)) return true;
+    return (w.services || []).some(s =>
+      (s.name || '').toLowerCase().includes(q)
+      || (s.provider || '').toLowerCase().includes(q)
+    );
+  });
+  if ($('ws-count')) $('ws-count').textContent = `${filtered.length} / ${_wsCache.length} websites`;
+  if (_wsCache.length === 0) {
+    listEl.innerHTML = `<div class="empty">ยังไม่มี domain — เพิ่มที่ <a href="#/domains-config" style="color:var(--primary)">Domain Config</a> ก่อน</div>`;
+    return;
+  }
+  if (filtered.length === 0) {
+    listEl.innerHTML = `<div class="empty">ไม่พบ website ที่ตรงกับการค้นหา</div>`;
+    return;
+  }
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  listEl.innerHTML = filtered.map(w => renderWebsiteCard(w, today)).join('');
+  listEl.querySelectorAll('button[data-ws-act]').forEach(btn => {
+    btn.addEventListener('click', () => handleWebsiteAction(btn));
+  });
+}
+
+function renderWebsiteCard(w, today) {
+  const d = w.domain;
+  // Domain status
+  let domStatus = '<span style="color:var(--text-muted);font-size:11px">— ไม่มีวันหมดอายุ</span>';
+  if (d.expire_date) {
+    const exp = new Date(d.expire_date);
+    const days = Math.floor((exp - today) / 86400000);
+    if (days < 0) domStatus = `<span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(220,38,38,.10);color:var(--critical)">⛔ Domain หมด ${-days} วัน</span>`;
+    else if (days <= 30) domStatus = `<span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(245,158,11,.12);color:#92400e">⚠ Domain เหลือ ${days} วัน</span>`;
+    else domStatus = `<span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(16,185,129,.12);color:var(--green)">✓ ${days} วัน</span>`;
+  }
+
+  // Render service group
+  const renderGroup = (typeId, label, icon, services) => {
+    if (!services || services.length === 0) {
+      return `
+        <div style="flex:1;min-width:200px;background:var(--bg);border:1px dashed var(--border);border-radius:8px;padding:8px 10px">
+          <div style="font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">${icon} ${escapeHtml(label)}</div>
+          <button class="btn" data-ws-act="add" data-ws-domain-id="${d.id}" data-ws-type="${typeId}" style="font-size:11px;padding:4px 9px;width:100%">+ เพิ่ม ${escapeHtml(label)}</button>
+        </div>
+      `;
+    }
+    return `
+      <div style="flex:1;min-width:200px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+          <span style="font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.4px">${icon} ${escapeHtml(label)}</span>
+          <button class="btn" data-ws-act="add" data-ws-domain-id="${d.id}" data-ws-type="${typeId}" style="font-size:10.5px;padding:2px 7px;line-height:1">+</button>
+        </div>
+        ${services.map(s => {
+          let svcExpire = '';
+          if (s.expire_date) {
+            const exp = new Date(s.expire_date);
+            const days = Math.floor((exp - today) / 86400000);
+            if (days < 0) svcExpire = `<span style="color:var(--critical);font-size:10.5px;font-weight:700">⛔ ${-days}d</span>`;
+            else if (days <= 30) svcExpire = `<span style="color:#92400e;font-size:10.5px;font-weight:700">⚠ ${days}d</span>`;
+            else svcExpire = `<span style="color:var(--green);font-size:10.5px;font-weight:600">${days}d</span>`;
+          }
+          return `
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;padding:4px 0;border-top:1px solid var(--border)">
+              <div style="flex:1;min-width:0;overflow:hidden">
+                <div style="font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</div>
+                <div style="font-size:10.5px;color:var(--text-muted)">${s.provider ? escapeHtml(s.provider) + ' · ' : ''}${s.price != null ? fmtMoneyOrNumber(s.price) + ' ' + escapeHtml(s.currency || '') : ''}</div>
+              </div>
+              ${svcExpire}
+              <button class="btn" data-ws-act="unlink" data-ws-domain-id="${d.id}" data-ws-service-id="${s.id}" data-ws-name="${escapeHtml(s.name)}" style="font-size:10px;padding:2px 6px;line-height:1" title="ยกเลิกการผูก">✕</button>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  };
+
+  const by = w.by_type || {};
+  return `
+    <div class="card" style="display:block;margin-bottom:12px;padding:14px 16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+        <div style="flex:1;min-width:240px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span style="font-weight:700;font-size:15px;font-family:ui-monospace,Menlo,monospace;color:var(--text)">🌐 ${escapeHtml(d.name)}</span>
+            ${domStatus}
+            <span style="font-size:11.5px;color:var(--text-muted)">${w.service_count} service${w.service_count !== 1 ? 's' : ''} ผูก</span>
+          </div>
+          ${d.provider ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:2px">🏢 ${escapeHtml(d.provider)}</div>` : ''}
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        ${renderGroup('hosting', 'Hosting', '🖥️', by.hosting)}
+        ${renderGroup('ssl', 'SSL', '🔒', by.ssl)}
+        ${renderGroup('others', 'Others', '📦', by.others)}
+      </div>
+    </div>
+  `;
+}
+
+async function handleWebsiteAction(btn) {
+  const act = btn.dataset.wsAct;
+  const domainId = parseInt(btn.dataset.wsDomainId, 10);
+  if (act === 'add') {
+    const type = btn.dataset.wsType;
+    showLinkServiceModal(domainId, type);
+  } else if (act === 'unlink') {
+    const serviceId = parseInt(btn.dataset.wsServiceId, 10);
+    const name = btn.dataset.wsName;
+    if (!confirm(`ยกเลิกการผูก "${name}" จาก domain นี้?`)) return;
+    try {
+      await fetchJson(`/api/admin/domains/${domainId}/services/${serviceId}`, { method: 'DELETE' });
+      await loadWebsites();
+    } catch (e) { alert('ยกเลิกไม่สำเร็จ: ' + e.message); }
+  }
+}
+
+function showLinkServiceModal(domainId, typeId) {
+  const tabInfo = SERVICE_TYPES.find(t => t.id === typeId);
+  const available = (_svcCache[typeId] || []);
+  // หา domain เพื่อรู้ว่า service ไหนผูกอยู่แล้ว
+  const w = _wsCache.find(x => x.domain.id === domainId);
+  const linkedIds = new Set((w?.services || []).map(s => s.id));
+  const candidates = available.filter(s => !linkedIds.has(s.id));
+
+  if (available.length === 0) {
+    alert(`ยังไม่มี ${tabInfo.label} ในระบบ — เพิ่มที่ Services Config ก่อน`);
+    location.hash = '#/services-config';
+    return;
+  }
+  if (candidates.length === 0) {
+    alert(`Domain นี้ผูกกับ ${tabInfo.label} ทุกตัวที่มีในระบบแล้ว — เพิ่ม ${tabInfo.label} ใหม่ที่ Services Config`);
+    return;
+  }
+
+  showModal({
+    title: `+ เพิ่ม ${tabInfo.icon} ${tabInfo.label}`,
+    body: `
+      <div class="field">
+        <label>เลือก ${escapeHtml(tabInfo.label)}</label>
+        <select id="ls-id" size="${Math.min(8, candidates.length)}" style="width:100%;padding:6px;font-size:13px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
+          ${candidates.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.provider ? ' (' + escapeHtml(s.provider) + ')' : ''}${s.price != null ? ' — ' + fmtMoneyOrNumber(s.price) + ' ' + escapeHtml(s.currency || '') : ''}</option>`).join('')}
+        </select>
+      </div>
+      <div class="hint" style="font-size:11.5px;color:var(--text-muted)">เลือกแล้วกด <strong>บันทึก</strong> เพื่อผูกกับ domain นี้</div>
+    `,
+    onSubmit: async () => {
+      const sid = parseInt($('ls-id').value, 10);
+      if (!sid) throw new Error('เลือก service ก่อน');
+      await fetchJson(`/api/admin/domains/${domainId}/services/${sid}`, { method: 'POST' });
+      await loadWebsites();
+    },
   });
 }
 

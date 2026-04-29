@@ -2,6 +2,25 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.25",
+      "date": "2026-04-29",
+      "title": "Module ใหม่: Services Config (Hosting/SSL/Others) + Websites (จับคู่ Domain↔Service)",
+      "summary": "เก็บข้อมูล Hosting/SSL/Others พร้อมราคา+วันหมดอายุ และจับคู่กับ Domain เป็น Website",
+      "changes": [
+        "DB: ตาราง services (id, service_type, name, provider, price, currency, expire_date, notes)",
+        "DB: ตาราง domain_services (M:N mapping ระหว่าง domain กับ service)",
+        "Backend endpoints (admin only):",
+        "  GET/POST/PATCH/DELETE /api/admin/services + ?type=hosting/ssl/others",
+        "  POST/DELETE /api/admin/domains/{id}/services/{service_id} (link/unlink)",
+        "  GET /api/admin/websites — list domain + linked services (group by type)",
+        "  GET /api/websites — same สำหรับ member (read-only)",
+        "Frontend: เมนูใหม่ '🛠️ Services Config' — tabs (Hosting/SSL/Others) + search + CRUD",
+        "Frontend: เมนูใหม่ '🔗 Websites' — แสดง domain + services 3 group + ปุ่ม + เพิ่ม / ✕ unlink",
+        "Service status badge: ⛔ หมดแล้ว / ⚠ ≤30 วัน / ✓ >30 วัน (เหมือน domain)",
+        "Service row แสดง: ชื่อ + provider + ราคา + วันหมดอายุ + จำนวน domain ที่ผูก"
+      ]
+    },
+    {
       "version": "1.9.24",
       "date": "2026-04-29",
       "title": "Dashboard: กล่อง credential สีเขียว ชัดเจนขึ้น 'Credential: <ชื่อ>'",
