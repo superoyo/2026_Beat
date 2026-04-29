@@ -3681,25 +3681,17 @@ function renderCalendar() {
     html += '</div>';
   }
 
-  // Legend
+  // Legend — explains dot colors + interaction hint
+  const dotSwatch = (color) => `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};vertical-align:middle;margin-right:4px"></span>`;
   html += `
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:14px;font-size:11.5px;color:var(--text-muted);align-items:center">
-      <span><strong>⏰</strong> หมดอายุ</span>
-      <span><strong>🟢</strong> จดทะเบียน</span>
-      <span style="border-left:1px solid var(--border);padding-left:12px">
-        <span style="display:inline-block;width:11px;height:11px;background:rgba(220,38,38,.20);border:1.5px solid var(--critical);border-radius:3px;vertical-align:middle;margin-right:3px"></span>หมดแล้ว
-      </span>
-      <span>
-        <span style="display:inline-block;width:11px;height:11px;background:rgba(245,158,11,.20);border:1.5px solid #f59e0b;border-radius:3px;vertical-align:middle;margin-right:3px"></span>≤30 วัน
-      </span>
-      <span>
-        <span style="display:inline-block;width:11px;height:11px;background:rgba(16,185,129,.15);border:1.5px solid #10b981;border-radius:3px;vertical-align:middle;margin-right:3px"></span>>30 วัน
-      </span>
-      <span>
-        <span style="display:inline-block;width:11px;height:11px;background:rgba(37,99,235,.10);border:1.5px solid rgba(37,99,235,.4);border-radius:3px;vertical-align:middle;margin-right:3px"></span>จดทะเบียน
-      </span>
-      <span>
-        <span style="display:inline-block;width:11px;height:11px;background:var(--bg-card);border:2px solid var(--primary);border-radius:3px;vertical-align:middle;margin-right:3px"></span>วันนี้
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:14px;font-size:11.5px;color:var(--text-muted);align-items:center">
+      <span style="font-style:italic;color:var(--primary)">💡 คลิกที่วันที่มีจุด เพื่อดูรายการ domain</span>
+      <span style="border-left:1px solid var(--border);padding-left:14px">${dotSwatch('#dc2626')}หมดอายุ (เกินกำหนด)</span>
+      <span>${dotSwatch('#f59e0b')}≤30 วัน</span>
+      <span>${dotSwatch('#10b981')}>30 วัน</span>
+      <span>${dotSwatch('#2563eb')}จดทะเบียน</span>
+      <span style="border-left:1px solid var(--border);padding-left:14px">
+        <span style="display:inline-block;width:10px;height:10px;background:var(--bg-card);border:2px solid var(--primary);border-radius:3px;vertical-align:middle;margin-right:3px"></span>วันนี้
       </span>
     </div>
   `;
@@ -3722,12 +3714,17 @@ function renderCalendar() {
   grid.classList.toggle('cal-1month', _calView === '1month');
   grid.innerHTML = html;
   wireCalHeaderClicks();
+  wireCalDayClicks();
 }
 
 // renderMonthPanel(month, year, today, mode='full'|'dots')
+//   - 'full': 1-month view (cells bigger, day font bigger, but still dots-only)
+//   - 'dots': 3-month view (compact)
+// Both modes use dots-only rendering — clicking a cell opens a popup with the domain list.
 function renderMonthPanel(month, year, today, mode) {
   mode = mode || 'full';
   const isDots = mode === 'dots';
+  const isFullDots = mode === 'full';   // 1-month, but still dots-style
 
   // หา events ของเดือนนี้
   const eventsByDay = {};
@@ -3758,10 +3755,11 @@ function renderMonthPanel(month, year, today, mode) {
   const headerSize = isDots ? '13px' : '17px';
   const headerMargin = isDots ? '6px' : '12px';
 
-  // Sizing per mode
-  const cellMin = isDots ? 38 : 74;
-  const cellPad = isDots ? '2px 3px' : '6px 7px';
-  const dayFont = isDots ? '10px' : '13px';
+  // Sizing per mode (both dots-style — no chips with full names)
+  const cellMin = isDots ? 38 : 60;
+  const cellPad = isDots ? '2px 3px' : '5px 7px';
+  const dayFont = isDots ? '10px' : '14px';
+  const dotSize = isDots ? 6 : 9;            // bigger dots in 1-month view
   const headerDowFont = isDots ? '9px' : '11.5px';
   const headerDowPad = isDots ? '3px 1px' : '8px 4px';
 
@@ -3820,54 +3818,37 @@ function renderMonthPanel(month, year, today, mode) {
     );
     const titleAttr = titleParts.length ? `title="${escapeHtml(titleParts.join('\n'))}"` : '';
 
-    let cellContent;
-    if (isDots) {
-      // === Dots mode (3-month view) ===
-      // แต่ละ event = dot สี
-      const dotColor = (e) => {
-        if (e.type === 'register') return '#2563eb';
-        if (expireDays != null) {
-          if (expireDays < 0) return '#dc2626';
-          if (expireDays <= 30) return '#f59e0b';
-          return '#10b981';
-        }
-        return '#6b7280';
-      };
-      const maxDots = 4;
-      const dots = events.slice(0, maxDots).map(e =>
-        `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${dotColor(e)}"></span>`
-      ).join('');
-      const moreNum = events.length > maxDots ? `<span style="font-size:8px;font-weight:700;color:var(--text-muted);margin-left:1px">+${events.length - maxDots}</span>` : '';
-      cellContent = `
-        <div style="font-size:${dayFont};font-weight:${isToday || hasEvent ? '700' : '500'};color:${dayColor};line-height:1">${day}${isToday ? '•' : ''}</div>
-        ${hasEvent ? `<div style="display:flex;flex-wrap:wrap;gap:2px;align-items:center;margin-top:2px">${dots}${moreNum}</div>` : ''}
-      `;
-    } else {
-      // === Full mode (1-month view) ===
-      const maxShow = 4;
-      const visibleChips = events.slice(0, maxShow).map(e => {
-        const isExp = e.type === 'expire';
-        const icon = isExp ? '⏰' : '🟢';
-        const labelColor = isExp ? dayColor : 'var(--primary-dark)';
-        const labelBg = isExp ? 'rgba(255,255,255,.6)' : 'rgba(37,99,235,.12)';
-        return `
-          <div style="font-size:10.5px;font-weight:600;color:${labelColor};background:${labelBg};padding:1px 5px;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4">
-            ${icon} ${escapeHtml(e.domain.name)}
-          </div>
-        `;
-      }).join('');
-      const moreBadge = events.length > maxShow
-        ? `<div style="font-size:9.5px;font-weight:700;color:var(--text-muted);padding:0 4px">+${events.length - maxShow} เพิ่มเติม</div>`
-        : '';
-      cellContent = `
-        <div style="font-size:${dayFont};font-weight:${isToday || hasEvent ? '700' : '500'};color:${dayColor};line-height:1">${day}${isToday ? ' •' : ''}</div>
-        ${visibleChips}
-        ${moreBadge}
-      `;
-    }
+    // === Dots-only rendering (both modes) — chips with full names removed ===
+    // Click on a cell with events → popup with domain list (wired in wireCalDayClicks)
+    const dotColor = (e) => {
+      if (e.type === 'register') return '#2563eb';
+      if (expireDays != null) {
+        if (expireDays < 0) return '#dc2626';
+        if (expireDays <= 30) return '#f59e0b';
+        return '#10b981';
+      }
+      return '#6b7280';
+    };
+    const maxDots = isDots ? 4 : 6;     // 1-month can show a few more dots
+    const dots = events.slice(0, maxDots).map(e =>
+      `<span style="display:inline-block;width:${dotSize}px;height:${dotSize}px;border-radius:50%;background:${dotColor(e)}"></span>`
+    ).join('');
+    const extraCount = events.length - maxDots;
+    const moreNum = extraCount > 0
+      ? `<span style="font-size:${isDots ? 8 : 10}px;font-weight:700;color:var(--text-muted);margin-left:2px">+${extraCount}</span>`
+      : '';
+    const cellContent = `
+      <div style="font-size:${dayFont};font-weight:${isToday || hasEvent ? '700' : '500'};color:${dayColor};line-height:1">${day}${isToday ? ' •' : ''}</div>
+      ${hasEvent ? `<div style="display:flex;flex-wrap:wrap;gap:${isDots ? 2 : 3}px;align-items:center;margin-top:${isDots ? 2 : 4}px">${dots}${moreNum}</div>` : ''}
+    `;
 
+    // Cells with events get a clickable class + data attrs for the popup wiring
+    const cellClass = hasEvent ? 'cal-day-clickable' : '';
+    const dataAttrs = hasEvent ? `data-cal-day="${day}" data-cal-month="${month}" data-cal-year="${year}"` : '';
+    const cursor = hasEvent ? 'pointer' : 'default';
+    const hoverStyle = hasEvent ? 'transition:transform .12s ease, box-shadow .12s ease' : '';
     html += `
-      <div ${titleAttr} style="min-height:${cellMin}px;padding:${cellPad};background:${bg};border:${border};border-radius:${isDots ? '5px' : '8px'};display:flex;flex-direction:column;gap:${isDots ? '0' : '3px'};overflow:hidden;cursor:${hasEvent ? 'help' : 'default'}">
+      <div ${titleAttr} ${dataAttrs} class="${cellClass}" style="min-height:${cellMin}px;padding:${cellPad};background:${bg};border:${border};border-radius:${isDots ? '5px' : '8px'};display:flex;flex-direction:column;gap:${isDots ? '0' : '3px'};overflow:hidden;cursor:${cursor};${hoverStyle}">
         ${cellContent}
       </div>
     `;
@@ -3913,6 +3894,172 @@ function wireCalHeaderClicks() {
     el.addEventListener('mouseenter', () => { el.style.textDecorationColor = 'var(--primary)'; });
     el.addEventListener('mouseleave', () => { el.style.textDecorationColor = 'transparent'; });
   });
+}
+
+// Wire clickable day cells — each cell with events opens a popup with the domain list
+function wireCalDayClicks() {
+  document.querySelectorAll('.cal-day-clickable').forEach(el => {
+    el.addEventListener('mouseenter', () => {
+      el.style.boxShadow = '0 0 0 2px var(--primary)';
+      el.style.transform = 'translateY(-1px)';
+    });
+    el.addEventListener('mouseleave', () => {
+      el.style.boxShadow = '';
+      el.style.transform = '';
+    });
+    el.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const day = parseInt(el.dataset.calDay, 10);
+      const month = parseInt(el.dataset.calMonth, 10);
+      const year = parseInt(el.dataset.calYear, 10);
+      showCalDayPopup(day, month, year, el);
+    });
+  });
+}
+
+// Compute events for a given (day, month, year) by scanning _domainsCache
+function _calEventsOnDay(day, month, year) {
+  const events = [];
+  for (const d of _domainsCache) {
+    if (d.register_date) {
+      const r = new Date(d.register_date);
+      if (!isNaN(r.getTime()) && r.getDate() === day && r.getMonth() === month && r.getFullYear() === year) {
+        events.push({ type: 'register', domain: d });
+      }
+    }
+    if (d.expire_date) {
+      const e = new Date(d.expire_date);
+      if (!isNaN(e.getTime()) && e.getDate() === day && e.getMonth() === month && e.getFullYear() === year) {
+        events.push({ type: 'expire', domain: d });
+      }
+    }
+  }
+  // Sort: expire first (more urgent), then register; alphabetical within type
+  events.sort((a, b) => {
+    if (a.type !== b.type) return a.type === 'expire' ? -1 : 1;
+    return (a.domain.name || '').localeCompare(b.domain.name || '', 'th');
+  });
+  return events;
+}
+
+function showCalDayPopup(day, month, year, anchor) {
+  // Close any existing popup first
+  const existing = document.getElementById('cal-day-pop');
+  if (existing) existing.remove();
+
+  const events = _calEventsOnDay(day, month, year);
+  if (events.length === 0) return;
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  const cellDate = new Date(year, month, day);
+  const dateLabel = `${day} ${_MONTHS_TH[month]} ${year + 543}`;
+
+  // Status badge per event type
+  const eventCard = (e) => {
+    const isExp = e.type === 'expire';
+    const icon = isExp ? '⏰' : '🟢';
+    const label = isExp ? 'หมดอายุ' : 'จดทะเบียน';
+    let badge = '';
+    let labelColor = isExp ? 'var(--critical)' : 'var(--primary-dark)';
+    if (isExp && e.domain.expire_date) {
+      const days = Math.floor((new Date(e.domain.expire_date) - today) / 86400000);
+      if (days < 0) {
+        badge = `<span style="display:inline-flex;padding:1px 7px;border-radius:999px;background:rgba(220,38,38,.10);color:var(--critical);font-size:10.5px;font-weight:700">⛔ หมด ${-days} วันแล้ว</span>`;
+      } else if (days <= 30) {
+        badge = `<span style="display:inline-flex;padding:1px 7px;border-radius:999px;background:rgba(245,158,11,.12);color:#92400e;font-size:10.5px;font-weight:700">⚠ เหลือ ${days} วัน</span>`;
+      } else {
+        badge = `<span style="display:inline-flex;padding:1px 7px;border-radius:999px;background:rgba(16,185,129,.12);color:var(--green);font-size:10.5px;font-weight:700">✓ เหลือ ${days} วัน</span>`;
+      }
+    }
+    const provider = e.domain.provider ? ` · 🏢 ${escapeHtml(e.domain.provider)}` : '';
+    return `
+      <div class="cal-pop-row" data-d-name="${escapeHtml(e.domain.name)}" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:background .12s">
+        <div style="flex:1;min-width:0;overflow:hidden">
+          <div style="font-family:ui-monospace,Menlo,monospace;font-weight:700;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(e.domain.name)}</div>
+          <div style="font-size:11.5px;color:${labelColor};font-weight:600;margin-top:1px">${icon} ${label}${provider}</div>
+        </div>
+        ${badge}
+      </div>
+    `;
+  };
+
+  const pop = document.createElement('div');
+  pop.id = 'cal-day-pop';
+  pop.style.cssText = `
+    position:fixed; z-index:9999; background:var(--bg-card); border:1px solid var(--border);
+    border-radius:12px; box-shadow:0 12px 36px rgba(0,0,0,.18);
+    padding:12px 14px; min-width:260px; max-width:340px; max-height:60vh; overflow-y:auto;
+    animation: calPopIn .14s ease-out;
+  `;
+  pop.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:10px">
+      <div style="font-weight:700;font-size:13.5px;color:var(--text)">📅 ${escapeHtml(dateLabel)}</div>
+      <div style="font-size:11px;color:var(--text-muted);font-weight:600;white-space:nowrap">${events.length} รายการ</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      ${events.map(eventCard).join('')}
+    </div>
+  `;
+
+  // One-time CSS for the slide-in animation
+  if (!document.getElementById('cal-pop-css')) {
+    const css = document.createElement('style');
+    css.id = 'cal-pop-css';
+    css.textContent = `
+      @keyframes calPopIn {
+        from { opacity: 0; transform: translateY(-4px) scale(.97); }
+        to   { opacity: 1; transform: translateY(0) scale(1); }
+      }
+      .cal-pop-row:hover { background: var(--bg-soft) !important; }
+    `;
+    document.head.appendChild(css);
+  }
+
+  document.body.appendChild(pop);
+
+  // Smart positioning — try to place below the cell; flip above if it'd overflow
+  const rect = anchor.getBoundingClientRect();
+  const popRect = pop.getBoundingClientRect();
+  const margin = 10;
+  let top = rect.bottom + 8;
+  let left = rect.left;
+  if (left + popRect.width > window.innerWidth - margin) {
+    left = window.innerWidth - popRect.width - margin;
+  }
+  if (left < margin) left = margin;
+  if (top + popRect.height > window.innerHeight - margin) {
+    top = rect.top - popRect.height - 8;
+    if (top < margin) top = margin;
+  }
+  pop.style.top = top + 'px';
+  pop.style.left = left + 'px';
+
+  // Click on a row → switch to Domain Config page (admin) or just info
+  pop.querySelectorAll('.cal-pop-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const name = row.dataset.dName;
+      // For now, just close the popup. Future: could navigate to Domain Config + filter.
+      // Keep this as no-op or copy name to clipboard for quick reference.
+      try {
+        if (navigator.clipboard) navigator.clipboard.writeText(name);
+      } catch (_) {}
+    });
+  });
+
+  // Close handlers — outside click + ESC
+  const close = () => {
+    pop.remove();
+    document.removeEventListener('click', onOutside, true);
+    document.removeEventListener('keydown', onKey);
+  };
+  const onOutside = (e) => {
+    if (!pop.contains(e.target) && !anchor.contains(e.target)) close();
+  };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  setTimeout(() => {
+    document.addEventListener('click', onOutside, true);
+    document.addEventListener('keydown', onKey);
+  }, 0);
 }
 
 

@@ -2,6 +2,25 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.18",
+      "date": "2026-04-29",
+      "title": "Calendar: ย่อ cell เป็น dots-only + click เพื่อดูรายการ domain ในวันนั้น",
+      "summary": "ลด clutter ในปฏิทิน — cell แสดงแค่จุดสี + popup ผุดเมื่อคลิก",
+      "changes": [
+        "1-month view: เลิกแสดง chips ชื่อ domain เต็ม → ใช้ dots สีแบบเดียวกับ 3-month",
+        "  cell ใหญ่ขึ้น (60px) + dot ใหญ่ขึ้น (9px) + แสดงได้ 6 จุดต่อวัน",
+        "Click cell ที่มี events → popup ลอย แสดง:",
+        "  • วันที่ภาษาไทย + จำนวนรายการ",
+        "  • ชื่อ domain + icon ⏰/🟢 + provider + status badge (เหลือกี่วัน)",
+        "  • Sorted: หมดอายุก่อน (urgent) → จดทะเบียน",
+        "  • คลิก row → copy ชื่อ domain ลง clipboard",
+        "Hover cell → highlight ด้วย ring สี primary + เลื่อนขึ้นเล็กน้อย",
+        "Smart popup positioning — ไม่ทะลุ viewport (flip ขึ้นถ้าใกล้ขอบล่าง)",
+        "Slide-in animation + close บน outside click + ESC",
+        "Legend ใหม่: จุดสีแทน chips + hint 'คลิกที่วันที่มีจุด เพื่อดูรายการ domain'"
+      ]
+    },
+    {
       "version": "1.9.17",
       "date": "2026-04-29",
       "title": "WHOIS sync indicator: badge 🌐 + tooltip บนวันที่ที่ดึงจาก WHOIS",
