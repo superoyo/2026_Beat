@@ -2,16 +2,26 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.20",
+      "date": "2026-04-29",
+      "title": "Magnific: ใช้ selectors เดิม (DOM rebrand เหมือนเด๊ะ)",
+      "summary": "ผู้ใช้ยืนยัน — Magnific แค่เปลี่ยนชื่อเว็บ DOM เหมือน Freepik ทุกอย่าง",
+      "changes": [
+        "ลบ speculative selectors ของ token (tokens-limit, user-tokens, ฯลฯ) ออก",
+        "ลบ broad attribute hints ที่เพิ่ม 'token' / aria-label",
+        "ลบ text pattern 'token' / 'tokens: 100' (กลับเป็น regex เดิม)",
+        "เก็บไว้แค่: hostname regex (เพิ่ม magnific.{com,ai}) + seed sites + help text",
+        "Logic เดียวเลย — ใช้ selectors เดิมของ Freepik ได้กับ Magnific 100%"
+      ]
+    },
+    {
       "version": "1.9.19",
       "date": "2026-04-29",
-      "title": "Magnific.com support: ดึง token แสดงใน dashboard เคียงคู่ Freepik",
-      "summary": "เพิ่มเว็บ magnific.com (และ magnific.ai) ให้ extension scrape ยอด token อัตโนมัติ",
+      "title": "Magnific.com support: scrape balance ด้วย selectors เดิมจาก Freepik",
+      "summary": "Magnific เป็น rebrand จาก Freepik (DOM เหมือนเด๊ะ) — แค่ขยาย hostname regex",
       "changes": [
         "Extension content.js v28: เพิ่ม magnific.{com,ai} ใน CREDIT_HOSTNAMES regex",
-        "  Logic การ scrape เหมือน Freepik แค่ขยาย selectors/patterns ให้รู้จัก 'token' ด้วย",
-        "Selectors ใหม่ (KNOWN_GOOD): tokens-limit/remaining/balance, user-tokens, token-balance, aria-label='tokens remaining'",
-        "Broad attribute hints: รวม data-cy/testid/class*='token', aria-label*='credit/token'",
-        "Text pattern รองรับ: '100 tokens' / 'tokens: 100' / '100 credits' (ทั้ง 2 รูปแบบ before/after)",
+        "Selectors ทั้งหมด ('credits-limit', 'user-credits', text pattern 'credits') ใช้ได้กับ Magnific เลย",
         "Backend: seed sites Magnific + Magnific (.ai) อัตโนมัติบน startup ครั้งแรก",
         "Options.js: ปุ่ม Test selector รองรับทั้ง freepik.com + magnific.com tab",
         "Help text + dashboard empty state อัพเดทกล่าวถึงทั้ง Freepik + Magnific",
