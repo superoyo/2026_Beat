@@ -739,7 +739,6 @@
         <a href="#/teams" data-route="teams">👨‍👩‍👧 Teams</a>
         <a href="#/access-requests" data-route="access-requests">🔔 Access Requests <span id="nav-req-badge" style="display:none;margin-left:6px;background:var(--critical);color:#fff;font-size:10.5px;padding:1px 7px;border-radius:999px;font-weight:700"></span></a>
         <a href="#/sites" data-route="sites">🛠 Config</a>
-        <a href="#/domains-config" data-route="domains-config">🌐 Domain Config</a>
         <a href="#/services-config" data-route="services-config">🛠️ Services Config</a>
         <a href="#/websites" data-route="websites">🔗 Websites</a>
         <a href="#/logs" data-route="logs">📜 Logs</a>
@@ -4074,15 +4073,16 @@ let _dcCache = [];
 let _dcSearch = '';
 let _dcSort = 'expire-asc';   // expire-asc | name-asc | name-desc | created-desc
 
+// Domain Config — เดิมเคยเป็นหน้าแยก ตอนนี้ถูกรวมเข้า Services Config เป็น tab แรก
+// renderDomainsConfigPage = legacy alias → ส่งต่อไป Services Config (Domain tab)
 async function renderDomainsConfigPage() {
-  $('main').innerHTML = `
-    <div class="page-head">
-      <h2 class="page-title">🌐 Domain Config</h2>
-      <button class="btn primary" id="d-add-btn">+ เพิ่ม Domain</button>
-    </div>
-    <div class="hint" style="margin-bottom:10px;color:var(--text-muted);font-size:13px">
-      จัดการ domain — เพิ่ม, แก้ไข, ลบ + บันทึกการ renew พร้อมแนบใบเสร็จ
-    </div>
+  _scActiveTab = 'domain';
+  await renderServicesConfigPage();
+}
+
+// HTML body ของ Domain tab (toolbar + list) — ใช้ใน Services Config
+function _buildDomainTabBodyHTML() {
+  return `
     <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
       <div style="flex:1;min-width:240px;position:relative">
         <input id="dc-search" type="text" placeholder="🔍 ค้นหาชื่อ domain / provider / note..." autocomplete="off"
@@ -4100,12 +4100,13 @@ async function renderDomainsConfigPage() {
     </div>
     <div id="dc-list"><div class="empty">กำลังโหลด…</div></div>
   `;
-  $('d-add-btn').addEventListener('click', () => showDomainModal(null));
-  // restore previous search/sort state
+}
+
+// Wire events ของ Domain tab — ใช้ค่าจาก _dcSearch / _dcSort ที่จำไว้
+function _wireDomainTab() {
   $('dc-search').value = _dcSearch;
   $('dc-sort').value = _dcSort;
   $('dc-search-clear').style.display = _dcSearch ? '' : 'none';
-  // wire toolbar
   $('dc-search').addEventListener('input', (e) => {
     _dcSearch = e.target.value;
     $('dc-search-clear').style.display = _dcSearch ? '' : 'none';
@@ -4122,7 +4123,6 @@ async function renderDomainsConfigPage() {
     _dcSort = e.target.value;
     renderDomainsConfigRows();
   });
-  await loadDomainsConfigList();
 }
 
 async function loadDomainsConfigList() {
@@ -5159,62 +5159,104 @@ async function showRenewalHistoryModal(domainId, domainName) {
 
 // ============== Services Config (Hosting / SSL / Others — admin only) ==============
 
+// Tabs ของ Services Config — รวม Domain เป็น tab แรก
 const SERVICE_TYPES = [
-  { id: 'hosting', label: 'Hosting',  icon: '🖥️',  emptyText: 'ยังไม่มี Hosting service' },
-  { id: 'ssl',     label: 'SSL',      icon: '🔒',  emptyText: 'ยังไม่มี SSL certificate' },
-  { id: 'others',  label: 'Others',   icon: '📦',  emptyText: 'ยังไม่มี service อื่น ๆ' },
+  { id: 'domain',  label: 'Domain',   icon: '🌐',  isDomain: true,
+    addLabel: '+ เพิ่ม Domain',  emptyText: 'ยังไม่มี Domain' },
+  { id: 'hosting', label: 'Hosting',  icon: '🖥️',
+    addLabel: '+ เพิ่ม Hosting', emptyText: 'ยังไม่มี Hosting service' },
+  { id: 'ssl',     label: 'SSL',      icon: '🔒',
+    addLabel: '+ เพิ่ม SSL',     emptyText: 'ยังไม่มี SSL certificate' },
+  { id: 'others',  label: 'Others',   icon: '📦',
+    addLabel: '+ เพิ่ม Others',  emptyText: 'ยังไม่มี service อื่น ๆ' },
 ];
 
 let _svcCache = { hosting: [], ssl: [], others: [] };
-let _svcActiveTab = 'hosting';
 let _svcSearch = '';
+// Active tab ของ Services Config — default = 'domain'
+let _scActiveTab = 'domain';
 
 async function renderServicesConfigPage() {
+  const tab = SERVICE_TYPES.find(t => t.id === _scActiveTab) || SERVICE_TYPES[0];
   $('main').innerHTML = `
     <div class="page-head">
       <h2 class="page-title">🛠️ Services Config</h2>
-      <button class="btn primary" id="svc-add-btn">+ เพิ่ม Service</button>
+      <button class="btn primary" id="sc-add-btn">${escapeHtml(tab.addLabel)}</button>
     </div>
     <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px">
-      จัดการ Hosting / SSL / Others — ใช้ในหน้า <a href="#/websites" style="color:var(--primary)">Websites</a> เพื่อจับคู่กับ Domain
+      จัดการ Domain / Hosting / SSL / Others — จับคู่ Domain กับ services ได้ที่ <a href="#/websites" style="color:var(--primary)">Websites</a>
     </div>
-    <div style="display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:14px">
+    <div style="display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:14px;flex-wrap:wrap">
       ${SERVICE_TYPES.map(t => `
-        <button class="svc-tab" data-svc-tab="${t.id}" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:9px 16px;font-size:13px;font-weight:600;color:var(--text-muted);cursor:pointer;font-family:inherit;transition:color .15s,border-color .15s">${t.icon} ${t.label}</button>
+        <button class="sc-tab" data-sc-tab="${t.id}" style="background:transparent;border:none;border-bottom:2px solid transparent;padding:9px 16px;font-size:13px;font-weight:600;color:var(--text-muted);cursor:pointer;font-family:inherit;transition:color .15s,border-color .15s">${t.icon} ${t.label}</button>
       `).join('')}
     </div>
-    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
-      <div style="flex:1;min-width:240px;position:relative">
-        <input id="svc-search" type="text" placeholder="🔍 ค้นหาชื่อ / provider / note..." autocomplete="off"
-          style="width:100%;padding:8px 32px 8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--bg-card);color:var(--text);box-sizing:border-box" />
-      </div>
-      <span id="svc-count" style="color:var(--text-muted);font-size:12.5px;font-weight:600;white-space:nowrap">— รายการ</span>
-    </div>
-    <div id="svc-list"><div class="empty">กำลังโหลด…</div></div>
+    <div id="sc-content"></div>
   `;
   // wire tabs
-  document.querySelectorAll('.svc-tab').forEach(b => {
-    b.addEventListener('click', () => {
-      _svcActiveTab = b.dataset.svcTab;
-      _updateSvcTabsUI();
-      renderServicesRows();
+  document.querySelectorAll('.sc-tab').forEach(b => {
+    b.addEventListener('click', async () => {
+      _scActiveTab = b.dataset.scTab;
+      _updateScTabsUI();
+      _updateScAddButton();
+      await renderActiveScContent();
     });
   });
-  $('svc-add-btn').addEventListener('click', () => showServiceModal(null, _svcActiveTab));
-  $('svc-search').addEventListener('input', e => {
-    _svcSearch = e.target.value;
-    renderServicesRows();
-  });
-  _updateSvcTabsUI();
-  await loadAllServices();
+  $('sc-add-btn').addEventListener('click', _onScAddClick);
+  _updateScTabsUI();
+  await renderActiveScContent();
 }
 
-function _updateSvcTabsUI() {
-  document.querySelectorAll('.svc-tab').forEach(b => {
-    const isActive = b.dataset.svcTab === _svcActiveTab;
+function _updateScTabsUI() {
+  document.querySelectorAll('.sc-tab').forEach(b => {
+    const isActive = b.dataset.scTab === _scActiveTab;
     b.style.color = isActive ? 'var(--primary)' : 'var(--text-muted)';
     b.style.borderBottomColor = isActive ? 'var(--primary)' : 'transparent';
   });
+}
+
+function _updateScAddButton() {
+  const tab = SERVICE_TYPES.find(t => t.id === _scActiveTab) || SERVICE_TYPES[0];
+  if ($('sc-add-btn')) $('sc-add-btn').textContent = tab.addLabel;
+}
+
+function _onScAddClick() {
+  if (_scActiveTab === 'domain') {
+    showDomainModal(null);
+  } else {
+    showServiceModal(null, _scActiveTab);
+  }
+}
+
+async function renderActiveScContent() {
+  const c = $('sc-content');
+  if (!c) return;
+  if (_scActiveTab === 'domain') {
+    // Domain tab — ใช้ helpers ที่ extract มาจาก renderDomainsConfigPage เดิม
+    c.innerHTML = _buildDomainTabBodyHTML();
+    _wireDomainTab();
+    await loadDomainsConfigList();
+  } else {
+    // Service tab (hosting/ssl/others) — ใช้ logic เดิม
+    c.innerHTML = `
+      <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+        <div style="flex:1;min-width:240px;position:relative">
+          <input id="svc-search" type="text" placeholder="🔍 ค้นหาชื่อ / provider / note..." autocomplete="off"
+            style="width:100%;padding:8px 32px 8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--bg-card);color:var(--text);box-sizing:border-box" />
+        </div>
+        <span id="svc-count" style="color:var(--text-muted);font-size:12.5px;font-weight:600;white-space:nowrap">— รายการ</span>
+      </div>
+      <div id="svc-list"><div class="empty">กำลังโหลด…</div></div>
+    `;
+    // Reset search ตอน switch tab — ป้องกันค่า search ของ tab เดิมไป filter tab ใหม่
+    _svcSearch = '';
+    $('svc-search').value = '';
+    $('svc-search').addEventListener('input', e => {
+      _svcSearch = e.target.value;
+      renderServicesRows();
+    });
+    await loadAllServices();
+  }
 }
 
 async function loadAllServices() {

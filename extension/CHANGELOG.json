@@ -2,6 +2,21 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.26",
+      "date": "2026-04-29",
+      "title": "Services Config: รวม Domain เป็น tab แรก (4 tabs ในหน้าเดียว)",
+      "summary": "ย้าย Domain Config มารวมใน Services Config — ลดเมนู, ทุกบริการอยู่ที่เดียวกัน",
+      "changes": [
+        "Services Config มี 4 tabs: 🌐 Domain / 🖥️ Hosting / 🔒 SSL / 📦 Others",
+        "Tab Domain default — เห็นรายการ domain เป็นอันดับแรก",
+        "ปุ่ม '+ เพิ่ม' เปลี่ยน label ตาม tab (+ เพิ่ม Domain / + เพิ่ม Hosting / ฯลฯ)",
+        "ลบ 'Domain Config' ออกจาก sidebar",
+        "Routing #/domains-config ยังใช้ได้ → redirect ไป #/services-config (Domain tab)",
+        "Refactor: แยก _buildDomainTabBodyHTML + _wireDomainTab เป็น helper แทน",
+        "เก็บ logic เดิมทุกอย่าง (search/sort/state/lookup/edit) ทำงานเหมือนเดิมในทุก tab"
+      ]
+    },
+    {
       "version": "1.9.25",
       "date": "2026-04-29",
       "title": "Module ใหม่: Services Config (Hosting/SSL/Others) + Websites (จับคู่ Domain↔Service)",
