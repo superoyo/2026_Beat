@@ -2,6 +2,22 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.15",
+      "date": "2026-04-29",
+      "title": "WHOIS: query RDAP server ของ TLD โดยตรง (รองรับ datafirst.id ฯลฯ)",
+      "summary": "แก้กรณี server block port 43 + rdap.org คืน 404 — ใช้ IANA RDAP bootstrap ไปที่ TLD authoritative ตรง",
+      "changes": [
+        "ปัญหา: บน server ผู้ใช้ port 43 ถูก firewall block (No route to host) + rdap.org คืน 404 สำหรับบาง .id แม้จะมีอยู่จริง",
+        "แก้: load IANA RDAP bootstrap (https://data.iana.org/rdap/dns.json) cache ไว้ → query TLD-authoritative RDAP server ตรง",
+        ".id → https://rdap.pandi.id/rdap/ (PANDI)",
+        ".mobi → https://rdap.identitydigital.services/rdap/ (Identity Digital)",
+        ".th → https://rdap.thains.co.th",
+        "Fallback: ถ้า authoritative ไม่ตอบ → ลอง rdap.org อีกที",
+        "Bootstrap cache ใน memory — โหลดครั้งเดียวต่อ session",
+        "Test: datafirst.id ✓ (created 2023-08-02, expire 2026-08-02), domain.id ✓, nokia.mobi ✓, samsung.mobi ✓"
+      ]
+    },
+    {
       "version": "1.9.14",
       "date": "2026-04-29",
       "title": "WHOIS: รองรับ .id + แก้ SSL fail (certifi + direct socket fallback)",

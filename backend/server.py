@@ -4281,29 +4281,44 @@ def _whois_server_for_domain(domain: str) -> Optional[str]:
         return None
 
 
-def _rdap_lookup(domain: str, *, timeout: float = 10.0) -> dict[str, Any]:
-    """Query rdap.org (free aggregator) — works for .mobi, .co.th, and most modern TLDs.
-    Returns dict (subset of WHOIS-shaped fields) or {'_error': ...} on failure."""
-    url = f"https://rdap.org/domain/{domain}"
-    req = urllib.request.Request(url, headers={
-        # Some TLD RDAP servers return 403 for non-browser UAs after redirect
-        "Accept": "application/rdap+json, application/json",
-        "User-Agent": "Mozilla/5.0 (compatible; fefl-beat WHOIS lookup)",
-    })
-    try:
-        with urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX) as resp:
-            payload = _json.loads(resp.read().decode("utf-8", errors="replace"))
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return {"_error": "RDAP: domain ไม่มีอยู่ (NXDOMAIN)"}
-        return {"_error": f"RDAP HTTP {e.code}"}
-    except urllib.error.URLError as e:
-        return {"_error": f"RDAP network error: {e.reason}"}
-    except Exception as e:
-        return {"_error": f"RDAP error: {e}"}
+_RDAP_BOOTSTRAP_URL = "https://data.iana.org/rdap/dns.json"
+_rdap_bootstrap_cache: Optional[dict[str, str]] = None   # tld(lower) → base URL
 
+
+def _load_rdap_bootstrap() -> dict[str, str]:
+    """Load + cache IANA's authoritative RDAP bootstrap (TLD → RDAP base URL).
+    Caches forever after first success. Returns empty dict on failure."""
+    global _rdap_bootstrap_cache
+    if _rdap_bootstrap_cache is not None:
+        return _rdap_bootstrap_cache
+    try:
+        req = urllib.request.Request(_RDAP_BOOTSTRAP_URL, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; fefl-beat WHOIS lookup)",
+        })
+        with urllib.request.urlopen(req, timeout=10, context=_SSL_CTX) as resp:
+            data = _json.loads(resp.read().decode("utf-8"))
+        mapping: dict[str, str] = {}
+        for service in data.get("services") or []:
+            if not isinstance(service, list) or len(service) < 2:
+                continue
+            tlds = service[0] or []
+            urls = service[1] or []
+            if not urls or not tlds:
+                continue
+            base = str(urls[0]).rstrip("/")
+            for tld in tlds:
+                mapping[str(tld).lower()] = base
+        _rdap_bootstrap_cache = mapping
+        return mapping
+    except Exception:
+        _rdap_bootstrap_cache = {}    # cache the failure so we don't keep retrying within session
+        return {}
+
+
+def _parse_rdap_payload(payload: dict) -> dict[str, Any]:
+    """Extract WHOIS-shaped fields from an RDAP JSON payload."""
     out: dict[str, Any] = {}
-    # Events: registration / expiration / last changed
+    # Events
     for event in payload.get("events") or []:
         action = (event.get("eventAction") or "").lower()
         date = event.get("eventDate")
@@ -4315,14 +4330,14 @@ def _rdap_lookup(domain: str, *, timeout: float = 10.0) -> dict[str, Any]:
             out["expiration_date"] = date
         elif action in ("last changed", "last update") and "updated_date" not in out:
             out["updated_date"] = date
-    # Registrar (entities with role 'registrar', vCard 'fn' field)
+    # Registrar
     for ent in payload.get("entities") or []:
         if "registrar" not in (ent.get("roles") or []):
             continue
         vcard = ent.get("vcardArray")
         if isinstance(vcard, list) and len(vcard) >= 2 and isinstance(vcard[1], list):
             for item in vcard[1]:
-                if isinstance(item, list) and len(item) >= 4 and item[0] == "fn":
+                if isinstance(item, list) and len(item) >= 4 and item[0] == "fn" and item[3]:
                     out["registrar"] = item[3]
                     break
         if "registrar" in out:
@@ -4338,8 +4353,53 @@ def _rdap_lookup(domain: str, *, timeout: float = 10.0) -> dict[str, Any]:
     # Status
     if payload.get("status"):
         out["status"] = payload["status"]
-    out["_source"] = "rdap"
     return out
+
+
+def _rdap_request(url: str, *, timeout: float = 10.0) -> tuple[Optional[dict], Optional[str]]:
+    """HTTP GET to an RDAP endpoint. Returns (payload, error)."""
+    req = urllib.request.Request(url, headers={
+        "Accept": "application/rdap+json, application/json",
+        "User-Agent": "Mozilla/5.0 (compatible; fefl-beat WHOIS lookup)",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX) as resp:
+            return _json.loads(resp.read().decode("utf-8", errors="replace")), None
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None, "404 (NXDOMAIN)"
+        return None, f"HTTP {e.code}"
+    except urllib.error.URLError as e:
+        return None, f"network: {e.reason}"
+    except Exception as e:
+        return None, str(e)
+
+
+def _rdap_lookup(domain: str, *, timeout: float = 10.0) -> dict[str, Any]:
+    """Query RDAP for a domain. Tries TLD-authoritative server (from IANA bootstrap)
+    first, then falls back to rdap.org aggregator. HTTPS only — works through firewalls
+    that block port 43."""
+    tld = domain.rsplit(".", 1)[-1].lower()
+    bootstrap = _load_rdap_bootstrap()
+    candidates: list[str] = []
+    if tld in bootstrap:
+        candidates.append(f"{bootstrap[tld]}/domain/{domain}")
+    candidates.append(f"https://rdap.org/domain/{domain}")
+    errors: list[str] = []
+    for url in candidates:
+        payload, err = _rdap_request(url, timeout=timeout)
+        if err:
+            errors.append(f"{url} → {err}")
+            continue
+        if not payload:
+            continue
+        parsed = _parse_rdap_payload(payload)
+        if parsed.get("creation_date") or parsed.get("expiration_date") or parsed.get("registrar"):
+            parsed["_source"] = "rdap"
+            parsed["_url"] = url
+            return parsed
+        errors.append(f"{url} → empty payload")
+    return {"_error": "RDAP: " + " | ".join(errors) if errors else "RDAP: ไม่พบ data"}
 
 
 @app.get("/api/admin/domains/lookup/whois")
