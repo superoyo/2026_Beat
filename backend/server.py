@@ -416,15 +416,22 @@ def init_db() -> None:
                   f"Visit /login to set up again. "
                   f"REMOVE the env var after setup!")
 
-        # ---- 5. seed Freepik site (ครั้งแรกเท่านั้น)
-        existing = conn.execute(
-            "SELECT 1 FROM sites WHERE url_pattern = ?", ("*.freepik.com/*",)
-        ).fetchone()
-        if not existing:
-            conn.execute(
-                "INSERT INTO sites(name, url_pattern, created_at) VALUES (?, ?, ?)",
-                ("Freepik", "*.freepik.com/*", utc_now().isoformat()),
-            )
+        # ---- 5. seed default sites (ครั้งแรกเท่านั้น)
+        # ทั้ง 2 site นี้ extension จะ scrape balance อัตโนมัติ — Freepik ใช้ "credits",
+        # Magnific ใช้ "tokens" แต่ logic การ scrape เหมือนกัน
+        for site_name, pattern in [
+            ("Freepik", "*.freepik.com/*"),
+            ("Magnific", "*.magnific.com/*"),
+            ("Magnific (.ai)", "*.magnific.ai/*"),
+        ]:
+            existing = conn.execute(
+                "SELECT 1 FROM sites WHERE url_pattern = ?", (pattern,)
+            ).fetchone()
+            if not existing:
+                conn.execute(
+                    "INSERT INTO sites(name, url_pattern, created_at) VALUES (?, ?, ?)",
+                    (site_name, pattern, utc_now().isoformat()),
+                )
 
 
 def get_config() -> dict[str, str]:

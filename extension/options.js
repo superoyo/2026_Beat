@@ -33,12 +33,13 @@ async function testSelector() {
     return;
   }
 
-  // หาแท็บ freepik.com ที่ active อยู่
+  // หาแท็บ freepik.com / magnific.{com,ai} ที่ active อยู่
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   const tab = tabs[0];
-  if (!tab || !tab.url || !/^https:\/\/.*\.freepik\.com\//.test(tab.url)) {
+  const HOSTS_RE = /^https:\/\/[^/]*\.(?:freepik\.com|magnific\.(?:com|ai))\//i;
+  if (!tab || !tab.url || !HOSTS_RE.test(tab.url)) {
     out.classList.add('warn');
-    out.textContent = 'กรุณาเปิดแท็บ freepik.com ก่อน แล้วลองอีกครั้ง';
+    out.textContent = 'กรุณาเปิดแท็บ freepik.com หรือ magnific.com ก่อน แล้วลองอีกครั้ง';
     return;
   }
 
@@ -69,7 +70,7 @@ async function testSelector() {
   } catch (e) {
     out.classList.add('error');
     out.textContent = 'ส่งข้อความถึง content script ไม่ได้: ' + e.message
-      + '\n(ลอง reload หน้า freepik.com หนึ่งครั้ง)';
+      + '\n(ลอง reload หน้า freepik.com / magnific.com หนึ่งครั้ง)';
   }
 }
 

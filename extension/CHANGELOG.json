@@ -2,6 +2,23 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.19",
+      "date": "2026-04-29",
+      "title": "Magnific.com support: ดึง token แสดงใน dashboard เคียงคู่ Freepik",
+      "summary": "เพิ่มเว็บ magnific.com (และ magnific.ai) ให้ extension scrape ยอด token อัตโนมัติ",
+      "changes": [
+        "Extension content.js v28: เพิ่ม magnific.{com,ai} ใน CREDIT_HOSTNAMES regex",
+        "  Logic การ scrape เหมือน Freepik แค่ขยาย selectors/patterns ให้รู้จัก 'token' ด้วย",
+        "Selectors ใหม่ (KNOWN_GOOD): tokens-limit/remaining/balance, user-tokens, token-balance, aria-label='tokens remaining'",
+        "Broad attribute hints: รวม data-cy/testid/class*='token', aria-label*='credit/token'",
+        "Text pattern รองรับ: '100 tokens' / 'tokens: 100' / '100 credits' (ทั้ง 2 รูปแบบ before/after)",
+        "Backend: seed sites Magnific + Magnific (.ai) อัตโนมัติบน startup ครั้งแรก",
+        "Options.js: ปุ่ม Test selector รองรับทั้ง freepik.com + magnific.com tab",
+        "Help text + dashboard empty state อัพเดทกล่าวถึงทั้ง Freepik + Magnific",
+        "Dashboard ไม่ต้องแก้ — group by host_name อยู่แล้ว Magnific จะมี section ของตัวเอง"
+      ]
+    },
+    {
       "version": "1.9.18",
       "date": "2026-04-29",
       "title": "Calendar: ย่อ cell เป็น dots-only + click เพื่อดูรายการ domain ในวันนั้น",

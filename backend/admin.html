@@ -6783,7 +6783,7 @@ async function renderExtensionPage() {
       </h3>
       <ol style="line-height:1.85;color:var(--text);font-size:13.5px;padding-left:20px;margin:0">
         <li>กลับ <code style="background:var(--bg-soft);padding:1px 6px;border-radius:4px">chrome://extensions</code> → กด <strong>🔄 Reload</strong> บน card "FEFL Beat" — สำคัญหลังเปลี่ยน config!</li>
-        <li>เปิด tab ใหม่ไปที่ <a href="https://www.freepik.com/log-in" target="_blank" style="color:var(--primary)">freepik.com/log-in</a></li>
+        <li>เปิด tab ใหม่ไป <a href="https://www.freepik.com/log-in" target="_blank" style="color:var(--primary)">freepik.com/log-in</a> หรือ <a href="https://magnific.com" target="_blank" style="color:var(--primary)">magnific.com</a></li>
         <li>มุมขวาล่างของหน้าจอควรเห็นปุ่ม <strong>🔑 FEFL Beat : Sign On</strong></li>
         <li>คลิก → เลือก credential → form login จะถูกกรอกให้</li>
       </ol>
@@ -6793,8 +6793,13 @@ async function renderExtensionPage() {
     <div class="card" style="display:block;margin-bottom:14px">
       <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">วิธีใช้งานสองโหมด</h3>
       <ul style="line-height:1.85;color:var(--text);font-size:13.5px;padding-left:20px;margin:0">
-        <li><strong>เมื่อยังไม่ได้ login (เช่น freepik.com/log-in)</strong> — extension แสดงปุ่ม "🔑 FEFL Beat : Sign On" พร้อมรายชื่อบัญชี</li>
-        <li><strong>เมื่อ login แล้ว (อยู่ในหน้า freepik.com/app)</strong> — extension ติดตามยอดเครดิตอัตโนมัติ ส่งไป Dashboard</li>
+        <li><strong>เมื่อยังไม่ได้ login (เช่น freepik.com/log-in, magnific.com/login)</strong> — extension แสดงปุ่ม "🔑 FEFL Beat : Sign On" พร้อมรายชื่อบัญชี</li>
+        <li><strong>เมื่อ login แล้ว</strong> — extension ติดตามยอดอัตโนมัติส่งไป Dashboard:
+          <ul style="margin-top:4px;padding-left:18px">
+            <li>📦 Freepik (<code>freepik.com/app</code>) → "credits"</li>
+            <li>🎨 Magnific (<code>magnific.com</code>) → "tokens"</li>
+          </ul>
+        </li>
         <li><strong>เพิ่มเว็บอื่น</strong> — admin ไปที่เมนู <a href="#/sites" style="color:var(--primary)">🛠 Config</a> → "+ เพิ่มเว็บใหม่"</li>
       </ul>
     </div>

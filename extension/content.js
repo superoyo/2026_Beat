@@ -1,19 +1,24 @@
-// content.js — runs on every freepik.com page.
+// content.js — runs on every freepik.com / magnific.com page.
 //
-// Strategy: scan the DOM for the credit-balance number using three layers
+// Strategy: scan the DOM for the credit/token balance using three layers
 // (user selector → text/attribute heuristics → bounded numeric scan), debounce
 // to avoid spamming the backend, and observe SPA navigations via MutationObserver.
+//
+// v28: เพิ่ม magnific.com / magnific.ai support — Magnific ใช้ "tokens" แทน credits
+//      แต่ logic การ scrape เหมือนกัน (number + label) ใช้ระบบเดิมได้
 //
 // Comments use the convention from the brief:
 //   - Thai for business logic
 //   - English for technical / library code
 
 const TAG = '[FCT]';
-const SCRIPT_VERSION = 'v27-all-frames';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
+const SCRIPT_VERSION = 'v28-magnific';  // เพิ่มทุกครั้งที่แก้ logic — ดูใน console ว่าโหลด version ไหน
 
-// Hostname ที่ extension จะทำหน้าที่ scrape credit (mode A)
-// เว็บอื่นที่ user เพิ่มใน admin จะได้แค่ prefill (mode B) — ไม่ scrape credit
-const CREDIT_HOSTNAMES = /(?:^|\.)freepik\.com$/i;
+// Hostname ที่ extension จะทำหน้าที่ scrape credit/token (mode A)
+// - freepik.com   → "credits"
+// - magnific.com  → "tokens"  (รวม magnific.ai เผื่อโดเมนสำรอง)
+// เว็บอื่นที่ user เพิ่มใน admin จะได้แค่ prefill (mode B) — ไม่ scrape balance
+const CREDIT_HOSTNAMES = /(?:^|\.)(?:freepik\.com|magnific\.(?:com|ai))$/i;
 
 /**
  * Fetch backend ผ่าน background.js — เลี่ยง CORS
@@ -125,14 +130,27 @@ function tryCustomSelector(selector) {
  *  - null   = nothing found
  */
 function tryPatternScan() {
-  // (1a) known-good selectors — verified จากหน้า freepik จริง
+  // (1a) known-good selectors — verified จากหน้า freepik + ตัวที่เดาจาก magnific (token)
   const KNOWN_GOOD = [
+    // Freepik (credits)
     '[data-cy="credits-limit"]',
     '[data-cy="credits-remaining"]',
     '[data-cy="credits-balance"]',
     '[data-cy="user-credits"]',
     '[data-testid="credits-limit"]',
     '[data-testid="user-credits"]',
+    // Magnific (tokens) — speculative but ครอบคลุม convention ของ React/Next.js apps
+    '[data-cy="tokens-limit"]',
+    '[data-cy="tokens-remaining"]',
+    '[data-cy="tokens-balance"]',
+    '[data-cy="user-tokens"]',
+    '[data-testid="tokens-limit"]',
+    '[data-testid="tokens-remaining"]',
+    '[data-testid="user-tokens"]',
+    '[data-test="token-balance"]',
+    '[data-test="tokens-balance"]',
+    '[aria-label*="tokens remaining" i]',
+    '[aria-label*="token balance" i]',
   ];
   for (const sel of KNOWN_GOOD) {
     const el = document.querySelector(sel);
@@ -143,21 +161,27 @@ function tryPatternScan() {
     }
   }
 
-  // (1b) broader attribute hints — fallback
+  // (1b) broader attribute hints — fallback (ครอบคลุมทั้ง credit + token + balance)
   const hintNodes = document.querySelectorAll([
     '[data-cy*="credit" i]',
+    '[data-cy*="token" i]',
     '[data-cy*="balance" i]',
     '[data-testid*="credit" i]',
+    '[data-testid*="token" i]',
     '[data-testid*="balance" i]',
     '[class*="credit" i]',
+    '[class*="token" i]',
     '[class*="balance" i]',
+    '[aria-label*="credit" i]',
+    '[aria-label*="token" i]',
   ].join(', '));
   for (const el of hintNodes) {
     if (el.children.length > 2) continue;
     const cy = (el.getAttribute('data-cy') || '').toLowerCase();
     const tid = (el.getAttribute('data-testid') || '').toLowerCase();
+    const aria = (el.getAttribute('aria-label') || '').toLowerCase();
     const cls = (el.className || '').toString().toLowerCase();
-    const meta = cy + ' ' + tid + ' ' + cls;
+    const meta = cy + ' ' + tid + ' ' + aria + ' ' + cls;
     if (/cost|used|today|icon|button|link|tooltip|label/.test(meta)) continue;
     const n = parseNumberFromText(el.textContent || '');
     if (n != null && n >= 0 && n <= MAX_PLAUSIBLE) {
@@ -165,8 +189,10 @@ function tryPatternScan() {
     }
   }
 
-  // (2) ข้อความที่มีคำว่า credit/เครดิต ใกล้ตัวเลข
-  const creditTextRe = /(\d[\d.,\s]{0,9})\s*(credits?|เครดิต)/i;
+  // (2) ข้อความที่มีคำว่า credit/เครดิต/token ใกล้ตัวเลข
+  // - "100 credits", "100 tokens", "100 เครดิต"
+  // - "credits: 100", "tokens: 100"  (number after label)
+  const creditTextRe = /(?:(\d[\d.,\s]{0,9})\s*(?:credits?|เครดิต|tokens?))|(?:(?:credits?|tokens?)\s*[:#]?\s*(\d[\d.,\s]{0,9}))/i;
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   let node;
   let bestText = null;
@@ -175,7 +201,8 @@ function tryPatternScan() {
     if (!t || t.length > 200) continue;
     const m = t.match(creditTextRe);
     if (m) {
-      const n = parseNumberFromText(m[1]);
+      // m[1] = number-before-label form ("100 tokens"), m[2] = number-after-label ("tokens: 100")
+      const n = parseNumberFromText(m[1] || m[2] || '');
       if (n != null && n >= 0 && n <= MAX_PLAUSIBLE) {
         if (bestText == null || n > bestText) bestText = n;
       }
