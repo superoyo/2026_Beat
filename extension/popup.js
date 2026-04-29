@@ -85,13 +85,52 @@ async function showPairedUser() {
 }
 
 async function loadCached() {
-  const r = await chrome.storage.local.get(['last_balance', 'last_updated', 'last_profile_name']);
+  const r = await chrome.storage.local.get([
+    'last_balance', 'last_updated', 'last_profile_name',
+    'last_tentative', 'has_seen_high_confidence',
+  ]);
   if (r.last_balance != null) {
     document.getElementById('balance').textContent = fmt.format(Math.round(r.last_balance));
   }
   document.getElementById('updated').textContent = 'อัพเดท: ' + fmtRel(r.last_updated);
   document.getElementById('balance-time').textContent = fmtAbsoluteDateTime(r.last_updated);
   showProfile(r.last_profile_name);
+
+  // Tentative banner: show เมื่อ scrape ได้ค่าใหม่กว่า last_balance หรือ
+  // ค่าใน scrape ระดับ low ที่ถูก lock ปฏิเสธ
+  const t = r.last_tentative;
+  const banner = document.getElementById('tentative-banner');
+  if (t && t.value != null) {
+    const tentativeIsNewer = !r.last_updated || (t.at && t.at > new Date(r.last_updated).getTime());
+    const isLowAndLocked = (t.confidence === 'low') && r.has_seen_high_confidence;
+    const valueDiffers = r.last_balance == null || Math.round(t.value) !== Math.round(r.last_balance);
+    if (isLowAndLocked && (tentativeIsNewer || valueDiffers)) {
+      banner.style.display = '';
+      const detail = document.getElementById('tentative-detail');
+      detail.textContent = `${fmt.format(Math.round(t.value))} · จาก ${t.source} · ${fmtRel(t.at ? new Date(t.at).toISOString() : null)}`;
+    } else {
+      banner.style.display = 'none';
+    }
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
+async function resetConfidenceLock() {
+  // Clear lock + ขอให้ content script ของ tab ปัจจุบัน rescan ทันที
+  await chrome.storage.local.remove(['has_seen_high_confidence', 'last_tentative']);
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab && tab.id) {
+      try {
+        await chrome.tabs.sendMessage(tab.id, { type: 'RESET_AND_RESCAN' });
+      } catch (_) {
+        // tab อาจไม่ใช่หน้าที่ content script รัน — ไม่เป็นไร
+      }
+    }
+  } catch (_) {}
+  // โหลด state ใหม่หลัง reset
+  setTimeout(loadCached, 600);
 }
 
 async function loadSummary() {
@@ -149,6 +188,28 @@ document.getElementById('dashboard-btn').addEventListener('click', async () => {
 
 document.getElementById('options-btn').addEventListener('click', () => {
   chrome.runtime.openOptionsPage();
+});
+
+document.getElementById('reset-lock-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('reset-lock-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ กำลัง reset…';
+  await resetConfidenceLock();
+  btn.textContent = '✓ Reset แล้ว — รอ scan รอบถัดไป';
+  setTimeout(() => {
+    btn.disabled = false;
+    btn.textContent = '🔓 Reset detect (ยอมรับค่านี้)';
+  }, 2000);
+});
+
+// Live-refresh: ถ้า storage เปลี่ยน (snapshot ใหม่/tentative ใหม่) → reload UI
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  if ('last_balance' in changes || 'last_updated' in changes
+      || 'last_tentative' in changes || 'has_seen_high_confidence' in changes
+      || 'last_profile_name' in changes) {
+    loadCached();
+  }
 });
 
 (async () => {

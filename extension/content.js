@@ -240,23 +240,46 @@ async function findBalance() {
   if (result.confidence === 'high') {
     if (!seenHigh) {
       await chrome.storage.local.set({ has_seen_high_confidence: true });
-      console.debug(TAG, 'high-confidence locked on selector:', result.source);
+      console.log('%c[FCT] ✓ high-confidence locked on:', 'color:#10b981;font-weight:bold', result.source);
     }
+    // เก็บ tentative ล่าสุดด้วย เผื่อ debug/popup ต้องดู
+    await chrome.storage.local.set({
+      last_tentative: { value: result.value, source: result.source, confidence: 'high', at: Date.now() },
+    });
     return result.value;
   }
 
-  // confidence === 'low'
+  // confidence === 'low' — บันทึก tentative ทุกครั้ง (popup จะใช้แสดงสถานะ)
+  await chrome.storage.local.set({
+    last_tentative: { value: result.value, source: result.source, confidence: 'low', at: Date.now() },
+  });
+
   if (seenHigh) {
     // เคยเจอ high แล้ว — รอบนี้ไม่เจอ → skip ไม่ trust ค่าขยะ
-    console.debug(TAG, 'skipping low-confidence', result.value, 'from', result.source,
-      '(เคยเจอ high-confidence selector แล้ว — รอ DOM ปรากฏใหม่)');
+    // log ครั้งแรกของ session ให้เด่น พร้อมบอกวิธี reset
+    if (!_lockSkipLogged) {
+      _lockSkipLogged = true;
+      console.warn('%c[FCT] ⚠ confidence-lock blocking low-confidence value', 'color:#dc2626;font-weight:bold',
+        '\n  value:', result.value, 'from', result.source,
+        '\n  เหตุผล: เคยเจอ high-confidence selector มาก่อน → รอ selector เดิมโผล่ใหม่',
+        '\n  วิธีแก้:',
+        '\n    1. คลิก icon extension → ปุ่ม "🔓 Reset detect"',
+        '\n    2. หรือพิมพ์ใน console: chrome.storage.local.remove(["has_seen_high_confidence"])',
+        '\n    3. หรือใช้ Inspect → ตรวจ DOM ว่า selector ของ Magnific ตรงกับ KNOWN_GOOD ไหม');
+    } else {
+      // logs ถัดไปเงียบกว่า — กันสแปม
+      console.debug(TAG, 'skipping low-confidence', result.value, 'from', result.source);
+    }
     return null;
   }
 
   // ยังไม่เคยเจอ high → trust low เป็น first-time
-  console.debug(TAG, 'using low-confidence', result.value, 'from', result.source);
+  console.log('%c[FCT] ✓ using low-confidence', 'color:#f59e0b', result.value, 'from', result.source);
   return result.value;
 }
+
+// session-scoped flag — log lock-skip warning ครั้งเดียวต่อ tab session
+let _lockSkipLogged = false;
 
 /**
  * Scrape the user's display name from the profile dropdown.
@@ -412,10 +435,12 @@ function reportBalance(balance, profileName, profileEmail, creditsSpent) {
       profileEmail: profileEmail || null,
       creditsSpent: (creditsSpent != null && Number.isFinite(creditsSpent)) ? creditsSpent : null,
     });
-    console.debug(TAG, 'reported balance:', balance,
-      '| spent:', creditsSpent != null ? creditsSpent : '(none)',
-      '| profile:', profileName || '(none)',
-      '| email:', profileEmail || '(none)');
+    console.log('%c[FCT] ✅ sent to backend', 'color:#10b981;font-weight:bold',
+      '\n  balance:', balance,
+      '\n  spent:', creditsSpent != null ? creditsSpent : '(none)',
+      '\n  profile:', profileName || '(none)',
+      '\n  email:', profileEmail || '(none)',
+      '\n  url:', location.href);
   } catch (e) {
     // service worker อาจถูก suspend — อันนี้เป็นเรื่องปกติของ MV3
     console.debug(TAG, 'sendMessage failed (worker asleep?):', e);
@@ -1246,8 +1271,30 @@ setInterval(() => {
 // Safety net — re-check prefill ทุก 3 วินาที (กรณี MutationObserver พลาด event)
 setInterval(() => schedulePrefillCheck(), 3000);
 
-// ตอบ message จาก options page (Test selector button)
+// ตอบ message จาก options page (Test selector button) + popup (Reset detect)
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg && msg.type === 'RESET_AND_RESCAN') {
+    chrome.storage.local.remove(['has_seen_high_confidence', 'last_tentative']).then(() => {
+      _lockSkipLogged = false;   // reset session log gate
+      console.log('%c[FCT] 🔓 confidence lock RESET — re-scanning now', 'color:#2563eb;font-weight:bold');
+      // immediate rescan (bypass debounce)
+      if (scanTimer) clearTimeout(scanTimer);
+      scanTimer = setTimeout(async () => {
+        scanTimer = null;
+        const balance = await findBalance();
+        if (balance != null) {
+          const profileName = findProfileName();
+          const profileEmail = findProfileEmail();
+          const creditsSpent = findCreditsSpent();
+          // bypass dedup — force send
+          lastReportedBalance = null;
+          reportBalance(balance, profileName, profileEmail, creditsSpent);
+        }
+      }, 100);
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
   if (msg && msg.type === 'TEST_SELECTOR') {
     try {
       const nodes = document.querySelectorAll(msg.selector);

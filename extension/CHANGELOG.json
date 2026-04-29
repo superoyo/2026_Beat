@@ -2,6 +2,23 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.21",
+      "date": "2026-04-29",
+      "title": "Debug: Tentative banner + Reset confidence lock + clearer console logs",
+      "summary": "ดูได้จาก popup ทันทีว่า extension scrape ค่าได้ไหม + กด Reset ปลด lock ได้ในคลิกเดียว",
+      "changes": [
+        "content.js: บันทึก last_tentative ลง storage ทุกครั้งที่ scrape ได้ (ทั้ง high + low + locked)",
+        "content.js: log ที่เด่นชัดขึ้น (console.log สี+bold) — ไม่ต้องเปิด Verbose ใน DevTools",
+        "  ✅ sent to backend (สีเขียว) เมื่อส่งสำเร็จ",
+        "  ⚠ confidence-lock blocking (สีแดง) เมื่อโดน lock — บอกวิธี reset 3 วิธีในข้อความเดียว",
+        "  Lock-skip log แสดงครั้งเดียวต่อ session กันสแปม",
+        "content.js: รับ message RESET_AND_RESCAN จาก popup → clear lock + immediate rescan",
+        "popup.html: เพิ่ม tentative banner แสดงค่า scrape ได้แต่ถูก lock ปฏิเสธ",
+        "popup.js: ปุ่ม '🔓 Reset detect' clear lock + ส่งสัญญาณให้ active tab rescan ทันที",
+        "popup.js: live-refresh ผ่าน chrome.storage.onChanged — เห็นค่าใหม่โดยไม่ต้องปิด-เปิด popup"
+      ]
+    },
+    {
       "version": "1.9.20",
       "date": "2026-04-29",
       "title": "Magnific: ใช้ selectors เดิม (DOM rebrand เหมือนเด๊ะ)",
