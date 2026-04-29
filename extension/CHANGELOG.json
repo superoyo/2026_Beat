@@ -2,6 +2,21 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.16",
+      "date": "2026-04-29",
+      "title": "WHOIS: ตัด www. อัตโนมัติ + suggest registrable domain เมื่อพบ subdomain",
+      "summary": "แก้กรณีผู้ใช้พิมพ์ www.example.com แล้ว WHOIS คืน 404 (เพราะเป็น subdomain ไม่ใช่ registered domain)",
+      "changes": [
+        "Backend: _sanitize_domain ตัด 'www.' prefix อัตโนมัติ",
+        "  • www.datafirst.id → datafirst.id",
+        "  • https://www.google.com/path → google.com",
+        "  • mail.google.com → คงเดิม (เก็บ subdomain อื่น)",
+        "Backend: เมื่อทุก path คืน 404 และ domain มี 3+ parts → แนะนำ registrable domain",
+        "  Response มี field 'suggested_domain' — เช่น sub.example.com → 'example.com'",
+        "Frontend: ปุ่ม '↺ ลองค้นหาด้วย ... แทน' ขึ้นอัตโนมัติเมื่อ backend แนะนำ"
+      ]
+    },
+    {
       "version": "1.9.15",
       "date": "2026-04-29",
       "title": "WHOIS: query RDAP server ของ TLD โดยตรง (รองรับ datafirst.id ฯลฯ)",

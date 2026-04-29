@@ -3893,7 +3893,12 @@ _DOMAIN_RE = re.compile(
 
 
 def _sanitize_domain(name: str) -> str:
-    """Strip protocol/port/path and validate as a domain name."""
+    """Strip protocol/port/path/'www.' prefix and validate as a domain name.
+
+    Note: WHOIS/RDAP only resolve REGISTERED domains, not subdomains. We strip
+    common 'www.' prefix automatically since users often paste full URLs.
+    Other subdomains (mail., app., etc.) are kept — caller's responsibility.
+    """
     n = (name or "").strip().lower()
     for prefix in ("https://", "http://"):
         if n.startswith(prefix):
@@ -3901,6 +3906,9 @@ def _sanitize_domain(name: str) -> str:
     n = n.split("/", 1)[0]
     n = n.split(":", 1)[0]
     n = n.rstrip(".")
+    # Auto-strip leading "www." — common user mistake when typing full URLs
+    while n.startswith("www."):
+        n = n[4:]
     if not n or not _DOMAIN_RE.match(n):
         raise HTTPException(status_code=400, detail="invalid domain name")
     return n
@@ -4487,10 +4495,30 @@ def admin_domain_whois(
         if py_error:     details.append(f"python-whois: {py_error}")
         if socket_error: details.append(socket_error)
         if rdap_error:   details.append(rdap_error)
+        # Heuristic: 404/NXDOMAIN + 3+ parts → likely a subdomain.
+        # Suggest the parent (registrable) domain as a candidate.
+        all_404 = (
+            ("404" in (rdap_error or "") or "NXDOMAIN" in (rdap_error or ""))
+        ) and len(domain.split(".")) >= 3
+        suggested = None
+        if all_404:
+            parts = domain.split(".")
+            # Common ccTLDs use 2-label TLD ("co.th"); fall back to last 2 then last 3
+            for n_keep in (2, 3):
+                if len(parts) > n_keep:
+                    suggested = ".".join(parts[-n_keep:])
+                    break
         return {
             "domain": domain,
-            "error": "ไม่พบข้อมูล WHOIS หรือ RDAP สำหรับ domain นี้"
-                     + (f" — {' / '.join(details)}" if details else ""),
+            "error": (
+                "ไม่พบข้อมูล WHOIS หรือ RDAP สำหรับ domain นี้"
+                + (f" — {' / '.join(details)}" if details else "")
+                + (
+                    f"\n\n💡 อาจเป็น subdomain — ลองใช้ \"{suggested}\" แทน"
+                    if suggested else ""
+                )
+            ),
+            "suggested_domain": suggested,
             "raw": (raw_text or "")[:5000] or None,
         }
 
