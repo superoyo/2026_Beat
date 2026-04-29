@@ -5010,6 +5010,10 @@ function showDomainModal(domain) {
         body: JSON.stringify(data),
       });
       await loadDomainsConfigList();
+      // ถ้ากำลังอยู่หน้า Websites → reload เพื่อให้เห็น logo/provider/dates ใหม่
+      if ($('ws-list') && typeof loadWebsites === 'function') {
+        await loadWebsites();
+      }
     },
   });
   // wire the WHOIS-sync button (after modal is in DOM)
@@ -5908,74 +5912,80 @@ function renderWebsitesList() {
 
 function renderWebsiteCard(w, today) {
   const d = w.domain;
-  // Domain status
-  let domStatus = '<span style="color:var(--text-muted);font-size:11px">— ไม่มีวันหมดอายุ</span>';
+  // Domain status — สั้น + ใส่ icon ตาม days remaining
+  let domStatus = '';
   if (d.expire_date) {
     const exp = new Date(d.expire_date);
     const days = Math.floor((exp - today) / 86400000);
-    if (days < 0) domStatus = `<span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(220,38,38,.10);color:var(--critical)">⛔ Domain หมด ${-days} วัน</span>`;
-    else if (days <= 30) domStatus = `<span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(245,158,11,.12);color:#92400e">⚠ Domain เหลือ ${days} วัน</span>`;
-    else domStatus = `<span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(16,185,129,.12);color:var(--green)">✓ ${days} วัน</span>`;
+    if (days < 0) domStatus = `<span style="display:inline-flex;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:700;background:rgba(220,38,38,.10);color:var(--critical);white-space:nowrap">⛔ ${-days}d</span>`;
+    else if (days <= 30) domStatus = `<span style="display:inline-flex;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:700;background:rgba(245,158,11,.12);color:#92400e;white-space:nowrap">⚠ ${days}d</span>`;
+    else domStatus = `<span style="display:inline-flex;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:600;background:rgba(16,185,129,.12);color:var(--green);white-space:nowrap">✓ ${days}d</span>`;
   }
 
-  // Render service group
-  const renderGroup = (typeId, label, icon, services) => {
-    if (!services || services.length === 0) {
-      return `
-        <div style="flex:1;min-width:200px;background:var(--bg);border:1px dashed var(--border);border-radius:8px;padding:8px 10px">
-          <div style="font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">${icon} ${escapeHtml(label)}</div>
-          <button class="btn" data-ws-act="add" data-ws-domain-id="${d.id}" data-ws-type="${typeId}" style="font-size:11px;padding:4px 9px;width:100%">+ เพิ่ม ${escapeHtml(label)}</button>
-        </div>
-      `;
+  // Service chip — single inline element
+  const renderSvcChip = (s) => {
+    let svcExpire = '';
+    if (s.expire_date) {
+      const exp = new Date(s.expire_date);
+      const days = Math.floor((exp - today) / 86400000);
+      if (days < 0) svcExpire = `<span style="color:var(--critical);font-weight:700">⛔${-days}d</span>`;
+      else if (days <= 30) svcExpire = `<span style="color:#92400e;font-weight:700">⚠${days}d</span>`;
+      else svcExpire = `<span style="color:var(--text-muted)">${days}d</span>`;
     }
+    const tip = `${escapeHtml(s.name)}${s.provider ? ' · ' + escapeHtml(s.provider) : ''}${s.price != null ? ' · ' + fmtMoneyOrNumber(s.price) + ' ' + escapeHtml(s.currency || '') : ''}${s.expire_date ? ' · หมด ' + escapeHtml(fmtDateThai(s.expire_date)) : ''}`;
+    const typeIcon = s.service_type === 'hosting' ? '🖥️' : s.service_type === 'ssl' ? '🔒' : '📦';
     return `
-      <div style="flex:1;min-width:200px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 10px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
-          <span style="font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.4px">${icon} ${escapeHtml(label)}</span>
-          <button class="btn" data-ws-act="add" data-ws-domain-id="${d.id}" data-ws-type="${typeId}" style="font-size:10.5px;padding:2px 7px;line-height:1">+</button>
-        </div>
-        ${services.map(s => {
-          let svcExpire = '';
-          if (s.expire_date) {
-            const exp = new Date(s.expire_date);
-            const days = Math.floor((exp - today) / 86400000);
-            if (days < 0) svcExpire = `<span style="color:var(--critical);font-size:10.5px;font-weight:700">⛔ ${-days}d</span>`;
-            else if (days <= 30) svcExpire = `<span style="color:#92400e;font-size:10.5px;font-weight:700">⚠ ${days}d</span>`;
-            else svcExpire = `<span style="color:var(--green);font-size:10.5px;font-weight:600">${days}d</span>`;
-          }
-          return `
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;padding:4px 0;border-top:1px solid var(--border)">
-              <div style="flex:1;min-width:0;overflow:hidden">
-                <div style="font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</div>
-                <div style="font-size:10.5px;color:var(--text-muted)">${s.provider ? escapeHtml(s.provider) + ' · ' : ''}${s.price != null ? fmtMoneyOrNumber(s.price) + ' ' + escapeHtml(s.currency || '') : ''}</div>
-              </div>
-              ${svcExpire}
-              <button class="btn" data-ws-act="unlink" data-ws-domain-id="${d.id}" data-ws-service-id="${s.id}" data-ws-name="${escapeHtml(s.name)}" style="font-size:10px;padding:2px 6px;line-height:1" title="ยกเลิกการผูก">✕</button>
-            </div>
-          `;
-        }).join('')}
-      </div>
+      <span class="ws-svc-chip" title="${tip}" style="display:inline-flex;align-items:center;gap:5px;padding:3px 7px 3px 9px;border:1px solid var(--border);background:var(--bg);border-radius:999px;font-size:11.5px;line-height:1.4;max-width:240px">
+        <span>${typeIcon}</span>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px;font-weight:600;color:var(--text)">${escapeHtml(s.name)}</span>
+        ${svcExpire}
+        <button class="btn" data-ws-act="unlink" data-ws-domain-id="${d.id}" data-ws-service-id="${s.id}" data-ws-name="${escapeHtml(s.name)}" style="font-size:9.5px;padding:0 4px;line-height:1;border-radius:50%;height:16px;min-width:16px;background:transparent;border-color:transparent;color:var(--text-muted)" title="ยกเลิกการผูก">✕</button>
+      </span>
     `;
   };
 
+  const renderAddBtn = (typeId, label, icon) => `
+    <button class="btn" data-ws-act="add" data-ws-domain-id="${d.id}" data-ws-type="${typeId}"
+      style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border:1px dashed var(--border);background:transparent;border-radius:999px;font-size:11px;color:var(--text-muted);font-weight:500"
+      title="เพิ่ม ${escapeHtml(label)}">${icon}+</button>
+  `;
+
   const by = w.by_type || {};
+  const allSvcs = [...(by.hosting || []), ...(by.ssl || []), ...(by.others || [])];
+  const chips = allSvcs.map(renderSvcChip).join('');
+
+  // Domain meta line — provider + register/expire dates inline
+  const metaParts = [];
+  if (d.provider) metaParts.push(`🏢 ${escapeHtml(d.provider)}`);
+  if (d.register_date) metaParts.push(`📅 ${escapeHtml(fmtDateThai(d.register_date))}`);
+  if (d.expire_date) metaParts.push(`⏰ ${escapeHtml(fmtDateThai(d.expire_date))}`);
+  const metaLine = metaParts.length ? metaParts.join(' <span style="color:var(--border)">·</span> ') : '';
+
   return `
-    <div class="card" style="display:block;margin-bottom:12px;padding:14px 16px">
-      <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px;flex-wrap:wrap">
-        ${domainLogoHTML(d, 48)}
-        <div style="flex:1;min-width:240px">
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <span style="font-weight:700;font-size:15px;font-family:ui-monospace,Menlo,monospace;color:var(--text)">${escapeHtml(d.name)}</span>
+    <div class="card" style="display:block;margin-bottom:8px;padding:10px 14px">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <button data-ws-act="logo" data-ws-domain-id="${d.id}" title="คลิกเพื่อแก้ไขโลโก้"
+          style="background:transparent;border:none;padding:0;cursor:pointer;flex-shrink:0">
+          ${domainLogoHTML(d, 40)}
+        </button>
+        <div style="flex:1;min-width:220px;display:flex;flex-direction:column;gap:2px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-weight:700;font-size:14.5px;font-family:ui-monospace,Menlo,monospace;color:var(--text)">${escapeHtml(d.name)}</span>
             ${domStatus}
-            <span style="font-size:11.5px;color:var(--text-muted)">${w.service_count} service${w.service_count !== 1 ? 's' : ''} ผูก</span>
+            <span style="font-size:11px;color:var(--text-muted)">${w.service_count} svc</span>
           </div>
-          ${d.provider ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:2px">🏢 ${escapeHtml(d.provider)}</div>` : ''}
+          ${metaLine ? `<div style="font-size:11.5px;color:var(--text-muted);line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${metaLine}</div>` : ''}
+        </div>
+        <div style="display:flex;gap:5px;flex-shrink:0;flex-wrap:wrap">
+          <button class="btn" data-ws-act="lookup" data-ws-domain-id="${d.id}" data-ws-name="${escapeHtml(d.name)}" style="font-size:11.5px;padding:5px 10px" title="WHOIS / nslookup / DNS">🔍 Lookup</button>
+          <button class="btn" data-ws-act="edit" data-ws-domain-id="${d.id}" style="font-size:11.5px;padding:5px 10px" title="แก้ไข domain">✏️</button>
         </div>
       </div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap">
-        ${renderGroup('hosting', 'Hosting', '🖥️', by.hosting)}
-        ${renderGroup('ssl', 'SSL', '🔒', by.ssl)}
-        ${renderGroup('others', 'Others', '📦', by.others)}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);align-items:center">
+        ${chips || '<span style="font-size:11.5px;color:var(--text-muted);font-style:italic">ยังไม่ได้ผูก service</span>'}
+        ${renderAddBtn('hosting', 'Hosting', '🖥️')}
+        ${renderAddBtn('ssl', 'SSL', '🔒')}
+        ${renderAddBtn('others', 'Others', '📦')}
       </div>
     </div>
   `;
@@ -5995,7 +6005,103 @@ async function handleWebsiteAction(btn) {
       await fetchJson(`/api/admin/domains/${domainId}/services/${serviceId}`, { method: 'DELETE' });
       await loadWebsites();
     } catch (e) { alert('ยกเลิกไม่สำเร็จ: ' + e.message); }
+  } else if (act === 'lookup') {
+    // เปิด WHOIS / nslookup / DNS modal — reuse function เดิมจาก Domain Config
+    const name = btn.dataset.wsName;
+    if (typeof showLookupModal === 'function') showLookupModal(name, 'whois');
+    else alert('Lookup ใช้งานไม่ได้');
+  } else if (act === 'edit') {
+    // เปิด full edit modal — reuse function เดิม + load domain object จาก _wsCache
+    const w = _wsCache.find(x => x.domain.id === domainId);
+    if (w) {
+      // เก็บ refresh callback แทน loadDomainsConfigList default
+      _wsAfterEditReload = true;
+      showDomainModal(w.domain);
+    }
+  } else if (act === 'logo') {
+    // เปิด quick logo modal (เฉพาะรูป — ไม่ต้องเข้า full edit)
+    const w = _wsCache.find(x => x.domain.id === domainId);
+    if (w) showQuickLogoModal(w.domain);
   }
+}
+
+// Flag: เมื่อกด edit จาก Websites page — หลัง save ให้ reload websites list ด้วย
+let _wsAfterEditReload = false;
+
+// Quick logo edit modal — focus เฉพาะรูป (ไม่ต้องแก้ field อื่น)
+function showQuickLogoModal(domain) {
+  const hasLogo = !!domain.logo_data;
+  showModal({
+    title: `🖼 โลโก้: ${domain.name}`,
+    body: `
+      <div class="hint" style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px">
+        แก้ไขเฉพาะโลโก้ (วงกลม) ของ domain นี้ — ไม่กระทบ field อื่น
+      </div>
+      <div style="display:flex;gap:14px;align-items:flex-start">
+        <div id="ql-preview" style="width:96px;height:96px;border-radius:50%;border:1.5px dashed var(--border);background:${hasLogo ? 'var(--bg-card)' : 'var(--bg-soft)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden">
+          ${hasLogo
+            ? `<img src="${domain.logo_data}" alt="logo" style="width:100%;height:100%;object-fit:cover" />`
+            : `<span style="color:var(--text-muted);font-size:11px;text-align:center;line-height:1.3">ยังไม่มี<br/>โลโก้</span>`
+          }
+        </div>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:7px">
+          <button type="button" class="btn" id="ql-upload-btn" style="font-size:13px;padding:8px 12px;text-align:left">📷 อัพโหลดไฟล์...</button>
+          <button type="button" class="btn" id="ql-search-btn" style="font-size:13px;padding:8px 12px;text-align:left">🔍 ค้นหาโลโก้จาก domain</button>
+          <button type="button" class="btn danger" id="ql-remove-btn" style="font-size:13px;padding:8px 12px;text-align:left;${hasLogo ? '' : 'display:none'}">🗑 ลบโลโก้</button>
+          <input type="file" id="ql-file-input" accept="image/*" style="display:none" />
+        </div>
+      </div>
+      <input type="hidden" id="ql-data" value="${escapeHtml(domain.logo_data || '')}" />
+    `,
+    onSubmit: async () => {
+      const cur = $('ql-data').value;
+      const initial = domain.logo_data || '';
+      if (cur === initial) {
+        // No change — skip API call
+        return;
+      }
+      // PATCH เฉพาะ logo_data
+      await fetchJson(`/api/admin/domains/${domain.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ logo_data: cur }),   // '' = clear
+      });
+      await loadWebsites();
+    },
+  });
+
+  // Wire (เลียน showDomainModal logo wiring)
+  const setQl = (dataUrl) => {
+    const dataEl = $('ql-data');
+    const preview = $('ql-preview');
+    const removeBtn = $('ql-remove-btn');
+    if (!dataEl || !preview) return;
+    dataEl.value = dataUrl || '';
+    if (dataUrl) {
+      preview.style.background = 'var(--bg-card)';
+      preview.innerHTML = `<img src="${dataUrl}" alt="logo" style="width:100%;height:100%;object-fit:cover" />`;
+      if (removeBtn) removeBtn.style.display = '';
+    } else {
+      preview.style.background = 'var(--bg-soft)';
+      preview.innerHTML = `<span style="color:var(--text-muted);font-size:11px;text-align:center;line-height:1.3">ยังไม่มี<br/>โลโก้</span>`;
+      if (removeBtn) removeBtn.style.display = 'none';
+    }
+  };
+
+  const fileInput = $('ql-file-input');
+  $('ql-upload-btn').addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => openCropModal(ev.target.result, setQl);
+    reader.readAsDataURL(file);
+    fileInput.value = '';
+  });
+  $('ql-search-btn').addEventListener('click', () => openLogoSearchModal(domain.name, setQl));
+  $('ql-remove-btn').addEventListener('click', () => {
+    if (!confirm('ลบโลโก้ของ domain นี้?')) return;
+    setQl('');
+  });
 }
 
 function showLinkServiceModal(domainId, typeId) {
