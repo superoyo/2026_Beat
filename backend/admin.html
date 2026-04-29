@@ -3415,8 +3415,10 @@ const _DAYS_TH = ['อา','จ','อ','พ','พฤ','ศ','ส'];
 const _MONTHS_TH = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
 
 let _domainsCache = [];
-let _calMonth = 0;   // 0-11
+let _calMonth = 0;   // 0-11 — เดือนซ้ายสุดถ้า 3-month, หรือเดือนที่แสดงถ้า 1-month
 let _calYear = 2026;
+let _calView = '3month';   // '3month' | '1month'
+let _calAnimating = false;
 
 async function renderDomainsPage() {
   // init calendar to current month
@@ -3437,16 +3439,23 @@ async function renderDomainsPage() {
     <div class="card" style="display:block;margin-bottom:18px;padding:18px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap">
         <button class="btn" id="cal-prev" style="font-size:13px;padding:6px 12px">← ก่อนหน้า</button>
-        <div style="display:flex;align-items:center;gap:8px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center">
           <select id="cal-month" style="padding:7px 10px;font-size:13.5px;border:1px solid var(--border);border-radius:7px;background:var(--bg-input);color:var(--text);font-weight:600">
             ${_MONTHS_TH.map((m, i) => `<option value="${i}">${m}</option>`).join('')}
           </select>
           <select id="cal-year" style="padding:7px 10px;font-size:13.5px;border:1px solid var(--border);border-radius:7px;background:var(--bg-input);color:var(--text);font-weight:600"></select>
           <button class="btn" id="cal-today" style="font-size:11.5px;padding:6px 10px">วันนี้</button>
+          <!-- View toggle -->
+          <div style="display:inline-flex;background:var(--bg-soft);border:1px solid var(--border);border-radius:7px;padding:2px;margin-left:4px">
+            <button id="cal-view-1" class="cal-view-btn" style="background:transparent;border:none;padding:5px 11px;font-size:12px;color:var(--text-muted);cursor:pointer;border-radius:5px;font-family:inherit">1 เดือน</button>
+            <button id="cal-view-3" class="cal-view-btn" style="background:transparent;border:none;padding:5px 11px;font-size:12px;color:var(--text-muted);cursor:pointer;border-radius:5px;font-family:inherit">3 เดือน</button>
+          </div>
         </div>
         <button class="btn" id="cal-next" style="font-size:13px;padding:6px 12px">ถัดไป →</button>
       </div>
-      <div id="cal-grid"></div>
+      <div id="cal-viewport" style="overflow:hidden;position:relative">
+        <div id="cal-grid" style="will-change:transform,opacity"></div>
+      </div>
     </div>
 
     <!-- Domains table -->
@@ -3467,33 +3476,97 @@ async function renderDomainsPage() {
   $('cal-month').value = _calMonth;
   $('cal-year').value = _calYear;
 
+  // helper: animate month change with slide
+  const slideAndRender = (dir) => {
+    if (_calAnimating) return;
+    _calAnimating = true;
+    const grid = $('cal-grid');
+    const distance = 60;   // px
+    const outX = dir === 0 ? 0 : (dir > 0 ? -distance : distance);
+    const inFromX = dir === 0 ? 0 : (dir > 0 ? distance : -distance);
+    grid.style.transition = 'transform .22s ease, opacity .22s ease';
+    grid.style.transform = `translateX(${outX}px)`;
+    grid.style.opacity = '0';
+    setTimeout(() => {
+      $('cal-month').value = _calMonth;
+      $('cal-year').value = _calYear;
+      // update content (no transition)
+      grid.style.transition = 'none';
+      grid.style.transform = `translateX(${inFromX}px)`;
+      grid.style.opacity = '0';
+      renderCalendar();
+      // force reflow
+      void grid.offsetHeight;
+      // animate in
+      grid.style.transition = 'transform .25s ease, opacity .25s ease';
+      grid.style.transform = 'translateX(0)';
+      grid.style.opacity = '1';
+      setTimeout(() => { _calAnimating = false; }, 260);
+    }, 230);
+  };
+
+  const stepMonth = (offset) => {
+    _calMonth += offset;
+    while (_calMonth < 0) { _calMonth += 12; _calYear--; }
+    while (_calMonth > 11) { _calMonth -= 12; _calYear++; }
+    slideAndRender(offset);
+  };
+
   // wire calendar nav
-  $('cal-prev').addEventListener('click', () => {
-    _calMonth--;
-    if (_calMonth < 0) { _calMonth = 11; _calYear--; }
-    $('cal-month').value = _calMonth;
-    $('cal-year').value = _calYear;
-    renderCalendar();
-  });
-  $('cal-next').addEventListener('click', () => {
-    _calMonth++;
-    if (_calMonth > 11) { _calMonth = 0; _calYear++; }
-    $('cal-month').value = _calMonth;
-    $('cal-year').value = _calYear;
-    renderCalendar();
-  });
+  $('cal-prev').addEventListener('click', () => stepMonth(-1));
+  $('cal-next').addEventListener('click', () => stepMonth(1));
   $('cal-today').addEventListener('click', () => {
     const t = new Date();
-    _calMonth = t.getMonth();
-    _calYear = t.getFullYear();
-    $('cal-month').value = _calMonth;
-    $('cal-year').value = _calYear;
-    renderCalendar();
+    const newM = t.getMonth(), newY = t.getFullYear();
+    const dir = (newY > _calYear || (newY === _calYear && newM > _calMonth)) ? 1 : -1;
+    _calMonth = newM; _calYear = newY;
+    slideAndRender(dir);
   });
-  $('cal-month').addEventListener('change', (e) => { _calMonth = parseInt(e.target.value, 10); renderCalendar(); });
-  $('cal-year').addEventListener('change', (e) => { _calYear = parseInt(e.target.value, 10); renderCalendar(); });
+  $('cal-month').addEventListener('change', (e) => {
+    const newM = parseInt(e.target.value, 10);
+    const dir = newM > _calMonth ? 1 : -1;
+    _calMonth = newM;
+    slideAndRender(dir);
+  });
+  $('cal-year').addEventListener('change', (e) => {
+    const newY = parseInt(e.target.value, 10);
+    const dir = newY > _calYear ? 1 : -1;
+    _calYear = newY;
+    slideAndRender(dir);
+  });
+
+  // View toggle
+  const setView = (view) => {
+    if (_calView === view) return;
+    _calView = view;
+    updateViewToggle();
+    slideAndRender(0);   // dir=0 → fade in place
+  };
+  $('cal-view-1').addEventListener('click', () => setView('1month'));
+  $('cal-view-3').addEventListener('click', () => setView('3month'));
+  updateViewToggle();
 
   await loadDomainsList();
+}
+
+function updateViewToggle() {
+  const b1 = $('cal-view-1');
+  const b3 = $('cal-view-3');
+  if (!b1 || !b3) return;
+  const active = (btn) => {
+    btn.style.background = 'var(--bg-card)';
+    btn.style.color = 'var(--primary)';
+    btn.style.fontWeight = '700';
+    btn.style.boxShadow = 'var(--shadow-sm)';
+  };
+  const inactive = (btn) => {
+    btn.style.background = 'transparent';
+    btn.style.color = 'var(--text-muted)';
+    btn.style.fontWeight = '500';
+    btn.style.boxShadow = 'none';
+  };
+  if (_calView === '1month') { active(b1); inactive(b3); }
+  else { inactive(b1); active(b3); }
 }
 
 async function loadDomainsList() {
@@ -3577,22 +3650,28 @@ function fmtDateThai(iso) {
   return `${d.getDate()} ${monthShort} ${(d.getFullYear() + 543) % 100}`;
 }
 
-// 3-month calendar — _calMonth/_calYear = เดือนแรก (ซ้ายสุด) ของ panel
+// Calendar — รองรับ 1-month (full size) และ 3-month (compact dots)
 function renderCalendar() {
   const grid = $('cal-grid');
   if (!grid) return;
   const today = new Date();
   today.setHours(0,0,0,0);
 
-  // Render 3 month panels side by side
-  let html = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">';
-  for (let offset = 0; offset < 3; offset++) {
-    let m = _calMonth + offset;
-    let y = _calYear;
-    while (m > 11) { m -= 12; y++; }
-    html += renderMonthPanel(m, y, today);
+  let html;
+  if (_calView === '1month') {
+    // 1-month view: full size (1 panel, 1fr)
+    html = `<div style="display:grid;grid-template-columns:1fr;gap:14px">${renderMonthPanel(_calMonth, _calYear, today, 'full')}</div>`;
+  } else {
+    // 3-month view: dots-only compact
+    html = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">';
+    for (let offset = 0; offset < 3; offset++) {
+      let m = _calMonth + offset;
+      let y = _calYear;
+      while (m > 11) { m -= 12; y++; }
+      html += renderMonthPanel(m, y, today, 'dots');
+    }
+    html += '</div>';
   }
-  html += '</div>';
 
   // Legend
   html += `
@@ -3617,24 +3696,31 @@ function renderCalendar() {
     </div>
   `;
 
-  // Add responsive CSS once
+  // Add responsive CSS once (only affects 3-month view)
   if (!document.getElementById('cal-responsive-css')) {
     const css = document.createElement('style');
     css.id = 'cal-responsive-css';
     css.textContent = `
       @media (max-width: 1100px) {
-        #cal-grid > div:first-child { grid-template-columns: 1fr 1fr !important; }
+        #cal-grid.cal-3month > div:first-child { grid-template-columns: 1fr 1fr !important; }
       }
       @media (max-width: 720px) {
-        #cal-grid > div:first-child { grid-template-columns: 1fr !important; }
+        #cal-grid.cal-3month > div:first-child { grid-template-columns: 1fr !important; }
       }
     `;
     document.head.appendChild(css);
   }
+  grid.classList.toggle('cal-3month', _calView === '3month');
+  grid.classList.toggle('cal-1month', _calView === '1month');
   grid.innerHTML = html;
+  wireCalHeaderClicks();
 }
 
-function renderMonthPanel(month, year, today) {
+// renderMonthPanel(month, year, today, mode='full'|'dots')
+function renderMonthPanel(month, year, today, mode) {
+  mode = mode || 'full';
+  const isDots = mode === 'dots';
+
   // หา events ของเดือนนี้
   const eventsByDay = {};
   const addEvent = (dateStr, domain, type) => {
@@ -3656,16 +3742,31 @@ function renderMonthPanel(month, year, today) {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const monthLabel = `${_MONTHS_TH[month]} ${year + 543}`;
 
+  // Header เดือน — กดได้เพื่อ switch ไป 1-month view (เฉพาะใน 3-month mode)
+  const headerStyle = isDots
+    ? 'cursor:pointer;text-decoration:underline;text-decoration-color:transparent;text-underline-offset:3px;transition:text-decoration-color .15s'
+    : '';
+  const headerData = isDots ? `data-cal-zoom-month="${month}" data-cal-zoom-year="${year}" title="คลิกเพื่อขยายเป็น 1 เดือน"` : '';
+  const headerSize = isDots ? '13px' : '17px';
+  const headerMargin = isDots ? '6px' : '12px';
+
+  // Sizing per mode
+  const cellMin = isDots ? 38 : 74;
+  const cellPad = isDots ? '2px 3px' : '6px 7px';
+  const dayFont = isDots ? '10px' : '13px';
+  const headerDowFont = isDots ? '9px' : '11.5px';
+  const headerDowPad = isDots ? '3px 1px' : '8px 4px';
+
   let html = `
-    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:10px">
-      <div style="text-align:center;font-weight:700;font-size:13px;color:var(--text);margin-bottom:6px">${escapeHtml(monthLabel)}</div>
-      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:${isDots ? '10px' : '14px'}">
+      <div ${headerData} class="cal-month-header" style="text-align:center;font-weight:700;font-size:${headerSize};color:var(--text);margin-bottom:${headerMargin};${headerStyle}">${escapeHtml(monthLabel)}</div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:${isDots ? '2px' : '4px'}">
   `;
-  // header
+
+  // header DOW
   for (const dow of _DAYS_TH) {
-    html += `<div style="text-align:center;padding:3px 1px;font-size:9.5px;font-weight:700;color:var(--text-muted)">${dow}</div>`;
+    html += `<div style="text-align:center;padding:${headerDowPad};font-size:${headerDowFont};font-weight:700;color:var(--text-muted);text-transform:uppercase">${dow}</div>`;
   }
-  // empty cells before day 1
   for (let i = 0; i < startDow; i++) html += '<div></div>';
 
   for (let day = 1; day <= daysInMonth; day++) {
@@ -3679,14 +3780,17 @@ function renderMonthPanel(month, year, today) {
     let bg = 'var(--bg-card)';
     let border = '1px solid var(--border)';
     let dayColor = 'var(--text)';
+    let expireDays = null;   // ใช้คำนวณสีของ dot
 
     if (hasExpire) {
-      const days = Math.floor((date - today) / 86400000);
-      if (days < 0) {
+      // ใช้ days-until-expire ของ event แรก (priority)
+      const expEvent = events.find(e => e.type === 'expire');
+      expireDays = Math.floor((date - today) / 86400000);
+      if (expireDays < 0) {
         bg = 'rgba(220,38,38,.12)';
         border = '1.5px solid var(--critical)';
         dayColor = 'var(--critical)';
-      } else if (days <= 30) {
+      } else if (expireDays <= 30) {
         bg = 'rgba(245,158,11,.15)';
         border = '1.5px solid #f59e0b';
         dayColor = '#92400e';
@@ -3702,40 +3806,105 @@ function renderMonthPanel(month, year, today) {
     }
     if (isToday) border = '2px solid var(--primary)';
 
-    // Tooltip: list ทุก event แบบเต็ม
+    // Tooltip
     const titleParts = events.map(e =>
       (e.type === 'expire' ? 'หมดอายุ: ' : 'จดทะเบียน: ') + e.domain.name
     );
     const titleAttr = titleParts.length ? `title="${escapeHtml(titleParts.join('\n'))}"` : '';
 
-    // Compact chips: แสดง max 2 chips, +N ถ้ามากกว่า
-    const maxShow = 2;
-    const visibleChips = events.slice(0, maxShow).map(e => {
-      const isExp = e.type === 'expire';
-      const icon = isExp ? '⏰' : '🟢';
-      const labelColor = isExp ? dayColor : 'var(--primary-dark)';
-      const labelBg = isExp ? 'rgba(255,255,255,.55)' : 'rgba(37,99,235,.12)';
-      // ตัดชื่อสั้น — แสดงแค่ icon + ตัวอักษรแรกของชื่อ + dot
-      return `
-        <div style="font-size:8.5px;font-weight:600;color:${labelColor};background:${labelBg};padding:0 3px;border-radius:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;max-width:100%">
-          ${icon}${escapeHtml(e.domain.name)}
-        </div>
+    let cellContent;
+    if (isDots) {
+      // === Dots mode (3-month view) ===
+      // แต่ละ event = dot สี
+      const dotColor = (e) => {
+        if (e.type === 'register') return '#2563eb';
+        if (expireDays != null) {
+          if (expireDays < 0) return '#dc2626';
+          if (expireDays <= 30) return '#f59e0b';
+          return '#10b981';
+        }
+        return '#6b7280';
+      };
+      const maxDots = 4;
+      const dots = events.slice(0, maxDots).map(e =>
+        `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${dotColor(e)}"></span>`
+      ).join('');
+      const moreNum = events.length > maxDots ? `<span style="font-size:8px;font-weight:700;color:var(--text-muted);margin-left:1px">+${events.length - maxDots}</span>` : '';
+      cellContent = `
+        <div style="font-size:${dayFont};font-weight:${isToday || hasEvent ? '700' : '500'};color:${dayColor};line-height:1">${day}${isToday ? '•' : ''}</div>
+        ${hasEvent ? `<div style="display:flex;flex-wrap:wrap;gap:2px;align-items:center;margin-top:2px">${dots}${moreNum}</div>` : ''}
       `;
-    }).join('');
-    const moreBadge = events.length > maxShow
-      ? `<div style="font-size:8px;font-weight:700;color:var(--text-muted);padding:0 3px">+${events.length - maxShow}</div>`
-      : '';
-
-    html += `
-      <div ${titleAttr} style="min-height:50px;padding:3px 4px;background:${bg};border:${border};border-radius:5px;display:flex;flex-direction:column;gap:1px;overflow:hidden;cursor:${hasEvent ? 'help' : 'default'}">
-        <div style="font-size:10.5px;font-weight:${isToday || hasEvent ? '700' : '500'};color:${dayColor};line-height:1">${day}${isToday ? '•' : ''}</div>
+    } else {
+      // === Full mode (1-month view) ===
+      const maxShow = 4;
+      const visibleChips = events.slice(0, maxShow).map(e => {
+        const isExp = e.type === 'expire';
+        const icon = isExp ? '⏰' : '🟢';
+        const labelColor = isExp ? dayColor : 'var(--primary-dark)';
+        const labelBg = isExp ? 'rgba(255,255,255,.6)' : 'rgba(37,99,235,.12)';
+        return `
+          <div style="font-size:10.5px;font-weight:600;color:${labelColor};background:${labelBg};padding:1px 5px;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4">
+            ${icon} ${escapeHtml(e.domain.name)}
+          </div>
+        `;
+      }).join('');
+      const moreBadge = events.length > maxShow
+        ? `<div style="font-size:9.5px;font-weight:700;color:var(--text-muted);padding:0 4px">+${events.length - maxShow} เพิ่มเติม</div>`
+        : '';
+      cellContent = `
+        <div style="font-size:${dayFont};font-weight:${isToday || hasEvent ? '700' : '500'};color:${dayColor};line-height:1">${day}${isToday ? ' •' : ''}</div>
         ${visibleChips}
         ${moreBadge}
+      `;
+    }
+
+    html += `
+      <div ${titleAttr} style="min-height:${cellMin}px;padding:${cellPad};background:${bg};border:${border};border-radius:${isDots ? '5px' : '8px'};display:flex;flex-direction:column;gap:${isDots ? '0' : '3px'};overflow:hidden;cursor:${hasEvent ? 'help' : 'default'}">
+        ${cellContent}
       </div>
     `;
   }
   html += '</div></div>';
   return html;
+}
+
+// Wire clickable month headers (called after renderCalendar updates DOM)
+function wireCalHeaderClicks() {
+  document.querySelectorAll('.cal-month-header[data-cal-zoom-month]').forEach(el => {
+    el.addEventListener('click', () => {
+      const m = parseInt(el.dataset.calZoomMonth, 10);
+      const y = parseInt(el.dataset.calZoomYear, 10);
+      _calMonth = m;
+      _calYear = y;
+      _calView = '1month';
+      const monthSel = $('cal-month'), yearSel = $('cal-year');
+      if (monthSel) monthSel.value = m;
+      if (yearSel) yearSel.value = y;
+      updateViewToggle();
+      // animate
+      const grid = $('cal-grid');
+      if (grid && !_calAnimating) {
+        _calAnimating = true;
+        grid.style.transition = 'transform .22s ease, opacity .22s ease';
+        grid.style.transform = 'scale(1.05)';
+        grid.style.opacity = '0';
+        setTimeout(() => {
+          grid.style.transition = 'none';
+          grid.style.transform = 'scale(0.95)';
+          renderCalendar();
+          void grid.offsetHeight;
+          grid.style.transition = 'transform .25s ease, opacity .25s ease';
+          grid.style.transform = 'scale(1)';
+          grid.style.opacity = '1';
+          setTimeout(() => { _calAnimating = false; }, 260);
+        }, 230);
+      } else {
+        renderCalendar();
+      }
+    });
+    el.addEventListener('mouseenter', () => { el.style.textDecorationColor = 'var(--primary)'; });
+    el.addEventListener('mouseleave', () => { el.style.textDecorationColor = 'transparent'; });
+  });
 }
 
 
