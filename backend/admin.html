@@ -373,6 +373,11 @@
     @media (max-width: 600px) {
       .field-grid-2 { grid-template-columns: 1fr; }
     }
+    /* Teams page: 2-col on desktop, stack on mobile */
+    @media (max-width: 800px) {
+      #teams-layout { grid-template-columns: 1fr !important; }
+      #teams-sidebar { position: static !important; max-height: none !important; }
+    }
     .field-section-label {
       grid-column: 1 / -1;
       font-size: 11.5px; font-weight: 600;
@@ -2487,7 +2492,7 @@ async function renderTeamsPage(selectedTeamId) {
     selectedTeamId = teams[0].id;
   }
 
-  // Render tab strip + container
+  // Render 2-column layout: left = team list, right = team detail
   $('main').innerHTML = `
     <div class="page-head">
       <h2 class="page-title">👨‍👩‍👧 Teams</h2>
@@ -2497,43 +2502,49 @@ async function renderTeamsPage(selectedTeamId) {
       จัดกลุ่ม member เพื่อกำหนดสิทธิ์เข้าถึง platform — site ที่ผูกกับทีมจะ visible เฉพาะคนในทีมเท่านั้น
     </div>
 
-    <!-- Horizontal team tabs (scrollable) -->
-    <div id="teams-tab-strip" style="display:flex;gap:6px;overflow-x:auto;border-bottom:1px solid var(--border);margin-bottom:14px;padding-bottom:1px">
-      ${teams.length === 0
-        ? '<div style="padding:12px 4px;color:var(--text-muted);font-size:13px">ยังไม่มี team — กด <strong>+ สร้าง Team ใหม่</strong> ด้านบน</div>'
-        : teams.map(t => {
-            const isActive = t.id === selectedTeamId;
-            return `
-              <button class="teams-pill" data-team-id="${t.id}"
-                      style="background:${isActive ? 'var(--bg-card)' : 'transparent'};
-                             border:1px solid ${isActive ? 'var(--border)' : 'transparent'};
-                             border-bottom:${isActive ? '1px solid var(--bg-card)' : 'none'};
-                             margin-bottom:-1px;
-                             padding:9px 14px;font-size:13.5px;
-                             color:${isActive ? 'var(--primary)' : 'var(--text)'};
-                             font-weight:${isActive ? '600' : '500'};
-                             border-radius:8px 8px 0 0;
-                             cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;transition:all .12s">
-                <span>${escapeHtml(t.name)}</span>
-                <span style="font-size:11px;color:var(--text-muted);background:var(--bg-soft);padding:1px 7px;border-radius:999px;font-weight:500">
-                  ${t.member_count}👤 · ${t.site_count}🌐
-                </span>
-              </button>
-            `;
-          }).join('')
-      }
-    </div>
+    <div id="teams-layout" style="display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:flex-start">
+      <!-- LEFT: team list -->
+      <aside id="teams-sidebar" style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:8px;box-shadow:var(--shadow-sm);position:sticky;top:14px;max-height:calc(100vh - 60px);overflow-y:auto">
+        ${teams.length === 0
+          ? '<div style="padding:18px 12px;color:var(--text-muted);font-size:13px;text-align:center">ยังไม่มี team — กด <strong>+ สร้าง</strong> ด้านบน</div>'
+          : '<div style="font-size:11.5px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;padding:8px 10px 4px">' + teams.length + ' ทีม</div>' +
+            teams.map(t => {
+              const isActive = t.id === selectedTeamId;
+              return `
+                <button class="teams-row" data-team-id="${t.id}"
+                        style="display:flex;flex-direction:column;align-items:flex-start;gap:3px;
+                               width:100%;text-align:left;
+                               padding:10px 12px;
+                               background:${isActive ? 'var(--primary-soft)' : 'transparent'};
+                               border:1px solid ${isActive ? 'rgba(37,99,235,.25)' : 'transparent'};
+                               border-radius:8px;
+                               cursor:pointer;font-family:inherit;
+                               margin-bottom:3px;
+                               transition:all .12s">
+                  <div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:8px">
+                    <span style="font-weight:${isActive ? '700' : '600'};font-size:13.5px;color:${isActive ? 'var(--primary)' : 'var(--text)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(t.name)}</span>
+                  </div>
+                  <div style="font-size:11px;color:var(--text-muted);font-weight:500;display:flex;gap:8px">
+                    <span>👤 ${t.member_count}</span>
+                    <span>🌐 ${t.site_count}</span>
+                  </div>
+                </button>
+              `;
+            }).join('')
+        }
+      </aside>
 
-    <!-- Selected team panel -->
-    <div id="team-panel">
-      ${selectedTeamId ? '<div class="empty">กำลังโหลด…</div>' : ''}
+      <!-- RIGHT: team detail -->
+      <div id="team-panel" style="min-width:0">
+        ${selectedTeamId ? '<div class="empty">กำลังโหลด…</div>' : '<div class="empty">เลือกทีมจากด้านซ้าย</div>'}
+      </div>
     </div>
   `;
 
   $('add-team-btn').addEventListener('click', showAddTeamModal);
 
-  // Wire tab clicks → update URL hash → navigate handler will re-render with new selectedTeamId
-  document.querySelectorAll('.teams-pill[data-team-id]').forEach(btn => {
+  // Wire team row clicks → update URL hash
+  document.querySelectorAll('.teams-row[data-team-id]').forEach(btn => {
     btn.addEventListener('click', () => {
       const id = parseInt(btn.dataset.teamId, 10);
       if (id !== selectedTeamId) {
@@ -2605,12 +2616,12 @@ async function loadTeamDetail(teamId) {
   }
   _currentTeam = data.team;
 
-  // Update count badge บน tab strip ของ team นี้ — ให้ตัวเลขทันสมัยหลังเพิ่ม/ลบ member/site
-  const tabBtn = document.querySelector(`.teams-pill[data-team-id="${teamId}"]`);
-  if (tabBtn) {
-    const badge = tabBtn.querySelector('span:last-child');
-    if (badge) {
-      badge.textContent = `${data.members.length}👤 · ${data.sites.length}🌐`;
+  // Update count badge บน sidebar row ของ team นี้ — ให้ตัวเลขทันสมัยหลังเพิ่ม/ลบ
+  const rowBtn = document.querySelector(`.teams-row[data-team-id="${teamId}"]`);
+  if (rowBtn) {
+    const counter = rowBtn.querySelector('div:last-child');
+    if (counter) {
+      counter.innerHTML = `<span>👤 ${data.members.length}</span><span>🌐 ${data.sites.length}</span>`;
     }
   }
 
