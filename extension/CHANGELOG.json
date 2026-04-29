@@ -2,6 +2,21 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.12",
+      "date": "2026-04-29",
+      "title": "Domain Edit Modal: ปุ่ม 📥 ดึงวันจดทะเบียน/หมดอายุจาก WHOIS",
+      "summary": "ในฟอร์มเพิ่ม/แก้ไข domain มีปุ่มดึง WHOIS แล้วกดยืนยันใส่วันที่อัตโนมัติ",
+      "changes": [
+        "เพิ่มปุ่ม '📥 ดึงจาก WHOIS' ในฟอร์ม edit domain (ใช้ได้ทั้งโหมดเพิ่มและแก้ไข)",
+        "Click → query /api/admin/domains/lookup/whois → preview กล่องผลลัพธ์",
+        "Preview: ตารางเทียบ 'ค่าใหม่จาก WHOIS' กับ 'ค่าเดิมในฟอร์ม' พร้อม badge 'เปลี่ยน' / 'ตรงกัน'",
+        "ใส่วันแบบฉลาด: creation_date เลือก earliest, expiration_date เลือก latest (กรณี WHOIS คืน array จากหลาย source)",
+        "กด 'ยืนยันใส่ค่านี้' → fill dm-register + dm-expire + auto-fill dm-provider ถ้ายังว่าง",
+        "Date conversion ใช้ UTC เพื่อกัน timezone shift",
+        "Loading state, error handling (NXDOMAIN, no WHOIS support, network error)"
+      ]
+    },
+    {
       "version": "1.9.11",
       "date": "2026-04-29",
       "title": "Domain Config: ย่อ row 2 บรรทัด + ค้นหา + sort",
