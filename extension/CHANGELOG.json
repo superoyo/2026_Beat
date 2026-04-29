@@ -2,6 +2,22 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.14",
+      "date": "2026-04-29",
+      "title": "WHOIS: รองรับ .id + แก้ SSL fail (certifi + direct socket fallback)",
+      "summary": "เพิ่ม path direct socket WHOIS (port 43) + SSL CA bundle จาก certifi → .id, .mobi, .io ใช้ได้แล้ว",
+      "changes": [
+        ".id ใช้ไม่ได้: python-whois shell-out หา 'whois.id' ไม่เจอภายใน → เพิ่ม direct socket WHOIS",
+        ".mobi อาจ SSL fail บน server บางตัว: เพิ่ม certifi ใน requirements + ใช้ใน RDAP request",
+        "Backend: เพิ่ม _whois_socket_query() — direct port-43 query (RFC 3912)",
+        "Backend: เพิ่ม _whois_server_for_domain() — IANA bootstrap หา WHOIS server ของ TLD ใด ๆ",
+        "Hardcoded TLD map สำหรับ TLD ที่รู้แล้ว: .th/.id/.vn/.sg/etc. → query เร็วขึ้น",
+        "Strategy 4 path: python-whois → re-parse raw → direct socket → RDAP",
+        "Error message รวมข้อความจากทุก path ที่ fail (debug ง่ายขึ้น)",
+        "Bug fix: regex ใน IANA bootstrap จับข้าม newline เมื่อ whois: line ว่าง (.mobi)"
+      ]
+    },
+    {
       "version": "1.9.13",
       "date": "2026-04-29",
       "title": "WHOIS: รองรับ .co.th / .ac.th / .mobi (THNIC parser + RDAP fallback)",

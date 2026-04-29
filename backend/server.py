@@ -3922,6 +3922,14 @@ try:
 except Exception:
     _HAS_WHOIS = False
 
+# certifi — guarantees a working CA bundle for HTTPS RDAP requests
+import ssl as _ssl
+try:
+    import certifi as _certifi  # type: ignore
+    _SSL_CTX = _ssl.create_default_context(cafile=_certifi.where())
+except Exception:
+    _SSL_CTX = _ssl.create_default_context()
+
 
 def _format_dnspython_record(rdata, record_type: str) -> str:
     """Format an rdata object the same way `dig +short` would print it."""
@@ -4196,6 +4204,83 @@ def _parse_whois_text(text: str) -> dict[str, Any]:
     return out
 
 
+# Hardcoded TLD → WHOIS server map (faster than IANA roundtrip; covers TLDs
+# where python-whois has known issues). Used by _whois_socket_query path.
+_TLD_WHOIS_SERVERS: dict[str, str] = {
+    "th":      "whois.thnic.co.th",
+    "co.th":   "whois.thnic.co.th",
+    "ac.th":   "whois.thnic.co.th",
+    "or.th":   "whois.thnic.co.th",
+    "in.th":   "whois.thnic.co.th",
+    "go.th":   "whois.thnic.co.th",
+    "net.th":  "whois.thnic.co.th",
+    "id":      "whois.id",
+    "co.id":   "whois.id",
+    "ac.id":   "whois.id",
+    "or.id":   "whois.id",
+    "web.id":  "whois.id",
+    "biz.id":  "whois.id",
+    "my.id":   "whois.id",
+    "vn":      "whois.vnnic.vn",
+    "sg":      "whois.sgnic.sg",
+    "com.sg":  "whois.sgnic.sg",
+}
+_TLD_WHOIS_CACHE: dict[str, Optional[str]] = {}
+
+
+def _whois_socket_query(server: str, query: str, *, timeout: float = 10.0) -> str:
+    """Direct WHOIS protocol (RFC 3912) — TCP port 43."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    chunks: list[bytes] = []
+    try:
+        sock.connect((server, 43))
+        sock.sendall((query + "\r\n").encode())
+        while True:
+            try:
+                chunk = sock.recv(4096)
+            except socket.timeout:
+                break
+            if not chunk:
+                break
+            chunks.append(chunk)
+    finally:
+        try:
+            sock.close()
+        except Exception:
+            pass
+    return b"".join(chunks).decode("utf-8", errors="replace")
+
+
+def _whois_server_for_domain(domain: str) -> Optional[str]:
+    """Determine WHOIS port-43 server for a domain, using hardcoded map then IANA."""
+    parts = domain.split(".")
+    # Try longest TLD suffix first (e.g., "co.th" before "th")
+    for i in range(len(parts) - 1):
+        suffix = ".".join(parts[i + 1:])
+        if suffix in _TLD_WHOIS_SERVERS:
+            return _TLD_WHOIS_SERVERS[suffix]
+        if suffix in _TLD_WHOIS_CACHE:
+            return _TLD_WHOIS_CACHE[suffix]
+    tld = parts[-1]
+    if tld in _TLD_WHOIS_CACHE:
+        return _TLD_WHOIS_CACHE[tld]
+    # Ask IANA — match only same-line value (don't span newlines), and only if non-empty
+    try:
+        iana = _whois_socket_query("whois.iana.org", tld, timeout=5.0)
+        server: Optional[str] = None
+        for line in iana.splitlines():
+            ml = re.match(r"(?i)^\s*whois:[ \t]*(\S+)[ \t]*$", line)
+            if ml:
+                server = ml.group(1)
+                break
+        _TLD_WHOIS_CACHE[tld] = server
+        return server
+    except Exception:
+        _TLD_WHOIS_CACHE[tld] = None
+        return None
+
+
 def _rdap_lookup(domain: str, *, timeout: float = 10.0) -> dict[str, Any]:
     """Query rdap.org (free aggregator) — works for .mobi, .co.th, and most modern TLDs.
     Returns dict (subset of WHOIS-shaped fields) or {'_error': ...} on failure."""
@@ -4206,7 +4291,7 @@ def _rdap_lookup(domain: str, *, timeout: float = 10.0) -> dict[str, Any]:
         "User-Agent": "Mozilla/5.0 (compatible; fefl-beat WHOIS lookup)",
     })
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX) as resp:
             payload = _json.loads(resp.read().decode("utf-8", errors="replace"))
     except urllib.error.HTTPError as e:
         if e.code == 404:
@@ -4296,7 +4381,32 @@ def admin_domain_whois(
             if patched:
                 sources_used.append("raw-parser")
 
-    # Step 3: RDAP fallback if dates still missing
+    # Step 3: direct socket WHOIS (port 43) fallback — for TLDs where
+    # python-whois fails to resolve the WHOIS server (e.g., .id) or its CLI
+    # shell-out can't connect. We do the connection ourselves using IANA bootstrap.
+    socket_error: Optional[str] = None
+    if not py_data.get("creation_date") or not py_data.get("expiration_date"):
+        server = _whois_server_for_domain(domain)
+        if server:
+            try:
+                socket_text = _whois_socket_query(server, domain, timeout=10.0)
+                if socket_text and len(socket_text) > 50:   # got something substantive
+                    if not raw_text:
+                        raw_text = socket_text
+                    else:
+                        raw_text = raw_text + "\n\n--- (socket fallback from " + server + ") ---\n" + socket_text
+                    patched = _parse_whois_text(socket_text)
+                    added = False
+                    for k, v in patched.items():
+                        if not py_data.get(k):
+                            py_data[k] = v
+                            added = True
+                    if added:
+                        sources_used.append(f"socket-whois({server})")
+            except Exception as e:
+                socket_error = f"socket WHOIS to {server} failed: {e}"
+
+    # Step 4: RDAP fallback if dates still missing
     rdap_error: Optional[str] = None
     if not py_data.get("creation_date") or not py_data.get("expiration_date"):
         rdap = _rdap_lookup(domain)
@@ -4310,14 +4420,17 @@ def admin_domain_whois(
                     py_data[k] = v
             sources_used.append("rdap")
 
-    # If all 3 paths produced nothing usable
+    # If all 4 paths produced nothing usable
     if not (py_data.get("registrar") or py_data.get("creation_date")
             or py_data.get("expiration_date") or py_data.get("name_servers")):
+        details = []
+        if py_error:     details.append(f"python-whois: {py_error}")
+        if socket_error: details.append(socket_error)
+        if rdap_error:   details.append(rdap_error)
         return {
             "domain": domain,
             "error": "ไม่พบข้อมูล WHOIS หรือ RDAP สำหรับ domain นี้"
-                     + (f" (python-whois: {py_error})" if py_error else "")
-                     + (f" / {rdap_error}" if rdap_error else ""),
+                     + (f" — {' / '.join(details)}" if details else ""),
             "raw": (raw_text or "")[:5000] or None,
         }
 
