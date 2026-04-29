@@ -2,6 +2,21 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.13",
+      "date": "2026-04-29",
+      "title": "WHOIS: รองรับ .co.th / .ac.th / .mobi (THNIC parser + RDAP fallback)",
+      "summary": "ก่อนหน้านี้ดึง WHOIS ของ .co.th/.mobi ไม่ได้ ตอนนี้ใช้งานได้แล้ว",
+      "changes": [
+        ".co.th / .ac.th / .or.th — THNIC ใช้คีย์ 'Created date:' / 'Exp date:' ที่ python-whois อ่านไม่ออก แม้ raw text จะมีอยู่",
+        ".mobi — registry เลิกใช้ WHOIS port-43 แล้ว ต้องใช้ RDAP เท่านั้น (python-whois fail ทันที)",
+        "Backend: เพิ่ม _parse_whois_text() — re-parse raw WHOIS text ด้วยรูปแบบ key หลายแบบ (THNIC + ICANN + DENIC ฯลฯ)",
+        "Backend: เพิ่ม _rdap_lookup() — query rdap.org เป็น fallback เมื่อ port-43 WHOIS ล้มเหลว",
+        "Strategy: python-whois → re-parse raw → RDAP — ใช้ทั้ง 3 path ตามลำดับ ตัวไหน work ก่อนใช้ก่อน",
+        "Date format รองรับ: ISO, '17 Jan 1999', '17 January 1999', '17-Jan-1999', '17/01/1999', etc.",
+        "Field 'sources' ใน response — บอกว่า data มาจาก path ไหน (debug)"
+      ]
+    },
+    {
       "version": "1.9.12",
       "date": "2026-04-29",
       "title": "Domain Edit Modal: ปุ่ม 📥 ดึงวันจดทะเบียน/หมดอายุจาก WHOIS",

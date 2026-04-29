@@ -4093,49 +4093,253 @@ def _normalize_whois_value(v: Any) -> Any:
     return str(v)
 
 
+# ---------------------------------------------------------------------------
+# WHOIS / RDAP fallback helpers
+#
+# python-whois works for popular gTLDs (.com, .net, .org, .io, ...) but fails on:
+#   - .co.th / .ac.th / etc. — THNIC's WHOIS uses non-standard keys ("Created date:" / "Exp date:")
+#                              python-whois receives the raw text but its parser doesn't extract dates
+#   - .mobi (and other newer TLDs) — registry has decommissioned port-43 WHOIS, only RDAP available
+#
+# Strategy:
+#   1. Try python-whois (fast for ICANN-format gTLDs)
+#   2. If raw_text exists but dates missing → re-parse with our pattern matcher (handles THNIC format)
+#   3. If still no dates → try RDAP via rdap.org (works for most TLDs incl. .mobi + .co.th)
+# ---------------------------------------------------------------------------
+
+# Date-key patterns observed across registries (case-insensitive, exact prefix match)
+_WHOIS_DATE_KEYS: dict[str, list[str]] = {
+    "creation_date": [
+        "created date", "creation date", "created on", "registered on",
+        "registration date", "registered", "created", "registry creation date",
+    ],
+    "expiration_date": [
+        "exp date", "expiration date", "expires", "expire date",
+        "registry expiry date", "registrar registration expiration date",
+        "registry expiration date", "expires on", "paid-till",
+    ],
+    "updated_date": [
+        "updated date", "updated", "last modified", "last updated", "changed",
+        "last update", "modified",
+    ],
+}
+
+# Date format strings tried (in order)
+_WHOIS_DATE_FORMATS: list[str] = [
+    "%Y-%m-%dT%H:%M:%S%z",       # 2026-05-15T04:00:00+00:00
+    "%Y-%m-%dT%H:%M:%SZ",        # 2026-05-15T04:00:00Z
+    "%Y-%m-%dT%H:%M:%S",         # 2026-05-15T04:00:00
+    "%Y-%m-%d %H:%M:%S",         # 2026-05-15 04:00:00
+    "%Y-%m-%d",                  # 2026-05-15
+    "%d %b %Y",                  # 17 Jan 1999  ← THNIC format
+    "%d %B %Y",                  # 17 January 1999
+    "%d-%b-%Y",                  # 17-Jan-1999
+    "%d/%m/%Y",                  # 17/01/1999
+    "%Y/%m/%d",                  # 1999/01/17
+    "%Y.%m.%d",                  # 1999.01.17
+]
+
+
+def _parse_whois_loose_date(s: str) -> Optional[datetime]:
+    """Try multiple date formats. Returns None if no format matches."""
+    if not s:
+        return None
+    s = s.strip()
+    # Cut off trailing notes/tz-words ("16 Jan 2035" or "16 Jan 2035 (UTC)")
+    s = re.sub(r"\s+\([^)]*\)\s*$", "", s).strip()
+    # Truncate at "  " (multiple spaces commonly separate value from comments)
+    if "  " in s:
+        s = s.split("  ", 1)[0].strip()
+    for fmt in _WHOIS_DATE_FORMATS:
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _parse_whois_text(text: str) -> dict[str, Any]:
+    """Re-parse raw WHOIS text — handles THNIC + other non-ICANN formats.
+    Only fills fields not already set; extracts dates, registrar, name_servers."""
+    out: dict[str, Any] = {}
+    if not text:
+        return out
+    name_servers: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        key = key.strip().lower()
+        value = value.strip()
+        if not value:
+            continue
+        # Date fields
+        for canonical, aliases in _WHOIS_DATE_KEYS.items():
+            if canonical in out:
+                continue
+            if key in aliases:
+                parsed = _parse_whois_loose_date(value)
+                if parsed:
+                    out[canonical] = parsed.isoformat()
+                break
+        # Registrar
+        if "registrar" not in out and key in ("registrar", "sponsoring registrar"):
+            out["registrar"] = value
+        # Name servers (collect all, dedupe at the end)
+        if key in ("name server", "nameserver", "nserver", "nservers"):
+            ns = value.split()[0].lower().rstrip(".")
+            if ns and ns not in name_servers:
+                name_servers.append(ns)
+    if name_servers:
+        out["name_servers"] = name_servers
+    return out
+
+
+def _rdap_lookup(domain: str, *, timeout: float = 10.0) -> dict[str, Any]:
+    """Query rdap.org (free aggregator) — works for .mobi, .co.th, and most modern TLDs.
+    Returns dict (subset of WHOIS-shaped fields) or {'_error': ...} on failure."""
+    url = f"https://rdap.org/domain/{domain}"
+    req = urllib.request.Request(url, headers={
+        # Some TLD RDAP servers return 403 for non-browser UAs after redirect
+        "Accept": "application/rdap+json, application/json",
+        "User-Agent": "Mozilla/5.0 (compatible; fefl-beat WHOIS lookup)",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            payload = _json.loads(resp.read().decode("utf-8", errors="replace"))
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return {"_error": "RDAP: domain ไม่มีอยู่ (NXDOMAIN)"}
+        return {"_error": f"RDAP HTTP {e.code}"}
+    except urllib.error.URLError as e:
+        return {"_error": f"RDAP network error: {e.reason}"}
+    except Exception as e:
+        return {"_error": f"RDAP error: {e}"}
+
+    out: dict[str, Any] = {}
+    # Events: registration / expiration / last changed
+    for event in payload.get("events") or []:
+        action = (event.get("eventAction") or "").lower()
+        date = event.get("eventDate")
+        if not date:
+            continue
+        if action == "registration" and "creation_date" not in out:
+            out["creation_date"] = date
+        elif action == "expiration" and "expiration_date" not in out:
+            out["expiration_date"] = date
+        elif action in ("last changed", "last update") and "updated_date" not in out:
+            out["updated_date"] = date
+    # Registrar (entities with role 'registrar', vCard 'fn' field)
+    for ent in payload.get("entities") or []:
+        if "registrar" not in (ent.get("roles") or []):
+            continue
+        vcard = ent.get("vcardArray")
+        if isinstance(vcard, list) and len(vcard) >= 2 and isinstance(vcard[1], list):
+            for item in vcard[1]:
+                if isinstance(item, list) and len(item) >= 4 and item[0] == "fn":
+                    out["registrar"] = item[3]
+                    break
+        if "registrar" in out:
+            break
+    # Nameservers
+    nss: list[str] = []
+    for ns in payload.get("nameservers") or []:
+        ldh = ns.get("ldhName")
+        if ldh:
+            nss.append(ldh.lower())
+    if nss:
+        out["name_servers"] = nss
+    # Status
+    if payload.get("status"):
+        out["status"] = payload["status"]
+    out["_source"] = "rdap"
+    return out
+
+
 @app.get("/api/admin/domains/lookup/whois")
 def admin_domain_whois(
     name: str,
     _sess: dict = Depends(require_admin),
 ) -> dict[str, Any]:
-    """WHOIS lookup — registrar, dates, name servers, status"""
+    """WHOIS lookup with multi-source fallback:
+       1) python-whois  → 2) re-parse raw text  → 3) RDAP via rdap.org"""
     domain = _sanitize_domain(name)
-    if not _HAS_WHOIS:
+
+    # Step 1: python-whois
+    py_data: dict[str, Any] = {}
+    raw_text: str = ""
+    py_error: Optional[str] = None
+    if _HAS_WHOIS:
+        try:
+            w = _whois.whois(domain)
+            if w:
+                raw_text = getattr(w, "text", "") or ""
+                for k in ("domain_name", "registrar", "registrar_url", "referral_url",
+                          "whois_server", "creation_date", "expiration_date",
+                          "updated_date", "name_servers", "status", "emails",
+                          "dnssec", "org", "country"):
+                    val = w.get(k)
+                    if val:
+                        py_data[k] = val
+        except Exception as e:
+            py_error = str(e)
+
+    # Step 2: re-parse raw_text for missing date fields (THNIC etc.)
+    sources_used = ["python-whois"] if py_data or raw_text else []
+    if raw_text:
+        if not py_data.get("creation_date") or not py_data.get("expiration_date"):
+            patched = _parse_whois_text(raw_text)
+            for k, v in patched.items():
+                if not py_data.get(k):
+                    py_data[k] = v
+            if patched:
+                sources_used.append("raw-parser")
+
+    # Step 3: RDAP fallback if dates still missing
+    rdap_error: Optional[str] = None
+    if not py_data.get("creation_date") or not py_data.get("expiration_date"):
+        rdap = _rdap_lookup(domain)
+        if "_error" in rdap:
+            rdap_error = rdap["_error"]
+        else:
+            for k, v in rdap.items():
+                if k.startswith("_"):
+                    continue
+                if not py_data.get(k):
+                    py_data[k] = v
+            sources_used.append("rdap")
+
+    # If all 3 paths produced nothing usable
+    if not (py_data.get("registrar") or py_data.get("creation_date")
+            or py_data.get("expiration_date") or py_data.get("name_servers")):
         return {
             "domain": domain,
-            "error": "python-whois ยังไม่ได้ลง — รัน: pip install python-whois",
+            "error": "ไม่พบข้อมูล WHOIS หรือ RDAP สำหรับ domain นี้"
+                     + (f" (python-whois: {py_error})" if py_error else "")
+                     + (f" / {rdap_error}" if rdap_error else ""),
+            "raw": (raw_text or "")[:5000] or None,
         }
-    try:
-        w = _whois.whois(domain)
-    except Exception as e:
-        return {"domain": domain, "error": f"WHOIS query failed: {e}"}
-    # If lookup returned no canonical fields, the TLD or registrar didn't reply
-    if not w or not (w.get("registrar") or w.get("creation_date") or w.get("expiration_date")):
-        raw_text = getattr(w, "text", "") if w else ""
-        return {
-            "domain": domain,
-            "error": "WHOIS server ไม่ตอบ หรือ TLD นี้ไม่รองรับ WHOIS",
-            "raw": (raw_text or "")[:5000] if raw_text else None,
-        }
-    out: dict[str, Any] = {
+
+    return {
         "domain": domain,
-        "domain_name": _normalize_whois_value(w.get("domain_name")),
-        "registrar": _normalize_whois_value(w.get("registrar")),
-        "registrar_url": _normalize_whois_value(w.get("registrar_url") or w.get("referral_url")),
-        "whois_server": _normalize_whois_value(w.get("whois_server")),
-        "creation_date": _normalize_whois_value(w.get("creation_date")),
-        "expiration_date": _normalize_whois_value(w.get("expiration_date")),
-        "updated_date": _normalize_whois_value(w.get("updated_date")),
-        "name_servers": _normalize_whois_value(w.get("name_servers")),
-        "status": _normalize_whois_value(w.get("status")),
-        "emails": _normalize_whois_value(w.get("emails")),
-        "dnssec": _normalize_whois_value(w.get("dnssec")),
-        "org": _normalize_whois_value(w.get("org")),
-        "country": _normalize_whois_value(w.get("country")),
-        "raw": (getattr(w, "text", "") or "")[:5000] or None,
+        "domain_name": _normalize_whois_value(py_data.get("domain_name")),
+        "registrar": _normalize_whois_value(py_data.get("registrar")),
+        "registrar_url": _normalize_whois_value(py_data.get("registrar_url") or py_data.get("referral_url")),
+        "whois_server": _normalize_whois_value(py_data.get("whois_server")),
+        "creation_date": _normalize_whois_value(py_data.get("creation_date")),
+        "expiration_date": _normalize_whois_value(py_data.get("expiration_date")),
+        "updated_date": _normalize_whois_value(py_data.get("updated_date")),
+        "name_servers": _normalize_whois_value(py_data.get("name_servers")),
+        "status": _normalize_whois_value(py_data.get("status")),
+        "emails": _normalize_whois_value(py_data.get("emails")),
+        "dnssec": _normalize_whois_value(py_data.get("dnssec")),
+        "org": _normalize_whois_value(py_data.get("org")),
+        "country": _normalize_whois_value(py_data.get("country")),
+        "raw": raw_text[:5000] or None,
+        "sources": sources_used,    # for debugging — UI can show ["python-whois","rdap"]
         "error": None,
     }
-    return out
 
 
 @app.get("/api/teams-overview")
