@@ -2,6 +2,20 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.22",
+      "date": "2026-04-29",
+      "title": "Confidence lock: เปลี่ยนเป็น per-host (Freepik lock ไม่กวน Magnific)",
+      "summary": "แต่ละ host มี lock state ของตัวเอง — บัญชี Magnific ที่ scrape ครั้งแรกไม่โดน lock จาก Freepik อีก",
+      "changes": [
+        "ปัญหา: has_seen_high_confidence เป็น boolean เดียวทั้งระบบ → lock จาก freepik.com block magnific.com ด้วย",
+        "  → บาง account บน Magnific ขึ้น 'skipping low-confidence 60674' แม้ค่าจะถูก",
+        "แก้: เปลี่ยน storage format → object map { 'freepik.com': true, 'magnific.com': true, ... }",
+        "Migration: ถ้าเจอ legacy boolean → reset เป็น empty object (ทุก host เริ่มสด)",
+        "Log แสดง host ใน lock event: '✓ high-confidence locked for magnific.com:'",
+        "Popup tentative banner แสดง host ของค่าที่ถูก reject ด้วย"
+      ]
+    },
+    {
       "version": "1.9.21",
       "date": "2026-04-29",
       "title": "Debug: Tentative banner + Reset confidence lock + clearer console logs",

@@ -96,18 +96,26 @@ async function loadCached() {
   document.getElementById('balance-time').textContent = fmtAbsoluteDateTime(r.last_updated);
   showProfile(r.last_profile_name);
 
-  // Tentative banner: show เมื่อ scrape ได้ค่าใหม่กว่า last_balance หรือ
-  // ค่าใน scrape ระดับ low ที่ถูก lock ปฏิเสธ
+  // Tentative banner: show เมื่อ scrape ได้ค่า low-confidence ที่ถูก lock ปฏิเสธ
+  // (lock ดูตาม host ของ tentative — ไม่ใช้ lock global อีกต่อไป)
   const t = r.last_tentative;
   const banner = document.getElementById('tentative-banner');
   if (t && t.value != null) {
+    let lockedForHost = false;
+    const lockMap = r.has_seen_high_confidence;
+    if (typeof lockMap === 'boolean') {
+      lockedForHost = lockMap;   // legacy: treat as global lock
+    } else if (lockMap && typeof lockMap === 'object' && t.host) {
+      lockedForHost = !!lockMap[t.host];
+    }
     const tentativeIsNewer = !r.last_updated || (t.at && t.at > new Date(r.last_updated).getTime());
-    const isLowAndLocked = (t.confidence === 'low') && r.has_seen_high_confidence;
+    const isLowAndLocked = (t.confidence === 'low') && lockedForHost;
     const valueDiffers = r.last_balance == null || Math.round(t.value) !== Math.round(r.last_balance);
     if (isLowAndLocked && (tentativeIsNewer || valueDiffers)) {
       banner.style.display = '';
       const detail = document.getElementById('tentative-detail');
-      detail.textContent = `${fmt.format(Math.round(t.value))} · จาก ${t.source} · ${fmtRel(t.at ? new Date(t.at).toISOString() : null)}`;
+      const hostStr = t.host ? ` · ${t.host}` : '';
+      detail.textContent = `${fmt.format(Math.round(t.value))} · จาก ${t.source}${hostStr} · ${fmtRel(t.at ? new Date(t.at).toISOString() : null)}`;
     } else {
       banner.style.display = 'none';
     }

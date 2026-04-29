@@ -233,25 +233,39 @@ async function findBalance() {
   const result = tryPatternScan();
   if (!result) return null;
 
-  // เช็ค confidence lock
+  // Confidence lock — track per-host เพื่อไม่ให้ lock ของ freepik.com
+  // ส่งผลกับ magnific.com (และในทางกลับกัน)
+  const HOST = location.hostname.replace(/^www\./, '').toLowerCase();
   const local = await chrome.storage.local.get(['has_seen_high_confidence']);
-  const seenHigh = !!local.has_seen_high_confidence;
+  let lockMap = local.has_seen_high_confidence;
+  // Migrate legacy boolean format → object map
+  if (typeof lockMap === 'boolean') {
+    // กรณี true: ถือเป็น lock ทั้งหมด แต่เปลี่ยนเป็น empty object เพื่อให้ host ใหม่
+    // เริ่มต้นใหม่ ไม่ติด lock ค้างจาก format เก่า
+    lockMap = {};
+    await chrome.storage.local.set({ has_seen_high_confidence: lockMap });
+    console.log('%c[FCT] 🔄 migrated legacy lock format → per-host', 'color:#2563eb');
+  } else if (lockMap == null || typeof lockMap !== 'object') {
+    lockMap = {};
+  }
+  const seenHigh = !!lockMap[HOST];
 
   if (result.confidence === 'high') {
     if (!seenHigh) {
-      await chrome.storage.local.set({ has_seen_high_confidence: true });
-      console.log('%c[FCT] ✓ high-confidence locked on:', 'color:#10b981;font-weight:bold', result.source);
+      lockMap[HOST] = true;
+      await chrome.storage.local.set({ has_seen_high_confidence: lockMap });
+      console.log('%c[FCT] ✓ high-confidence locked for ' + HOST + ':', 'color:#10b981;font-weight:bold', result.source);
     }
     // เก็บ tentative ล่าสุดด้วย เผื่อ debug/popup ต้องดู
     await chrome.storage.local.set({
-      last_tentative: { value: result.value, source: result.source, confidence: 'high', at: Date.now() },
+      last_tentative: { value: result.value, source: result.source, confidence: 'high', host: HOST, at: Date.now() },
     });
     return result.value;
   }
 
   // confidence === 'low' — บันทึก tentative ทุกครั้ง (popup จะใช้แสดงสถานะ)
   await chrome.storage.local.set({
-    last_tentative: { value: result.value, source: result.source, confidence: 'low', at: Date.now() },
+    last_tentative: { value: result.value, source: result.source, confidence: 'low', host: HOST, at: Date.now() },
   });
 
   if (seenHigh) {
@@ -259,9 +273,9 @@ async function findBalance() {
     // log ครั้งแรกของ session ให้เด่น พร้อมบอกวิธี reset
     if (!_lockSkipLogged) {
       _lockSkipLogged = true;
-      console.warn('%c[FCT] ⚠ confidence-lock blocking low-confidence value', 'color:#dc2626;font-weight:bold',
+      console.warn('%c[FCT] ⚠ confidence-lock blocking low-confidence on ' + HOST, 'color:#dc2626;font-weight:bold',
         '\n  value:', result.value, 'from', result.source,
-        '\n  เหตุผล: เคยเจอ high-confidence selector มาก่อน → รอ selector เดิมโผล่ใหม่',
+        '\n  เหตุผล: เคยเจอ high-confidence selector บน ' + HOST + ' มาก่อน → รอ selector เดิมโผล่ใหม่',
         '\n  วิธีแก้:',
         '\n    1. คลิก icon extension → ปุ่ม "🔓 Reset detect"',
         '\n    2. หรือพิมพ์ใน console: chrome.storage.local.remove(["has_seen_high_confidence"])',
@@ -274,7 +288,7 @@ async function findBalance() {
   }
 
   // ยังไม่เคยเจอ high → trust low เป็น first-time
-  console.log('%c[FCT] ✓ using low-confidence', 'color:#f59e0b', result.value, 'from', result.source);
+  console.log('%c[FCT] ✓ using low-confidence on ' + HOST, 'color:#f59e0b', result.value, 'from', result.source);
   return result.value;
 }
 
