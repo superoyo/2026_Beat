@@ -2,6 +2,27 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.35",
+      "date": "2026-04-30",
+      "title": "Calendar: เปลี่ยนชื่อจาก Domain Names + รวมวันหมดอายุของ Hosting/SSL/Others",
+      "summary": "ปฏิทินรวมทุก expiration จาก domain + service ทั้ง 3 type คลิกวันได้ filter รายการด้านล่าง",
+      "changes": [
+        "Sidebar: '🌐 Domain Names' → '📅 Calendar'",
+        "Routes: เพิ่ม #/calendar (primary) + คงไว้ #/domains (legacy alias)",
+        "Data: เปลี่ยนจาก /api/domains → /api/websites (ได้ services ผูกครบ)",
+        "Calendar dots: รวม domain register/expire + service expire (hosting/ssl/others)",
+        "Dot color = source type: 🌐 Domain (blue) / 🖥️ Hosting (cyan) / 🔒 SSL (purple) / 📦 Others (pink)",
+        "Cell background ยังคง encode urgency: หมดแล้ว (red) / ≤30 วัน (amber) / >30 วัน (green)",
+        "ลบ table ด้านล่าง → แทนด้วย Detail Panel ที่ sync ตาม view:",
+        "  • Default 1-month view → panel แสดง events ใน 1 เดือน",
+        "  • Default 3-month view → panel แสดง events ใน 3 เดือน (เฉพาะ expire)",
+        "  • คลิกวันใน calendar → panel แสดงเฉพาะวันนั้น (รวม register + expire)",
+        "  • คลิกซ้ำที่วันเดิม → ยกเลิก selection",
+        "Detail row: type pill + service/domain name + status badge + provider + date",
+        "เปลี่ยนเดือน/view → clear selection อัตโนมัติ (เห็น scope ใหม่ตรง ๆ)"
+      ]
+    },
+    {
       "version": "1.9.34",
       "date": "2026-04-30",
       "title": "Websites: chip ของแต่ละ service ต่อท้ายชื่อ Provider",

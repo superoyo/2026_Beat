@@ -770,7 +770,7 @@
       <div class="nav-section">
         <a href="#/dashboard" data-route="dashboard">📊 Dashboard</a>
         <a href="#/platforms" data-route="platforms">🚀 Platforms</a>
-        <a href="#/domains" data-route="domains">🌐 Domain Names</a>
+        <a href="#/calendar" data-route="calendar">📅 Calendar</a>
         <a href="#/extension" data-route="extension">🧩 Extension</a>
         <a href="#/account" data-route="account">👤 บัญชีของฉัน</a>
       </div>
@@ -897,7 +897,8 @@ const HIDE_FROM_MEMBER_NAV = new Set(['security', 'members', 'sites', 'logs', 't
 const routes = {
   'dashboard':        renderDashboardEmbed,
   'platforms':        renderPlatformsPage,
-  'domains':          renderDomainsPage,
+  'calendar':         renderDomainsPage,    // primary route (Domain Names → Calendar)
+  'domains':          renderDomainsPage,    // legacy alias
   'domains-config':   renderDomainsConfigPage,
   'services-config':  renderServicesConfigPage,
   'websites':         renderWebsitesPage,
@@ -3517,15 +3518,20 @@ async function refreshAccessRequestBadge() {
   } catch {}
 }
 
-// ============== Domain Names (general) ==============
+// ============== Calendar (general) — domain + service expirations ==============
 const _DAYS_TH = ['อา','จ','อ','พ','พฤ','ศ','ส'];
 const _MONTHS_TH = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
 
-let _domainsCache = [];
+// Cache: websites (domain + linked services) → ใช้สำหรับสร้าง events ในปฏิทิน
+let _domainsCache = [];           // (legacy) — domains ตรง ๆ ไม่ผ่าน websites
+let _websitesCache = [];          // websites endpoint — มี services ผูกอยู่
 let _calMonth = 0;   // 0-11 — เดือนซ้ายสุดถ้า 3-month, หรือเดือนที่แสดงถ้า 1-month
 let _calYear = 2026;
 let _calView = '3month';   // '3month' | '1month'
 let _calAnimating = false;
+// วันที่ user คลิกใน calendar — null = ไม่เลือก (แสดงทั้ง view)
+// รูปแบบ: { day, month, year } หรือ null
+let _calSelectedDay = null;
 
 async function renderDomainsPage() {
   // init calendar to current month
@@ -3533,13 +3539,15 @@ async function renderDomainsPage() {
   _calMonth = now.getMonth();
   _calYear = now.getFullYear();
 
+  // reset selection on page enter
+  _calSelectedDay = null;
   $('main').innerHTML = `
     <div class="page-head">
-      <h2 class="page-title">🌐 Domain Names</h2>
+      <h2 class="page-title">📅 Calendar</h2>
       <span class="card-sub" id="d-count">—</span>
     </div>
     <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px">
-      Domain ทั้งหมดในระบบ — ปฏิทินด้านบน highlight วันที่ domain หมดอายุ
+      ปฏิทินรวมวันหมดอายุ — Domain · Hosting · SSL · Others — คลิกวันใดวันหนึ่งเพื่อดูเฉพาะวันนั้น
     </div>
 
     <!-- Calendar -->
@@ -3565,7 +3573,7 @@ async function renderDomainsPage() {
       </div>
     </div>
 
-    <!-- Domains table -->
+    <!-- Detail panel — แสดงรายการที่หมดอายุ ตาม calendar view (1m/3m) หรือ day ที่คลิก -->
     <div id="d-list">
       <div class="empty">กำลังโหลด…</div>
     </div>
@@ -3587,6 +3595,8 @@ async function renderDomainsPage() {
   const slideAndRender = (dir) => {
     if (_calAnimating) return;
     _calAnimating = true;
+    // clear day selection เมื่อเปลี่ยนเดือน/view เพื่อให้ panel แสดง range ใหม่
+    _calSelectedDay = null;
     const grid = $('cal-grid');
     const distance = 60;   // px
     const outX = dir === 0 ? 0 : (dir > 0 ? -distance : distance);
@@ -3602,6 +3612,8 @@ async function renderDomainsPage() {
       grid.style.transform = `translateX(${inFromX}px)`;
       grid.style.opacity = '0';
       renderCalendar();
+      // re-render detail panel ตาม view/range ใหม่ (เก็บ selection เดิมไว้)
+      renderCalendarDetailPanel();
       // force reflow
       void grid.offsetHeight;
       // animate in
@@ -3677,89 +3689,217 @@ function updateViewToggle() {
 }
 
 async function loadDomainsList() {
-  let data;
+  // โหลดทั้ง domains (สำหรับ calendar legacy) + websites (มี services ผูกครบ)
+  // /api/websites คืน { websites: [{domain, services, by_type, ...}] } — ใช้ field 'services'
+  let websitesData;
   try {
-    data = await fetchJson('/api/domains');
+    websitesData = await fetchJson('/api/websites');
   } catch (e) {
     $('d-list').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
     return;
   }
-  _domainsCache = data.domains || [];
-  $('d-count').textContent = `${_domainsCache.length} domain`;
+  _websitesCache = websitesData.websites || [];
+  // _domainsCache: array of domain objects (with logo etc.) — ใช้ใน renderMonthPanel เดิม
+  _domainsCache = _websitesCache.map(w => w.domain);
+  // นับ events ทั้งหมดใน calendar (domain register + expire + service expire)
+  const totalEvents = _calCollectAllEvents().length;
+  $('d-count').textContent = `${_websitesCache.length} domain · ${totalEvents} event`;
   renderCalendar();
-  renderDomainsTable();
+  renderCalendarDetailPanel();
 }
 
-function renderDomainsTable() {
+// Helper: รวม events ทั้งหมดจาก _websitesCache (domains + services)
+// คืน array ของ event object: {date, domain, type, source_type, service?, label}
+function _calCollectAllEvents() {
+  const events = [];
+  for (const w of _websitesCache) {
+    const d = w.domain;
+    if (d.register_date) {
+      events.push({ date: d.register_date, domain: d, type: 'register', source_type: 'domain' });
+    }
+    if (d.expire_date) {
+      events.push({ date: d.expire_date, domain: d, type: 'expire', source_type: 'domain' });
+    }
+    for (const s of (w.services || [])) {
+      if (s.expire_date) {
+        events.push({
+          date: s.expire_date,
+          domain: d,
+          type: 'expire',
+          source_type: s.service_type,   // 'hosting' | 'ssl' | 'others'
+          service: s,
+        });
+      }
+    }
+  }
+  return events;
+}
+
+// Color + label สำหรับแต่ละ source type — ใช้ทั้ง dots ใน calendar + chips ใน detail panel
+const _CAL_SOURCE_META = {
+  domain:   { color: '#2563eb', icon: '🌐', label: 'Domain' },
+  hosting:  { color: '#0891b2', icon: '🖥️', label: 'Hosting' },
+  ssl:      { color: '#7c3aed', icon: '🔒', label: 'SSL' },
+  others:   { color: '#db2777', icon: '📦', label: 'Others' },
+};
+
+// คืน range [start, end] ของ calendar view ปัจจุบัน
+function _calCurrentRange() {
+  const start = new Date(_calYear, _calMonth, 1);
+  start.setHours(0,0,0,0);
+  const monthsToShow = (_calView === '3month') ? 3 : 1;
+  const end = new Date(_calYear, _calMonth + monthsToShow, 0);   // last day ของ month สุดท้าย
+  end.setHours(23,59,59,999);
+  return { start, end };
+}
+
+// Detail panel — แสดง events ตาม selection state:
+//   - _calSelectedDay = null → แสดง events ใน range ของ calendar view (1m/3m)
+//   - _calSelectedDay = {day,month,year} → แสดง events เฉพาะวันนั้น
+function renderCalendarDetailPanel() {
   const wrap = $('d-list');
-  if (_domainsCache.length === 0) {
-    wrap.innerHTML = `<div class="empty">ยังไม่มี domain — ${currentRole === 'admin' ? 'เพิ่มได้ที่ <strong>🌐 Domain Config</strong>' : 'แจ้ง admin ให้เพิ่ม'}</div>`;
+  if (!wrap) return;
+  if (_websitesCache.length === 0) {
+    wrap.innerHTML = `<div class="empty">ยังไม่มี domain — ${currentRole === 'admin' ? 'เพิ่มได้ที่ <strong>🛠️ Services Config</strong> (Domain tab)' : 'แจ้ง admin ให้เพิ่ม'}</div>`;
     return;
   }
-  const today = new Date();
-  today.setHours(0,0,0,0);
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  const allEvents = _calCollectAllEvents();
+
+  // Filter: select day OR view range
+  let scope, scopeLabel;
+  if (_calSelectedDay) {
+    const sd = _calSelectedDay;
+    scope = (e) => {
+      const d = new Date(e.date);
+      return !isNaN(d.getTime())
+        && d.getDate() === sd.day && d.getMonth() === sd.month && d.getFullYear() === sd.year;
+    };
+    scopeLabel = `📅 ${sd.day} ${_MONTHS_TH[sd.month]} ${sd.year + 543}`;
+  } else {
+    const { start, end } = _calCurrentRange();
+    scope = (e) => {
+      const d = new Date(e.date);
+      return !isNaN(d.getTime()) && d >= start && d <= end;
+    };
+    if (_calView === '1month') {
+      scopeLabel = `📅 ${_MONTHS_TH[_calMonth]} ${_calYear + 543}`;
+    } else {
+      const lastM = (_calMonth + 2) % 12;
+      const lastY = _calYear + (_calMonth + 2 >= 12 ? 1 : 0);
+      scopeLabel = `📅 ${_MONTHS_TH[_calMonth]} ${_calYear + 543} – ${_MONTHS_TH[lastM]} ${lastY + 543}`;
+    }
+  }
+
+  // เน้นเฉพาะ expire events (register แสดงด้วยถ้าเลือก single day)
+  const filtered = allEvents.filter(e => {
+    if (!scope(e)) return false;
+    if (_calSelectedDay) return true;       // single day = แสดงทั้งหมด (register + expire)
+    return e.type === 'expire';             // range view = เฉพาะ expire (โฟกัสที่หมดอายุ)
+  });
+
+  // Sort: by date asc, then domain name
+  filtered.sort((a, b) => {
+    const da = new Date(a.date).getTime() - new Date(b.date).getTime();
+    if (da !== 0) return da;
+    return (a.domain.name || '').localeCompare(b.domain.name || '', 'th');
+  });
+
+  // Top header — scope label + clear-selection button
+  const clearBtn = _calSelectedDay
+    ? `<button class="btn" id="d-clear-day" style="font-size:11.5px;padding:5px 10px">✕ แสดงทั้ง ${_calView === '1month' ? '1 เดือน' : '3 เดือน'}</button>`
+    : '';
+
+  if (filtered.length === 0) {
+    wrap.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+        <h3 style="margin:0;font-size:14.5px;font-weight:700">${escapeHtml(scopeLabel)}</h3>
+        ${clearBtn}
+      </div>
+      <div class="empty">ไม่มีรายการหมดอายุในช่วงนี้</div>
+    `;
+    if (_calSelectedDay && $('d-clear-day')) {
+      $('d-clear-day').addEventListener('click', () => { _calSelectedDay = null; renderCalendarDetailPanel(); refreshCalSelectionHighlight(); });
+    }
+    return;
+  }
+
   wrap.innerHTML = `
-    <div style="overflow-x:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-sm)">
-      <table style="width:100%;border-collapse:collapse;font-size:13px">
-        <thead>
-          <tr style="background:var(--bg-soft)">
-            <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em">Domain</th>
-            <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em">Provider</th>
-            <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em">วันที่จด</th>
-            <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em">วันหมดอายุ</th>
-            <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em">สถานะ</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${_domainsCache.map(d => {
-            let statusBadge = '<span style="color:var(--text-muted)">—</span>';
-            let daysLeftTxt = '';
-            if (d.expire_date) {
-              const exp = new Date(d.expire_date);
-              const days = Math.floor((exp - today) / 86400000);
-              if (days < 0) {
-                statusBadge = '<span style="display:inline-flex;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(220,38,38,.10);color:var(--critical)">⛔ หมดอายุแล้ว</span>';
-                daysLeftTxt = ` (เกิน ${-days} วัน)`;
-              } else if (days <= 30) {
-                statusBadge = `<span style="display:inline-flex;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(245,158,11,.12);color:#92400e">⚠ ใกล้หมด</span>`;
-                daysLeftTxt = ` (เหลือ ${days} วัน)`;
-              } else if (days <= 90) {
-                statusBadge = '<span style="display:inline-flex;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(37,99,235,.10);color:var(--primary)">✓ ใช้งาน</span>';
-                daysLeftTxt = ` (เหลือ ${days} วัน)`;
-              } else {
-                statusBadge = '<span style="display:inline-flex;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(16,185,129,.12);color:var(--green)">✓ ใช้งาน</span>';
-                daysLeftTxt = ` (เหลือ ${days} วัน)`;
-              }
-            }
-            const whoisIcon = (ts) => {
-              if (!ts) return '';
-              const t = new Date(ts);
-              const tip = isNaN(t.getTime())
-                ? `ดึงจาก WHOIS เมื่อ ${ts}`
-                : `ดึงจาก WHOIS เมื่อ ${t.toLocaleString('th-TH', {dateStyle:'medium', timeStyle:'short'})}`;
-              return `<span title="${escapeHtml(tip)}" style="display:inline-block;margin-left:4px;font-size:10px;color:#2563eb;cursor:help" aria-label="from WHOIS">🌐</span>`;
-            };
-            return `
-              <tr style="border-bottom:1px solid var(--border)">
-                <td style="padding:12px;font-weight:600;font-family:ui-monospace,Menlo,monospace">
-                  <div style="display:inline-flex;align-items:center;gap:10px">
-                    ${domainLogoHTML(d, 28)}
-                    <span>${escapeHtml(d.name)}</span>
-                  </div>
-                </td>
-                <td style="padding:12px;color:var(--text-muted)">${escapeHtml(d.provider || '—')}</td>
-                <td style="padding:12px;font-size:12px;color:var(--text-muted)">${d.register_date ? escapeHtml(fmtDateThai(d.register_date)) + whoisIcon(d.register_whois_synced_at) : '—'}</td>
-                <td style="padding:12px;font-size:12.5px">
-                  ${d.expire_date ? `<strong>${escapeHtml(fmtDateThai(d.expire_date))}</strong>${whoisIcon(d.expire_whois_synced_at)}<span style="color:var(--text-muted);font-size:11px">${escapeHtml(daysLeftTxt)}</span>` : '<span style="color:var(--text-muted)">—</span>'}
-                </td>
-                <td style="padding:12px">${statusBadge}</td>
-              </tr>
-            `;
-          }).join('')}
-        </tbody>
-      </table>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <h3 style="margin:0;font-size:14.5px;font-weight:700">${escapeHtml(scopeLabel)} <span style="color:var(--text-muted);font-weight:500;font-size:12.5px;margin-left:6px">${filtered.length} รายการ</span></h3>
+      ${clearBtn}
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${filtered.map(e => _renderCalEventRow(e, today)).join('')}
     </div>
   `;
+  if (_calSelectedDay && $('d-clear-day')) {
+    $('d-clear-day').addEventListener('click', () => { _calSelectedDay = null; renderCalendarDetailPanel(); refreshCalSelectionHighlight(); });
+  }
+}
+
+function _renderCalEventRow(e, today) {
+  const meta = _CAL_SOURCE_META[e.source_type] || _CAL_SOURCE_META.others;
+  const dt = new Date(e.date);
+  dt.setHours(0,0,0,0);
+  const days = Math.floor((dt - today) / 86400000);
+  let statusBadge;
+  if (e.type === 'register') {
+    statusBadge = `<span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(37,99,235,.10);color:var(--primary-dark)">🟢 จดทะเบียน</span>`;
+  } else if (days < 0) {
+    statusBadge = `<span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(220,38,38,.10);color:var(--critical)">⛔ หมด ${-days} วันแล้ว</span>`;
+  } else if (days <= 30) {
+    statusBadge = `<span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(245,158,11,.12);color:#92400e">⚠ เหลือ ${days} วัน</span>`;
+  } else {
+    statusBadge = `<span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(16,185,129,.12);color:var(--green)">✓ เหลือ ${days} วัน</span>`;
+  }
+
+  // Title หลัก: domain (สำหรับ source=domain) หรือ service-name (สำหรับ hosting/ssl/others)
+  const titleMain = e.service ? escapeHtml(e.service.name) : escapeHtml(e.domain.name);
+  // Sub-line: แสดง domain name + provider/host info
+  let subParts = [];
+  if (e.service) {
+    // Service event: แสดง domain ที่ผูก + provider ของ service
+    subParts.push(`🌐 ${escapeHtml(e.domain.name)}`);
+    if (e.service.provider) subParts.push(`🏢 ${escapeHtml(e.service.provider)}`);
+  } else {
+    // Domain event: แสดง provider/registrar ของ domain
+    if (e.domain.provider) subParts.push(`🏢 ${escapeHtml(e.domain.provider)}`);
+  }
+
+  // Type pill (ซ้ายสุด)
+  const typePill = `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700;background:${meta.color}1a;color:${meta.color};white-space:nowrap">${meta.icon} ${escapeHtml(meta.label)}</span>`;
+
+  return `
+    <div class="card" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px">
+      ${domainLogoHTML(e.domain, 36)}
+      <div style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:3px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          ${typePill}
+          <span style="font-weight:700;font-size:14px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${titleMain}</span>
+          ${statusBadge}
+        </div>
+        ${subParts.length ? `<div style="font-size:11.5px;color:var(--text-muted);line-height:1.4">${subParts.join(' <span style="color:var(--border)">·</span> ')}</div>` : ''}
+      </div>
+      <div style="font-size:12.5px;font-weight:600;color:var(--text-muted);white-space:nowrap">${escapeHtml(fmtDateThai(e.date))}</div>
+    </div>
+  `;
+}
+
+// Highlight ของ cell ที่ user คลิก — รอบ ๆ cell มี ring สีน้ำเงิน
+function refreshCalSelectionHighlight() {
+  document.querySelectorAll('.cal-day-clickable').forEach(el => {
+    const day = parseInt(el.dataset.calDay, 10);
+    const month = parseInt(el.dataset.calMonth, 10);
+    const year = parseInt(el.dataset.calYear, 10);
+    const isSelected = _calSelectedDay
+      && day === _calSelectedDay.day
+      && month === _calSelectedDay.month
+      && year === _calSelectedDay.year;
+    el.style.boxShadow = isSelected ? '0 0 0 3px var(--primary)' : '';
+    el.style.transform = isSelected ? 'translateY(-1px)' : '';
+  });
 }
 
 function fmtDateThai(iso) {
@@ -3793,15 +3933,21 @@ function renderCalendar() {
     html += '</div>';
   }
 
-  // Legend — explains dot colors + interaction hint
+  // Legend — dot colors แสดง source type ของแต่ละ event
   const dotSwatch = (color) => `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};vertical-align:middle;margin-right:4px"></span>`;
   html += `
     <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:14px;font-size:11.5px;color:var(--text-muted);align-items:center">
-      <span style="font-style:italic;color:var(--primary)">💡 คลิกที่วันที่มีจุด เพื่อดูรายการ domain</span>
-      <span style="border-left:1px solid var(--border);padding-left:14px">${dotSwatch('#dc2626')}หมดอายุ (เกินกำหนด)</span>
-      <span>${dotSwatch('#f59e0b')}≤30 วัน</span>
-      <span>${dotSwatch('#10b981')}>30 วัน</span>
-      <span>${dotSwatch('#2563eb')}จดทะเบียน</span>
+      <span style="font-style:italic;color:var(--primary)">💡 คลิกที่วันที่มีจุด เพื่อ filter รายการด้านล่าง — คลิกซ้ำเพื่อยกเลิก</span>
+      <span style="border-left:1px solid var(--border);padding-left:14px">${dotSwatch(_CAL_SOURCE_META.domain.color)}🌐 Domain</span>
+      <span>${dotSwatch(_CAL_SOURCE_META.hosting.color)}🖥️ Hosting</span>
+      <span>${dotSwatch(_CAL_SOURCE_META.ssl.color)}🔒 SSL</span>
+      <span>${dotSwatch(_CAL_SOURCE_META.others.color)}📦 Others</span>
+      <span style="border-left:1px solid var(--border);padding-left:14px">
+        <span style="display:inline-block;width:10px;height:10px;background:rgba(220,38,38,.20);border:1.5px solid var(--critical);border-radius:3px;vertical-align:middle;margin-right:3px"></span>หมดแล้ว
+      </span>
+      <span>
+        <span style="display:inline-block;width:10px;height:10px;background:rgba(245,158,11,.15);border:1.5px solid #f59e0b;border-radius:3px;vertical-align:middle;margin-right:3px"></span>≤30 วัน
+      </span>
       <span style="border-left:1px solid var(--border);padding-left:14px">
         <span style="display:inline-block;width:10px;height:10px;background:var(--bg-card);border:2px solid var(--primary);border-radius:3px;vertical-align:middle;margin-right:3px"></span>วันนี้
       </span>
@@ -3838,20 +3984,24 @@ function renderMonthPanel(month, year, today, mode) {
   const isDots = mode === 'dots';
   const isFullDots = mode === 'full';   // 1-month, but still dots-style
 
-  // หา events ของเดือนนี้
+  // หา events ของเดือนนี้ — รวม domain register/expire + service expire (hosting/ssl/others)
   const eventsByDay = {};
-  const addEvent = (dateStr, domain, type) => {
+  const addEvent = (dateStr, domain, type, source_type, service) => {
     if (!dateStr) return;
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return;
     if (d.getMonth() === month && d.getFullYear() === year) {
       const day = d.getDate();
-      (eventsByDay[day] = eventsByDay[day] || []).push({ domain, type });
+      (eventsByDay[day] = eventsByDay[day] || []).push({ domain, type, source_type, service });
     }
   };
-  for (const d of _domainsCache) {
-    addEvent(d.register_date, d, 'register');
-    addEvent(d.expire_date, d, 'expire');
+  for (const w of _websitesCache) {
+    const dom = w.domain;
+    addEvent(dom.register_date, dom, 'register', 'domain');
+    addEvent(dom.expire_date, dom, 'expire', 'domain');
+    for (const s of (w.services || [])) {
+      addEvent(s.expire_date, dom, 'expire', s.service_type, s);
+    }
   }
 
   const first = new Date(year, month, 1);
@@ -3931,15 +4081,14 @@ function renderMonthPanel(month, year, today, mode) {
     const titleAttr = titleParts.length ? `title="${escapeHtml(titleParts.join('\n'))}"` : '';
 
     // === Dots-only rendering (both modes) — chips with full names removed ===
-    // Click on a cell with events → popup with domain list (wired in wireCalDayClicks)
+    // Click on a cell with events → toggle selection + update detail panel below
+    // Dot color = source type (domain/hosting/ssl/others) — เพื่อแยกประเภทได้ในตา
     const dotColor = (e) => {
-      if (e.type === 'register') return '#2563eb';
-      if (expireDays != null) {
-        if (expireDays < 0) return '#dc2626';
-        if (expireDays <= 30) return '#f59e0b';
-        return '#10b981';
-      }
-      return '#6b7280';
+      // Register event ของ domain → blue (เหมือนเดิม)
+      if (e.type === 'register') return _CAL_SOURCE_META.domain.color;
+      // Expire — สีตาม source type
+      const meta = _CAL_SOURCE_META[e.source_type] || _CAL_SOURCE_META.others;
+      return meta.color;
     };
     const maxDots = isDots ? 4 : 6;     // 1-month can show a few more dots
     const dots = events.slice(0, maxDots).map(e =>
@@ -4008,47 +4157,78 @@ function wireCalHeaderClicks() {
   });
 }
 
-// Wire clickable day cells — each cell with events opens a popup with the domain list
+// Wire clickable day cells — each cell with events updates detail panel below (toggle selection)
 function wireCalDayClicks() {
   document.querySelectorAll('.cal-day-clickable').forEach(el => {
-    el.addEventListener('mouseenter', () => {
-      el.style.boxShadow = '0 0 0 2px var(--primary)';
+    const day = parseInt(el.dataset.calDay, 10);
+    const month = parseInt(el.dataset.calMonth, 10);
+    const year = parseInt(el.dataset.calYear, 10);
+    const isSelected = () => _calSelectedDay
+      && day === _calSelectedDay.day
+      && month === _calSelectedDay.month
+      && year === _calSelectedDay.year;
+
+    // initial highlight (กรณี selection ค้างจากครั้งก่อน)
+    if (isSelected()) {
+      el.style.boxShadow = '0 0 0 3px var(--primary)';
       el.style.transform = 'translateY(-1px)';
+    }
+
+    el.addEventListener('mouseenter', () => {
+      if (!isSelected()) {
+        el.style.boxShadow = '0 0 0 2px var(--primary)';
+        el.style.transform = 'translateY(-1px)';
+      }
     });
     el.addEventListener('mouseleave', () => {
-      el.style.boxShadow = '';
-      el.style.transform = '';
+      if (!isSelected()) {
+        el.style.boxShadow = '';
+        el.style.transform = '';
+      }
     });
     el.addEventListener('click', (ev) => {
       ev.stopPropagation();
-      const day = parseInt(el.dataset.calDay, 10);
-      const month = parseInt(el.dataset.calMonth, 10);
-      const year = parseInt(el.dataset.calYear, 10);
-      showCalDayPopup(day, month, year, el);
+      // Toggle: คลิกซ้ำที่วันเดิม → ยกเลิก selection
+      if (isSelected()) {
+        _calSelectedDay = null;
+      } else {
+        _calSelectedDay = { day, month, year };
+      }
+      refreshCalSelectionHighlight();
+      renderCalendarDetailPanel();
     });
   });
 }
 
-// Compute events for a given (day, month, year) by scanning _domainsCache
+// Compute events for a given (day, month, year) — รวม domain register/expire + service expire
 function _calEventsOnDay(day, month, year) {
   const events = [];
-  for (const d of _domainsCache) {
-    if (d.register_date) {
-      const r = new Date(d.register_date);
-      if (!isNaN(r.getTime()) && r.getDate() === day && r.getMonth() === month && r.getFullYear() === year) {
-        events.push({ type: 'register', domain: d });
-      }
+  const matchDay = (iso) => {
+    if (!iso) return false;
+    const t = new Date(iso);
+    return !isNaN(t.getTime()) && t.getDate() === day && t.getMonth() === month && t.getFullYear() === year;
+  };
+  for (const w of _websitesCache) {
+    const d = w.domain;
+    if (matchDay(d.register_date)) {
+      events.push({ type: 'register', source_type: 'domain', domain: d, date: d.register_date });
     }
-    if (d.expire_date) {
-      const e = new Date(d.expire_date);
-      if (!isNaN(e.getTime()) && e.getDate() === day && e.getMonth() === month && e.getFullYear() === year) {
-        events.push({ type: 'expire', domain: d });
+    if (matchDay(d.expire_date)) {
+      events.push({ type: 'expire', source_type: 'domain', domain: d, date: d.expire_date });
+    }
+    for (const s of (w.services || [])) {
+      if (matchDay(s.expire_date)) {
+        events.push({ type: 'expire', source_type: s.service_type, domain: d, service: s, date: s.expire_date });
       }
     }
   }
-  // Sort: expire first (more urgent), then register; alphabetical within type
+  // Sort: expire first (more urgent), then register; แล้ว by source_type → name
   events.sort((a, b) => {
     if (a.type !== b.type) return a.type === 'expire' ? -1 : 1;
+    if (a.source_type !== b.source_type) {
+      const order = { domain: 0, hosting: 1, ssl: 2, others: 3 };
+      return (order[a.source_type] ?? 9) - (order[b.source_type] ?? 9);
+    }
     return (a.domain.name || '').localeCompare(b.domain.name || '', 'th');
   });
   return events;
