@@ -3915,6 +3915,13 @@ try:
 except Exception:
     _HAS_DNSPYTHON = False
 
+# python-whois — for WHOIS lookups
+try:
+    import whois as _whois  # type: ignore
+    _HAS_WHOIS = True
+except Exception:
+    _HAS_WHOIS = False
+
 
 def _format_dnspython_record(rdata, record_type: str) -> str:
     """Format an rdata object the same way `dig +short` would print it."""
@@ -4064,6 +4071,71 @@ def admin_domain_dns(
     for rt in record_types:
         records[rt] = _run_dig(domain, rt)
     return {"domain": domain, "records": records}
+
+
+def _normalize_whois_value(v: Any) -> Any:
+    """Convert WHOIS field values (datetime, list, str) to JSON-safe types."""
+    if v is None:
+        return None
+    if isinstance(v, list):
+        # Deduplicate while preserving order
+        seen: set[str] = set()
+        out: list[Any] = []
+        for item in v:
+            normalized = _normalize_whois_value(item)
+            key = str(normalized)
+            if key not in seen:
+                seen.add(key)
+                out.append(normalized)
+        return out
+    if isinstance(v, datetime):
+        return v.isoformat()
+    return str(v)
+
+
+@app.get("/api/admin/domains/lookup/whois")
+def admin_domain_whois(
+    name: str,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """WHOIS lookup — registrar, dates, name servers, status"""
+    domain = _sanitize_domain(name)
+    if not _HAS_WHOIS:
+        return {
+            "domain": domain,
+            "error": "python-whois ยังไม่ได้ลง — รัน: pip install python-whois",
+        }
+    try:
+        w = _whois.whois(domain)
+    except Exception as e:
+        return {"domain": domain, "error": f"WHOIS query failed: {e}"}
+    # If lookup returned no canonical fields, the TLD or registrar didn't reply
+    if not w or not (w.get("registrar") or w.get("creation_date") or w.get("expiration_date")):
+        raw_text = getattr(w, "text", "") if w else ""
+        return {
+            "domain": domain,
+            "error": "WHOIS server ไม่ตอบ หรือ TLD นี้ไม่รองรับ WHOIS",
+            "raw": (raw_text or "")[:5000] if raw_text else None,
+        }
+    out: dict[str, Any] = {
+        "domain": domain,
+        "domain_name": _normalize_whois_value(w.get("domain_name")),
+        "registrar": _normalize_whois_value(w.get("registrar")),
+        "registrar_url": _normalize_whois_value(w.get("registrar_url") or w.get("referral_url")),
+        "whois_server": _normalize_whois_value(w.get("whois_server")),
+        "creation_date": _normalize_whois_value(w.get("creation_date")),
+        "expiration_date": _normalize_whois_value(w.get("expiration_date")),
+        "updated_date": _normalize_whois_value(w.get("updated_date")),
+        "name_servers": _normalize_whois_value(w.get("name_servers")),
+        "status": _normalize_whois_value(w.get("status")),
+        "emails": _normalize_whois_value(w.get("emails")),
+        "dnssec": _normalize_whois_value(w.get("dnssec")),
+        "org": _normalize_whois_value(w.get("org")),
+        "country": _normalize_whois_value(w.get("country")),
+        "raw": (getattr(w, "text", "") or "")[:5000] or None,
+        "error": None,
+    }
+    return out
 
 
 @app.get("/api/teams-overview")

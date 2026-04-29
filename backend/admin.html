@@ -3968,8 +3968,7 @@ async function loadDomainsConfigList() {
             <div style="margin-top:8px">${statusBadge}</div>
           </div>
           <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
-            <button class="btn" data-d-act="nslookup" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" style="font-size:12px;padding:6px 12px" title="ดู IP + reverse DNS">🔍 nslookup</button>
-            <button class="btn" data-d-act="dns" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" style="font-size:12px;padding:6px 12px" title="ดู DNS records (A, MX, NS, TXT, ...)">🌐 DNS</button>
+            <button class="btn" data-d-act="lookup" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" style="font-size:12px;padding:6px 12px" title="WHOIS / nslookup / DNS records">🔍 Lookup</button>
             <button class="btn primary" data-d-act="renew" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" data-d-expire="${escapeHtml(d.expire_date || '')}" style="font-size:12px;padding:6px 12px">🔄 Renew</button>
             <button class="btn" data-d-act="history" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" style="font-size:12px;padding:6px 12px">📜 ประวัติ</button>
             <button class="btn" data-d-act="edit" data-d-id="${d.id}" style="font-size:12px;padding:6px 12px">✏️ แก้ไข</button>
@@ -4004,39 +4003,62 @@ async function handleDomainAction(btn, list) {
     showRenewModal(id, name, expire);
   } else if (act === 'history') {
     showRenewalHistoryModal(id, name);
-  } else if (act === 'nslookup' || act === 'dns') {
-    showLookupModal(name, act);
+  } else if (act === 'lookup') {
+    showLookupModal(name, 'whois');
   }
 }
 
-// ============== nslookup / DNS lookup modal ==============
+// ============== Lookup modal (WHOIS + nslookup + DNS, tabbed) ==============
 
-function showLookupModal(domainName, kind) {
-  // kind: 'nslookup' | 'dns'
-  // Inject the once-only CSS for cleaning trailing row borders
+function showLookupModal(domainName, initialTab) {
+  // initialTab: 'whois' | 'nslookup' | 'dns'  (default 'whois')
+  initialTab = initialTab || 'whois';
+  // Inject the once-only CSS for cleaning trailing row borders + tab styles
   if (!document.getElementById('lookup-css')) {
     const css = document.createElement('style');
     css.id = 'lookup-css';
-    css.textContent = `.lookup-rows > .lookup-row:last-child { border-bottom: 0 !important; }`;
+    css.textContent = `
+      .lookup-rows > .lookup-row:last-child { border-bottom: 0 !important; }
+      .lookup-tab {
+        background: transparent;
+        border: none;
+        border-bottom: 2px solid transparent;
+        padding: 9px 16px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-family: inherit;
+        transition: color .15s, border-color .15s;
+      }
+      .lookup-tab:hover { color: var(--text); }
+      .lookup-tab.active {
+        color: var(--primary);
+        border-bottom-color: var(--primary);
+      }
+    `;
     document.head.appendChild(css);
   }
-  const title = kind === 'nslookup'
-    ? `🔍 nslookup: ${domainName}`
-    : `🌐 DNS records: ${domainName}`;
+
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   bg.innerHTML = `
     <div class="modal modal-wide">
-      <h3>${escapeHtml(title)}</h3>
-      <div id="lookup-body" style="font-size:13px;min-height:120px">
+      <h3 style="margin-bottom:8px">🔍 Lookup: <span style="font-family:ui-monospace,Menlo,monospace;color:var(--primary-dark)">${escapeHtml(domainName)}</span></h3>
+      <div style="display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:14px">
+        <button class="lookup-tab" data-lk-tab="whois">📋 WHOIS</button>
+        <button class="lookup-tab" data-lk-tab="nslookup">🔍 nslookup</button>
+        <button class="lookup-tab" data-lk-tab="dns">🌐 DNS records</button>
+      </div>
+      <div id="lookup-body" style="font-size:13px;min-height:160px;max-height:60vh;overflow-y:auto">
         <div style="text-align:center;padding:30px;color:var(--text-muted)">
           <div style="font-size:24px;margin-bottom:8px">⏳</div>
           กำลังค้นหา…
         </div>
       </div>
       <div class="modal-actions">
-        <button class="btn" id="lk-refresh">🔄 ค้นหาใหม่</button>
-        <button class="btn" id="lk-copy">📋 คัดลอก</button>
+        <button class="btn" id="lk-refresh" title="ค้นหาแท็บปัจจุบันใหม่">🔄 ค้นหาใหม่</button>
+        <button class="btn" id="lk-copy" title="คัดลอกผลลัพธ์เป็น text">📋 คัดลอก</button>
         <button class="btn primary" id="lk-close">ปิด</button>
       </div>
     </div>
@@ -4046,35 +4068,57 @@ function showLookupModal(domainName, kind) {
   bg.querySelector('#lk-close').addEventListener('click', close);
   bg.addEventListener('click', e => { if (e.target === bg) close(); });
 
-  let _lastRawText = '';
+  // Cache results per tab so switching tabs doesn't re-query
+  const _cache = {};       // { whois: {html, text}, nslookup: ..., dns: ... }
+  let _currentTab = initialTab;
 
-  const renderResult = async () => {
+  const setActiveTabUI = (tab) => {
+    bg.querySelectorAll('.lookup-tab').forEach(b => {
+      b.classList.toggle('active', b.dataset.lkTab === tab);
+    });
+  };
+
+  const fetchAndRender = async (tab, force) => {
+    _currentTab = tab;
+    setActiveTabUI(tab);
     const body = bg.querySelector('#lookup-body');
+    if (!force && _cache[tab]) {
+      body.innerHTML = _cache[tab].html;
+      return;
+    }
     body.innerHTML = `
       <div style="text-align:center;padding:30px;color:var(--text-muted)">
         <div style="font-size:24px;margin-bottom:8px">⏳</div>
-        กำลังค้นหา ${escapeHtml(domainName)}…
+        กำลังค้นหา ${tab === 'whois' ? 'WHOIS' : tab} ของ ${escapeHtml(domainName)}…
+        ${tab === 'whois' ? '<div style="font-size:11px;margin-top:6px">(WHOIS อาจช้า 3-10 วินาที)</div>' : ''}
       </div>
     `;
     try {
-      const url = '/api/admin/domains/lookup/' + kind + '?name=' + encodeURIComponent(domainName);
+      const url = '/api/admin/domains/lookup/' + tab + '?name=' + encodeURIComponent(domainName);
       const data = await fetchJson(url);
-      const rendered = (kind === 'nslookup')
-        ? renderNslookupResult(data)
-        : renderDnsResult(data);
-      body.innerHTML = rendered.html;
-      _lastRawText = rendered.text;
+      let rendered;
+      if (tab === 'whois')         rendered = renderWhoisResult(data);
+      else if (tab === 'nslookup') rendered = renderNslookupResult(data);
+      else                          rendered = renderDnsResult(data);
+      _cache[tab] = rendered;
+      // Only render if user hasn't switched tabs while we waited
+      if (_currentTab === tab) body.innerHTML = rendered.html;
     } catch (e) {
-      body.innerHTML = `<div class="empty" style="color:var(--critical)">ค้นหาไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
-      _lastRawText = '';
+      const html = `<div class="empty" style="color:var(--critical)">ค้นหาไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+      _cache[tab] = { html, text: 'Error: ' + e.message };
+      if (_currentTab === tab) body.innerHTML = html;
     }
   };
 
-  bg.querySelector('#lk-refresh').addEventListener('click', renderResult);
+  bg.querySelectorAll('.lookup-tab').forEach(b => {
+    b.addEventListener('click', () => fetchAndRender(b.dataset.lkTab, false));
+  });
+  bg.querySelector('#lk-refresh').addEventListener('click', () => fetchAndRender(_currentTab, true));
   bg.querySelector('#lk-copy').addEventListener('click', async () => {
-    if (!_lastRawText) return;
+    const cached = _cache[_currentTab];
+    if (!cached || !cached.text) return;
     try {
-      await navigator.clipboard.writeText(_lastRawText);
+      await navigator.clipboard.writeText(cached.text);
       const btn = bg.querySelector('#lk-copy');
       const old = btn.textContent;
       btn.textContent = '✓ คัดลอกแล้ว';
@@ -4084,7 +4128,198 @@ function showLookupModal(domainName, kind) {
     }
   });
 
-  renderResult();
+  fetchAndRender(initialTab, false);
+}
+
+function renderWhoisResult(data) {
+  const lines = [];
+  lines.push('Domain: ' + data.domain);
+  if (data.error) {
+    lines.push('Error: ' + data.error);
+    let html = `
+      <div style="background:rgba(220,38,38,.08);border:1px solid var(--critical);border-radius:8px;padding:14px;color:var(--critical);font-weight:600;margin-bottom:10px">
+        ⛔ ${escapeHtml(data.error)}
+      </div>
+    `;
+    if (data.raw) {
+      html += renderWhoisRawSection(data.raw);
+      lines.push('');
+      lines.push('--- Raw WHOIS ---');
+      lines.push(data.raw);
+    }
+    return { html, text: lines.join('\n') };
+  }
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  // pickDate: ถ้าเป็น array ของ datetimes (เช่นมาจาก WHOIS หลาย source) ให้เลือกตัวที่ "เกี่ยวข้องที่สุด"
+  //   updated_date     → เอาวันที่ใหม่ที่สุด (latest)
+  //   creation_date    → เอาวันเก่าที่สุด (earliest = original registration)
+  //   expiration_date  → เอาวันใหม่ที่สุด (latest = หลัง renew)
+  const pickDate = (v, prefer) => {
+    if (v == null) return null;
+    if (!Array.isArray(v)) return v;
+    if (v.length === 0) return null;
+    const valids = v.filter(x => x && !isNaN(new Date(x).getTime()));
+    if (valids.length === 0) return v[0];
+    valids.sort((a, b) => new Date(a) - new Date(b));
+    return prefer === 'earliest' ? valids[0] : valids[valids.length - 1];
+  };
+  const fmtDate = (v) => {
+    if (!v) return null;
+    const d = new Date(v);
+    if (isNaN(d.getTime())) return String(v);
+    return d.toISOString().slice(0,10) + ' (' + d.toLocaleString('th-TH', {hour12:false}).replace(',','') + ')';
+  };
+  const daysFromToday = (v) => {
+    if (!v) return null;
+    const d = new Date(v); d.setHours(0,0,0,0);
+    if (isNaN(d.getTime())) return null;
+    return Math.floor((d - today) / 86400000);
+  };
+  const asArray = (v) => v == null ? [] : (Array.isArray(v) ? v : [v]);
+
+  let html = '';
+
+  // ---- Registrar ----
+  if (data.registrar || data.registrar_url || data.whois_server) {
+    lines.push('');
+    lines.push('=== Registrar ===');
+    let registrarHtml = '';
+    if (data.registrar) {
+      registrarHtml += `<div style="font-weight:700;font-size:14px;color:var(--text);margin-bottom:4px">${escapeHtml(asArray(data.registrar)[0])}</div>`;
+      lines.push('Registrar: ' + asArray(data.registrar)[0]);
+    }
+    if (data.registrar_url) {
+      const url = asArray(data.registrar_url)[0];
+      registrarHtml += `<div style="font-size:12px;color:var(--text-muted)">🔗 <a href="${escapeHtml(url.startsWith('http') ? url : 'http://' + url)}" target="_blank" rel="noopener" style="color:var(--primary);text-decoration:none">${escapeHtml(url)}</a></div>`;
+      lines.push('Registrar URL: ' + url);
+    }
+    if (data.whois_server) {
+      const ws = asArray(data.whois_server)[0];
+      registrarHtml += `<div style="font-size:11.5px;color:var(--text-muted);margin-top:2px">WHOIS server: <code style="font-family:ui-monospace,Menlo,monospace">${escapeHtml(ws)}</code></div>`;
+      lines.push('WHOIS server: ' + ws);
+    }
+    html += renderWhoisSection('🏢 Registrar', registrarHtml);
+  }
+
+  // ---- Important dates ----
+  const dates = [];
+  if (data.creation_date)   dates.push({ label: 'จดทะเบียน', icon: '🟢', value: pickDate(data.creation_date, 'earliest'), key: 'created' });
+  if (data.updated_date)    dates.push({ label: 'อัพเดตล่าสุด', icon: '🔄', value: pickDate(data.updated_date, 'latest'),    key: 'updated' });
+  if (data.expiration_date) dates.push({ label: 'หมดอายุ',    icon: '⏰', value: pickDate(data.expiration_date, 'latest'), key: 'expires' });
+  if (dates.length) {
+    lines.push('');
+    lines.push('=== Dates ===');
+    let dateRows = '';
+    for (const d of dates) {
+      const formatted = fmtDate(d.value);
+      const days = daysFromToday(d.value);
+      let extra = '';
+      if (d.key === 'expires' && days != null) {
+        if (days < 0) extra = `<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(220,38,38,.10);color:var(--critical);font-size:11px;font-weight:700;margin-left:8px">⛔ หมด ${-days} วันแล้ว</span>`;
+        else if (days <= 30) extra = `<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(245,158,11,.12);color:#92400e;font-size:11px;font-weight:700;margin-left:8px">⚠ เหลือ ${days} วัน</span>`;
+        else extra = `<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(16,185,129,.12);color:var(--green);font-size:11px;font-weight:700;margin-left:8px">เหลือ ${days} วัน</span>`;
+      } else if (days != null && days < 0) {
+        const ageYears = Math.abs(days) / 365;
+        extra = `<span style="font-size:11px;color:var(--text-muted);margin-left:8px">${ageYears >= 1 ? ageYears.toFixed(1) + ' ปีที่แล้ว' : Math.abs(days) + ' วันที่แล้ว'}</span>`;
+      }
+      dateRows += `
+        <div class="lookup-row" style="display:flex;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border);font-size:13px">
+          <span style="display:inline-block;width:130px;color:var(--text-muted);font-weight:600">${d.icon} ${escapeHtml(d.label)}</span>
+          <span style="font-family:ui-monospace,Menlo,monospace;color:var(--text)">${escapeHtml(formatted || '—')}</span>
+          ${extra}
+        </div>
+      `;
+      lines.push(`  ${d.label.padEnd(15)}: ${formatted || '—'}`);
+    }
+    html += renderWhoisSection('📅 Important dates', `<div class="lookup-rows">${dateRows}</div>`, /*pad=*/false);
+  }
+
+  // ---- Name servers ----
+  const nsList = asArray(data.name_servers).filter(Boolean);
+  if (nsList.length) {
+    lines.push('');
+    lines.push('=== Name Servers ===');
+    nsList.forEach(ns => lines.push('  ' + ns));
+    const nsHtml = `
+      <div class="lookup-rows" style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px">
+        ${nsList.map(ns => `<div class="lookup-row" style="padding:6px 12px;border-bottom:1px solid var(--border)">${escapeHtml(String(ns).toLowerCase())}</div>`).join('')}
+      </div>
+    `;
+    html += renderWhoisSection(`🌐 Name servers (${nsList.length})`, nsHtml, /*pad=*/false);
+  }
+
+  // ---- Status ----
+  const statusList = asArray(data.status).filter(Boolean);
+  if (statusList.length) {
+    lines.push('');
+    lines.push('=== Status ===');
+    statusList.forEach(s => lines.push('  ' + s));
+    const statusHtml = `
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${statusList.map(s => `<span style="display:inline-block;padding:3px 9px;border-radius:999px;background:var(--bg);border:1px solid var(--border);font-size:11.5px;font-family:ui-monospace,Menlo,monospace;color:var(--text)">🔒 ${escapeHtml(String(s).split(' ')[0])}</span>`).join('')}
+      </div>
+    `;
+    html += renderWhoisSection('🔒 Status', statusHtml);
+  }
+
+  // ---- Other (org, country, dnssec, emails) ----
+  const otherRows = [];
+  if (data.org) otherRows.push({ label: 'Organization', value: asArray(data.org)[0], icon: '🏛' });
+  if (data.country) otherRows.push({ label: 'Country', value: asArray(data.country)[0], icon: '🌍' });
+  if (data.dnssec) otherRows.push({ label: 'DNSSEC', value: asArray(data.dnssec).join(', '), icon: '🛡' });
+  if (data.emails) {
+    const emails = asArray(data.emails).filter(Boolean);
+    if (emails.length) otherRows.push({ label: 'Contact emails', value: emails.join(', '), icon: '📧' });
+  }
+  if (otherRows.length) {
+    lines.push('');
+    lines.push('=== Other ===');
+    let other = '<div class="lookup-rows">';
+    for (const r of otherRows) {
+      lines.push(`  ${r.label}: ${r.value}`);
+      other += `
+        <div class="lookup-row" style="display:flex;align-items:flex-start;padding:7px 12px;border-bottom:1px solid var(--border);font-size:12.5px">
+          <span style="display:inline-block;width:130px;color:var(--text-muted);font-weight:600;flex-shrink:0">${r.icon} ${escapeHtml(r.label)}</span>
+          <span style="word-break:break-all">${escapeHtml(String(r.value))}</span>
+        </div>
+      `;
+    }
+    other += '</div>';
+    html += renderWhoisSection('ℹ️ Other', other, /*pad=*/false);
+  }
+
+  // ---- Raw WHOIS (collapsible) ----
+  if (data.raw) {
+    html += renderWhoisRawSection(data.raw);
+    lines.push('');
+    lines.push('--- Raw WHOIS ---');
+    lines.push(data.raw);
+  }
+
+  if (!html) {
+    html = `<div class="empty">ไม่พบข้อมูล WHOIS</div>`;
+  }
+  return { html, text: lines.join('\n') };
+}
+
+function renderWhoisSection(title, innerHtml, pad) {
+  const padInner = pad === false ? '0' : '12px 14px';
+  return `
+    <div style="margin-bottom:12px;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+      <div style="padding:8px 14px;background:var(--bg);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">${title}</div>
+      <div style="padding:${padInner}">${innerHtml}</div>
+    </div>
+  `;
+}
+
+function renderWhoisRawSection(rawText) {
+  return `
+    <details style="margin-top:8px">
+      <summary style="cursor:pointer;font-size:11.5px;font-weight:600;color:var(--text-muted);padding:8px 0">📜 Raw WHOIS output (กดเพื่อดู)</summary>
+      <pre style="font-family:ui-monospace,Menlo,monospace;font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px;max-height:300px;overflow:auto;white-space:pre-wrap;word-break:break-all;color:var(--text-muted)">${escapeHtml(rawText)}</pre>
+    </details>
+  `;
 }
 
 function renderNslookupResult(data) {

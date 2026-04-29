@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.10",
+      "date": "2026-04-29",
+      "title": "Domain Lookup: WHOIS + ยุบเป็น 1 ปุ่ม + tabbed modal",
+      "summary": "เพิ่ม WHOIS lookup (registrar, creation/expiration/updated dates, name servers, status) + ยุบ 2 ปุ่มเป็น 1 ปุ่ม Lookup",
+      "changes": [
+        "Backend: เพิ่ม python-whois dependency + GET /api/admin/domains/lookup/whois",
+        "WHOIS รองรับ: registrar, registrar_url, whois_server, creation/expiration/updated dates (มี days-until + age), name_servers, status, org, country, dnssec, emails, raw output",
+        "Frontend: ยุบปุ่ม nslookup + DNS เป็นปุ่มเดียว '🔍 Lookup' (ลด clutter จาก 6 ปุ่มเหลือ 5)",
+        "Frontend: modal ใหม่มี 3 tabs (WHOIS / nslookup / DNS) + cache ผลแต่ละ tab",
+        "WHOIS section UI: registrar / dates พร้อม badge เหลือกี่วัน / name servers / status chips / raw collapsible"
+      ]
+    },
+    {
       "version": "1.9.9",
       "date": "2026-04-29",
       "title": "Domain lookups: pure-Python fallback (dnspython)",
