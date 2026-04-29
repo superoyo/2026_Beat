@@ -2,6 +2,21 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.27",
+      "date": "2026-04-29",
+      "title": "Sidebar: รวม Members/Teams/Access Requests เป็น sub-menu (collapsible)",
+      "summary": "Members เป็น parent menu — กดเพื่อ expand/collapse — มี 3 sub: รายชื่อ Members / Teams / Access Requests",
+      "changes": [
+        "Sidebar HTML: ห่อ 3 menu items ด้วย <div class='nav-group'>",
+        "Parent button (Members) มี caret ▼ — กดเพื่อ toggle collapse",
+        "CSS: nav-group, nav-group-toggle, nav-group-children — sub-items indent + border-left",
+        "Auto-expand เมื่อ child route active (กรณี user collapse แล้ว navigate ผ่าน URL)",
+        "Parent highlight (font-weight 600) เมื่อมี child active — เห็นได้แม้ collapsed",
+        "Badge Access Requests แสดงทั้งที่ sub-item + parent (เห็นได้แม้ collapsed)",
+        "ทุก route เดิม (#/members, #/teams, #/access-requests) ยังใช้ได้เหมือนเดิม"
+      ]
+    },
+    {
       "version": "1.9.26",
       "date": "2026-04-29",
       "title": "Services Config: รวม Domain เป็น tab แรก (4 tabs ในหน้าเดียว)",
