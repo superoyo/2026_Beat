@@ -53,7 +53,10 @@ function backendFetch(path, opts = {}) {
 // --- ค่าคงที่ทางธุรกิจ ---------------------------------------------------
 const SCAN_DEBOUNCE_MS = 1000;             // หน่วงสแกน 1 วินาที กันสแปม
 const REPORT_INTERVAL_MS = 5 * 60 * 1000;  // รายงานซ้ำทุก 5 นาที แม้ค่าไม่เปลี่ยน
-const MAX_PLAUSIBLE = 1_000_000;           // เลขที่สูงเกิน 1 ล้าน ก็ไม่ใช่เครดิตแล้ว
+// เพดาน balance — Magnific แสดงยอด "Available" สูงสุดได้ถึง 3.9M+ (หลายล้าน)
+// Freepik enterprise plans ก็อาจมี credits ระดับล้าน → ใช้ 100M เพื่อรองรับทุก tier
+// (เดิม 1M ทำให้ "3.9M" ถูก reject แล้ว fallback ไปจับ "spent" 60K มาแทน)
+const MAX_PLAUSIBLE = 100_000_000;
 // ใช้เฉพาะ numeric scan แบบ fallback (layer 3) —
 // custom selector กับ attribute hints (layer 1, 2) เชื่อค่าได้เลย ไม่ filter
 const MIN_FALLBACK_SCAN = 5;

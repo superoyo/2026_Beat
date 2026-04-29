@@ -2,6 +2,21 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.23",
+      "date": "2026-04-29",
+      "title": "MAX_PLAUSIBLE 1M → 100M — รองรับ Magnific 'Available 3.9M'",
+      "summary": "เพดานเลขเดิม (1M) ทำให้ '3.9M' ถูก reject → fallback ไปจับ 'spent' มาเป็น balance",
+      "changes": [
+        "ปัญหาที่ผู้ใช้พบ: <span data-cy='credits-limit'>3.9M</span> มีอยู่จริง แต่ extension ส่ง balance = 60674 (ไม่ใช่ 3.9M)",
+        "Root cause: parseNumberFromText('3.9M') = 3,900,000 → เกิน MAX_PLAUSIBLE (1,000,000) → reject → fallback ไปจับ data-cy='credits-spent' (60674) แทน",
+        "แก้: เพิ่ม MAX_PLAUSIBLE จาก 1_000_000 เป็น 100_000_000 (100M)",
+        "เหตุผล: Magnific แสดง 'Available' สูงถึง 3.9M+ (subscription หลายล้าน), Freepik enterprise ก็มีระดับล้าน",
+        "Parser เดิมรองรับ K/M suffix อยู่แล้ว (3.9M → 3,900,000) — แค่เพดานต่ำไป",
+        "หลัง fix: balance = 3,900,000 (Available จริง), spent = 60,674 (ใช้ไปแล้ว)",
+        "Note: findCreditsSpent ใช้เพดาน 100M อยู่แล้ว ไม่ต้องแก้"
+      ]
+    },
+    {
       "version": "1.9.22",
       "date": "2026-04-29",
       "title": "Confidence lock: เปลี่ยนเป็น per-host (Freepik lock ไม่กวน Magnific)",
