@@ -1030,9 +1030,20 @@ function groupAccountsBySite(accounts) {
 function renderAccountCard(a) {
   const display = a.profile_name || a.profile_email || a.account_key || '(unknown)';
   const initial = (display || '?').trim().charAt(0).toUpperCase();
-  const credBadge = a.credential_label
-    ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:600;background:rgba(16,185,129,.12);color:var(--ok)">✓ ${escapeHtml(a.credential_label)}</span>`
-    : `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:10.5px;background:var(--bg-soft);color:var(--text-muted)">unlinked</span>`;
+  // Credential badge — บอกว่า account นี้ผูกกับ credential ไหนใน admin panel
+  // (matched ผ่าน credentials.username = profile_email ของ snapshot)
+  const credLabel = a.credential_label;
+  const credUser = a.credential_username;
+  const credBadge = credLabel
+    ? `<span title="username: ${escapeHtml(credUser || '—')}" style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;font-size:10.5px;font-weight:600;background:rgba(16,185,129,.12);color:var(--ok);max-width:100%">
+         <span style="font-size:11px;line-height:1">🔑</span>
+         <span style="color:var(--text-muted);font-weight:600">Credential:</span>
+         <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">${escapeHtml(credLabel)}</span>
+       </span>`
+    : `<span title="profile email นี้ยังไม่ได้ผูกกับ credential ใน admin → ตั้งค่าใน Config" style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;font-size:10.5px;font-weight:600;background:var(--bg-soft);color:var(--text-muted)">
+         <span style="font-size:11px;line-height:1">🔓</span>
+         <span>ยังไม่ได้ผูก credential</span>
+       </span>`;
   const emailLine = a.profile_email
     ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;font-family:ui-monospace,Menlo,monospace;word-break:break-all">${escapeHtml(a.profile_email)}</div>`
     : '';
@@ -1176,7 +1187,10 @@ async function openAccountDetail(acct) {
     chips.push(`<div class="card" style="display:block;flex:1;min-width:140px;padding:14px"><div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em">Quota รวม</div><div style="font-size:22px;font-weight:700">${fmtInt(acct.estimated_quota)}</div></div>`);
   }
   if (acct.credential_label) {
-    chips.push(`<div class="card" style="display:block;flex:1;min-width:140px;padding:14px"><div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em">Credential ผูก</div><div style="font-size:14px;font-weight:600;color:var(--ok)">✓ ${escapeHtml(acct.credential_label)}</div></div>`);
+    const credUserLine = acct.credential_username
+      ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;font-family:ui-monospace,Menlo,monospace;word-break:break-all">${escapeHtml(acct.credential_username)}</div>`
+      : '';
+    chips.push(`<div class="card" style="display:block;flex:1;min-width:160px;padding:14px"><div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em">🔑 Credential ผูก</div><div style="font-size:14px;font-weight:700;color:var(--ok)">${escapeHtml(acct.credential_label)}</div>${credUserLine}</div>`);
   }
   document.getElementById('acct-summary').innerHTML = chips.join('');
 

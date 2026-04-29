@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.24",
+      "date": "2026-04-29",
+      "title": "Dashboard: กล่อง credential สีเขียว ชัดเจนขึ้น 'Credential: <ชื่อ>'",
+      "summary": "แสดง prefix 'Credential:' ก่อนชื่อ + 🔑 icon + tooltip บอก username",
+      "changes": [
+        "Account card (กล่องสีเขียวล่างสุด): จาก '✓ <label>' → '🔑 Credential: <label>'",
+        "  - hover เพื่อดู credential username (email)",
+        "  - ชื่อยาวเกิน → ellipsis แทนเลื่อนหลายบรรทัด",
+        "  - ถ้าไม่ผูก → '🔓 ยังไม่ได้ผูก credential' พร้อม tooltip ว่าตั้งค่าใน Config",
+        "Account detail modal: 'Credential ผูก' chip เพิ่ม 🔑 icon + แสดง username ด้านล่างชื่อ"
+      ]
+    },
+    {
       "version": "1.9.23",
       "date": "2026-04-29",
       "title": "MAX_PLAUSIBLE 1M → 100M — รองรับ Magnific 'Available 3.9M'",
