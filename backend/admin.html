@@ -795,9 +795,19 @@
             <a href="#/access-requests" data-route="access-requests">Access Requests <span id="nav-req-badge" style="display:none;margin-left:6px;background:var(--critical);color:#fff;font-size:10.5px;padding:1px 7px;border-radius:999px;font-weight:700"></span></a>
           </div>
         </div>
-        <a href="#/sites" data-route="sites">🛠 Config</a>
-        <a href="#/services-config" data-route="services-config">🛠️ Services Config</a>
-        <a href="#/websites" data-route="websites">🔗 Websites</a>
+        <a href="#/sites" data-route="sites">🛠 Int. Platforms Config</a>
+        <!-- Clients Platform group: รวม Websites + Services Config -->
+        <div class="nav-group" id="nav-group-clients" data-group-routes="websites,services-config,domains-config">
+          <button type="button" class="nav-group-toggle" data-group-toggle="clients">
+            <span style="font-size:14px">🌐</span>
+            <span class="nav-group-label">Clients Platform</span>
+            <span class="nav-group-caret">▼</span>
+          </button>
+          <div class="nav-group-children">
+            <a href="#/websites" data-route="websites">🔗 Websites</a>
+            <a href="#/services-config" data-route="services-config">🛠️ Services Config</a>
+          </div>
+        </div>
         <!-- Setting group: รวม Logs + API Key -->
         <div class="nav-group" id="nav-group-setting" data-group-routes="logs,security">
           <button type="button" class="nav-group-toggle" data-group-toggle="setting">
