@@ -4903,8 +4903,13 @@ function showDomainModal(domain) {
         <input id="dm-name" type="text" value="${isEdit ? escapeHtml(domain.name) : ''}" placeholder="เช่น example.com" />
       </div>
       <div class="field">
-        <label>Provider (ผู้ให้บริการ)</label>
-        <input id="dm-provider" type="text" value="${isEdit ? escapeHtml(domain.provider || '') : ''}" placeholder="เช่น GoDaddy, Namecheap, Cloudflare" />
+        <label>จดทะเบียนกับ (Registrar / Provider)</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <select id="dm-provider-select" style="flex:1;min-width:160px;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit"></select>
+          <input id="dm-provider-other" type="text" placeholder="ชื่อผู้ให้บริการ..."
+            style="flex:2;min-width:200px;display:none;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit" />
+        </div>
+        <div class="hint" style="font-size:11.5px;color:var(--text-muted);margin-top:4px">เลือกจาก dropdown หรือกด "อื่น ๆ" เพื่อกรอกชื่อเอง</div>
       </div>
       <!-- Logo / Profile image — วงกลม -->
       <div class="field">
@@ -4946,9 +4951,21 @@ function showDomainModal(domain) {
       </div>
     `,
     onSubmit: async () => {
+      // Provider — เลือกจาก dropdown หรือกรอกเอง (โหมด '__other')
+      let providerValue = '';
+      const sel = $('dm-provider-select');
+      const other = $('dm-provider-other');
+      if (sel) {
+        if (sel.value === '__other') {
+          providerValue = (other ? other.value : '').trim();
+        } else {
+          providerValue = sel.value || '';
+        }
+      }
+
       const data = {
         name: $('dm-name').value.trim(),
-        provider: $('dm-provider').value.trim() || null,
+        provider: providerValue || null,
         register_date: $('dm-register').value || null,
         expire_date: $('dm-expire').value || null,
         notes: $('dm-notes').value.trim() || null,
@@ -4997,6 +5014,43 @@ function showDomainModal(domain) {
   });
   // wire the WHOIS-sync button (after modal is in DOM)
   $('dm-whois-btn').addEventListener('click', () => fetchWhoisAndPreview());
+
+  // ---- Provider dropdown wiring ----
+  // Populate options + เลือกค่าเดิม (ถ้าค่าเดิมไม่อยู่ในรายการ → switch เป็น "อื่น ๆ")
+  const provSel = $('dm-provider-select');
+  const provOther = $('dm-provider-other');
+  if (provSel) {
+    const initialProv = (isEdit ? (domain.provider || '') : '').trim();
+    const allProviders = DOMAIN_PROVIDERS.slice();
+    // กรณี value เดิมเป็น custom name → ถือเป็น "__other" + prefill text
+    const isKnown = !initialProv || allProviders.some(p => p.toLowerCase() === initialProv.toLowerCase());
+    let opts = `<option value="">— ไม่ระบุ —</option>`;
+    for (const p of allProviders) {
+      const sel = (p.toLowerCase() === initialProv.toLowerCase()) ? ' selected' : '';
+      opts += `<option value="${escapeHtml(p)}"${sel}>${escapeHtml(p)}</option>`;
+    }
+    opts += `<option value="__other"${!isKnown && initialProv ? ' selected' : ''}>อื่น ๆ (กรอกชื่อ)</option>`;
+    provSel.innerHTML = opts;
+
+    if (provOther) {
+      if (!isKnown && initialProv) {
+        provOther.value = initialProv;
+        provOther.style.display = '';
+      } else {
+        provOther.style.display = 'none';
+      }
+    }
+
+    provSel.addEventListener('change', () => {
+      if (!provOther) return;
+      if (provSel.value === '__other') {
+        provOther.style.display = '';
+        provOther.focus();
+      } else {
+        provOther.style.display = 'none';
+      }
+    });
+  }
 
   // ---- Logo wiring (mirror ของ Site logo modal) ----
   const dmLogoEl = $('dm-logo-data');
@@ -5367,6 +5421,17 @@ async function showRenewalHistoryModal(domainId, domainName) {
 // ============== Services Config (Hosting / SSL / Others — admin only) ==============
 
 // Tabs ของ Services Config — รวม Domain เป็น tab แรก
+// Common domain registrars — แสดงใน Domain edit dropdown + filter ใน Websites
+const DOMAIN_PROVIDERS = [
+  'HostAtom',
+  'DotArai',
+  'GoDaddy',
+  'Namecheap',
+  'Cloudflare',
+  'Google Domains',
+  'Z.com',
+];
+
 const SERVICE_TYPES = [
   { id: 'domain',  label: 'Domain',   icon: '🌐',  isDomain: true,
     addLabel: '+ เพิ่ม Domain',  emptyText: 'ยังไม่มี Domain' },
@@ -5650,6 +5715,8 @@ function showServiceModal(svc, defaultType) {
 
 let _wsCache = [];
 let _wsSearch = '';
+// Filter state — '' = ทุกตัว, '__none' = "ยังไม่มีผูก", หรือชื่อ specific (เป็นข้อความ)
+let _wsFilter = { registrar: '', hosting: '', ssl: '', others: '' };
 
 async function renderWebsitesPage() {
   $('main').innerHTML = `
@@ -5658,19 +5725,105 @@ async function renderWebsitesPage() {
       <span class="card-sub" id="ws-count">—</span>
     </div>
     <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px">
-      จับคู่ <strong>Domain</strong> กับ <strong>Hosting / SSL / Others</strong> — เพิ่ม Domain ที่ <a href="#/domains-config" style="color:var(--primary)">Domain Config</a>, เพิ่ม service ที่ <a href="#/services-config" style="color:var(--primary)">Services Config</a>
+      จับคู่ <strong>Domain</strong> กับ <strong>Hosting / SSL / Others</strong> — เพิ่ม Domain ที่ <a href="#/services-config" style="color:var(--primary)">Services Config</a> (Domain tab), เพิ่ม service ที่ <a href="#/services-config" style="color:var(--primary)">Services Config</a>
     </div>
-    <div style="margin-bottom:14px">
+    <div style="margin-bottom:10px">
       <input id="ws-search" type="text" placeholder="🔍 ค้นหาชื่อ domain / service..." autocomplete="off"
         style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--bg-card);color:var(--text);box-sizing:border-box" />
     </div>
+    <!-- Filters: registrar / hosting / ssl / others -->
+    <div id="ws-filters" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:11.5px;color:var(--text-muted);font-weight:600;letter-spacing:.4px">FILTER:</span>
+      <select id="ws-filter-registrar" class="ws-filter-sel"></select>
+      <select id="ws-filter-hosting" class="ws-filter-sel"></select>
+      <select id="ws-filter-ssl" class="ws-filter-sel"></select>
+      <select id="ws-filter-others" class="ws-filter-sel"></select>
+      <button id="ws-filter-clear" class="btn" type="button" style="font-size:11.5px;padding:5px 10px;display:none">✕ ล้าง filter</button>
+    </div>
     <div id="ws-list"><div class="empty">กำลังโหลด…</div></div>
   `;
+  // Add CSS for filter selects (one-time)
+  if (!document.getElementById('ws-filter-css')) {
+    const css = document.createElement('style');
+    css.id = 'ws-filter-css';
+    css.textContent = `.ws-filter-sel {padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg-card);color:var(--text);font-family:inherit;cursor:pointer;max-width:180px}`;
+    document.head.appendChild(css);
+  }
   $('ws-search').addEventListener('input', (e) => {
     _wsSearch = e.target.value;
     renderWebsitesList();
   });
+  // Wire filter selects
+  for (const k of ['registrar', 'hosting', 'ssl', 'others']) {
+    const el = $('ws-filter-' + k);
+    if (el) el.addEventListener('change', () => {
+      _wsFilter[k] = el.value;
+      _updateWsClearBtn();
+      renderWebsitesList();
+    });
+  }
+  $('ws-filter-clear').addEventListener('click', () => {
+    _wsFilter = { registrar: '', hosting: '', ssl: '', others: '' };
+    for (const k of ['registrar', 'hosting', 'ssl', 'others']) {
+      const el = $('ws-filter-' + k);
+      if (el) el.value = '';
+    }
+    _updateWsClearBtn();
+    renderWebsitesList();
+  });
   await loadWebsites();
+}
+
+function _updateWsClearBtn() {
+  const hasFilter = Object.values(_wsFilter).some(v => v);
+  const btn = $('ws-filter-clear');
+  if (btn) btn.style.display = hasFilter ? '' : 'none';
+}
+
+// Build options for each filter from current data
+function _populateWsFilters() {
+  // Domain registrars (จาก domains.provider) — รวม DOMAIN_PROVIDERS + ค่าจริงในข้อมูล
+  const registrarSet = new Set(DOMAIN_PROVIDERS);
+  for (const w of _wsCache) {
+    const p = (w.domain.provider || '').trim();
+    if (p) registrarSet.add(p);
+  }
+  // Service names by type — เก็บ unique names ที่ผูกอยู่จริง
+  const hostingSet = new Set(), sslSet = new Set(), othersSet = new Set();
+  for (const w of _wsCache) {
+    for (const s of (w.services || [])) {
+      const name = (s.name || '').trim();
+      if (!name) continue;
+      if (s.service_type === 'hosting') hostingSet.add(name);
+      else if (s.service_type === 'ssl') sslSet.add(name);
+      else if (s.service_type === 'others') othersSet.add(name);
+    }
+  }
+
+  const fillSel = (id, allLabel, items) => {
+    const el = $(id);
+    if (!el) return;
+    const current = _wsFilter[id.replace('ws-filter-', '')];
+    const sortedItems = Array.from(items).sort((a, b) => a.localeCompare(b, 'th'));
+    let opts = `<option value="">${escapeHtml(allLabel)}</option>`;
+    // "__none" option only meaningful for hosting/ssl/others (not registrar — domains always have provider field, just maybe blank)
+    if (id !== 'ws-filter-registrar') {
+      opts += `<option value="__none">— ยังไม่ได้ผูก —</option>`;
+    } else {
+      opts += `<option value="__none">— ไม่ระบุ —</option>`;
+    }
+    for (const v of sortedItems) {
+      const sel = (v === current) ? ' selected' : '';
+      opts += `<option value="${escapeHtml(v)}"${sel}>${escapeHtml(v)}</option>`;
+    }
+    el.innerHTML = opts;
+    if (current) el.value = current;   // restore (สำคัญตอน list re-render)
+  };
+
+  fillSel('ws-filter-registrar', '🌐 ทุกผู้จดทะเบียน Domain', registrarSet);
+  fillSel('ws-filter-hosting',   '🖥️ ทุก Hosting',           hostingSet);
+  fillSel('ws-filter-ssl',       '🔒 ทุก SSL',               sslSet);
+  fillSel('ws-filter-others',    '📦 ทุก Others',            othersSet);
 }
 
 async function loadWebsites() {
@@ -5692,27 +5845,57 @@ async function loadWebsites() {
   } catch (e) {
     /* ignore — จะแสดง warning ตอนกด Add link */
   }
+  _populateWsFilters();
+  _updateWsClearBtn();
   renderWebsitesList();
+}
+
+// Apply filter ตาม type — true ถ้า website ผ่าน filter
+function _wsMatchesServiceFilter(w, typeId, filterValue) {
+  if (!filterValue) return true;   // no filter
+  const services = (w.services || []).filter(s => s.service_type === typeId);
+  if (filterValue === '__none') return services.length === 0;
+  return services.some(s => (s.name || '').trim() === filterValue);
 }
 
 function renderWebsitesList() {
   const listEl = $('ws-list');
   if (!listEl) return;
   const q = _wsSearch.trim().toLowerCase();
-  const filtered = !q ? _wsCache : _wsCache.filter(w => {
-    if ((w.domain.name || '').toLowerCase().includes(q)) return true;
-    return (w.services || []).some(s =>
-      (s.name || '').toLowerCase().includes(q)
-      || (s.provider || '').toLowerCase().includes(q)
-    );
-  });
+
+  let filtered = _wsCache.slice();
+  // Search filter (text)
+  if (q) {
+    filtered = filtered.filter(w => {
+      if ((w.domain.name || '').toLowerCase().includes(q)) return true;
+      return (w.services || []).some(s =>
+        (s.name || '').toLowerCase().includes(q)
+        || (s.provider || '').toLowerCase().includes(q)
+      );
+    });
+  }
+  // Registrar filter (domain.provider)
+  if (_wsFilter.registrar) {
+    filtered = filtered.filter(w => {
+      const p = (w.domain.provider || '').trim();
+      if (_wsFilter.registrar === '__none') return !p;
+      return p === _wsFilter.registrar;
+    });
+  }
+  // Service filters
+  filtered = filtered.filter(w =>
+    _wsMatchesServiceFilter(w, 'hosting', _wsFilter.hosting)
+    && _wsMatchesServiceFilter(w, 'ssl', _wsFilter.ssl)
+    && _wsMatchesServiceFilter(w, 'others', _wsFilter.others)
+  );
+
   if ($('ws-count')) $('ws-count').textContent = `${filtered.length} / ${_wsCache.length} websites`;
   if (_wsCache.length === 0) {
-    listEl.innerHTML = `<div class="empty">ยังไม่มี domain — เพิ่มที่ <a href="#/domains-config" style="color:var(--primary)">Domain Config</a> ก่อน</div>`;
+    listEl.innerHTML = `<div class="empty">ยังไม่มี domain — เพิ่มที่ <a href="#/services-config" style="color:var(--primary)">Services Config</a> (Domain tab) ก่อน</div>`;
     return;
   }
   if (filtered.length === 0) {
-    listEl.innerHTML = `<div class="empty">ไม่พบ website ที่ตรงกับการค้นหา</div>`;
+    listEl.innerHTML = `<div class="empty">ไม่พบ website ที่ตรงกับเงื่อนไข — กด <strong>✕ ล้าง filter</strong> เพื่อดูทั้งหมด</div>`;
     return;
   }
   const today = new Date(); today.setHours(0, 0, 0, 0);

@@ -2,6 +2,27 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.31",
+      "date": "2026-04-29",
+      "title": "Domain registrar dropdown + Websites page filters",
+      "summary": "Domain: เลือก registrar จาก dropdown (HostAtom/DotArai/etc.) + Websites: กรองตาม registrar/hosting/ssl/others",
+      "changes": [
+        "Domain edit modal: Provider field เปลี่ยนเป็น dropdown 'จดทะเบียนกับ'",
+        "  • Default options: HostAtom / DotArai / GoDaddy / Namecheap / Cloudflare / Google Domains / Z.com",
+        "  • เลือก 'อื่น ๆ' → text input โผล่ให้กรอกชื่อเอง",
+        "  • Backwards compat: ค่าเดิมที่เป็นชื่อ custom จะเข้าโหมด 'อื่น ๆ' อัตโนมัติ + prefill",
+        "Websites page: filter bar 4 dropdowns:",
+        "  🌐 ทุกผู้จดทะเบียน Domain (registrar)",
+        "  🖥️ ทุก Hosting",
+        "  🔒 ทุก SSL",
+        "  📦 ทุก Others",
+        "  + ปุ่ม ✕ ล้าง filter (โผล่เมื่อมี filter active)",
+        "Filter รวมกันแบบ AND — Search text + 4 filters ทำงานพร้อมกันได้",
+        "ตัวเลือก '__none' = 'ยังไม่ได้ผูก' (สำหรับ services) / 'ไม่ระบุ' (สำหรับ registrar)",
+        "Filter options auto-populate จากข้อมูลจริง + DOMAIN_PROVIDERS list"
+      ]
+    },
+    {
       "version": "1.9.30",
       "date": "2026-04-29",
       "title": "Domain: เพิ่ม logo วงกลม (อัพโหลด / search / crop)",
