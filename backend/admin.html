@@ -3577,20 +3577,71 @@ function fmtDateThai(iso) {
   return `${d.getDate()} ${monthShort} ${(d.getFullYear() + 543) % 100}`;
 }
 
+// 3-month calendar — _calMonth/_calYear = เดือนแรก (ซ้ายสุด) ของ panel
 function renderCalendar() {
   const grid = $('cal-grid');
   if (!grid) return;
   const today = new Date();
   today.setHours(0,0,0,0);
 
-  // หา events ของเดือน-ปีนี้ — รวมทั้ง register และ expire
-  // eventsByDay: {day: [{domain, type: 'register'|'expire'}, ...]}
+  // Render 3 month panels side by side
+  let html = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">';
+  for (let offset = 0; offset < 3; offset++) {
+    let m = _calMonth + offset;
+    let y = _calYear;
+    while (m > 11) { m -= 12; y++; }
+    html += renderMonthPanel(m, y, today);
+  }
+  html += '</div>';
+
+  // Legend
+  html += `
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:14px;font-size:11.5px;color:var(--text-muted);align-items:center">
+      <span><strong>⏰</strong> หมดอายุ</span>
+      <span><strong>🟢</strong> จดทะเบียน</span>
+      <span style="border-left:1px solid var(--border);padding-left:12px">
+        <span style="display:inline-block;width:11px;height:11px;background:rgba(220,38,38,.20);border:1.5px solid var(--critical);border-radius:3px;vertical-align:middle;margin-right:3px"></span>หมดแล้ว
+      </span>
+      <span>
+        <span style="display:inline-block;width:11px;height:11px;background:rgba(245,158,11,.20);border:1.5px solid #f59e0b;border-radius:3px;vertical-align:middle;margin-right:3px"></span>≤30 วัน
+      </span>
+      <span>
+        <span style="display:inline-block;width:11px;height:11px;background:rgba(16,185,129,.15);border:1.5px solid #10b981;border-radius:3px;vertical-align:middle;margin-right:3px"></span>>30 วัน
+      </span>
+      <span>
+        <span style="display:inline-block;width:11px;height:11px;background:rgba(37,99,235,.10);border:1.5px solid rgba(37,99,235,.4);border-radius:3px;vertical-align:middle;margin-right:3px"></span>จดทะเบียน
+      </span>
+      <span>
+        <span style="display:inline-block;width:11px;height:11px;background:var(--bg-card);border:2px solid var(--primary);border-radius:3px;vertical-align:middle;margin-right:3px"></span>วันนี้
+      </span>
+    </div>
+  `;
+
+  // Add responsive CSS once
+  if (!document.getElementById('cal-responsive-css')) {
+    const css = document.createElement('style');
+    css.id = 'cal-responsive-css';
+    css.textContent = `
+      @media (max-width: 1100px) {
+        #cal-grid > div:first-child { grid-template-columns: 1fr 1fr !important; }
+      }
+      @media (max-width: 720px) {
+        #cal-grid > div:first-child { grid-template-columns: 1fr !important; }
+      }
+    `;
+    document.head.appendChild(css);
+  }
+  grid.innerHTML = html;
+}
+
+function renderMonthPanel(month, year, today) {
+  // หา events ของเดือนนี้
   const eventsByDay = {};
   const addEvent = (dateStr, domain, type) => {
     if (!dateStr) return;
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return;
-    if (d.getMonth() === _calMonth && d.getFullYear() === _calYear) {
+    if (d.getMonth() === month && d.getFullYear() === year) {
       const day = d.getDate();
       (eventsByDay[day] = eventsByDay[day] || []).push({ domain, type });
     }
@@ -3600,36 +3651,36 @@ function renderCalendar() {
     addEvent(d.expire_date, d, 'expire');
   }
 
-  // คำนวณวันแรกของเดือน + จำนวนวัน
-  const first = new Date(_calYear, _calMonth, 1);
+  const first = new Date(year, month, 1);
   const startDow = first.getDay();
-  const daysInMonth = new Date(_calYear, _calMonth + 1, 0).getDate();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const monthLabel = `${_MONTHS_TH[month]} ${year + 543}`;
 
-  // Header (S M T W T F S)
-  let html = '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">';
+  let html = `
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:10px">
+      <div style="text-align:center;font-weight:700;font-size:13px;color:var(--text);margin-bottom:6px">${escapeHtml(monthLabel)}</div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">
+  `;
+  // header
   for (const dow of _DAYS_TH) {
-    html += `<div style="text-align:center;padding:8px 4px;font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase">${dow}</div>`;
+    html += `<div style="text-align:center;padding:3px 1px;font-size:9.5px;font-weight:700;color:var(--text-muted)">${dow}</div>`;
   }
-  for (let i = 0; i < startDow; i++) {
-    html += '<div></div>';
-  }
+  // empty cells before day 1
+  for (let i = 0; i < startDow; i++) html += '<div></div>';
 
   for (let day = 1; day <= daysInMonth; day++) {
-    const date = new Date(_calYear, _calMonth, day);
+    const date = new Date(year, month, day);
     const isToday = date.getTime() === today.getTime();
     const events = eventsByDay[day] || [];
     const hasEvent = events.length > 0;
     const hasExpire = events.some(e => e.type === 'expire');
     const hasRegister = events.some(e => e.type === 'register');
 
-    // Cell color: expire ชนะ register (priority)
     let bg = 'var(--bg-card)';
     let border = '1px solid var(--border)';
     let dayColor = 'var(--text)';
-    let titleParts = [];
 
     if (hasExpire) {
-      // หาว่า expire เก่า/ใกล้/ไกล (โดยใช้ context ของวันที่ในปฏิทินนี้)
       const days = Math.floor((date - today) / 86400000);
       if (days < 0) {
         bg = 'rgba(220,38,38,.12)';
@@ -3645,71 +3696,46 @@ function renderCalendar() {
         dayColor = '#15803d';
       }
     } else if (hasRegister) {
-      // มีแต่ register → สีฟ้า (info)
       bg = 'rgba(37,99,235,.08)';
       border = '1.5px solid rgba(37,99,235,.4)';
       dayColor = 'var(--primary-dark)';
     }
+    if (isToday) border = '2px solid var(--primary)';
 
-    if (isToday) {
-      border = '2px solid var(--primary)';
-    }
-
-    // Tooltip: list ทุก event ในวันนี้
-    if (hasEvent) {
-      titleParts = events.map(e =>
-        (e.type === 'expire' ? 'หมดอายุ: ' : 'จดทะเบียน: ') + e.domain.name
-      );
-    }
+    // Tooltip: list ทุก event แบบเต็ม
+    const titleParts = events.map(e =>
+      (e.type === 'expire' ? 'หมดอายุ: ' : 'จดทะเบียน: ') + e.domain.name
+    );
     const titleAttr = titleParts.length ? `title="${escapeHtml(titleParts.join('\n'))}"` : '';
 
-    // Render event chips (label inside cell)
-    const eventChips = events.map(e => {
+    // Compact chips: แสดง max 2 chips, +N ถ้ามากกว่า
+    const maxShow = 2;
+    const visibleChips = events.slice(0, maxShow).map(e => {
       const isExp = e.type === 'expire';
       const icon = isExp ? '⏰' : '🟢';
       const labelColor = isExp ? dayColor : 'var(--primary-dark)';
-      const labelBg = isExp
-        ? 'rgba(255,255,255,.55)'
-        : 'rgba(37,99,235,.12)';
+      const labelBg = isExp ? 'rgba(255,255,255,.55)' : 'rgba(37,99,235,.12)';
+      // ตัดชื่อสั้น — แสดงแค่ icon + ตัวอักษรแรกของชื่อ + dot
       return `
-        <div style="font-size:9.5px;font-weight:600;color:${labelColor};background:${labelBg};padding:1px 4px;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4">
-          ${icon} ${escapeHtml(e.domain.name)}
+        <div style="font-size:8.5px;font-weight:600;color:${labelColor};background:${labelBg};padding:0 3px;border-radius:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;max-width:100%">
+          ${icon}${escapeHtml(e.domain.name)}
         </div>
       `;
     }).join('');
+    const moreBadge = events.length > maxShow
+      ? `<div style="font-size:8px;font-weight:700;color:var(--text-muted);padding:0 3px">+${events.length - maxShow}</div>`
+      : '';
 
     html += `
-      <div ${titleAttr} style="min-height:74px;padding:6px 7px;background:${bg};border:${border};border-radius:8px;display:flex;flex-direction:column;gap:3px;cursor:${hasEvent ? 'help' : 'default'}">
-        <div style="font-size:13px;font-weight:${isToday || hasEvent ? '700' : '500'};color:${dayColor}">${day}${isToday ? ' •' : ''}</div>
-        ${eventChips}
+      <div ${titleAttr} style="min-height:50px;padding:3px 4px;background:${bg};border:${border};border-radius:5px;display:flex;flex-direction:column;gap:1px;overflow:hidden;cursor:${hasEvent ? 'help' : 'default'}">
+        <div style="font-size:10.5px;font-weight:${isToday || hasEvent ? '700' : '500'};color:${dayColor};line-height:1">${day}${isToday ? '•' : ''}</div>
+        ${visibleChips}
+        ${moreBadge}
       </div>
     `;
   }
-  html += '</div>';
-
-  // Legend
-  html += `
-    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:11.5px;color:var(--text-muted)">
-      <span><strong>⏰ = หมดอายุ</strong></span>
-      <span><strong>🟢 = จดทะเบียน</strong></span>
-      <span style="margin-left:6px;border-left:1px solid var(--border);padding-left:14px">
-        <span style="display:inline-block;width:12px;height:12px;background:rgba(220,38,38,.20);border:1.5px solid var(--critical);border-radius:3px;vertical-align:middle;margin-right:4px"></span>หมดอายุแล้ว
-      </span>
-      <span>
-        <span style="display:inline-block;width:12px;height:12px;background:rgba(245,158,11,.20);border:1.5px solid #f59e0b;border-radius:3px;vertical-align:middle;margin-right:4px"></span>ใกล้หมด (≤30 วัน)
-      </span>
-      <span>
-        <span style="display:inline-block;width:12px;height:12px;background:rgba(16,185,129,.15);border:1.5px solid #10b981;border-radius:3px;vertical-align:middle;margin-right:4px"></span>หมดอายุ (>30 วัน)
-      </span>
-      <span>
-        <span style="display:inline-block;width:12px;height:12px;background:rgba(37,99,235,.10);border:1.5px solid rgba(37,99,235,.4);border-radius:3px;vertical-align:middle;margin-right:4px"></span>จดทะเบียน
-      </span>
-      <span>
-        <span style="display:inline-block;width:12px;height:12px;background:var(--bg-card);border:2px solid var(--primary);border-radius:3px;vertical-align:middle;margin-right:4px"></span>วันนี้
-      </span>
-    </div>
-  `;
-  grid.innerHTML = html;
+  html += '</div></div>';
+  return html;
 }
 
 
