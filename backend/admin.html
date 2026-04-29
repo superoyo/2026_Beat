@@ -2503,34 +2503,52 @@ async function renderTeamsPage(selectedTeamId) {
     </div>
 
     <div id="teams-layout" style="display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:flex-start">
-      <!-- LEFT: team list -->
+      <!-- LEFT: team list with search + drag-reorder -->
       <aside id="teams-sidebar" style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:8px;box-shadow:var(--shadow-sm);position:sticky;top:14px;max-height:calc(100vh - 60px);overflow-y:auto">
         ${teams.length === 0
           ? '<div style="padding:18px 12px;color:var(--text-muted);font-size:13px;text-align:center">ยังไม่มี team — กด <strong>+ สร้าง</strong> ด้านบน</div>'
-          : '<div style="font-size:11.5px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;padding:8px 10px 4px">' + teams.length + ' ทีม</div>' +
-            teams.map(t => {
-              const isActive = t.id === selectedTeamId;
-              return `
-                <button class="teams-row" data-team-id="${t.id}"
-                        style="display:flex;flex-direction:column;align-items:flex-start;gap:3px;
-                               width:100%;text-align:left;
-                               padding:10px 12px;
-                               background:${isActive ? 'var(--primary-soft)' : 'transparent'};
-                               border:1px solid ${isActive ? 'rgba(37,99,235,.25)' : 'transparent'};
-                               border-radius:8px;
-                               cursor:pointer;font-family:inherit;
-                               margin-bottom:3px;
-                               transition:all .12s">
-                  <div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:8px">
-                    <span style="font-weight:${isActive ? '700' : '600'};font-size:13.5px;color:${isActive ? 'var(--primary)' : 'var(--text)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(t.name)}</span>
+          : `
+            <div style="position:relative;margin:4px 4px 8px">
+              <input id="teams-search" type="text" placeholder="🔍 ค้นหาทีม..." autocomplete="off"
+                     style="width:100%;padding:7px 10px;font-size:12.5px;border:1px solid var(--border);border-radius:7px;background:var(--bg-input);color:var(--text);font-family:inherit" />
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;font-size:10.5px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;padding:4px 10px 6px">
+              <span id="teams-count-label">${teams.length} ทีม</span>
+              <span style="color:var(--text-soft);font-weight:400;text-transform:none;letter-spacing:0">⋮⋮ ลากเพื่อจัดลำดับ</span>
+            </div>
+            <div id="teams-list">
+              ${teams.map(t => {
+                const isActive = t.id === selectedTeamId;
+                const searchKey = ((t.name || '') + ' ' + (t.description || '')).toLowerCase();
+                return `
+                  <div class="teams-row-wrap" data-team-id="${t.id}" data-search="${escapeHtml(searchKey)}" draggable="true"
+                       style="display:flex;align-items:stretch;gap:2px;margin-bottom:3px;border-radius:8px;transition:opacity .12s">
+                    <span class="teams-drag-handle" title="ลากเพื่อจัดลำดับ"
+                          style="display:flex;align-items:center;padding:0 4px;color:var(--text-soft);cursor:grab;font-size:14px;border-radius:6px;user-select:none">⋮⋮</span>
+                    <button class="teams-row" data-team-id="${t.id}"
+                            style="flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:3px;
+                                   text-align:left;
+                                   padding:10px 12px;
+                                   background:${isActive ? 'var(--primary-soft)' : 'transparent'};
+                                   border:1px solid ${isActive ? 'rgba(37,99,235,.25)' : 'transparent'};
+                                   border-radius:8px;
+                                   cursor:pointer;font-family:inherit;
+                                   transition:all .12s;
+                                   min-width:0">
+                      <div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:8px">
+                        <span style="font-weight:${isActive ? '700' : '600'};font-size:13.5px;color:${isActive ? 'var(--primary)' : 'var(--text)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(t.name)}</span>
+                      </div>
+                      <div style="font-size:11px;color:var(--text-muted);font-weight:500;display:flex;gap:8px">
+                        <span>👤 ${t.member_count}</span>
+                        <span>🌐 ${t.site_count}</span>
+                      </div>
+                    </button>
                   </div>
-                  <div style="font-size:11px;color:var(--text-muted);font-weight:500;display:flex;gap:8px">
-                    <span>👤 ${t.member_count}</span>
-                    <span>🌐 ${t.site_count}</span>
-                  </div>
-                </button>
-              `;
-            }).join('')
+                `;
+              }).join('')}
+            </div>
+            <div id="teams-no-results" class="empty" style="display:none;padding:14px;font-size:12px;color:var(--text-muted)">ไม่เจอทีมที่ตรงกับคำค้น</div>
+          `
         }
       </aside>
 
@@ -2562,6 +2580,90 @@ async function renderTeamsPage(selectedTeamId) {
       }
     });
   });
+
+  // === Search filter ===
+  const searchInput = $('teams-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.toLowerCase().trim();
+      let shown = 0;
+      document.querySelectorAll('.teams-row-wrap').forEach(row => {
+        const key = row.dataset.search || '';
+        const match = !q || key.includes(q);
+        row.style.display = match ? '' : 'none';
+        if (match) shown++;
+      });
+      const noRes = $('teams-no-results');
+      if (noRes) noRes.style.display = (q && shown === 0) ? '' : 'none';
+      const lbl = $('teams-count-label');
+      if (lbl) {
+        lbl.textContent = q ? `${shown} / ${teams.length} ทีม` : `${teams.length} ทีม`;
+      }
+    });
+  }
+
+  // === Drag-to-reorder ===
+  const listEl = $('teams-list');
+  if (listEl) {
+    let draggedRow = null;
+    listEl.querySelectorAll('.teams-row-wrap').forEach(row => {
+      row.addEventListener('dragstart', (e) => {
+        draggedRow = row;
+        row.style.opacity = '0.4';
+        e.dataTransfer.effectAllowed = 'move';
+        // เก็บ id ใน dataTransfer สำหรับ cross-window safety (ไม่ใช้จริงเพราะ same window)
+        try { e.dataTransfer.setData('text/plain', row.dataset.teamId); } catch {}
+      });
+      row.addEventListener('dragend', () => {
+        if (draggedRow) draggedRow.style.opacity = '';
+        draggedRow = null;
+        // เคลียร์ all visual indicators
+        listEl.querySelectorAll('.teams-row-wrap').forEach(r => {
+          r.style.borderTop = '';
+          r.style.borderBottom = '';
+        });
+      });
+      row.addEventListener('dragover', (e) => {
+        if (!draggedRow || draggedRow === row) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        // visual indicator: highlight แนวบน/ล่างของ row นี้ตามตำแหน่ง mouse
+        const rect = row.getBoundingClientRect();
+        const above = e.clientY < rect.top + rect.height / 2;
+        listEl.querySelectorAll('.teams-row-wrap').forEach(r => {
+          r.style.borderTop = '';
+          r.style.borderBottom = '';
+        });
+        if (above) row.style.borderTop = '2px solid var(--primary)';
+        else row.style.borderBottom = '2px solid var(--primary)';
+      });
+      row.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        if (!draggedRow || draggedRow === row) return;
+        const rect = row.getBoundingClientRect();
+        const above = e.clientY < rect.top + rect.height / 2;
+        // Reorder DOM
+        if (above) row.parentNode.insertBefore(draggedRow, row);
+        else row.parentNode.insertBefore(draggedRow, row.nextSibling);
+        // เคลียร์ visual
+        listEl.querySelectorAll('.teams-row-wrap').forEach(r => {
+          r.style.borderTop = '';
+          r.style.borderBottom = '';
+        });
+        // Save to backend
+        const newOrder = Array.from(listEl.querySelectorAll('.teams-row-wrap'))
+          .map(r => parseInt(r.dataset.teamId, 10));
+        try {
+          await fetchJson('/api/admin/teams/reorder', {
+            method: 'PUT',
+            body: JSON.stringify({ team_ids: newOrder }),
+          });
+        } catch (err) {
+          alert('บันทึกลำดับไม่สำเร็จ: ' + err.message);
+        }
+      });
+    });
+  }
 
   // Load selected team detail
   if (selectedTeamId) {

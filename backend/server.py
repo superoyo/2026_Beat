@@ -301,6 +301,17 @@ def init_db() -> None:
             if col_name not in site_cols:
                 conn.execute(f"ALTER TABLE sites ADD COLUMN {col_name} {col_def}")
 
+        # teams table — display_order สำหรับ drag-to-reorder (v1.18)
+        team_cols = {
+            row["name"] for row in conn.execute("PRAGMA table_info(teams)").fetchall()
+        }
+        if "display_order" not in team_cols:
+            conn.execute("ALTER TABLE teams ADD COLUMN display_order INTEGER NOT NULL DEFAULT 0")
+            # initial seed: order ตาม created_at ASC
+            existing = conn.execute("SELECT id FROM teams ORDER BY created_at ASC").fetchall()
+            for idx, r in enumerate(existing):
+                conn.execute("UPDATE teams SET display_order = ? WHERE id = ?", (idx, r["id"]))
+
         # credentials table — billing/lifecycle fields ย้ายมาจาก sites (v1.10)
         # หลังจากนี้ user จะ config ที่ระดับ credential แทน site
         cred_cols = {
@@ -1698,12 +1709,44 @@ class TeamSitePatchIn(BaseModel):
 def admin_list_teams(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
     with db_conn() as conn:
         rows = conn.execute(
-            "SELECT t.id, t.name, t.description, t.created_at, "
+            "SELECT t.id, t.name, t.description, t.created_at, t.display_order, "
             "  (SELECT COUNT(*) FROM team_members WHERE team_id = t.id) AS member_count, "
             "  (SELECT COUNT(*) FROM team_sites   WHERE team_id = t.id) AS site_count "
-            "FROM teams t ORDER BY t.created_at DESC"
+            "FROM teams t ORDER BY t.display_order ASC, t.name COLLATE NOCASE ASC"
         ).fetchall()
     return {"teams": [dict(r) for r in rows]}
+
+
+class TeamReorderIn(BaseModel):
+    team_ids: list[int]
+
+
+@app.put("/api/admin/teams/reorder")
+def admin_reorder_teams(
+    payload: TeamReorderIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """Reorder teams — รับ list ของ team_ids ตามลำดับใหม่
+    UPDATE display_order ของแต่ละ row ตาม index ใน array
+    """
+    with db_conn() as conn:
+        # Validate: all team_ids ต้องมีจริง
+        if payload.team_ids:
+            placeholders = ",".join("?" * len(payload.team_ids))
+            existing = {r["id"] for r in conn.execute(
+                f"SELECT id FROM teams WHERE id IN ({placeholders})",
+                tuple(payload.team_ids),
+            ).fetchall()}
+            missing = set(payload.team_ids) - existing
+            if missing:
+                raise HTTPException(status_code=400, detail=f"team not found: {sorted(missing)}")
+        # Update each team's display_order ตาม index
+        for idx, tid in enumerate(payload.team_ids):
+            conn.execute(
+                "UPDATE teams SET display_order = ? WHERE id = ?",
+                (idx, tid),
+            )
+    return {"ok": True, "count": len(payload.team_ids)}
 
 
 @app.post("/api/admin/teams")
@@ -3617,7 +3660,7 @@ def teams_overview(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
         teams = conn.execute(
             "SELECT id, name, description, "
             "  (SELECT COUNT(*) FROM team_members tm WHERE tm.team_id = t.id) AS member_count "
-            "FROM teams t ORDER BY name COLLATE NOCASE"
+            "FROM teams t ORDER BY display_order ASC, name COLLATE NOCASE ASC"
         ).fetchall()
         ts_rows = conn.execute(
             "SELECT team_id, site_id FROM team_sites"
