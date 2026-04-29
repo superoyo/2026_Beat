@@ -2,6 +2,28 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.30",
+      "date": "2026-04-29",
+      "title": "Domain: เพิ่ม logo วงกลม (อัพโหลด / search / crop)",
+      "summary": "ทุก domain มีโลโก้วงกลม — เลือกได้ 3 วิธี: อัพโหลดไฟล์ / search ผ่าน favicon / crop เป็นสี่เหลี่ยมจัตุรัส",
+      "changes": [
+        "DB: ALTER TABLE domains ADD COLUMN logo_data TEXT (base64 data URL, max 700KB)",
+        "Backend: DomainIn/DomainPatchIn รองรับ logo_data (กรณี '' = clear, NULL = unchanged)",
+        "Backend: GET endpoints (/api/domains, /api/admin/domains, /api/admin/websites) คืน logo_data",
+        "Frontend (Domain edit modal): เพิ่ม section 'โลโก้ (วงกลม)' พร้อม preview 88px",
+        "  • 📷 อัพโหลดไฟล์ → openCropModal (Cropper.js, square aspect)",
+        "  • 🔍 ค้นหาโลโก้จาก domain → openLogoSearchModal (Google Favicon, Clearbit, ฯลฯ)",
+        "  • 🗑 ลบโลโก้",
+        "  • Crop output: 256x256 PNG → save เป็น base64 data URL",
+        "Frontend: helper domainLogoHTML(d, size) — render circle img หรือ initial fallback (สีจาก hash ของชื่อ)",
+        "Display โลโก้ใน 3 ที่:",
+        "  • Domain row ใน Services Config / Domain tab (36px)",
+        "  • Website card ใน Websites page (48px)",
+        "  • Domain Names table — public page (28px)",
+        "ใช้ existing crop/search/camera infrastructure ของ Sites — ไม่ต้องสร้างใหม่"
+      ]
+    },
+    {
       "version": "1.9.29",
       "date": "2026-04-29",
       "title": "Sidebar: rename Config → Int. Platforms Config + เพิ่ม group 'Clients Platform'",
