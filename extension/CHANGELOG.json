@@ -2,6 +2,23 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.17",
+      "date": "2026-04-29",
+      "title": "WHOIS sync indicator: badge 🌐 + tooltip บนวันที่ที่ดึงจาก WHOIS",
+      "summary": "เห็นได้ทันทีว่าวันจดทะเบียน/หมดอายุ มาจาก WHOIS เมื่อใด",
+      "changes": [
+        "DB migration: เพิ่ม register_whois_synced_at + expire_whois_synced_at ใน domains table",
+        "Backend: Pydantic field register_from_whois / expire_from_whois (3 states: True/False/null)",
+        "  • True = ดึงจาก WHOIS เพิ่ง apply → set timestamp = now",
+        "  • False = user manual edit → clear timestamp",
+        "  • null = ไม่แตะ (untouched) → คงค่าเดิม",
+        "Renew domain → clear expire_whois_synced_at เพราะวันใหม่มาจาก renewal record ไม่ใช่ WHOIS",
+        "Frontend (edit modal): track ว่า WHOIS apply ถูกใช้กับ field ไหน + เทียบกับ initial value ตอน save",
+        "Frontend (Domain Config row + Domain Names table): แสดง 🌐 เล็ก ๆ ข้างวันที่ที่มาจาก WHOIS",
+        "Tooltip: 'ดึงจาก WHOIS เมื่อ DD/MM/YYYY HH:MM' (Thai locale)"
+      ]
+    },
+    {
       "version": "1.9.16",
       "date": "2026-04-29",
       "title": "WHOIS: ตัด www. อัตโนมัติ + suggest registrable domain เมื่อพบ subdomain",

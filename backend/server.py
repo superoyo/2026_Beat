@@ -340,6 +340,15 @@ def init_db() -> None:
             for idx, r in enumerate(existing):
                 conn.execute("UPDATE teams SET display_order = ? WHERE id = ?", (idx, r["id"]))
 
+        # domains table — per-field WHOIS sync timestamps (v1.9.17)
+        # ใช้ track ว่า register_date / expire_date มาจาก WHOIS เมื่อใด
+        domain_cols = {
+            row["name"] for row in conn.execute("PRAGMA table_info(domains)").fetchall()
+        }
+        for col_name in ("register_whois_synced_at", "expire_whois_synced_at"):
+            if col_name not in domain_cols:
+                conn.execute(f"ALTER TABLE domains ADD COLUMN {col_name} TEXT")
+
         # credentials table — billing/lifecycle fields ย้ายมาจาก sites (v1.10)
         # หลังจากนี้ user จะ config ที่ระดับ credential แทน site
         cred_cols = {
@@ -3689,6 +3698,12 @@ class DomainIn(BaseModel):
     expire_date: Optional[str] = Field(None, max_length=40)
     provider: Optional[str] = Field(None, max_length=120)
     notes: Optional[str] = Field(None, max_length=2000)
+    # WHOIS sync flags — frontend sends:
+    #   True  = "this date is fresh from WHOIS" (set timestamp = now)
+    #   False = "user manually edited this date" (clear timestamp)
+    #   None  = "untouched" (don't change timestamp)
+    register_from_whois: Optional[bool] = None
+    expire_from_whois: Optional[bool] = None
 
 
 class DomainPatchIn(BaseModel):
@@ -3697,6 +3712,8 @@ class DomainPatchIn(BaseModel):
     expire_date: Optional[str] = Field(None, max_length=40)
     provider: Optional[str] = Field(None, max_length=120)
     notes: Optional[str] = Field(None, max_length=2000)
+    register_from_whois: Optional[bool] = None
+    expire_from_whois: Optional[bool] = None
 
 
 class DomainRenewalIn(BaseModel):
@@ -3714,7 +3731,8 @@ def list_domains_public(_auth: str = Depends(require_any_auth)) -> dict[str, Any
     """รายการ domains — เปิดให้ทุก logged-in user (สำหรับ Domain Name page ฝั่ง member)"""
     with db_conn() as conn:
         rows = conn.execute(
-            "SELECT id, name, register_date, expire_date, provider, notes, created_at "
+            "SELECT id, name, register_date, expire_date, provider, notes, created_at, "
+            "       register_whois_synced_at, expire_whois_synced_at "
             "FROM domains ORDER BY expire_date ASC NULLS LAST, name COLLATE NOCASE ASC"
         ).fetchall()
     return {"domains": [dict(r) for r in rows]}
@@ -3733,18 +3751,37 @@ def admin_list_domains(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
     return {"domains": [dict(r) for r in rows]}
 
 
+def _resolve_whois_sync_ts(flag: Optional[bool], now_iso: str) -> tuple[bool, Optional[str]]:
+    """Translate frontend flag → (should_update, value).
+       True  → ('update', now)   = WHOIS-applied just now
+       False → ('update', None)  = manually edited, clear timestamp
+       None  → ('skip',  None)   = leave existing timestamp alone
+    """
+    if flag is True:
+        return True, now_iso
+    if flag is False:
+        return True, None
+    return False, None
+
+
 @app.post("/api/admin/domains")
 def admin_create_domain(payload: DomainIn, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
     name = (payload.name or "").strip().lower()
     if not name:
         raise HTTPException(status_code=400, detail="ชื่อ domain ต้องไม่ว่าง")
+    now_iso = utc_now().isoformat()
+    # Translate WHOIS flags to timestamp values (default NULL on create)
+    reg_ts: Optional[str] = now_iso if payload.register_from_whois is True else None
+    exp_ts: Optional[str] = now_iso if payload.expire_from_whois is True else None
     with db_conn() as conn:
         try:
             cur = conn.execute(
-                "INSERT INTO domains(name, register_date, expire_date, provider, notes, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO domains(name, register_date, expire_date, provider, notes, created_at, "
+                "                    register_whois_synced_at, expire_whois_synced_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (name, payload.register_date or None, payload.expire_date or None,
-                 payload.provider or None, payload.notes or None, utc_now().isoformat()),
+                 payload.provider or None, payload.notes or None, now_iso,
+                 reg_ts, exp_ts),
             )
         except sqlite3.IntegrityError:
             raise HTTPException(status_code=409, detail=f"domain '{name}' มีอยู่แล้ว")
@@ -3771,6 +3808,14 @@ def admin_update_domain(
         updates["provider"] = payload.provider or None
     if payload.notes is not None:
         updates["notes"] = payload.notes or None
+    # WHOIS sync timestamps
+    now_iso = utc_now().isoformat()
+    reg_should, reg_val = _resolve_whois_sync_ts(payload.register_from_whois, now_iso)
+    exp_should, exp_val = _resolve_whois_sync_ts(payload.expire_from_whois, now_iso)
+    if reg_should:
+        updates["register_whois_synced_at"] = reg_val
+    if exp_should:
+        updates["expire_whois_synced_at"] = exp_val
     if not updates:
         raise HTTPException(status_code=400, detail="ไม่มีอะไรให้บันทึก")
     set_clause = ", ".join(f"{k} = ?" for k in updates)
@@ -3860,9 +3905,10 @@ def admin_renew_domain(
              payload.receipt_type or None,
              payload.cost_amount, payload.cost_currency or None, payload.note or None),
         )
-        # Update domain's expire_date
+        # Update domain's expire_date — and clear WHOIS sync timestamp
+        # (this date now comes from a renewal record, not from WHOIS)
         conn.execute(
-            "UPDATE domains SET expire_date = ? WHERE id = ?",
+            "UPDATE domains SET expire_date = ?, expire_whois_synced_at = NULL WHERE id = ?",
             (payload.new_expire_date, domain_id),
         )
     return {"ok": True, "id": cur.lastrowid, "new_expire_date": payload.new_expire_date}

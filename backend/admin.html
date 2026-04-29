@@ -3624,13 +3624,21 @@ function renderDomainsTable() {
                 daysLeftTxt = ` (เหลือ ${days} วัน)`;
               }
             }
+            const whoisIcon = (ts) => {
+              if (!ts) return '';
+              const t = new Date(ts);
+              const tip = isNaN(t.getTime())
+                ? `ดึงจาก WHOIS เมื่อ ${ts}`
+                : `ดึงจาก WHOIS เมื่อ ${t.toLocaleString('th-TH', {dateStyle:'medium', timeStyle:'short'})}`;
+              return `<span title="${escapeHtml(tip)}" style="display:inline-block;margin-left:4px;font-size:10px;color:#2563eb;cursor:help" aria-label="from WHOIS">🌐</span>`;
+            };
             return `
               <tr style="border-bottom:1px solid var(--border)">
                 <td style="padding:12px;font-weight:600;font-family:ui-monospace,Menlo,monospace">${escapeHtml(d.name)}</td>
                 <td style="padding:12px;color:var(--text-muted)">${escapeHtml(d.provider || '—')}</td>
-                <td style="padding:12px;font-size:12px;color:var(--text-muted)">${d.register_date ? escapeHtml(fmtDateThai(d.register_date)) : '—'}</td>
+                <td style="padding:12px;font-size:12px;color:var(--text-muted)">${d.register_date ? escapeHtml(fmtDateThai(d.register_date)) + whoisIcon(d.register_whois_synced_at) : '—'}</td>
                 <td style="padding:12px;font-size:12.5px">
-                  ${d.expire_date ? `<strong>${escapeHtml(fmtDateThai(d.expire_date))}</strong><span style="color:var(--text-muted);font-size:11px">${escapeHtml(daysLeftTxt)}</span>` : '<span style="color:var(--text-muted)">—</span>'}
+                  ${d.expire_date ? `<strong>${escapeHtml(fmtDateThai(d.expire_date))}</strong>${whoisIcon(d.expire_whois_synced_at)}<span style="color:var(--text-muted);font-size:11px">${escapeHtml(daysLeftTxt)}</span>` : '<span style="color:var(--text-muted)">—</span>'}
                 </td>
                 <td style="padding:12px">${statusBadge}</td>
               </tr>
@@ -4056,10 +4064,21 @@ function renderDomainConfigRow(d, today) {
   }
 
   // meta line — เอามารวมเป็นบรรทัดเดียว ขั้นด้วย ·
+  // Tiny WHOIS-source badge: 🌐 with tooltip showing when WHOIS was applied.
+  // Renders as inline icon next to the date, hoverable for the timestamp.
+  const whoisBadge = (syncedAtIso) => {
+    if (!syncedAtIso) return '';
+    const t = new Date(syncedAtIso);
+    const tooltip = isNaN(t.getTime())
+      ? `ดึงจาก WHOIS เมื่อ ${escapeHtml(syncedAtIso)}`
+      : `ดึงจาก WHOIS เมื่อ ${t.toLocaleString('th-TH', {dateStyle:'medium', timeStyle:'short'})}`;
+    return `<span title="${escapeHtml(tooltip)}" style="display:inline-block;margin-left:3px;font-size:10px;color:#2563eb;cursor:help;vertical-align:baseline" aria-label="from WHOIS">🌐</span>`;
+  };
+
   const metaParts = [];
   if (d.provider)         metaParts.push(`🏢 ${escapeHtml(d.provider)}`);
-  if (d.register_date)    metaParts.push(`📅 จด ${escapeHtml(fmtDateThai(d.register_date))}`);
-  if (d.expire_date)      metaParts.push(`⏰ หมด ${escapeHtml(fmtDateThai(d.expire_date))}`);
+  if (d.register_date)    metaParts.push(`📅 จด ${escapeHtml(fmtDateThai(d.register_date))}${whoisBadge(d.register_whois_synced_at)}`);
+  if (d.expire_date)      metaParts.push(`⏰ หมด ${escapeHtml(fmtDateThai(d.expire_date))}${whoisBadge(d.expire_whois_synced_at)}`);
   if (d.renewal_count > 0) metaParts.push(`🔄 ${d.renewal_count} ครั้ง`);
   if (d.notes) {
     const truncated = d.notes.length > 50 ? d.notes.slice(0, 47) + '…' : d.notes;
@@ -4578,8 +4597,26 @@ function renderDnsResult(data) {
   return { html, text: lines.join('\n') };
 }
 
+// State that persists across the lifetime of one open Domain edit modal.
+// - whoisApplied{Register,Expire}: the date string set by clicking "ยืนยันใส่ค่านี้"
+//   (null if WHOIS apply was never used in this session)
+// - initial{Register,Expire}: value when modal opened (used to detect manual edits)
+let _domainModalWhois = {
+  initialRegister: '',
+  initialExpire:   '',
+  whoisAppliedRegister: null,
+  whoisAppliedExpire:   null,
+};
+
 function showDomainModal(domain) {
   const isEdit = !!domain;
+  // Reset modal state — record initial values to detect manual edits later
+  _domainModalWhois = {
+    initialRegister: isEdit ? (domain.register_date || '').slice(0, 10) : '',
+    initialExpire:   isEdit ? (domain.expire_date || '').slice(0, 10) : '',
+    whoisAppliedRegister: null,
+    whoisAppliedExpire:   null,
+  };
   showModal({
     title: isEdit ? `แก้ไข Domain: ${domain.name}` : 'เพิ่ม Domain ใหม่',
     body: `
@@ -4620,6 +4657,29 @@ function showDomainModal(domain) {
         notes: $('dm-notes').value.trim() || null,
       };
       if (!data.name) throw new Error('กรอก domain name');
+
+      // Resolve WHOIS sync flags by comparing current value to states tracked above:
+      //   - field === whoisApplied (still has WHOIS value) → flag = true (set timestamp = now)
+      //   - field !== initial (user manually changed)     → flag = false (clear timestamp)
+      //   - field === initial (untouched)                 → omit flag (keep existing timestamp)
+      const flagFor = (current, initial, whoisApplied) => {
+        if (whoisApplied != null && current === whoisApplied) return true;
+        if (current !== initial) return false;
+        return undefined;   // untouched
+      };
+      const regFlag = flagFor(
+        data.register_date || '',
+        _domainModalWhois.initialRegister,
+        _domainModalWhois.whoisAppliedRegister,
+      );
+      const expFlag = flagFor(
+        data.expire_date || '',
+        _domainModalWhois.initialExpire,
+        _domainModalWhois.whoisAppliedExpire,
+      );
+      if (regFlag !== undefined) data.register_from_whois = regFlag;
+      if (expFlag !== undefined) data.expire_from_whois = expFlag;
+
       const url = isEdit ? `/api/admin/domains/${domain.id}` : '/api/admin/domains';
       await fetchJson(url, {
         method: isEdit ? 'PATCH' : 'POST',
@@ -4744,8 +4804,14 @@ async function fetchWhoisAndPreview() {
       result.innerHTML = '';
     });
     $('dm-whois-apply').addEventListener('click', () => {
-      if (createdDay) $('dm-register').value = createdDay;
-      if (expiresDay) $('dm-expire').value = expiresDay;
+      if (createdDay) {
+        $('dm-register').value = createdDay;
+        _domainModalWhois.whoisAppliedRegister = createdDay;
+      }
+      if (expiresDay) {
+        $('dm-expire').value = expiresDay;
+        _domainModalWhois.whoisAppliedExpire = expiresDay;
+      }
       // Auto-fill provider too if it was empty
       const providerInput = $('dm-provider');
       if (registrar && !providerInput.value.trim()) {
