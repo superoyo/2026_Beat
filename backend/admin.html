@@ -724,6 +724,7 @@
       <div class="nav-section">
         <a href="#/dashboard" data-route="dashboard">📊 Dashboard</a>
         <a href="#/platforms" data-route="platforms">🚀 Platforms</a>
+        <a href="#/domains" data-route="domains">🌐 Domain Names</a>
         <a href="#/extension" data-route="extension">🧩 Extension</a>
         <a href="#/account" data-route="account">👤 บัญชีของฉัน</a>
       </div>
@@ -738,6 +739,7 @@
         <a href="#/teams" data-route="teams">👨‍👩‍👧 Teams</a>
         <a href="#/access-requests" data-route="access-requests">🔔 Access Requests <span id="nav-req-badge" style="display:none;margin-left:6px;background:var(--critical);color:#fff;font-size:10.5px;padding:1px 7px;border-radius:999px;font-weight:700"></span></a>
         <a href="#/sites" data-route="sites">🛠 Config</a>
+        <a href="#/domains-config" data-route="domains-config">🌐 Domain Config</a>
         <a href="#/logs" data-route="logs">📜 Logs</a>
         <a href="#/security" data-route="security">🔑 API Key</a>
       </div>
@@ -808,15 +810,17 @@ async function fetchJson(path, opts = {}) {
 }
 
 // admin-only routes — member ห้ามเข้า (bounce ไป default)
-const ADMIN_ONLY_ROUTES = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests']);
+const ADMIN_ONLY_ROUTES = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config']);
 // menu items ที่ซ่อนใน sidebar สำหรับ member
 // (dashboard เห็นได้ทุกบทบาท — ใช้เป็นหน้าแรกของ member ด้วย)
-const HIDE_FROM_MEMBER_NAV = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests']);
+const HIDE_FROM_MEMBER_NAV = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config']);
 
 // ---------- routing ----------
 const routes = {
   'dashboard':        renderDashboardEmbed,
   'platforms':        renderPlatformsPage,
+  'domains':          renderDomainsPage,
+  'domains-config':   renderDomainsConfigPage,
   'sites':            renderSitesList,
   'members':          renderMembersPage,
   'teams':            renderTeamsPage,
@@ -3405,6 +3409,579 @@ async function refreshAccessRequestBadge() {
     }
   } catch {}
 }
+
+// ============== Domain Names (general) ==============
+const _DAYS_TH = ['อา','จ','อ','พ','พฤ','ศ','ส'];
+const _MONTHS_TH = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+
+let _domainsCache = [];
+let _calMonth = 0;   // 0-11
+let _calYear = 2026;
+
+async function renderDomainsPage() {
+  // init calendar to current month
+  const now = new Date();
+  _calMonth = now.getMonth();
+  _calYear = now.getFullYear();
+
+  $('main').innerHTML = `
+    <div class="page-head">
+      <h2 class="page-title">🌐 Domain Names</h2>
+      <span class="card-sub" id="d-count">—</span>
+    </div>
+    <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px">
+      Domain ทั้งหมดในระบบ — ปฏิทินด้านบน highlight วันที่ domain หมดอายุ
+    </div>
+
+    <!-- Calendar -->
+    <div class="card" style="display:block;margin-bottom:18px;padding:18px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap">
+        <button class="btn" id="cal-prev" style="font-size:13px;padding:6px 12px">← ก่อนหน้า</button>
+        <div style="display:flex;align-items:center;gap:8px">
+          <select id="cal-month" style="padding:7px 10px;font-size:13.5px;border:1px solid var(--border);border-radius:7px;background:var(--bg-input);color:var(--text);font-weight:600">
+            ${_MONTHS_TH.map((m, i) => `<option value="${i}">${m}</option>`).join('')}
+          </select>
+          <select id="cal-year" style="padding:7px 10px;font-size:13.5px;border:1px solid var(--border);border-radius:7px;background:var(--bg-input);color:var(--text);font-weight:600"></select>
+          <button class="btn" id="cal-today" style="font-size:11.5px;padding:6px 10px">วันนี้</button>
+        </div>
+        <button class="btn" id="cal-next" style="font-size:13px;padding:6px 12px">ถัดไป →</button>
+      </div>
+      <div id="cal-grid"></div>
+    </div>
+
+    <!-- Domains table -->
+    <div id="d-list">
+      <div class="empty">กำลังโหลด…</div>
+    </div>
+  `;
+
+  // populate year dropdown
+  const ySel = $('cal-year');
+  const curY = now.getFullYear();
+  for (let y = curY - 2; y <= curY + 5; y++) {
+    const opt = document.createElement('option');
+    opt.value = y;
+    opt.textContent = (y + 543);   // พ.ศ.
+    ySel.appendChild(opt);
+  }
+  $('cal-month').value = _calMonth;
+  $('cal-year').value = _calYear;
+
+  // wire calendar nav
+  $('cal-prev').addEventListener('click', () => {
+    _calMonth--;
+    if (_calMonth < 0) { _calMonth = 11; _calYear--; }
+    $('cal-month').value = _calMonth;
+    $('cal-year').value = _calYear;
+    renderCalendar();
+  });
+  $('cal-next').addEventListener('click', () => {
+    _calMonth++;
+    if (_calMonth > 11) { _calMonth = 0; _calYear++; }
+    $('cal-month').value = _calMonth;
+    $('cal-year').value = _calYear;
+    renderCalendar();
+  });
+  $('cal-today').addEventListener('click', () => {
+    const t = new Date();
+    _calMonth = t.getMonth();
+    _calYear = t.getFullYear();
+    $('cal-month').value = _calMonth;
+    $('cal-year').value = _calYear;
+    renderCalendar();
+  });
+  $('cal-month').addEventListener('change', (e) => { _calMonth = parseInt(e.target.value, 10); renderCalendar(); });
+  $('cal-year').addEventListener('change', (e) => { _calYear = parseInt(e.target.value, 10); renderCalendar(); });
+
+  await loadDomainsList();
+}
+
+async function loadDomainsList() {
+  let data;
+  try {
+    data = await fetchJson('/api/domains');
+  } catch (e) {
+    $('d-list').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  _domainsCache = data.domains || [];
+  $('d-count').textContent = `${_domainsCache.length} domain`;
+  renderCalendar();
+  renderDomainsTable();
+}
+
+function renderDomainsTable() {
+  const wrap = $('d-list');
+  if (_domainsCache.length === 0) {
+    wrap.innerHTML = `<div class="empty">ยังไม่มี domain — ${currentRole === 'admin' ? 'เพิ่มได้ที่ <strong>🌐 Domain Config</strong>' : 'แจ้ง admin ให้เพิ่ม'}</div>`;
+    return;
+  }
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  wrap.innerHTML = `
+    <div style="overflow-x:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-sm)">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="background:var(--bg-soft)">
+            <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em">Domain</th>
+            <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em">Provider</th>
+            <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em">วันที่จด</th>
+            <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em">วันหมดอายุ</th>
+            <th style="text-align:left;padding:12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em">สถานะ</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${_domainsCache.map(d => {
+            let statusBadge = '<span style="color:var(--text-muted)">—</span>';
+            let daysLeftTxt = '';
+            if (d.expire_date) {
+              const exp = new Date(d.expire_date);
+              const days = Math.floor((exp - today) / 86400000);
+              if (days < 0) {
+                statusBadge = '<span style="display:inline-flex;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(220,38,38,.10);color:var(--critical)">⛔ หมดอายุแล้ว</span>';
+                daysLeftTxt = ` (เกิน ${-days} วัน)`;
+              } else if (days <= 30) {
+                statusBadge = `<span style="display:inline-flex;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(245,158,11,.12);color:#92400e">⚠ ใกล้หมด</span>`;
+                daysLeftTxt = ` (เหลือ ${days} วัน)`;
+              } else if (days <= 90) {
+                statusBadge = '<span style="display:inline-flex;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(37,99,235,.10);color:var(--primary)">✓ ใช้งาน</span>';
+                daysLeftTxt = ` (เหลือ ${days} วัน)`;
+              } else {
+                statusBadge = '<span style="display:inline-flex;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(16,185,129,.12);color:var(--green)">✓ ใช้งาน</span>';
+                daysLeftTxt = ` (เหลือ ${days} วัน)`;
+              }
+            }
+            return `
+              <tr style="border-bottom:1px solid var(--border)">
+                <td style="padding:12px;font-weight:600;font-family:ui-monospace,Menlo,monospace">${escapeHtml(d.name)}</td>
+                <td style="padding:12px;color:var(--text-muted)">${escapeHtml(d.provider || '—')}</td>
+                <td style="padding:12px;font-size:12px;color:var(--text-muted)">${d.register_date ? escapeHtml(fmtDateThai(d.register_date)) : '—'}</td>
+                <td style="padding:12px;font-size:12.5px">
+                  ${d.expire_date ? `<strong>${escapeHtml(fmtDateThai(d.expire_date))}</strong><span style="color:var(--text-muted);font-size:11px">${escapeHtml(daysLeftTxt)}</span>` : '<span style="color:var(--text-muted)">—</span>'}
+                </td>
+                <td style="padding:12px">${statusBadge}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function fmtDateThai(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const monthShort = d.toLocaleDateString('th-TH', { month: 'short' });
+  return `${d.getDate()} ${monthShort} ${(d.getFullYear() + 543) % 100}`;
+}
+
+function renderCalendar() {
+  const grid = $('cal-grid');
+  if (!grid) return;
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
+  // หา domain ที่หมดอายุในเดือน-ปีนี้
+  const expiryByDay = {};   // {1: [domain, ...], 15: [...]}
+  for (const d of _domainsCache) {
+    if (!d.expire_date) continue;
+    const exp = new Date(d.expire_date);
+    if (exp.getMonth() === _calMonth && exp.getFullYear() === _calYear) {
+      const day = exp.getDate();
+      (expiryByDay[day] = expiryByDay[day] || []).push(d);
+    }
+  }
+
+  // คำนวณวันแรกของเดือน + จำนวนวัน
+  const first = new Date(_calYear, _calMonth, 1);
+  const startDow = first.getDay();   // 0=อาทิตย์
+  const daysInMonth = new Date(_calYear, _calMonth + 1, 0).getDate();
+
+  // Header (S M T W T F S)
+  let html = '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">';
+  for (const dow of _DAYS_TH) {
+    html += `<div style="text-align:center;padding:8px 4px;font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase">${dow}</div>`;
+  }
+  // empty cells before day 1
+  for (let i = 0; i < startDow; i++) {
+    html += '<div></div>';
+  }
+  // day cells
+  for (let day = 1; day <= daysInMonth; day++) {
+    const date = new Date(_calYear, _calMonth, day);
+    const isToday = date.getTime() === today.getTime();
+    const expiries = expiryByDay[day] || [];
+    const hasExp = expiries.length > 0;
+
+    let bg = 'var(--bg-card)';
+    let border = '1px solid var(--border)';
+    let dayColor = 'var(--text)';
+    let titleAttr = '';
+
+    if (hasExp) {
+      // หาว่าหมดอายุในอดีตหรืออนาคต
+      const days = Math.floor((date - today) / 86400000);
+      if (days < 0) {
+        bg = 'rgba(220,38,38,.12)';
+        border = '1.5px solid var(--critical)';
+        dayColor = 'var(--critical)';
+      } else if (days <= 30) {
+        bg = 'rgba(245,158,11,.15)';
+        border = '1.5px solid #f59e0b';
+        dayColor = '#92400e';
+      } else {
+        bg = 'rgba(16,185,129,.10)';
+        border = '1.5px solid #10b981';
+        dayColor = '#15803d';
+      }
+      titleAttr = `title="${escapeHtml(expiries.map(d => d.name).join('\n'))}"`;
+    }
+    if (isToday) {
+      border = '2px solid var(--primary)';
+    }
+
+    html += `
+      <div ${titleAttr} style="min-height:64px;padding:6px 7px;background:${bg};border:${border};border-radius:8px;display:flex;flex-direction:column;gap:3px;cursor:${hasExp ? 'help' : 'default'}">
+        <div style="font-size:13px;font-weight:${isToday || hasExp ? '700' : '500'};color:${dayColor}">${day}${isToday ? ' •' : ''}</div>
+        ${expiries.map(d => `<div style="font-size:9.5px;font-weight:600;color:${dayColor};background:rgba(255,255,255,.55);padding:1px 4px;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(d.name)}</div>`).join('')}
+      </div>
+    `;
+  }
+  html += '</div>';
+
+  // Legend ข้างล่าง
+  html += `
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:11.5px;color:var(--text-muted)">
+      <span><span style="display:inline-block;width:12px;height:12px;background:rgba(220,38,38,.20);border:1.5px solid var(--critical);border-radius:3px;vertical-align:middle;margin-right:4px"></span>หมดอายุแล้ว</span>
+      <span><span style="display:inline-block;width:12px;height:12px;background:rgba(245,158,11,.20);border:1.5px solid #f59e0b;border-radius:3px;vertical-align:middle;margin-right:4px"></span>ใกล้หมด (≤30 วัน)</span>
+      <span><span style="display:inline-block;width:12px;height:12px;background:rgba(16,185,129,.15);border:1.5px solid #10b981;border-radius:3px;vertical-align:middle;margin-right:4px"></span>หมดอายุ (>30 วัน)</span>
+      <span><span style="display:inline-block;width:12px;height:12px;background:var(--bg-card);border:2px solid var(--primary);border-radius:3px;vertical-align:middle;margin-right:4px"></span>วันนี้</span>
+    </div>
+  `;
+  grid.innerHTML = html;
+}
+
+
+// ============== Domain Config (admin only) ==============
+
+async function renderDomainsConfigPage() {
+  $('main').innerHTML = `
+    <div class="page-head">
+      <h2 class="page-title">🌐 Domain Config</h2>
+      <button class="btn primary" id="d-add-btn">+ เพิ่ม Domain</button>
+    </div>
+    <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px">
+      จัดการ domain — เพิ่ม, แก้ไข, ลบ + บันทึกการ renew พร้อมแนบใบเสร็จ
+    </div>
+    <div id="dc-list"><div class="empty">กำลังโหลด…</div></div>
+  `;
+  $('d-add-btn').addEventListener('click', () => showDomainModal(null));
+  await loadDomainsConfigList();
+}
+
+async function loadDomainsConfigList() {
+  let data;
+  try {
+    data = await fetchJson('/api/admin/domains');
+  } catch (e) {
+    $('dc-list').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  const list = data.domains || [];
+  if (list.length === 0) {
+    $('dc-list').innerHTML = `<div class="empty">ยังไม่มี domain — กด <strong>+ เพิ่ม Domain</strong></div>`;
+    return;
+  }
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  $('dc-list').innerHTML = list.map(d => {
+    let statusBadge = '<span style="color:var(--text-muted);font-size:11px">— ไม่มีวันหมดอายุ</span>';
+    if (d.expire_date) {
+      const exp = new Date(d.expire_date);
+      const days = Math.floor((exp - today) / 86400000);
+      if (days < 0) {
+        statusBadge = `<span style="display:inline-flex;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(220,38,38,.10);color:var(--critical)">⛔ หมดอายุ ${-days} วันแล้ว</span>`;
+      } else if (days <= 30) {
+        statusBadge = `<span style="display:inline-flex;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(245,158,11,.12);color:#92400e">⚠ เหลือ ${days} วัน</span>`;
+      } else {
+        statusBadge = `<span style="display:inline-flex;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(16,185,129,.12);color:var(--green)">✓ เหลือ ${days} วัน</span>`;
+      }
+    }
+    return `
+      <div class="card" style="display:block;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap">
+          <div style="flex:1;min-width:200px">
+            <div style="font-weight:700;font-size:15px;font-family:ui-monospace,Menlo,monospace;margin-bottom:4px">${escapeHtml(d.name)}</div>
+            <div style="font-size:12.5px;color:var(--text-muted);display:flex;gap:14px;flex-wrap:wrap">
+              ${d.provider ? `<span>🏢 ${escapeHtml(d.provider)}</span>` : ''}
+              ${d.register_date ? `<span>📅 จด ${escapeHtml(fmtDateThai(d.register_date))}</span>` : ''}
+              ${d.expire_date ? `<span>⏰ หมด ${escapeHtml(fmtDateThai(d.expire_date))}</span>` : ''}
+              ${d.renewal_count > 0 ? `<span>🔄 renew ${d.renewal_count} ครั้ง</span>` : ''}
+            </div>
+            ${d.notes ? `<div style="margin-top:6px;font-size:12px;color:var(--text-muted);font-style:italic">📝 ${escapeHtml(d.notes)}</div>` : ''}
+            <div style="margin-top:8px">${statusBadge}</div>
+          </div>
+          <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
+            <button class="btn primary" data-d-act="renew" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" data-d-expire="${escapeHtml(d.expire_date || '')}" style="font-size:12px;padding:6px 12px">🔄 Renew</button>
+            <button class="btn" data-d-act="history" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" style="font-size:12px;padding:6px 12px">📜 ประวัติ</button>
+            <button class="btn" data-d-act="edit" data-d-id="${d.id}" style="font-size:12px;padding:6px 12px">✏️ แก้ไข</button>
+            <button class="btn danger" data-d-act="delete" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" style="font-size:12px;padding:6px 12px">🗑 ลบ</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  // wire actions
+  document.querySelectorAll('button[data-d-act]').forEach(btn => {
+    btn.addEventListener('click', () => handleDomainAction(btn, list));
+  });
+}
+
+async function handleDomainAction(btn, list) {
+  const id = parseInt(btn.dataset.dId, 10);
+  const act = btn.dataset.dAct;
+  const name = btn.dataset.dName;
+
+  if (act === 'edit') {
+    const d = list.find(x => x.id === id);
+    if (d) showDomainModal(d);
+  } else if (act === 'delete') {
+    if (!confirm(`ลบ domain "${name}"?\n\n(ประวัติการ renew ทั้งหมดจะถูกลบด้วย)`)) return;
+    try {
+      await fetchJson('/api/admin/domains/' + id, { method: 'DELETE' });
+      await loadDomainsConfigList();
+    } catch (e) { alert('ลบไม่สำเร็จ: ' + e.message); }
+  } else if (act === 'renew') {
+    const expire = btn.dataset.dExpire || '';
+    showRenewModal(id, name, expire);
+  } else if (act === 'history') {
+    showRenewalHistoryModal(id, name);
+  }
+}
+
+function showDomainModal(domain) {
+  const isEdit = !!domain;
+  showModal({
+    title: isEdit ? `แก้ไข Domain: ${domain.name}` : 'เพิ่ม Domain ใหม่',
+    body: `
+      <div class="field">
+        <label>Domain name *</label>
+        <input id="dm-name" type="text" value="${isEdit ? escapeHtml(domain.name) : ''}" placeholder="เช่น example.com" />
+      </div>
+      <div class="field">
+        <label>Provider (ผู้ให้บริการ)</label>
+        <input id="dm-provider" type="text" value="${isEdit ? escapeHtml(domain.provider || '') : ''}" placeholder="เช่น GoDaddy, Namecheap, Cloudflare" />
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="field">
+          <label>วันที่จดทะเบียน</label>
+          <input id="dm-register" type="date" value="${isEdit ? escapeHtml((domain.register_date || '').slice(0, 10)) : ''}" />
+        </div>
+        <div class="field">
+          <label>วันหมดอายุ</label>
+          <input id="dm-expire" type="date" value="${isEdit ? escapeHtml((domain.expire_date || '').slice(0, 10)) : ''}" />
+        </div>
+      </div>
+      <div class="field">
+        <label>หมายเหตุ</label>
+        <textarea id="dm-notes" rows="2" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical">${isEdit ? escapeHtml(domain.notes || '') : ''}</textarea>
+      </div>
+    `,
+    onSubmit: async () => {
+      const data = {
+        name: $('dm-name').value.trim(),
+        provider: $('dm-provider').value.trim() || null,
+        register_date: $('dm-register').value || null,
+        expire_date: $('dm-expire').value || null,
+        notes: $('dm-notes').value.trim() || null,
+      };
+      if (!data.name) throw new Error('กรอก domain name');
+      const url = isEdit ? `/api/admin/domains/${domain.id}` : '/api/admin/domains';
+      await fetchJson(url, {
+        method: isEdit ? 'PATCH' : 'POST',
+        body: JSON.stringify(data),
+      });
+      await loadDomainsConfigList();
+    },
+  });
+}
+
+function showRenewModal(domainId, domainName, currentExpire) {
+  showModal({
+    title: `🔄 Renew: ${domainName}`,
+    size: 'wide',
+    body: `
+      <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:12.5px">
+        บันทึกการ renew — กรอกวันหมดอายุใหม่ พร้อมแนบใบเสร็จ (PDF/รูปภาพ)
+      </div>
+      <div class="field-grid-2">
+        <div class="field">
+          <label>วันหมดอายุเดิม</label>
+          <input type="text" value="${escapeHtml(currentExpire || '—')}" disabled style="background:var(--bg-soft);color:var(--text-muted)" />
+        </div>
+        <div class="field">
+          <label>วันหมดอายุใหม่ *</label>
+          <input id="rm-expire" type="date" required />
+        </div>
+        <div class="field">
+          <label>ค่าใช้จ่าย</label>
+          <input id="rm-cost" type="number" min="0" step="0.01" placeholder="เช่น 350" />
+        </div>
+        <div class="field">
+          <label>สกุลเงิน</label>
+          <select id="rm-currency" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
+            ${['THB','USD','EUR','GBP'].map(c => `<option value="${c}" ${c === 'THB' ? 'selected' : ''}>${c}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field field-span-2">
+          <label>ใบเสร็จ (PDF / รูป) <span style="color:var(--text-muted);font-weight:400">— ไม่บังคับ, สูงสุด 2 MB</span></label>
+          <input id="rm-receipt" type="file" accept="image/*,application/pdf" style="width:100%;padding:8px;font-size:13px;border:1px solid var(--border);border-radius:7px;background:var(--bg-input)" />
+          <div id="rm-receipt-preview" class="hint" style="margin-top:6px;font-size:11.5px;color:var(--text-muted)"></div>
+        </div>
+        <div class="field field-span-2">
+          <label>หมายเหตุ</label>
+          <textarea id="rm-note" rows="2" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical"></textarea>
+        </div>
+      </div>
+    `,
+    onSubmit: async () => {
+      const newExpire = $('rm-expire').value;
+      if (!newExpire) throw new Error('กรอกวันหมดอายุใหม่');
+      const file = $('rm-receipt').files[0];
+      let receiptData = null, receiptName = null, receiptType = null;
+      if (file) {
+        if (file.size > 2_000_000) throw new Error('ไฟล์ใหญ่เกิน 2 MB');
+        receiptData = await new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result);
+          r.onerror = reject;
+          r.readAsDataURL(file);
+        });
+        receiptName = file.name;
+        receiptType = file.type;
+      }
+      const cost = $('rm-cost').value;
+      await fetchJson(`/api/admin/domains/${domainId}/renew`, {
+        method: 'POST',
+        body: JSON.stringify({
+          new_expire_date: newExpire,
+          receipt_data: receiptData,
+          receipt_name: receiptName,
+          receipt_type: receiptType,
+          cost_amount: cost ? parseFloat(cost) : null,
+          cost_currency: $('rm-currency').value || 'THB',
+          note: $('rm-note').value.trim() || null,
+        }),
+      });
+      await loadDomainsConfigList();
+    },
+  });
+  // file preview
+  setTimeout(() => {
+    const f = $('rm-receipt');
+    const preview = $('rm-receipt-preview');
+    if (f) f.addEventListener('change', () => {
+      const file = f.files[0];
+      if (file) {
+        const sizeKB = Math.round(file.size / 1024);
+        preview.innerHTML = `📎 ${escapeHtml(file.name)} (${sizeKB} KB)`;
+        preview.style.color = file.size > 2_000_000 ? 'var(--critical)' : 'var(--green)';
+      } else {
+        preview.textContent = '';
+      }
+    });
+  }, 0);
+}
+
+async function showRenewalHistoryModal(domainId, domainName) {
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal modal-wide">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <h3 style="margin:0;font-size:17px;font-weight:700">📜 ประวัติการ Renew: ${escapeHtml(domainName)}</h3>
+        <button class="btn" id="rh-close" style="font-size:13px;padding:6px 14px">✕ ปิด</button>
+      </div>
+      <div id="rh-list"><div class="empty">กำลังโหลด…</div></div>
+    </div>
+  `;
+  document.body.appendChild(bg);
+  const close = () => bg.remove();
+  bg.querySelector('#rh-close').addEventListener('click', close);
+  bg.addEventListener('click', e => { if (e.target === bg) close(); });
+
+  let data;
+  try {
+    data = await fetchJson(`/api/admin/domains/${domainId}/renewals`);
+  } catch (e) {
+    bg.querySelector('#rh-list').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  const renewals = data.renewals || [];
+  if (renewals.length === 0) {
+    bg.querySelector('#rh-list').innerHTML = `<div class="empty" style="padding:30px">ยังไม่มีประวัติการ renew</div>`;
+    return;
+  }
+  bg.querySelector('#rh-list').innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow-y:auto">
+      ${renewals.map(r => {
+        const renewedDate = new Date(r.renewed_at).toLocaleString('th-TH', {
+          day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        });
+        return `
+          <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:12px 14px">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+              <div style="flex:1;min-width:200px">
+                <div style="font-weight:600;font-size:13.5px">🔄 ${escapeHtml(renewedDate)}</div>
+                <div style="font-size:12.5px;color:var(--text-muted);margin-top:3px">
+                  ${r.old_expire_date ? `จาก ${escapeHtml(fmtDateThai(r.old_expire_date))} → ` : ''}<strong>${escapeHtml(fmtDateThai(r.new_expire_date))}</strong>
+                </div>
+                ${r.cost_amount != null ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">💵 ${r.cost_amount.toLocaleString('th-TH')} ${escapeHtml(r.cost_currency || 'THB')}</div>` : ''}
+                ${r.note ? `<div style="font-size:12px;color:var(--text-muted);margin-top:4px;font-style:italic">📝 ${escapeHtml(r.note)}</div>` : ''}
+              </div>
+              <div style="display:flex;gap:6px;flex-shrink:0">
+                ${r.has_receipt ? `<button class="btn" data-r-receipt="${r.id}" data-r-name="${escapeHtml(r.receipt_name || 'receipt')}" style="font-size:11.5px;padding:5px 10px">📎 ${escapeHtml(r.receipt_name || 'ใบเสร็จ')}</button>` : ''}
+                <button class="btn danger" data-r-delete="${r.id}" style="font-size:11.5px;padding:5px 10px">🗑</button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+  // wire receipt + delete
+  bg.querySelectorAll('button[data-r-receipt]').forEach(b => {
+    b.addEventListener('click', async () => {
+      const rid = parseInt(b.dataset.rReceipt, 10);
+      try {
+        const r = await fetchJson(`/api/admin/domains/renewals/${rid}/receipt`);
+        // เปิด data URL ใน tab ใหม่
+        const w = window.open('', '_blank');
+        if (w) {
+          if ((r.receipt_type || '').startsWith('image/')) {
+            w.document.write(`<title>${escapeHtml(r.receipt_name || 'receipt')}</title><body style="margin:0;background:#0f172a;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="${r.receipt_data}" style="max-width:100%;max-height:100vh"/></body>`);
+          } else {
+            w.location.href = r.receipt_data;
+          }
+        }
+      } catch (e) { alert('ดึงไม่สำเร็จ: ' + e.message); }
+    });
+  });
+  bg.querySelectorAll('button[data-r-delete]').forEach(b => {
+    b.addEventListener('click', async () => {
+      if (!confirm('ลบ renewal record นี้?\n\n(หมายเหตุ: expire_date ของ domain จะไม่ถูก rollback ต้องไปแก้เอง)')) return;
+      const rid = parseInt(b.dataset.rDelete, 10);
+      try {
+        await fetchJson(`/api/admin/domains/renewals/${rid}`, { method: 'DELETE' });
+        showRenewalHistoryModal(domainId, domainName);   // reload modal
+        bg.remove();
+      } catch (e) { alert('ลบไม่สำเร็จ: ' + e.message); }
+    });
+  });
+}
+
 
 async function renderLogsPage() {
   $('main').innerHTML = `

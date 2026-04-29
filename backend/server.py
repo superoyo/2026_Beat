@@ -235,6 +235,32 @@ def init_db() -> None:
                 PRIMARY KEY (credential_id, member_id)
             );
 
+            -- v1.18 — Domain name tracking (general เห็นได้, admin จัดการ)
+            CREATE TABLE IF NOT EXISTS domains (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                name            TEXT NOT NULL UNIQUE,
+                register_date   TEXT,                -- ISO YYYY-MM-DD
+                expire_date     TEXT,                -- ISO YYYY-MM-DD
+                provider        TEXT,                -- e.g., GoDaddy, Namecheap
+                notes           TEXT,
+                created_at      TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS domain_renewals (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                domain_id        INTEGER NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
+                renewed_at       TEXT NOT NULL,
+                new_expire_date  TEXT NOT NULL,
+                old_expire_date  TEXT,
+                receipt_data     TEXT,               -- base64 (PDF/image)
+                receipt_name     TEXT,               -- original filename
+                receipt_type     TEXT,               -- MIME type
+                cost_amount      REAL,
+                cost_currency    TEXT,
+                note             TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_domains_expire ON domains(expire_date);
+            CREATE INDEX IF NOT EXISTS idx_domain_renewals_domain ON domain_renewals(domain_id);
+
             -- v1.13 — ขอสิทธิ์เข้าถึง site (member request → admin accept/reject)
             CREATE TABLE IF NOT EXISTS access_requests (
                 id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3648,6 +3674,208 @@ def member_logout(
     if fct_member_session:
         destroy_member_session(fct_member_session)
     response.delete_cookie(MEMBER_COOKIE, path="/")
+    return {"ok": True}
+
+
+# ===========================================================================
+# Domain name tracking (v1.18)
+# ===========================================================================
+
+class DomainIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    register_date: Optional[str] = Field(None, max_length=40)
+    expire_date: Optional[str] = Field(None, max_length=40)
+    provider: Optional[str] = Field(None, max_length=120)
+    notes: Optional[str] = Field(None, max_length=2000)
+
+
+class DomainPatchIn(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    register_date: Optional[str] = Field(None, max_length=40)
+    expire_date: Optional[str] = Field(None, max_length=40)
+    provider: Optional[str] = Field(None, max_length=120)
+    notes: Optional[str] = Field(None, max_length=2000)
+
+
+class DomainRenewalIn(BaseModel):
+    new_expire_date: str = Field(..., max_length=40)   # ISO YYYY-MM-DD (required)
+    receipt_data: Optional[str] = Field(None, max_length=3_500_000)   # ~2.5 MB base64
+    receipt_name: Optional[str] = Field(None, max_length=200)
+    receipt_type: Optional[str] = Field(None, max_length=120)
+    cost_amount: Optional[float] = Field(None, ge=0)
+    cost_currency: Optional[str] = Field(None, max_length=10)
+    note: Optional[str] = Field(None, max_length=2000)
+
+
+@app.get("/api/domains")
+def list_domains_public(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
+    """รายการ domains — เปิดให้ทุก logged-in user (สำหรับ Domain Name page ฝั่ง member)"""
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, name, register_date, expire_date, provider, notes, created_at "
+            "FROM domains ORDER BY expire_date ASC NULLS LAST, name COLLATE NOCASE ASC"
+        ).fetchall()
+    return {"domains": [dict(r) for r in rows]}
+
+
+@app.get("/api/admin/domains")
+def admin_list_domains(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    """รายการ domains พร้อม renewal count"""
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT d.*, "
+            "  (SELECT COUNT(*) FROM domain_renewals r WHERE r.domain_id = d.id) AS renewal_count, "
+            "  (SELECT MAX(renewed_at) FROM domain_renewals r WHERE r.domain_id = d.id) AS last_renewed_at "
+            "FROM domains d ORDER BY d.expire_date ASC NULLS LAST, d.name COLLATE NOCASE ASC"
+        ).fetchall()
+    return {"domains": [dict(r) for r in rows]}
+
+
+@app.post("/api/admin/domains")
+def admin_create_domain(payload: DomainIn, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    name = (payload.name or "").strip().lower()
+    if not name:
+        raise HTTPException(status_code=400, detail="ชื่อ domain ต้องไม่ว่าง")
+    with db_conn() as conn:
+        try:
+            cur = conn.execute(
+                "INSERT INTO domains(name, register_date, expire_date, provider, notes, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (name, payload.register_date or None, payload.expire_date or None,
+                 payload.provider or None, payload.notes or None, utc_now().isoformat()),
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail=f"domain '{name}' มีอยู่แล้ว")
+    return {"ok": True, "id": cur.lastrowid}
+
+
+@app.patch("/api/admin/domains/{domain_id}")
+def admin_update_domain(
+    domain_id: int,
+    payload: DomainPatchIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    updates: dict[str, Any] = {}
+    if payload.name is not None:
+        v = payload.name.strip().lower()
+        if not v:
+            raise HTTPException(status_code=400, detail="ชื่อ domain ต้องไม่ว่าง")
+        updates["name"] = v
+    if payload.register_date is not None:
+        updates["register_date"] = payload.register_date or None
+    if payload.expire_date is not None:
+        updates["expire_date"] = payload.expire_date or None
+    if payload.provider is not None:
+        updates["provider"] = payload.provider or None
+    if payload.notes is not None:
+        updates["notes"] = payload.notes or None
+    if not updates:
+        raise HTTPException(status_code=400, detail="ไม่มีอะไรให้บันทึก")
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [domain_id]
+    with db_conn() as conn:
+        try:
+            cur = conn.execute(f"UPDATE domains SET {set_clause} WHERE id = ?", values)
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail="ชื่อ domain ซ้ำ")
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="domain not found")
+    return {"ok": True}
+
+
+@app.delete("/api/admin/domains/{domain_id}")
+def admin_delete_domain(domain_id: int, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    with db_conn() as conn:
+        cur = conn.execute("DELETE FROM domains WHERE id = ?", (domain_id,))
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="domain not found")
+    return {"ok": True}
+
+
+@app.get("/api/admin/domains/{domain_id}/renewals")
+def admin_list_renewals(
+    domain_id: int,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """ประวัติการ renew ของ domain นี้ — ไม่ส่ง receipt_data เพื่อประหยัด bandwidth"""
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, domain_id, renewed_at, new_expire_date, old_expire_date, "
+            "       receipt_name, receipt_type, "
+            "       (receipt_data IS NOT NULL) AS has_receipt, "
+            "       cost_amount, cost_currency, note "
+            "FROM domain_renewals WHERE domain_id = ? "
+            "ORDER BY renewed_at DESC",
+            (domain_id,),
+        ).fetchall()
+    return {"renewals": [dict(r) for r in rows]}
+
+
+@app.get("/api/admin/domains/renewals/{renewal_id}/receipt")
+def admin_get_renewal_receipt(
+    renewal_id: int,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """ส่ง receipt_data ของ renewal เฉพาะตอนคลิกดู (lazy load)"""
+    with db_conn() as conn:
+        row = conn.execute(
+            "SELECT receipt_data, receipt_name, receipt_type FROM domain_renewals WHERE id = ?",
+            (renewal_id,),
+        ).fetchone()
+    if not row or not row["receipt_data"]:
+        raise HTTPException(status_code=404, detail="receipt not found")
+    return {
+        "receipt_data": row["receipt_data"],
+        "receipt_name": row["receipt_name"],
+        "receipt_type": row["receipt_type"],
+    }
+
+
+@app.post("/api/admin/domains/{domain_id}/renew")
+def admin_renew_domain(
+    domain_id: int,
+    payload: DomainRenewalIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """Renew domain — บันทึก renewal record + อัพเดท expire_date ใน domain"""
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        domain = conn.execute(
+            "SELECT id, expire_date FROM domains WHERE id = ?", (domain_id,)
+        ).fetchone()
+        if not domain:
+            raise HTTPException(status_code=404, detail="domain not found")
+        old_expire = domain["expire_date"]
+        # Insert renewal record
+        cur = conn.execute(
+            "INSERT INTO domain_renewals("
+            "  domain_id, renewed_at, new_expire_date, old_expire_date,"
+            "  receipt_data, receipt_name, receipt_type,"
+            "  cost_amount, cost_currency, note"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (domain_id, now, payload.new_expire_date, old_expire,
+             payload.receipt_data or None, payload.receipt_name or None,
+             payload.receipt_type or None,
+             payload.cost_amount, payload.cost_currency or None, payload.note or None),
+        )
+        # Update domain's expire_date
+        conn.execute(
+            "UPDATE domains SET expire_date = ? WHERE id = ?",
+            (payload.new_expire_date, domain_id),
+        )
+    return {"ok": True, "id": cur.lastrowid, "new_expire_date": payload.new_expire_date}
+
+
+@app.delete("/api/admin/domains/renewals/{renewal_id}")
+def admin_delete_renewal(
+    renewal_id: int,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """ลบ renewal record (ไม่ rollback expire_date — admin ต้องไปแก้เอง)"""
+    with db_conn() as conn:
+        cur = conn.execute("DELETE FROM domain_renewals WHERE id = ?", (renewal_id,))
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="renewal not found")
     return {"ok": True}
 
 
