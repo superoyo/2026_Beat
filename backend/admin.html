@@ -3910,18 +3910,59 @@ function wireCalHeaderClicks() {
 
 // ============== Domain Config (admin only) ==============
 
+// Domain Config — state for search + sort (persists across refreshes within session)
+let _dcCache = [];
+let _dcSearch = '';
+let _dcSort = 'expire-asc';   // expire-asc | name-asc | name-desc | created-desc
+
 async function renderDomainsConfigPage() {
   $('main').innerHTML = `
     <div class="page-head">
       <h2 class="page-title">🌐 Domain Config</h2>
       <button class="btn primary" id="d-add-btn">+ เพิ่ม Domain</button>
     </div>
-    <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px">
+    <div class="hint" style="margin-bottom:10px;color:var(--text-muted);font-size:13px">
       จัดการ domain — เพิ่ม, แก้ไข, ลบ + บันทึกการ renew พร้อมแนบใบเสร็จ
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+      <div style="flex:1;min-width:240px;position:relative">
+        <input id="dc-search" type="text" placeholder="🔍 ค้นหาชื่อ domain / provider / note..." autocomplete="off"
+          style="width:100%;padding:8px 32px 8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--bg-card);color:var(--text);box-sizing:border-box" />
+        <button id="dc-search-clear" type="button" title="ล้างการค้นหา"
+          style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;color:var(--text-muted);cursor:pointer;font-size:16px;padding:4px 8px">✕</button>
+      </div>
+      <select id="dc-sort" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg-card);color:var(--text);font-family:inherit;cursor:pointer">
+        <option value="expire-asc">⏰ ใกล้หมดอายุก่อน</option>
+        <option value="name-asc">🔤 ชื่อ A → Z</option>
+        <option value="name-desc">🔤 ชื่อ Z → A</option>
+        <option value="created-desc">📅 จดทะเบียนล่าสุด</option>
+      </select>
+      <span id="dc-count" style="color:var(--text-muted);font-size:12.5px;font-weight:600;white-space:nowrap">— รายการ</span>
     </div>
     <div id="dc-list"><div class="empty">กำลังโหลด…</div></div>
   `;
   $('d-add-btn').addEventListener('click', () => showDomainModal(null));
+  // restore previous search/sort state
+  $('dc-search').value = _dcSearch;
+  $('dc-sort').value = _dcSort;
+  $('dc-search-clear').style.display = _dcSearch ? '' : 'none';
+  // wire toolbar
+  $('dc-search').addEventListener('input', (e) => {
+    _dcSearch = e.target.value;
+    $('dc-search-clear').style.display = _dcSearch ? '' : 'none';
+    renderDomainsConfigRows();
+  });
+  $('dc-search-clear').addEventListener('click', () => {
+    _dcSearch = '';
+    $('dc-search').value = '';
+    $('dc-search-clear').style.display = 'none';
+    $('dc-search').focus();
+    renderDomainsConfigRows();
+  });
+  $('dc-sort').addEventListener('change', (e) => {
+    _dcSort = e.target.value;
+    renderDomainsConfigRows();
+  });
   await loadDomainsConfigList();
 }
 
@@ -3930,58 +3971,120 @@ async function loadDomainsConfigList() {
   try {
     data = await fetchJson('/api/admin/domains');
   } catch (e) {
-    $('dc-list').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+    if ($('dc-list')) $('dc-list').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
     return;
   }
-  const list = data.domains || [];
-  if (list.length === 0) {
-    $('dc-list').innerHTML = `<div class="empty">ยังไม่มี domain — กด <strong>+ เพิ่ม Domain</strong></div>`;
+  _dcCache = data.domains || [];
+  renderDomainsConfigRows();
+}
+
+function renderDomainsConfigRows() {
+  const listEl = $('dc-list');
+  if (!listEl) return;
+  const countEl = $('dc-count');
+
+  // empty (no domains at all)
+  if (_dcCache.length === 0) {
+    listEl.innerHTML = `<div class="empty">ยังไม่มี domain — กด <strong>+ เพิ่ม Domain</strong></div>`;
+    if (countEl) countEl.textContent = '0 รายการ';
     return;
   }
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  $('dc-list').innerHTML = list.map(d => {
-    let statusBadge = '<span style="color:var(--text-muted);font-size:11px">— ไม่มีวันหมดอายุ</span>';
-    if (d.expire_date) {
-      const exp = new Date(d.expire_date);
-      const days = Math.floor((exp - today) / 86400000);
-      if (days < 0) {
-        statusBadge = `<span style="display:inline-flex;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(220,38,38,.10);color:var(--critical)">⛔ หมดอายุ ${-days} วันแล้ว</span>`;
-      } else if (days <= 30) {
-        statusBadge = `<span style="display:inline-flex;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(245,158,11,.12);color:#92400e">⚠ เหลือ ${days} วัน</span>`;
-      } else {
-        statusBadge = `<span style="display:inline-flex;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(16,185,129,.12);color:var(--green)">✓ เหลือ ${days} วัน</span>`;
-      }
-    }
-    return `
-      <div class="card" style="display:block;margin-bottom:10px">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap">
-          <div style="flex:1;min-width:200px">
-            <div style="font-weight:700;font-size:15px;font-family:ui-monospace,Menlo,monospace;margin-bottom:4px">${escapeHtml(d.name)}</div>
-            <div style="font-size:12.5px;color:var(--text-muted);display:flex;gap:14px;flex-wrap:wrap">
-              ${d.provider ? `<span>🏢 ${escapeHtml(d.provider)}</span>` : ''}
-              ${d.register_date ? `<span>📅 จด ${escapeHtml(fmtDateThai(d.register_date))}</span>` : ''}
-              ${d.expire_date ? `<span>⏰ หมด ${escapeHtml(fmtDateThai(d.expire_date))}</span>` : ''}
-              ${d.renewal_count > 0 ? `<span>🔄 renew ${d.renewal_count} ครั้ง</span>` : ''}
-            </div>
-            ${d.notes ? `<div style="margin-top:6px;font-size:12px;color:var(--text-muted);font-style:italic">📝 ${escapeHtml(d.notes)}</div>` : ''}
-            <div style="margin-top:8px">${statusBadge}</div>
-          </div>
-          <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
-            <button class="btn" data-d-act="lookup" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" style="font-size:12px;padding:6px 12px" title="WHOIS / nslookup / DNS records">🔍 Lookup</button>
-            <button class="btn primary" data-d-act="renew" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" data-d-expire="${escapeHtml(d.expire_date || '')}" style="font-size:12px;padding:6px 12px">🔄 Renew</button>
-            <button class="btn" data-d-act="history" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" style="font-size:12px;padding:6px 12px">📜 ประวัติ</button>
-            <button class="btn" data-d-act="edit" data-d-id="${d.id}" style="font-size:12px;padding:6px 12px">✏️ แก้ไข</button>
-            <button class="btn danger" data-d-act="delete" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" style="font-size:12px;padding:6px 12px">🗑 ลบ</button>
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
-  // wire actions
-  document.querySelectorAll('button[data-d-act]').forEach(btn => {
-    btn.addEventListener('click', () => handleDomainAction(btn, list));
+
+  // filter
+  const q = _dcSearch.trim().toLowerCase();
+  let list = !q ? _dcCache.slice() : _dcCache.filter(d => {
+    return (d.name || '').toLowerCase().includes(q)
+        || (d.provider || '').toLowerCase().includes(q)
+        || (d.notes || '').toLowerCase().includes(q);
   });
+
+  // sort
+  const FAR = 9e15;
+  list.sort((a, b) => {
+    if (_dcSort === 'name-asc')   return (a.name || '').localeCompare(b.name || '', 'th');
+    if (_dcSort === 'name-desc')  return (b.name || '').localeCompare(a.name || '', 'th');
+    if (_dcSort === 'created-desc') {
+      const ad = a.register_date ? new Date(a.register_date).getTime() : -FAR;
+      const bd = b.register_date ? new Date(b.register_date).getTime() : -FAR;
+      if (bd !== ad) return bd - ad;
+      return (a.name || '').localeCompare(b.name || '', 'th');
+    }
+    // default: expire-asc — earliest expire first; null expire goes last
+    const ae = a.expire_date ? new Date(a.expire_date).getTime() : FAR;
+    const be = b.expire_date ? new Date(b.expire_date).getTime() : FAR;
+    if (ae !== be) return ae - be;
+    return (a.name || '').localeCompare(b.name || '', 'th');
+  });
+
+  // count
+  if (countEl) {
+    countEl.textContent = q
+      ? `${list.length} / ${_dcCache.length} รายการ`
+      : `${_dcCache.length} รายการ`;
+  }
+
+  // empty after filter
+  if (list.length === 0) {
+    listEl.innerHTML = `<div class="empty">ไม่พบ domain ที่ตรงกับ "<strong>${escapeHtml(_dcSearch)}</strong>"</div>`;
+    return;
+  }
+
+  // render compact 2-line rows
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  listEl.innerHTML = list.map(d => renderDomainConfigRow(d, today)).join('');
+
+  // wire actions (use _dcCache so handler can find by id even if filtered)
+  listEl.querySelectorAll('button[data-d-act]').forEach(btn => {
+    btn.addEventListener('click', () => handleDomainAction(btn, _dcCache));
+  });
+}
+
+function renderDomainConfigRow(d, today) {
+  // status badge
+  let statusBadge = '<span style="color:var(--text-muted);font-size:11px">— ไม่มีวันหมดอายุ</span>';
+  if (d.expire_date) {
+    const exp = new Date(d.expire_date);
+    const days = Math.floor((exp - today) / 86400000);
+    if (days < 0) {
+      statusBadge = `<span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(220,38,38,.10);color:var(--critical)">⛔ หมด ${-days} วันแล้ว</span>`;
+    } else if (days <= 30) {
+      statusBadge = `<span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(245,158,11,.12);color:#92400e">⚠ เหลือ ${days} วัน</span>`;
+    } else {
+      statusBadge = `<span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(16,185,129,.12);color:var(--green)">✓ เหลือ ${days} วัน</span>`;
+    }
+  }
+
+  // meta line — เอามารวมเป็นบรรทัดเดียว ขั้นด้วย ·
+  const metaParts = [];
+  if (d.provider)         metaParts.push(`🏢 ${escapeHtml(d.provider)}`);
+  if (d.register_date)    metaParts.push(`📅 จด ${escapeHtml(fmtDateThai(d.register_date))}`);
+  if (d.expire_date)      metaParts.push(`⏰ หมด ${escapeHtml(fmtDateThai(d.expire_date))}`);
+  if (d.renewal_count > 0) metaParts.push(`🔄 ${d.renewal_count} ครั้ง`);
+  if (d.notes) {
+    const truncated = d.notes.length > 50 ? d.notes.slice(0, 47) + '…' : d.notes;
+    metaParts.push(`<span title="${escapeHtml(d.notes)}">📝 ${escapeHtml(truncated)}</span>`);
+  }
+  const metaLine = metaParts.length ? metaParts.join(' <span style="color:var(--border)">·</span> ') : '<span style="color:var(--text-muted);font-style:italic">— ไม่มีข้อมูลเพิ่มเติม</span>';
+
+  return `
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px;padding:10px 14px">
+      <div style="flex:1;min-width:260px;display:flex;flex-direction:column;gap:3px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-weight:700;font-size:14.5px;font-family:ui-monospace,Menlo,monospace;color:var(--text)">${escapeHtml(d.name)}</span>
+          ${statusBadge}
+        </div>
+        <div style="font-size:12px;color:var(--text-muted);line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${metaLine}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
+        <button class="btn" data-d-act="lookup" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" style="font-size:12px;padding:5px 10px" title="WHOIS / nslookup / DNS">🔍 Lookup</button>
+        <button class="btn primary" data-d-act="renew" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" data-d-expire="${escapeHtml(d.expire_date || '')}" style="font-size:12px;padding:5px 10px">🔄 Renew</button>
+        <button class="btn" data-d-act="history" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" style="font-size:12px;padding:5px 10px">📜 ประวัติ</button>
+        <button class="btn" data-d-act="edit" data-d-id="${d.id}" style="font-size:12px;padding:5px 10px">✏️ แก้ไข</button>
+        <button class="btn danger" data-d-act="delete" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" style="font-size:12px;padding:5px 10px">🗑 ลบ</button>
+      </div>
+    </div>
+  `;
 }
 
 async function handleDomainAction(btn, list) {

@@ -2,6 +2,21 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.11",
+      "date": "2026-04-29",
+      "title": "Domain Config: ย่อ row 2 บรรทัด + ค้นหา + sort",
+      "summary": "แต่ละ domain ใช้พื้นที่น้อยลง (2 บรรทัดแทน 4) + search box + sort 4 แบบ",
+      "changes": [
+        "Row layout: 2 บรรทัด — บรรทัดที่ 1 ชื่อ + status badge / บรรทัดที่ 2 meta (provider · จด · หมด · renew · note) คั่นด้วย ·",
+        "Notes ตัดที่ 50 ตัวอักษร + tooltip แสดงเต็ม",
+        "Search box (live filter) — ค้นหาตามชื่อ / provider / note พร้อมปุ่ม ✕ ล้างคำค้น",
+        "Sort dropdown 4 แบบ: ใกล้หมดอายุก่อน (default) / A→Z / Z→A / จดทะเบียนล่าสุด",
+        "Domain ที่ไม่มี expire_date จะอยู่ท้ายสุดเสมอใน sort 'ใกล้หมดอายุ'",
+        "Counter \"N / Total รายการ\" เมื่อ filter, \"N รายการ\" เมื่อไม่ filter",
+        "Search/sort state ถูกเก็บใน session (จำได้เวลา navigate กลับมา)"
+      ]
+    },
+    {
       "version": "1.9.10",
       "date": "2026-04-29",
       "title": "Domain Lookup: WHOIS + ยุบเป็น 1 ปุ่ม + tabbed modal",
