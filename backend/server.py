@@ -283,7 +283,20 @@ def init_db() -> None:
                 -- ผูกกับ member ปัจจุบัน
                 current_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
                 -- v1.9.37: รูปภาพ (base64 JPEG, ~640x480)
-                photo_data        TEXT
+                photo_data        TEXT,
+                -- v1.9.38: extended PC fields
+                serial_number     TEXT,
+                display           TEXT,
+                department        TEXT,
+                location          TEXT,
+                os_version        TEXT,
+                model             TEXT,
+                mainboard         TEXT,
+                gpu               TEXT,
+                battery           TEXT,
+                ups               TEXT,
+                status            TEXT,
+                quotation         TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_hardware_type ON hardware(hw_type);
             CREATE INDEX IF NOT EXISTS idx_hardware_member ON hardware(current_member_id);
@@ -411,13 +424,30 @@ def init_db() -> None:
         if "logo_data" not in domain_cols:
             conn.execute("ALTER TABLE domains ADD COLUMN logo_data TEXT")
 
-        # v1.9.37 — photo (base64 JPEG) สำหรับ hardware item
+        # v1.9.37 — photo + v1.9.38 — extended PC fields (serial, display, dept,
+        # location, os_version, model, mainboard, gpu, battery, ups, status, quotation)
         try:
             hw_cols = {
                 row["name"] for row in conn.execute("PRAGMA table_info(hardware)").fetchall()
             }
-            if hw_cols and "photo_data" not in hw_cols:
-                conn.execute("ALTER TABLE hardware ADD COLUMN photo_data TEXT")
+            extra_cols = [
+                ("photo_data", "TEXT"),
+                ("serial_number", "TEXT"),
+                ("display", "TEXT"),
+                ("department", "TEXT"),
+                ("location", "TEXT"),
+                ("os_version", "TEXT"),
+                ("model", "TEXT"),
+                ("mainboard", "TEXT"),
+                ("gpu", "TEXT"),
+                ("battery", "TEXT"),
+                ("ups", "TEXT"),
+                ("status", "TEXT"),
+                ("quotation", "TEXT"),
+            ]
+            for col_name, col_type in extra_cols:
+                if hw_cols and col_name not in hw_cols:
+                    conn.execute(f"ALTER TABLE hardware ADD COLUMN {col_name} {col_type}")
         except sqlite3.OperationalError:
             # hardware table อาจไม่มีอยู่ (DB เก่ามาก) — schema CREATE TABLE จะสร้างให้ในรอบนี้
             pass
@@ -4029,13 +4059,26 @@ class HardwareIn(BaseModel):
     hw_type: str = Field(..., min_length=1, max_length=20)
     name: str = Field(..., min_length=1, max_length=200)
     asset_number: Optional[str] = Field(None, max_length=80)
-    purchased_at: Optional[str] = Field(None, max_length=40)   # ISO YYYY-MM-DD
+    purchased_at: Optional[str] = Field(None, max_length=40)   # ISO YYYY-MM-DD or YYYY-MM
     notes: Optional[str] = Field(None, max_length=2000)
-    # PC
+    # PC — basic spec
     os: Optional[str] = Field(None, max_length=80)
-    cpu: Optional[str] = Field(None, max_length=120)
-    ram: Optional[str] = Field(None, max_length=80)
-    storage: Optional[str] = Field(None, max_length=120)
+    cpu: Optional[str] = Field(None, max_length=200)
+    ram: Optional[str] = Field(None, max_length=120)
+    storage: Optional[str] = Field(None, max_length=200)
+    # PC — extended (v1.9.38)
+    serial_number: Optional[str] = Field(None, max_length=120)
+    display: Optional[str] = Field(None, max_length=200)
+    department: Optional[str] = Field(None, max_length=120)
+    location: Optional[str] = Field(None, max_length=200)
+    os_version: Optional[str] = Field(None, max_length=120)
+    model: Optional[str] = Field(None, max_length=200)
+    mainboard: Optional[str] = Field(None, max_length=200)
+    gpu: Optional[str] = Field(None, max_length=200)
+    battery: Optional[str] = Field(None, max_length=200)
+    ups: Optional[str] = Field(None, max_length=200)
+    status: Optional[str] = Field(None, max_length=80)
+    quotation: Optional[str] = Field(None, max_length=200)
     # Device
     device_subtype: Optional[str] = Field(None, max_length=120)
     capacity: Optional[str] = Field(None, max_length=120)
@@ -4059,9 +4102,22 @@ class HardwarePatchIn(BaseModel):
     purchased_at: Optional[str] = Field(None, max_length=40)
     notes: Optional[str] = Field(None, max_length=2000)
     os: Optional[str] = Field(None, max_length=80)
-    cpu: Optional[str] = Field(None, max_length=120)
-    ram: Optional[str] = Field(None, max_length=80)
-    storage: Optional[str] = Field(None, max_length=120)
+    cpu: Optional[str] = Field(None, max_length=200)
+    ram: Optional[str] = Field(None, max_length=120)
+    storage: Optional[str] = Field(None, max_length=200)
+    # Extended PC fields (v1.9.38)
+    serial_number: Optional[str] = Field(None, max_length=120)
+    display: Optional[str] = Field(None, max_length=200)
+    department: Optional[str] = Field(None, max_length=120)
+    location: Optional[str] = Field(None, max_length=200)
+    os_version: Optional[str] = Field(None, max_length=120)
+    model: Optional[str] = Field(None, max_length=200)
+    mainboard: Optional[str] = Field(None, max_length=200)
+    gpu: Optional[str] = Field(None, max_length=200)
+    battery: Optional[str] = Field(None, max_length=200)
+    ups: Optional[str] = Field(None, max_length=200)
+    status: Optional[str] = Field(None, max_length=80)
+    quotation: Optional[str] = Field(None, max_length=200)
     device_subtype: Optional[str] = Field(None, max_length=120)
     capacity: Optional[str] = Field(None, max_length=120)
     # Owner change — `null` = clear owner, undefined (omitted) = no change
@@ -4139,25 +4195,40 @@ def admin_create_hardware(
     _sess: dict = Depends(require_admin),
 ) -> dict[str, Any]:
     now = utc_now().isoformat()
+    s = lambda v: (v.strip() if isinstance(v, str) else v) or None
     with db_conn() as conn:
         cur = conn.execute(
             "INSERT INTO hardware(hw_type, name, asset_number, purchased_at, notes, created_at, "
-            "                     os, cpu, ram, storage, device_subtype, capacity, current_member_id, "
-            "                     photo_data) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "                     os, cpu, ram, storage, "
+            "                     serial_number, display, department, location, os_version, model, "
+            "                     mainboard, gpu, battery, ups, status, quotation, "
+            "                     device_subtype, capacity, current_member_id, photo_data) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 payload.hw_type,
                 payload.name.strip(),
-                (payload.asset_number or "").strip() or None,
+                s(payload.asset_number),
                 payload.purchased_at or None,
-                (payload.notes or "").strip() or None,
+                s(payload.notes),
                 now,
-                (payload.os or "").strip() or None,
-                (payload.cpu or "").strip() or None,
-                (payload.ram or "").strip() or None,
-                (payload.storage or "").strip() or None,
-                (payload.device_subtype or "").strip() or None,
-                (payload.capacity or "").strip() or None,
+                s(payload.os),
+                s(payload.cpu),
+                s(payload.ram),
+                s(payload.storage),
+                s(payload.serial_number),
+                s(payload.display),
+                s(payload.department),
+                s(payload.location),
+                s(payload.os_version),
+                s(payload.model),
+                s(payload.mainboard),
+                s(payload.gpu),
+                s(payload.battery),
+                s(payload.ups),
+                s(payload.status),
+                s(payload.quotation),
+                s(payload.device_subtype),
+                s(payload.capacity),
                 payload.current_member_id,
                 payload.photo_data or None,
             ),
@@ -4188,7 +4259,9 @@ def admin_update_hardware(
     raw_body = payload.model_dump(exclude_unset=True)
     updates: dict[str, Any] = {}
     for f in ("name", "asset_number", "purchased_at", "notes", "os", "cpu", "ram",
-              "storage", "device_subtype", "capacity"):
+              "storage", "device_subtype", "capacity",
+              "serial_number", "display", "department", "location", "os_version",
+              "model", "mainboard", "gpu", "battery", "ups", "status", "quotation"):
         if f in raw_body:
             v = raw_body[f]
             updates[f] = (v.strip() if isinstance(v, str) else v) or None

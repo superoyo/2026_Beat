@@ -3930,6 +3930,21 @@ function refreshCalSelectionHighlight() {
   });
 }
 
+// แสดง YYYY-MM เป็น "มี.ค. 68" (เดือน + ปี พ.ศ. 2 หลัก) — ใช้กับ purchased_at ของ PC
+function fmtMonthYearThai(s) {
+  if (!s) return '—';
+  const m = /^(\d{4})-(\d{2})$/.exec(s);
+  if (m) {
+    const year = parseInt(m[1], 10);
+    const monthIdx = parseInt(m[2], 10) - 1;
+    const monthShort = (typeof _MONTHS_TH !== 'undefined' && _MONTHS_TH[monthIdx])
+      ? _MONTHS_TH[monthIdx].slice(0, 4) : (monthIdx + 1);
+    return `${monthShort} ${(year + 543) % 100}`;
+  }
+  // fallback for full date strings
+  return fmtDateThai(s);
+}
+
 function fmtDateThai(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -6459,17 +6474,43 @@ function renderHardwareRow(h) {
   // Spec line — แตกต่างกันตาม type
   const specs = [];
   if (h.hw_type === 'pc') {
-    if (h.os) specs.push(`💿 ${escapeHtml(h.os)}`);
+    if (h.model) specs.push(`📦 ${escapeHtml(h.model)}`);
+    if (h.os) specs.push(`💿 ${escapeHtml(h.os)}${h.os_version ? ' ' + escapeHtml(h.os_version) : ''}`);
     if (h.cpu) specs.push(`🔧 ${escapeHtml(h.cpu)}`);
     if (h.ram) specs.push(`🧠 ${escapeHtml(h.ram)}`);
     if (h.storage) specs.push(`💾 ${escapeHtml(h.storage)}`);
+    if (h.display) specs.push(`🖥️ ${escapeHtml(h.display)}`);
   } else if (h.hw_type === 'device') {
     if (h.device_subtype) specs.push(`📦 ${escapeHtml(h.device_subtype)}`);
     if (h.capacity) specs.push(`📏 ${escapeHtml(h.capacity)}`);
   }
   if (h.asset_number) specs.push(`🔖 ${escapeHtml(h.asset_number)}`);
-  if (h.purchased_at) specs.push(`📅 ${escapeHtml(fmtDateThai(h.purchased_at))}`);
+  if (h.serial_number) specs.push(`#️⃣ ${escapeHtml(h.serial_number)}`);
+  if (h.purchased_at) {
+    // PC ใช้ month/year ส่วน device/network ใช้ full date
+    const dateLabel = (h.hw_type === 'pc') ? fmtMonthYearThai(h.purchased_at) : fmtDateThai(h.purchased_at);
+    specs.push(`📅 ${escapeHtml(dateLabel)}`);
+  }
+  if (h.department || h.location) {
+    const dl = [h.department, h.location].filter(Boolean).map(escapeHtml).join(' / ');
+    specs.push(`📍 ${dl}`);
+  }
   const specLine = specs.length ? specs.join(' <span style="color:var(--border)">·</span> ') : '<span style="color:var(--text-muted);font-style:italic">— ไม่มีรายละเอียด</span>';
+
+  // Status badge (PC only — device/network ไม่มี status field)
+  let statusBadge = '';
+  if (h.hw_type === 'pc' && h.status) {
+    const map = {
+      active:  { color: 'rgba(16,185,129,.12);color:var(--green)',     label: '✓ ใช้งาน' },
+      repair:  { color: 'rgba(245,158,11,.15);color:#92400e',          label: '🔧 ซ่อม' },
+      stock:   { color: 'rgba(99,102,241,.10);color:#3730a3',          label: '📦 Stock' },
+      retired: { color: 'rgba(220,38,38,.10);color:var(--critical)',   label: '⚠ ปลดระวาง' },
+    };
+    const m = map[h.status];
+    if (m) {
+      statusBadge = `<span style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:${m.color}">${m.label}</span>`;
+    }
+  }
 
   // Owner badge
   const ownerBadge = h.current_member_label
@@ -6487,6 +6528,7 @@ function renderHardwareRow(h) {
       <div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:3px;overflow:hidden">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <span style="font-weight:700;font-size:14.5px;color:var(--text)">${escapeHtml(h.name)}</span>
+          ${statusBadge}
           ${ownerBadge}
         </div>
         <div style="font-size:12px;color:var(--text-muted);line-height:1.5;overflow:hidden;text-overflow:ellipsis">${specLine}</div>
@@ -6560,14 +6602,96 @@ function showHardwareModal(hw, type) {
     })
   ).join('');
 
+  // Status options
+  const HW_STATUS_OPTS = [
+    { value: '', label: '— ไม่ระบุ —' },
+    { value: 'active', label: '✓ ใช้งาน' },
+    { value: 'repair', label: '🔧 ซ่อม / รอซ่อม' },
+    { value: 'stock', label: '📦 เก็บ stock' },
+    { value: 'retired', label: '⚠ ปลดระวาง' },
+  ];
+
+  // Inline section header — visual hint สำหรับการจัดกลุ่ม
+  const sect = (icon, title) => `
+    <div style="font-size:11.5px;font-weight:700;color:var(--primary-dark);text-transform:uppercase;letter-spacing:.5px;padding:14px 0 6px;border-bottom:1px solid var(--border);margin-bottom:10px">${icon} ${escapeHtml(title)}</div>
+  `;
+
+  // purchased_at — ใช้ month picker (YYYY-MM) สำหรับ PC, date picker สำหรับ device/network
+  const purchVal = isEdit ? (hw.purchased_at || '').slice(0, showPC ? 7 : 10) : '';
+  const purchInput = showPC
+    ? `<input id="hm-purchased" type="month" value="${escapeHtml(purchVal)}" />`
+    : `<input id="hm-purchased" type="date" value="${escapeHtml(purchVal)}" />`;
+
   showModal({
     title: isEdit ? `แก้ไข ${tabInfo.label}: ${hw.name}` : `+ เพิ่ม ${tabInfo.label}`,
+    size: 'wide',
     body: `
-      <div class="field">
-        <label>ชื่อ *</label>
-        <input id="hm-name" type="text" value="${isEdit ? escapeHtml(hw.name) : ''}" placeholder="${type === 'pc' ? 'เช่น MacBook Pro 14 ของอนัน' : type === 'network' ? 'เช่น Cisco Switch 24-port' : 'เช่น External HDD WD My Passport 1TB'}" />
-      </div>
       ${showPC ? `
+        ${sect('📋', 'ข้อมูลทั่วไป')}
+        <div class="field">
+          <label>ชื่อ *</label>
+          <input id="hm-name" type="text" value="${isEdit ? escapeHtml(hw.name) : ''}" placeholder="เช่น MacBook Pro 14 ของอนัน" />
+        </div>
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+          <div class="field">
+            <label>Model</label>
+            <input id="hm-model" type="text" value="${isEdit ? escapeHtml(hw.model || '') : ''}" placeholder="เช่น MacBook Pro 14 M3 2023 / ThinkPad X1 Gen 11" />
+          </div>
+          <div class="field">
+            <label>Status</label>
+            <select id="hm-status" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
+              ${HW_STATUS_OPTS.map(o => `<option value="${escapeHtml(o.value)}"${(isEdit && (hw.status || '') === o.value) ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="field">
+            <label>เลข Asset</label>
+            <input id="hm-asset" type="text" value="${isEdit ? escapeHtml(hw.asset_number || '') : ''}" placeholder="เช่น A-001" />
+          </div>
+          <div class="field">
+            <label>S/N (Serial Number)</label>
+            <input id="hm-serial" type="text" value="${isEdit ? escapeHtml(hw.serial_number || '') : ''}" placeholder="เช่น C02ABC123XYZ" />
+          </div>
+        </div>
+
+        ${sect('🔧', 'Specification')}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="field">
+            <label>CPU</label>
+            <input id="hm-cpu" type="text" value="${isEdit ? escapeHtml(hw.cpu || '') : ''}" placeholder="Apple M3 Pro / Intel i7-12700H" />
+          </div>
+          <div class="field">
+            <label>RAM</label>
+            <input id="hm-ram" type="text" value="${isEdit ? escapeHtml(hw.ram || '') : ''}" placeholder="16GB / 32GB DDR5" />
+          </div>
+          <div class="field">
+            <label>Storage</label>
+            <input id="hm-storage" type="text" value="${isEdit ? escapeHtml(hw.storage || '') : ''}" placeholder='512GB SSD / 1TB NVMe' />
+          </div>
+          <div class="field">
+            <label>Display</label>
+            <input id="hm-display" type="text" value="${isEdit ? escapeHtml(hw.display || '') : ''}" placeholder='14" Retina / 27" 4K' />
+          </div>
+          <div class="field">
+            <label>Mainboard</label>
+            <input id="hm-mainboard" type="text" value="${isEdit ? escapeHtml(hw.mainboard || '') : ''}" placeholder="ASUS Z790 / Apple silicon" />
+          </div>
+          <div class="field">
+            <label>GPU</label>
+            <input id="hm-gpu" type="text" value="${isEdit ? escapeHtml(hw.gpu || '') : ''}" placeholder="NVIDIA RTX 4070 / Apple M3 Pro 18-core" />
+          </div>
+          <div class="field">
+            <label>Battery</label>
+            <input id="hm-battery" type="text" value="${isEdit ? escapeHtml(hw.battery || '') : ''}" placeholder="Health 95% / 70 Wh" />
+          </div>
+          <div class="field">
+            <label>UPS</label>
+            <input id="hm-ups" type="text" value="${isEdit ? escapeHtml(hw.ups || '') : ''}" placeholder="APC BR1500MS2 / ไม่มี" />
+          </div>
+        </div>
+
+        ${sect('💿', 'ระบบปฏิบัติการ')}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
           <div class="field">
             <label>OS</label>
@@ -6579,72 +6703,118 @@ function showHardwareModal(hw, type) {
             </select>
           </div>
           <div class="field">
-            <label>CPU</label>
-            <input id="hm-cpu" type="text" value="${isEdit ? escapeHtml(hw.cpu || '') : ''}" placeholder="Apple M3 Pro / Intel i7-12700H" />
-          </div>
-          <div class="field">
-            <label>RAM</label>
-            <input id="hm-ram" type="text" value="${isEdit ? escapeHtml(hw.ram || '') : ''}" placeholder="16GB / 32GB DDR5" />
-          </div>
-          <div class="field">
-            <label>Storage</label>
-            <input id="hm-storage" type="text" value="${isEdit ? escapeHtml(hw.storage || '') : ''}" placeholder="512GB SSD / 1TB NVMe" />
+            <label>OSX / Version</label>
+            <input id="hm-os-version" type="text" value="${isEdit ? escapeHtml(hw.os_version || '') : ''}" placeholder="Sonoma 14.5 / Win11 23H2" />
           </div>
         </div>
-      ` : ''}
-      ${showDevice ? `
-        <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+
+        ${sect('👤', 'การจัดสรร')}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
           <div class="field">
-            <label>ประเภท Device</label>
-            <input id="hm-subtype" type="text" list="hm-subtype-list" value="${isEdit ? escapeHtml(hw.device_subtype || '') : ''}" placeholder="เลือกหรือพิมพ์เอง..." />
-            <datalist id="hm-subtype-list">
-              ${HW_DEVICE_SUBTYPES.map(s => `<option value="${escapeHtml(s)}"></option>`).join('')}
-            </datalist>
+            <label>Department</label>
+            <input id="hm-dept" type="text" value="${isEdit ? escapeHtml(hw.department || '') : ''}" placeholder="เช่น Marketing / IT / Design" />
           </div>
           <div class="field">
-            <label>ความจุ / Spec</label>
-            <input id="hm-capacity" type="text" value="${isEdit ? escapeHtml(hw.capacity || '') : ''}" placeholder='1TB / 4K 27"' />
+            <label>Location</label>
+            <input id="hm-location" type="text" value="${isEdit ? escapeHtml(hw.location || '') : ''}" placeholder="เช่น HQ ชั้น 3 / Home Office" />
           </div>
-        </div>
-      ` : ''}
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div class="field">
-          <label>เลข Asset</label>
-          <input id="hm-asset" type="text" value="${isEdit ? escapeHtml(hw.asset_number || '') : ''}" placeholder="เช่น A-001" />
         </div>
         <div class="field">
-          <label>วันที่ซื้อ</label>
-          <input id="hm-purchased" type="date" value="${isEdit ? escapeHtml((hw.purchased_at || '').slice(0, 10)) : ''}" />
+          <label>ผู้ดูแลปัจจุบัน (Owner)</label>
+          <select id="hm-owner" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">${memberOptions}</select>
+          <div class="hint" style="font-size:11.5px;color:var(--text-muted);margin-top:4px">${isEdit ? 'เปลี่ยน owner → ปิด assignment เก่า + เปิดใหม่อัตโนมัติ (เก็บประวัติ)' : 'จะสร้าง initial assignment ให้อัตโนมัติ'}</div>
         </div>
-      </div>
-      <div class="field">
-        <label>ผู้ดูแลปัจจุบัน (Owner)</label>
-        <select id="hm-owner" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">${memberOptions}</select>
-        <div class="hint" style="font-size:11.5px;color:var(--text-muted);margin-top:4px">${isEdit ? 'เปลี่ยน owner → ปิด assignment เก่า + เปิดใหม่อัตโนมัติ (เก็บประวัติ)' : 'จะสร้าง initial assignment ให้อัตโนมัติ'}</div>
-      </div>
-      <!-- รูปภาพ -->
-      <div class="field">
-        <label>รูปภาพ</label>
-        <div style="display:flex;gap:14px;align-items:flex-start;margin-top:6px">
-          <div id="hm-photo-preview" style="width:120px;height:90px;border-radius:8px;border:1.5px dashed var(--border);background:${(isEdit && hw.photo_data) ? 'var(--bg-card)' : 'var(--bg-soft)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden">
-            ${(isEdit && hw.photo_data)
-              ? `<img src="${hw.photo_data}" alt="photo" style="width:100%;height:100%;object-fit:cover" />`
-              : `<span style="color:var(--text-muted);font-size:11px;text-align:center;line-height:1.3">ยังไม่มี<br/>รูปภาพ</span>`
-            }
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="field">
+            <label>วันที่ซื้อ (เดือน/ปี)</label>
+            ${purchInput}
           </div>
-          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px">
-            <button type="button" class="btn" id="hm-photo-upload-btn" style="font-size:12.5px;padding:7px 12px;text-align:left">📷 อัพโหลดไฟล์...</button>
-            <button type="button" class="btn" id="hm-photo-camera-btn" style="font-size:12.5px;padding:7px 12px;text-align:left">📸 ถ่ายรูปจากกล้อง</button>
-            <button type="button" class="btn danger" id="hm-photo-remove-btn" style="font-size:12.5px;padding:7px 12px;text-align:left;${(isEdit && hw.photo_data) ? '' : 'display:none'}">🗑 ลบรูป</button>
-            <input type="file" id="hm-photo-file-input" accept="image/*" style="display:none" />
+          <div class="field">
+            <label>Quotation</label>
+            <input id="hm-quotation" type="text" value="${isEdit ? escapeHtml(hw.quotation || '') : ''}" placeholder="เลข PO / ราคา / ใบเสนอราคา" />
           </div>
         </div>
-        <input type="hidden" id="hm-photo-data" value="${escapeHtml((isEdit && hw.photo_data) || '')}" />
-      </div>
-      <div class="field">
-        <label>หมายเหตุ</label>
-        <textarea id="hm-notes" rows="2" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical">${isEdit ? escapeHtml(hw.notes || '') : ''}</textarea>
-      </div>
+
+        ${sect('🖼', 'รูปภาพ + หมายเหตุ')}
+        <div class="field">
+          <div style="display:flex;gap:14px;align-items:flex-start;margin-top:2px">
+            <div id="hm-photo-preview" style="width:120px;height:90px;border-radius:8px;border:1.5px dashed var(--border);background:${(isEdit && hw.photo_data) ? 'var(--bg-card)' : 'var(--bg-soft)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden">
+              ${(isEdit && hw.photo_data)
+                ? `<img src="${hw.photo_data}" alt="photo" style="width:100%;height:100%;object-fit:cover" />`
+                : `<span style="color:var(--text-muted);font-size:11px;text-align:center;line-height:1.3">ยังไม่มี<br/>รูปภาพ</span>`
+              }
+            </div>
+            <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px">
+              <button type="button" class="btn" id="hm-photo-upload-btn" style="font-size:12.5px;padding:7px 12px;text-align:left">📷 อัพโหลดไฟล์...</button>
+              <button type="button" class="btn" id="hm-photo-camera-btn" style="font-size:12.5px;padding:7px 12px;text-align:left">📸 ถ่ายรูปจากกล้อง</button>
+              <button type="button" class="btn danger" id="hm-photo-remove-btn" style="font-size:12.5px;padding:7px 12px;text-align:left;${(isEdit && hw.photo_data) ? '' : 'display:none'}">🗑 ลบรูป</button>
+              <input type="file" id="hm-photo-file-input" accept="image/*" style="display:none" />
+            </div>
+          </div>
+          <input type="hidden" id="hm-photo-data" value="${escapeHtml((isEdit && hw.photo_data) || '')}" />
+        </div>
+        <div class="field">
+          <label>หมายเหตุ</label>
+          <textarea id="hm-notes" rows="2" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical">${isEdit ? escapeHtml(hw.notes || '') : ''}</textarea>
+        </div>
+      ` : `
+        <!-- Device / Network — keep simpler form -->
+        <div class="field">
+          <label>ชื่อ *</label>
+          <input id="hm-name" type="text" value="${isEdit ? escapeHtml(hw.name) : ''}" placeholder="${type === 'network' ? 'เช่น Cisco Switch 24-port' : 'เช่น External HDD WD My Passport 1TB'}" />
+        </div>
+        ${showDevice ? `
+          <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+            <div class="field">
+              <label>ประเภท Device</label>
+              <input id="hm-subtype" type="text" list="hm-subtype-list" value="${isEdit ? escapeHtml(hw.device_subtype || '') : ''}" placeholder="เลือกหรือพิมพ์เอง..." />
+              <datalist id="hm-subtype-list">
+                ${HW_DEVICE_SUBTYPES.map(s => `<option value="${escapeHtml(s)}"></option>`).join('')}
+              </datalist>
+            </div>
+            <div class="field">
+              <label>ความจุ / Spec</label>
+              <input id="hm-capacity" type="text" value="${isEdit ? escapeHtml(hw.capacity || '') : ''}" placeholder='1TB / 4K 27"' />
+            </div>
+          </div>
+        ` : ''}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="field">
+            <label>เลข Asset</label>
+            <input id="hm-asset" type="text" value="${isEdit ? escapeHtml(hw.asset_number || '') : ''}" placeholder="เช่น A-001" />
+          </div>
+          <div class="field">
+            <label>วันที่ซื้อ</label>
+            ${purchInput}
+          </div>
+        </div>
+        <div class="field">
+          <label>ผู้ดูแลปัจจุบัน (Owner)</label>
+          <select id="hm-owner" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">${memberOptions}</select>
+        </div>
+        <div class="field">
+          <label>รูปภาพ</label>
+          <div style="display:flex;gap:14px;align-items:flex-start;margin-top:6px">
+            <div id="hm-photo-preview" style="width:120px;height:90px;border-radius:8px;border:1.5px dashed var(--border);background:${(isEdit && hw.photo_data) ? 'var(--bg-card)' : 'var(--bg-soft)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden">
+              ${(isEdit && hw.photo_data)
+                ? `<img src="${hw.photo_data}" alt="photo" style="width:100%;height:100%;object-fit:cover" />`
+                : `<span style="color:var(--text-muted);font-size:11px;text-align:center;line-height:1.3">ยังไม่มี<br/>รูปภาพ</span>`
+              }
+            </div>
+            <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px">
+              <button type="button" class="btn" id="hm-photo-upload-btn" style="font-size:12.5px;padding:7px 12px;text-align:left">📷 อัพโหลดไฟล์...</button>
+              <button type="button" class="btn" id="hm-photo-camera-btn" style="font-size:12.5px;padding:7px 12px;text-align:left">📸 ถ่ายรูปจากกล้อง</button>
+              <button type="button" class="btn danger" id="hm-photo-remove-btn" style="font-size:12.5px;padding:7px 12px;text-align:left;${(isEdit && hw.photo_data) ? '' : 'display:none'}">🗑 ลบรูป</button>
+              <input type="file" id="hm-photo-file-input" accept="image/*" style="display:none" />
+            </div>
+          </div>
+          <input type="hidden" id="hm-photo-data" value="${escapeHtml((isEdit && hw.photo_data) || '')}" />
+        </div>
+        <div class="field">
+          <label>หมายเหตุ</label>
+          <textarea id="hm-notes" rows="2" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical">${isEdit ? escapeHtml(hw.notes || '') : ''}</textarea>
+        </div>
+      `}
     `,
     onSubmit: async () => {
       const data = {
@@ -6659,6 +6829,19 @@ function showHardwareModal(hw, type) {
         data.cpu = $('hm-cpu').value.trim() || null;
         data.ram = $('hm-ram').value.trim() || null;
         data.storage = $('hm-storage').value.trim() || null;
+        // Extended PC fields (v1.9.38)
+        data.model = $('hm-model').value.trim() || null;
+        data.serial_number = $('hm-serial').value.trim() || null;
+        data.display = $('hm-display').value.trim() || null;
+        data.department = $('hm-dept').value.trim() || null;
+        data.location = $('hm-location').value.trim() || null;
+        data.os_version = $('hm-os-version').value.trim() || null;
+        data.mainboard = $('hm-mainboard').value.trim() || null;
+        data.gpu = $('hm-gpu').value.trim() || null;
+        data.battery = $('hm-battery').value.trim() || null;
+        data.ups = $('hm-ups').value.trim() || null;
+        data.status = $('hm-status').value || null;
+        data.quotation = $('hm-quotation').value.trim() || null;
       }
       if (showDevice) {
         data.device_subtype = $('hm-subtype').value.trim() || null;

@@ -2,6 +2,29 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.38",
+      "date": "2026-04-30",
+      "title": "PC form: เพิ่ม 12 fields ใหม่ + จัดกลุ่มเป็น 5 sections + month/year picker",
+      "summary": "ฟอร์ม Personal Computer ครบถ้วน — Model, S/N, Display, Dept/Location, Mainboard, GPU, Battery, UPS, Status, Quotation, OS Version",
+      "changes": [
+        "DB: ALTER TABLE hardware ADD 12 columns (serial_number, display, department, location, os_version, model, mainboard, gpu, battery, ups, status, quotation)",
+        "Backend: Pydantic + POST/PATCH รองรับทุก field ใหม่",
+        "Frontend: PC form แบ่งเป็น 5 sections พร้อม section header ชัดเจน:",
+        "  📋 ข้อมูลทั่วไป (ชื่อ / Model / Status / เลข Asset / S/N)",
+        "  🔧 Specification (CPU / RAM / Storage / Display / Mainboard / GPU / Battery / UPS)",
+        "  💿 ระบบปฏิบัติการ (OS dropdown / OS version)",
+        "  👤 การจัดสรร (Department / Location / Owner / วันที่ซื้อ / Quotation)",
+        "  🖼 รูปภาพ + หมายเหตุ",
+        "วันที่ซื้อสำหรับ PC: ใช้ <input type='month'> (Month/Year picker) — เก็บเป็น YYYY-MM",
+        "Helper fmtMonthYearThai(YYYY-MM) → 'มี.ค. 68' (Thai short month + พ.ศ. 2 หลัก)",
+        "Status dropdown 4 ตัวเลือก: ✓ ใช้งาน / 🔧 ซ่อม / 📦 Stock / ⚠ ปลดระวาง",
+        "Status badge แสดงใน row (ถัดจากชื่อ) — สีต่างกันตาม state",
+        "Spec line ใน row รวม fields ใหม่: Model, Display, Serial #, Dept/Location",
+        "Modal เปลี่ยนเป็น size='wide' — รองรับ form หนาแน่นขึ้น",
+        "Device + Network — ฟอร์มเหมือนเดิม (ไม่ได้รับผลกระทบ)"
+      ]
+    },
+    {
       "version": "1.9.37",
       "date": "2026-04-30",
       "title": "Hardware: เพิ่มรูปภาพ — อัพโหลด/ถ่ายกล้อง/crop + แสดง thumbnail ใน list",
