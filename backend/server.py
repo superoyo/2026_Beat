@@ -263,6 +263,40 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_domains_expire ON domains(expire_date);
             CREATE INDEX IF NOT EXISTS idx_domain_renewals_domain ON domain_renewals(domain_id);
 
+            -- v1.9.36 — Hardware (PC / Device / Network) + ประวัติการครอบครอง
+            CREATE TABLE IF NOT EXISTS hardware (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                hw_type           TEXT NOT NULL,   -- 'pc' | 'device' | 'network'
+                name              TEXT NOT NULL,   -- ชื่อเครื่อง / device
+                asset_number      TEXT,            -- เลข assets ภายใน
+                purchased_at      TEXT,            -- ISO YYYY-MM-DD
+                notes             TEXT,
+                created_at        TEXT NOT NULL,
+                -- PC-specific fields
+                os                TEXT,            -- macOS / Windows / Linux / etc.
+                cpu               TEXT,
+                ram               TEXT,            -- '16GB DDR4'
+                storage           TEXT,            -- '512GB SSD'
+                -- Device-specific fields
+                device_subtype    TEXT,            -- 'External HDD' / 'WACOM' / 'Monitor' (free-form)
+                capacity          TEXT,            -- '1TB' / '4K 27"' (free-form)
+                -- ผูกกับ member ปัจจุบัน
+                current_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_hardware_type ON hardware(hw_type);
+            CREATE INDEX IF NOT EXISTS idx_hardware_member ON hardware(current_member_id);
+            CREATE TABLE IF NOT EXISTS hardware_assignments (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                hardware_id     INTEGER NOT NULL REFERENCES hardware(id) ON DELETE CASCADE,
+                member_id       INTEGER REFERENCES members(id) ON DELETE SET NULL,
+                member_label    TEXT,           -- snapshot ของชื่อ member ตอน assign (กันสูญหาย)
+                assigned_at     TEXT NOT NULL,
+                unassigned_at   TEXT,           -- NULL = ยังถือครองอยู่
+                note            TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_hw_asg_hw ON hardware_assignments(hardware_id);
+            CREATE INDEX IF NOT EXISTS idx_hw_asg_member ON hardware_assignments(member_id);
+
             -- v1.9.25 — บริการ Hosting / SSL / Others + ผูกกับ domain (Website)
             CREATE TABLE IF NOT EXISTS services (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3970,6 +4004,238 @@ def admin_delete_renewal(
 # =============================================================================
 
 _VALID_SERVICE_TYPES = {"hosting", "ssl", "others"}
+_VALID_HW_TYPES = {"pc", "device", "network"}
+
+
+# =============================================================================
+# Hardware (PC / Device / Network) + assignment history
+# =============================================================================
+
+
+class HardwareIn(BaseModel):
+    hw_type: str = Field(..., min_length=1, max_length=20)
+    name: str = Field(..., min_length=1, max_length=200)
+    asset_number: Optional[str] = Field(None, max_length=80)
+    purchased_at: Optional[str] = Field(None, max_length=40)   # ISO YYYY-MM-DD
+    notes: Optional[str] = Field(None, max_length=2000)
+    # PC
+    os: Optional[str] = Field(None, max_length=80)
+    cpu: Optional[str] = Field(None, max_length=120)
+    ram: Optional[str] = Field(None, max_length=80)
+    storage: Optional[str] = Field(None, max_length=120)
+    # Device
+    device_subtype: Optional[str] = Field(None, max_length=120)
+    capacity: Optional[str] = Field(None, max_length=120)
+    # Owner
+    current_member_id: Optional[int] = None
+
+    @field_validator("hw_type")
+    @classmethod
+    def _check_type(cls, v: str) -> str:
+        v = (v or "").strip().lower()
+        if v not in _VALID_HW_TYPES:
+            raise ValueError(f"hw_type ต้องเป็น {sorted(_VALID_HW_TYPES)}")
+        return v
+
+
+class HardwarePatchIn(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    asset_number: Optional[str] = Field(None, max_length=80)
+    purchased_at: Optional[str] = Field(None, max_length=40)
+    notes: Optional[str] = Field(None, max_length=2000)
+    os: Optional[str] = Field(None, max_length=80)
+    cpu: Optional[str] = Field(None, max_length=120)
+    ram: Optional[str] = Field(None, max_length=80)
+    storage: Optional[str] = Field(None, max_length=120)
+    device_subtype: Optional[str] = Field(None, max_length=120)
+    capacity: Optional[str] = Field(None, max_length=120)
+    # Owner change — `null` = clear owner, undefined (omitted) = no change
+    current_member_id: Optional[int] = None
+    _set_owner: bool = False    # internal flag (not used yet)
+
+
+def _hardware_row_to_dict(r: sqlite3.Row, member_lookup: dict[int, dict] = None) -> dict:
+    out = dict(r)
+    if member_lookup is not None and r["current_member_id"]:
+        m = member_lookup.get(r["current_member_id"])
+        if m:
+            out["current_member_label"] = m.get("display_name") or m.get("username")
+            out["current_member_username"] = m.get("username")
+    return out
+
+
+def _change_hardware_owner(conn: sqlite3.Connection, hw_id: int, new_member_id: Optional[int]) -> None:
+    """ปิด assignment เก่า + เปิดใหม่ + อัพเดท current_member_id"""
+    now = utc_now().isoformat()
+    # ปิด active assignment เก่า (ที่ unassigned_at = NULL)
+    conn.execute(
+        "UPDATE hardware_assignments SET unassigned_at = ? "
+        "WHERE hardware_id = ? AND unassigned_at IS NULL",
+        (now, hw_id),
+    )
+    # เปิด assignment ใหม่ (ถ้ามี new owner)
+    if new_member_id:
+        m = conn.execute(
+            "SELECT display_name, username FROM members WHERE id = ?",
+            (new_member_id,),
+        ).fetchone()
+        member_label = (m["display_name"] or m["username"]) if m else None
+        conn.execute(
+            "INSERT INTO hardware_assignments(hardware_id, member_id, member_label, assigned_at) "
+            "VALUES (?, ?, ?, ?)",
+            (hw_id, new_member_id, member_label, now),
+        )
+    # อัพเดท current_member_id ใน hardware
+    conn.execute(
+        "UPDATE hardware SET current_member_id = ? WHERE id = ?",
+        (new_member_id, hw_id),
+    )
+
+
+@app.get("/api/admin/hardware")
+def admin_list_hardware(
+    type: Optional[str] = None,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """รายการ hardware (filter ตาม type ได้)"""
+    sql = "SELECT * FROM hardware"
+    params: list[Any] = []
+    if type:
+        t = type.strip().lower()
+        if t not in _VALID_HW_TYPES:
+            raise HTTPException(status_code=400, detail=f"invalid type: {type}")
+        sql += " WHERE hw_type = ?"
+        params.append(t)
+    sql += " ORDER BY name COLLATE NOCASE ASC"
+    with db_conn() as conn:
+        rows = conn.execute(sql, params).fetchall()
+        members = conn.execute(
+            "SELECT id, username, display_name FROM members"
+        ).fetchall()
+    member_lookup = {m["id"]: dict(m) for m in members}
+    return {"hardware": [_hardware_row_to_dict(r, member_lookup) for r in rows]}
+
+
+@app.post("/api/admin/hardware")
+def admin_create_hardware(
+    payload: HardwareIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO hardware(hw_type, name, asset_number, purchased_at, notes, created_at, "
+            "                     os, cpu, ram, storage, device_subtype, capacity, current_member_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                payload.hw_type,
+                payload.name.strip(),
+                (payload.asset_number or "").strip() or None,
+                payload.purchased_at or None,
+                (payload.notes or "").strip() or None,
+                now,
+                (payload.os or "").strip() or None,
+                (payload.cpu or "").strip() or None,
+                (payload.ram or "").strip() or None,
+                (payload.storage or "").strip() or None,
+                (payload.device_subtype or "").strip() or None,
+                (payload.capacity or "").strip() or None,
+                payload.current_member_id,
+            ),
+        )
+        hw_id = cur.lastrowid
+        # ถ้ามี current_member_id → สร้าง initial assignment
+        if payload.current_member_id:
+            m = conn.execute(
+                "SELECT display_name, username FROM members WHERE id = ?",
+                (payload.current_member_id,),
+            ).fetchone()
+            member_label = (m["display_name"] or m["username"]) if m else None
+            conn.execute(
+                "INSERT INTO hardware_assignments(hardware_id, member_id, member_label, assigned_at) "
+                "VALUES (?, ?, ?, ?)",
+                (hw_id, payload.current_member_id, member_label, now),
+            )
+    return {"ok": True, "id": hw_id}
+
+
+@app.patch("/api/admin/hardware/{hw_id}")
+def admin_update_hardware(
+    hw_id: int,
+    payload: HardwarePatchIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """Update fields. ถ้า current_member_id เปลี่ยน → end old assignment + start new."""
+    raw_body = payload.model_dump(exclude_unset=True)
+    updates: dict[str, Any] = {}
+    for f in ("name", "asset_number", "purchased_at", "notes", "os", "cpu", "ram",
+              "storage", "device_subtype", "capacity"):
+        if f in raw_body:
+            v = raw_body[f]
+            updates[f] = (v.strip() if isinstance(v, str) else v) or None
+
+    with db_conn() as conn:
+        existing = conn.execute("SELECT * FROM hardware WHERE id = ?", (hw_id,)).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="hardware not found")
+        # Update fields
+        if updates:
+            set_clause = ", ".join(f"{k} = ?" for k in updates)
+            conn.execute(
+                f"UPDATE hardware SET {set_clause} WHERE id = ?",
+                list(updates.values()) + [hw_id],
+            )
+        # Owner change?
+        if "current_member_id" in raw_body:
+            new_owner = raw_body["current_member_id"]
+            if new_owner != existing["current_member_id"]:
+                _change_hardware_owner(conn, hw_id, new_owner)
+    return {"ok": True}
+
+
+@app.delete("/api/admin/hardware/{hw_id}")
+def admin_delete_hardware(
+    hw_id: int,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    with db_conn() as conn:
+        cur = conn.execute("DELETE FROM hardware WHERE id = ?", (hw_id,))
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="hardware not found")
+    return {"ok": True}
+
+
+@app.get("/api/admin/hardware/{hw_id}/history")
+def admin_hardware_history(
+    hw_id: int,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """ประวัติการครอบครอง — เรียง assigned_at DESC"""
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, member_id, member_label, assigned_at, unassigned_at, note "
+            "FROM hardware_assignments WHERE hardware_id = ? ORDER BY assigned_at DESC",
+            (hw_id,),
+        ).fetchall()
+    return {"history": [dict(r) for r in rows]}
+
+
+@app.get("/api/admin/members/{member_id}/hardware")
+def admin_member_hardware(
+    member_id: int,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """รายการ hardware ที่ member นี้ครอบครองอยู่ (current)"""
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM hardware WHERE current_member_id = ? "
+            "ORDER BY hw_type ASC, name COLLATE NOCASE ASC",
+            (member_id,),
+        ).fetchall()
+    return {"hardware": [dict(r) for r in rows]}
+
+
+
 
 
 class ServiceIn(BaseModel):

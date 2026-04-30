@@ -2,6 +2,31 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.36",
+      "date": "2026-04-30",
+      "title": "Module ใหม่: Hardware (PC / Device / Network) + ผูกกับ Member + ประวัติการครอบครอง",
+      "summary": "จัดการ inventory ของ hardware ทั้งบริษัท — track owner ปัจจุบัน + history ของผู้ครอบครองในอดีต",
+      "changes": [
+        "DB: ตาราง hardware (hw_type=pc/device/network, name, asset_number, purchased_at, notes, current_member_id, OS-specific fields)",
+        "DB: ตาราง hardware_assignments (M:1 mapping + history — assigned_at/unassigned_at)",
+        "Backend endpoints (admin only):",
+        "  GET/POST/PATCH/DELETE /api/admin/hardware (+filter ?type=)",
+        "  GET /api/admin/hardware/{id}/history",
+        "  GET /api/admin/members/{id}/hardware",
+        "Sidebar: nav-group ใหม่ '🖥️ Hardware' — มี 3 sub-items:",
+        "  💻 Personal Computer",
+        "  📱 Device",
+        "  📡 Network",
+        "Routes: #/hardware-pc, #/hardware-device, #/hardware-network — ใช้ render function เดียว",
+        "PC fields: OS dropdown (macOS/Windows/Ubuntu/etc.) + CPU + RAM + Storage",
+        "Device fields: device_subtype (datalist: External HDD/WACOM/Monitor/etc. + custom typing) + capacity",
+        "Network fields: ชื่อ + asset + วันที่ซื้อ + notes",
+        "Owner change ตอน edit → backend ปิด assignment เก่า + เปิดใหม่อัตโนมัติ + อัพเดท current_member_id",
+        "ปุ่ม '📜 ประวัติ' ในแต่ละ row → modal แสดง assignment history (member + ระยะเวลาครอบครอง)",
+        "Members page: ปุ่ม '🖥️ Hardware' ใน row ของแต่ละ member → modal แสดง hardware ทั้งหมดที่ผูกอยู่ (group by type)"
+      ]
+    },
+    {
       "version": "1.9.35",
       "date": "2026-04-30",
       "title": "Calendar: เปลี่ยนชื่อจาก Domain Names + รวมวันหมดอายุของ Hosting/SSL/Others",

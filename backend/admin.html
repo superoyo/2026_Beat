@@ -808,6 +808,19 @@
             <a href="#/services-config" data-route="services-config">🛠️ Services Config</a>
           </div>
         </div>
+        <!-- Hardware group: PC / Device / Network -->
+        <div class="nav-group" id="nav-group-hardware" data-group-routes="hardware-pc,hardware-device,hardware-network">
+          <button type="button" class="nav-group-toggle" data-group-toggle="hardware">
+            <span style="font-size:14px">🖥️</span>
+            <span class="nav-group-label">Hardware</span>
+            <span class="nav-group-caret">▼</span>
+          </button>
+          <div class="nav-group-children">
+            <a href="#/hardware-pc" data-route="hardware-pc">💻 Personal Computer</a>
+            <a href="#/hardware-device" data-route="hardware-device">📱 Device</a>
+            <a href="#/hardware-network" data-route="hardware-network">📡 Network</a>
+          </div>
+        </div>
         <!-- Setting group: รวม Logs + API Key -->
         <div class="nav-group" id="nav-group-setting" data-group-routes="logs,security">
           <button type="button" class="nav-group-toggle" data-group-toggle="setting">
@@ -888,10 +901,10 @@ async function fetchJson(path, opts = {}) {
 }
 
 // admin-only routes — member ห้ามเข้า (bounce ไป default)
-const ADMIN_ONLY_ROUTES = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites']);
+const ADMIN_ONLY_ROUTES = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-device', 'hardware-network']);
 // menu items ที่ซ่อนใน sidebar สำหรับ member
 // (dashboard เห็นได้ทุกบทบาท — ใช้เป็นหน้าแรกของ member ด้วย)
-const HIDE_FROM_MEMBER_NAV = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites']);
+const HIDE_FROM_MEMBER_NAV = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-device', 'hardware-network']);
 
 // ---------- routing ----------
 const routes = {
@@ -899,6 +912,9 @@ const routes = {
   'platforms':        renderPlatformsPage,
   'calendar':         renderDomainsPage,    // primary route (Domain Names → Calendar)
   'domains':          renderDomainsPage,    // legacy alias
+  'hardware-pc':      () => renderHardwarePage('pc'),
+  'hardware-device':  () => renderHardwarePage('device'),
+  'hardware-network': () => renderHardwarePage('network'),
   'domains-config':   renderDomainsConfigPage,
   'services-config':  renderServicesConfigPage,
   'websites':         renderWebsitesPage,
@@ -6328,6 +6344,328 @@ function showLinkServiceModal(domainId, typeId) {
 }
 
 
+// ============== Hardware (PC / Device / Network — admin only) ==============
+
+const HW_TYPES = [
+  { id: 'pc',      label: 'Personal Computer', icon: '💻',  emptyText: 'ยังไม่มี Personal Computer' },
+  { id: 'device',  label: 'Device',            icon: '📱',  emptyText: 'ยังไม่มี Device' },
+  { id: 'network', label: 'Network Devices',   icon: '📡',  emptyText: 'ยังไม่มี Network Device' },
+];
+
+// suggestion list สำหรับ device subtype — pre-fill dropdown
+const HW_DEVICE_SUBTYPES = [
+  'External HDD', 'External SSD', 'USB Flash Drive',
+  'Monitor', 'WACOM', 'Drawing Tablet',
+  'Keyboard', 'Mouse', 'Headphones',
+  'Webcam', 'Microphone', 'Printer',
+  'Tablet', 'iPad', 'Phone',
+];
+
+let _hwCache = [];          // hardware ของ tab ปัจจุบัน
+let _hwActiveType = 'pc';   // 'pc' | 'device' | 'network'
+let _hwSearch = '';
+let _hwMembersCache = [];   // members list (สำหรับ owner dropdown)
+
+async function renderHardwarePage(type) {
+  if (type) _hwActiveType = type;
+  const tab = HW_TYPES.find(t => t.id === _hwActiveType) || HW_TYPES[0];
+  $('main').innerHTML = `
+    <div class="page-head">
+      <h2 class="page-title">${tab.icon} ${escapeHtml(tab.label)}</h2>
+      <button class="btn primary" id="hw-add-btn">+ เพิ่ม ${escapeHtml(tab.label)}</button>
+    </div>
+    <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px">
+      จัดการ ${escapeHtml(tab.label)} — ผูกกับผู้ดูแลปัจจุบัน + เก็บประวัติการครอบครอง
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+      <input id="hw-search" type="text" placeholder="🔍 ค้นหาชื่อ / asset / owner..." autocomplete="off"
+        style="flex:1;min-width:260px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--bg-card);color:var(--text);box-sizing:border-box" />
+      <span id="hw-count" style="color:var(--text-muted);font-size:12.5px;font-weight:600;white-space:nowrap">— รายการ</span>
+    </div>
+    <div id="hw-list"><div class="empty">กำลังโหลด…</div></div>
+  `;
+  $('hw-add-btn').addEventListener('click', () => showHardwareModal(null, _hwActiveType));
+  $('hw-search').addEventListener('input', (e) => {
+    _hwSearch = e.target.value;
+    renderHardwareRows();
+  });
+  // โหลด members ครั้งแรก (cache)
+  if (_hwMembersCache.length === 0) {
+    try {
+      const md = await fetchJson('/api/admin/members');
+      _hwMembersCache = md.members || [];
+    } catch (_) { /* ignore */ }
+  }
+  await loadHardware();
+}
+
+async function loadHardware() {
+  let data;
+  try {
+    data = await fetchJson('/api/admin/hardware?type=' + encodeURIComponent(_hwActiveType));
+  } catch (e) {
+    if ($('hw-list')) $('hw-list').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  _hwCache = data.hardware || [];
+  renderHardwareRows();
+}
+
+function renderHardwareRows() {
+  const listEl = $('hw-list');
+  if (!listEl) return;
+  const tab = HW_TYPES.find(t => t.id === _hwActiveType);
+  const q = _hwSearch.trim().toLowerCase();
+  const list = !q ? _hwCache : _hwCache.filter(h => {
+    return (h.name || '').toLowerCase().includes(q)
+        || (h.asset_number || '').toLowerCase().includes(q)
+        || (h.current_member_label || '').toLowerCase().includes(q)
+        || (h.current_member_username || '').toLowerCase().includes(q)
+        || (h.device_subtype || '').toLowerCase().includes(q)
+        || (h.notes || '').toLowerCase().includes(q);
+  });
+  if ($('hw-count')) {
+    $('hw-count').textContent = q
+      ? `${list.length} / ${_hwCache.length} รายการ`
+      : `${_hwCache.length} รายการ`;
+  }
+  if (_hwCache.length === 0) {
+    listEl.innerHTML = `<div class="empty">${escapeHtml(tab.emptyText)} — กด <strong>+ เพิ่ม</strong></div>`;
+    return;
+  }
+  if (list.length === 0) {
+    listEl.innerHTML = `<div class="empty">ไม่พบรายการที่ตรงกับ "<strong>${escapeHtml(_hwSearch)}</strong>"</div>`;
+    return;
+  }
+  listEl.innerHTML = list.map(h => renderHardwareRow(h)).join('');
+  listEl.querySelectorAll('button[data-hw-act]').forEach(btn => {
+    btn.addEventListener('click', () => handleHardwareAction(btn));
+  });
+}
+
+function renderHardwareRow(h) {
+  // Spec line — แตกต่างกันตาม type
+  const specs = [];
+  if (h.hw_type === 'pc') {
+    if (h.os) specs.push(`💿 ${escapeHtml(h.os)}`);
+    if (h.cpu) specs.push(`🔧 ${escapeHtml(h.cpu)}`);
+    if (h.ram) specs.push(`🧠 ${escapeHtml(h.ram)}`);
+    if (h.storage) specs.push(`💾 ${escapeHtml(h.storage)}`);
+  } else if (h.hw_type === 'device') {
+    if (h.device_subtype) specs.push(`📦 ${escapeHtml(h.device_subtype)}`);
+    if (h.capacity) specs.push(`📏 ${escapeHtml(h.capacity)}`);
+  }
+  if (h.asset_number) specs.push(`🔖 ${escapeHtml(h.asset_number)}`);
+  if (h.purchased_at) specs.push(`📅 ${escapeHtml(fmtDateThai(h.purchased_at))}`);
+  const specLine = specs.length ? specs.join(' <span style="color:var(--border)">·</span> ') : '<span style="color:var(--text-muted);font-style:italic">— ไม่มีรายละเอียด</span>';
+
+  // Owner badge
+  const ownerBadge = h.current_member_label
+    ? `<span title="${escapeHtml(h.current_member_username || '')}" style="display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(16,185,129,.10);color:var(--green)">👤 ${escapeHtml(h.current_member_label)}</span>`
+    : `<span style="display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;background:var(--bg-soft);color:var(--text-muted)">🔓 ยังไม่ผูก</span>`;
+
+  return `
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px;padding:10px 14px">
+      <div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:3px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-weight:700;font-size:14.5px;color:var(--text)">${escapeHtml(h.name)}</span>
+          ${ownerBadge}
+        </div>
+        <div style="font-size:12px;color:var(--text-muted);line-height:1.5;overflow:hidden;text-overflow:ellipsis">${specLine}</div>
+        ${h.notes ? `<div style="font-size:11.5px;color:var(--text-muted);font-style:italic;margin-top:2px">📝 ${escapeHtml(h.notes.length > 80 ? h.notes.slice(0, 77) + '…' : h.notes)}</div>` : ''}
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
+        <button class="btn" data-hw-act="history" data-hw-id="${h.id}" data-hw-name="${escapeHtml(h.name)}" style="font-size:12px;padding:5px 10px">📜 ประวัติ</button>
+        <button class="btn" data-hw-act="edit" data-hw-id="${h.id}" style="font-size:12px;padding:5px 10px">✏️ แก้ไข</button>
+        <button class="btn danger" data-hw-act="delete" data-hw-id="${h.id}" data-hw-name="${escapeHtml(h.name)}" style="font-size:12px;padding:5px 10px">🗑 ลบ</button>
+      </div>
+    </div>
+  `;
+}
+
+async function handleHardwareAction(btn) {
+  const id = parseInt(btn.dataset.hwId, 10);
+  const act = btn.dataset.hwAct;
+  if (act === 'edit') {
+    const h = _hwCache.find(x => x.id === id);
+    if (h) showHardwareModal(h, h.hw_type);
+  } else if (act === 'delete') {
+    const name = btn.dataset.hwName;
+    if (!confirm(`ลบ "${name}"?\n\n(ประวัติการครอบครองจะถูกลบด้วย)`)) return;
+    try {
+      await fetchJson('/api/admin/hardware/' + id, { method: 'DELETE' });
+      await loadHardware();
+    } catch (e) { alert('ลบไม่สำเร็จ: ' + e.message); }
+  } else if (act === 'history') {
+    showHardwareHistoryModal(id, btn.dataset.hwName);
+  }
+}
+
+function showHardwareModal(hw, type) {
+  const isEdit = !!hw;
+  const tabInfo = HW_TYPES.find(t => t.id === type) || HW_TYPES[0];
+  // PC fields visible เฉพาะ type='pc' / Device fields เฉพาะ 'device'
+  const showPC = (type === 'pc');
+  const showDevice = (type === 'device');
+
+  // Member options (Members ทั้งหมด สำหรับ owner dropdown)
+  const memberOptions = [`<option value="">— ไม่ผูก —</option>`].concat(
+    _hwMembersCache.map(m => {
+      const label = m.display_name || m.username || `member#${m.id}`;
+      const sel = (isEdit && hw.current_member_id === m.id) ? ' selected' : '';
+      return `<option value="${m.id}"${sel}>${escapeHtml(label)} (${escapeHtml(m.username || '')})</option>`;
+    })
+  ).join('');
+
+  showModal({
+    title: isEdit ? `แก้ไข ${tabInfo.label}: ${hw.name}` : `+ เพิ่ม ${tabInfo.label}`,
+    body: `
+      <div class="field">
+        <label>ชื่อ *</label>
+        <input id="hm-name" type="text" value="${isEdit ? escapeHtml(hw.name) : ''}" placeholder="${type === 'pc' ? 'เช่น MacBook Pro 14 ของอนัน' : type === 'network' ? 'เช่น Cisco Switch 24-port' : 'เช่น External HDD WD My Passport 1TB'}" />
+      </div>
+      ${showPC ? `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="field">
+            <label>OS</label>
+            <select id="hm-os" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
+              <option value="">— เลือก —</option>
+              ${['macOS', 'Windows 11', 'Windows 10', 'Ubuntu', 'Debian', 'อื่น ๆ'].map(o =>
+                `<option value="${escapeHtml(o)}"${(isEdit && hw.os === o) ? ' selected' : ''}>${escapeHtml(o)}</option>`
+              ).join('')}
+            </select>
+          </div>
+          <div class="field">
+            <label>CPU</label>
+            <input id="hm-cpu" type="text" value="${isEdit ? escapeHtml(hw.cpu || '') : ''}" placeholder="Apple M3 Pro / Intel i7-12700H" />
+          </div>
+          <div class="field">
+            <label>RAM</label>
+            <input id="hm-ram" type="text" value="${isEdit ? escapeHtml(hw.ram || '') : ''}" placeholder="16GB / 32GB DDR5" />
+          </div>
+          <div class="field">
+            <label>Storage</label>
+            <input id="hm-storage" type="text" value="${isEdit ? escapeHtml(hw.storage || '') : ''}" placeholder="512GB SSD / 1TB NVMe" />
+          </div>
+        </div>
+      ` : ''}
+      ${showDevice ? `
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+          <div class="field">
+            <label>ประเภท Device</label>
+            <input id="hm-subtype" type="text" list="hm-subtype-list" value="${isEdit ? escapeHtml(hw.device_subtype || '') : ''}" placeholder="เลือกหรือพิมพ์เอง..." />
+            <datalist id="hm-subtype-list">
+              ${HW_DEVICE_SUBTYPES.map(s => `<option value="${escapeHtml(s)}"></option>`).join('')}
+            </datalist>
+          </div>
+          <div class="field">
+            <label>ความจุ / Spec</label>
+            <input id="hm-capacity" type="text" value="${isEdit ? escapeHtml(hw.capacity || '') : ''}" placeholder='1TB / 4K 27"' />
+          </div>
+        </div>
+      ` : ''}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="field">
+          <label>เลข Asset</label>
+          <input id="hm-asset" type="text" value="${isEdit ? escapeHtml(hw.asset_number || '') : ''}" placeholder="เช่น A-001" />
+        </div>
+        <div class="field">
+          <label>วันที่ซื้อ</label>
+          <input id="hm-purchased" type="date" value="${isEdit ? escapeHtml((hw.purchased_at || '').slice(0, 10)) : ''}" />
+        </div>
+      </div>
+      <div class="field">
+        <label>ผู้ดูแลปัจจุบัน (Owner)</label>
+        <select id="hm-owner" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">${memberOptions}</select>
+        <div class="hint" style="font-size:11.5px;color:var(--text-muted);margin-top:4px">${isEdit ? 'เปลี่ยน owner → ปิด assignment เก่า + เปิดใหม่อัตโนมัติ (เก็บประวัติ)' : 'จะสร้าง initial assignment ให้อัตโนมัติ'}</div>
+      </div>
+      <div class="field">
+        <label>หมายเหตุ</label>
+        <textarea id="hm-notes" rows="2" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical">${isEdit ? escapeHtml(hw.notes || '') : ''}</textarea>
+      </div>
+    `,
+    onSubmit: async () => {
+      const data = {
+        name: $('hm-name').value.trim(),
+        asset_number: $('hm-asset').value.trim() || null,
+        purchased_at: $('hm-purchased').value || null,
+        notes: $('hm-notes').value.trim() || null,
+        current_member_id: $('hm-owner').value ? parseInt($('hm-owner').value, 10) : null,
+      };
+      if (showPC) {
+        data.os = $('hm-os').value || null;
+        data.cpu = $('hm-cpu').value.trim() || null;
+        data.ram = $('hm-ram').value.trim() || null;
+        data.storage = $('hm-storage').value.trim() || null;
+      }
+      if (showDevice) {
+        data.device_subtype = $('hm-subtype').value.trim() || null;
+        data.capacity = $('hm-capacity').value.trim() || null;
+      }
+      if (!data.name) throw new Error('กรอกชื่อ');
+      const url = isEdit ? `/api/admin/hardware/${hw.id}` : '/api/admin/hardware';
+      const method = isEdit ? 'PATCH' : 'POST';
+      // POST ต้องระบุ hw_type
+      if (!isEdit) data.hw_type = type;
+      await fetchJson(url, { method, body: JSON.stringify(data) });
+      await loadHardware();
+    },
+  });
+}
+
+async function showHardwareHistoryModal(hwId, hwName) {
+  let data;
+  try {
+    data = await fetchJson(`/api/admin/hardware/${hwId}/history`);
+  } catch (e) {
+    alert('โหลดประวัติไม่สำเร็จ: ' + e.message);
+    return;
+  }
+  const history = data.history || [];
+  const fmtTs = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleString('th-TH', {dateStyle:'medium', timeStyle:'short'});
+  };
+  const rows = history.length === 0
+    ? '<div class="empty">ยังไม่มีประวัติการครอบครอง</div>'
+    : history.map(h => {
+        const isCurrent = !h.unassigned_at;
+        const dur = isCurrent ? 'ปัจจุบัน' : `${Math.round((new Date(h.unassigned_at) - new Date(h.assigned_at)) / 86400000)} วัน`;
+        return `
+          <div class="card" style="display:block;padding:10px 14px;margin-bottom:6px">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+              <div style="flex:1">
+                <div style="font-weight:700;font-size:13px;color:var(--text)">👤 ${escapeHtml(h.member_label || `member#${h.member_id || '?'}`)}</div>
+                <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px">
+                  📅 รับ: ${escapeHtml(fmtTs(h.assigned_at))}
+                  ${h.unassigned_at ? ` · 🔚 คืน: ${escapeHtml(fmtTs(h.unassigned_at))}` : ''}
+                </div>
+              </div>
+              <span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:${isCurrent ? 'rgba(16,185,129,.12);color:var(--green)' : 'var(--bg-soft);color:var(--text-muted)'}">${escapeHtml(dur)}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+  showModal({
+    title: `📜 ประวัติการครอบครอง: ${hwName}`,
+    body: `
+      <div class="hint" style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px">
+        เรียงจากใหม่ → เก่า — รวม ${history.length} รายการ
+      </div>
+      ${rows}
+    `,
+    onSubmit: async () => { /* read-only — no save */ },
+  });
+  // ซ่อนปุ่มบันทึก (เพราะ modal นี้ read-only)
+  setTimeout(() => {
+    const okBtn = document.querySelector('.modal-bg .modal #m-ok');
+    if (okBtn) okBtn.style.display = 'none';
+  }, 10);
+}
+
+
 async function renderLogsPage() {
   $('main').innerHTML = `
     <div class="page-head">
@@ -6747,6 +7085,7 @@ function renderMembersTable(members) {
       <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">
         ${adminBtn}
         <button class="btn" data-act="sites" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px" title="ดูและแก้สิทธิ์เข้าถึง site">🌐 Site Access</button>
+        <button class="btn" data-act="hardware" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px" title="Hardware ที่ดูแลอยู่">🖥️ Hardware</button>
         <button class="btn" data-act="reset" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px">🔑 Reset PW</button>
         <button class="btn ${m.enabled ? 'danger' : ''}" data-act="toggle" data-id="${m.id}" data-enabled="${m.enabled ? 1 : 0}" style="font-size:11.5px;padding:5px 10px">${m.enabled ? '⛔ Disable' : '✓ Enable'}</button>
         <button class="btn danger" data-act="delete" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px">🗑 ลบ</button>
@@ -6905,6 +7244,57 @@ function fmtMemberInt(n) { return n == null ? '—' : _MEM_FMT.format(Math.round
 
 // === Modal: edit member's teams (multi-select) ===
 // === Modal: member's site access (view + add/remove direct grants) ===
+async function showMemberHardwareModal(memberId, memberName) {
+  let data;
+  try {
+    data = await fetchJson(`/api/admin/members/${memberId}/hardware`);
+  } catch (e) {
+    alert('โหลดไม่สำเร็จ: ' + e.message);
+    return;
+  }
+  const items = data.hardware || [];
+  // Group by type
+  const groups = { pc: [], device: [], network: [] };
+  for (const h of items) {
+    if (groups[h.hw_type]) groups[h.hw_type].push(h);
+  }
+  const renderGroup = (typeId, label, icon) => {
+    const list = groups[typeId];
+    if (!list.length) return '';
+    return `
+      <div style="margin-bottom:14px">
+        <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">${icon} ${escapeHtml(label)} (${list.length})</div>
+        ${list.map(h => `
+          <div class="card" style="display:block;padding:9px 12px;margin-bottom:5px">
+            <div style="font-weight:700;font-size:13px;color:var(--text)">${escapeHtml(h.name)}</div>
+            <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px">
+              ${h.asset_number ? `🔖 ${escapeHtml(h.asset_number)} · ` : ''}${h.purchased_at ? `📅 ${escapeHtml(fmtDateThai(h.purchased_at))}` : ''}
+              ${h.os ? ` · 💿 ${escapeHtml(h.os)}` : ''}${h.cpu ? ` · 🔧 ${escapeHtml(h.cpu)}` : ''}
+              ${h.device_subtype ? ` · 📦 ${escapeHtml(h.device_subtype)}` : ''}${h.capacity ? ` · 📏 ${escapeHtml(h.capacity)}` : ''}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  };
+  const body = items.length === 0
+    ? '<div class="empty">ไม่มี hardware ที่ผูกอยู่กับ member คนนี้</div>'
+    : renderGroup('pc', 'Personal Computer', '💻')
+      + renderGroup('device', 'Device', '📱')
+      + renderGroup('network', 'Network', '📡')
+      + `<div style="font-size:12px;color:var(--text-muted);margin-top:6px">รวม ${items.length} รายการ — จัดการได้ที่ <a href="#/hardware-pc" style="color:var(--primary)">Hardware → PC/Device/Network</a></div>`;
+
+  showModal({
+    title: `🖥️ Hardware ของ ${memberName}`,
+    body,
+    onSubmit: async () => { /* read-only */ },
+  });
+  setTimeout(() => {
+    const okBtn = document.querySelector('.modal-bg .modal #m-ok');
+    if (okBtn) okBtn.style.display = 'none';
+  }, 10);
+}
+
 async function showMemberSitesModal(memberId, memberName) {
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
@@ -7105,6 +7495,12 @@ async function handleMemberAction(btn) {
   if (act === 'sites') {
     const name = btn.dataset.name;
     showMemberSitesModal(parseInt(id, 10), name);
+    return;
+  }
+
+  if (act === 'hardware') {
+    const name = btn.dataset.name;
+    showMemberHardwareModal(parseInt(id, 10), name);
     return;
   }
 
