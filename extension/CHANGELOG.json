@@ -2,6 +2,24 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.37",
+      "date": "2026-04-30",
+      "title": "Hardware: เพิ่มรูปภาพ — อัพโหลด/ถ่ายกล้อง/crop + แสดง thumbnail ใน list",
+      "summary": "ทุก hardware item อัพโหลดรูปได้ (file หรือ camera) + crop เป็น 4:3 + lightbox preview",
+      "changes": [
+        "DB: ALTER TABLE hardware ADD COLUMN photo_data TEXT (base64 JPEG, max ~1MB)",
+        "Backend: HardwareIn/HardwarePatchIn รองรับ photo_data ('' = clear, omit = unchanged)",
+        "Frontend: extend openCropModal — รับ options {aspectRatio, outputWidth/Height, outputType, outputQuality, title}",
+        "Frontend: extend openCameraModal — forward cropOpts ให้ openCropModal (กัน double-crop)",
+        "Hardware edit modal — section รูปภาพใหม่:",
+        "  📷 อัพโหลดไฟล์ → file picker → crop (4:3 landscape, 640x480 JPEG q=0.85)",
+        "  📸 ถ่ายรูปจากกล้อง → camera modal → snap → crop (เหมือนกัน)",
+        "  🗑 ลบรูป → clear",
+        "Hardware row: thumbnail 60x45 ทางซ้าย ก่อนชื่อ — ถ้าไม่มีรูป แสดง icon ของ type (💻/📱/📡)",
+        "คลิก thumbnail → showHardwarePhotoModal — lightbox แสดงรูปเต็ม max-height 70vh"
+      ]
+    },
+    {
       "version": "1.9.36",
       "date": "2026-04-30",
       "title": "Module ใหม่: Hardware (PC / Device / Network) + ผูกกับ Member + ประวัติการครอบครอง",

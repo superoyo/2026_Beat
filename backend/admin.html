@@ -1183,15 +1183,24 @@ function setSiteLogoInForm(dataUrl) {
 // === Crop modal — Cropper.js ===
 let _cropper = null;
 
-function openCropModal(srcDataUrl, onSave) {
+function openCropModal(srcDataUrl, onSave, options) {
   // onSave: (dataUrl) => void — callback เมื่อ user crop สำเร็จ
+  // options: {aspectRatio, outputWidth, outputHeight, outputType, outputQuality, title}
+  //   defaults = square logo (1:1, 256x256, PNG)
+  options = options || {};
+  const aspectRatio = (options.aspectRatio != null) ? options.aspectRatio : 1;
+  const outputWidth = options.outputWidth || 256;
+  const outputHeight = options.outputHeight || 256;
+  const outputType = options.outputType || 'image/png';
+  const outputQuality = (options.outputQuality != null) ? options.outputQuality : 0.92;
+  const title = options.title || '✂️ Crop โลโก้ (สี่เหลี่ยมจัตุรัส)';
   if (!onSave) onSave = setSiteLogoInForm;   // default: เขียนลง form (สำหรับ Add site modal)
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   bg.style.zIndex = '1100';   // เหนือ site form modal
   bg.innerHTML = `
     <div class="modal modal-wide">
-      <h3 style="margin:0 0 14px;font-size:17px;font-weight:700">✂️ Crop โลโก้ (สี่เหลี่ยมจัตุรัส)</h3>
+      <h3 style="margin:0 0 14px;font-size:17px;font-weight:700">${escapeHtml(title)}</h3>
       <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:12.5px">
         ลากเพื่อเลือกพื้นที่ • ใช้ scroll wheel เพื่อ zoom • ปุ่ม +/- สำหรับ zoom
       </div>
@@ -1222,7 +1231,7 @@ function openCropModal(srcDataUrl, onSave) {
   const initCropper = () => {
     const img = bg.querySelector('#m-crop-img');
     _cropper = new Cropper(img, {
-      aspectRatio: 1,         // square
+      aspectRatio: aspectRatio,       // 1 = square, 4/3 = landscape, NaN = free-form
       viewMode: 1,            // restrict crop box to canvas
       dragMode: 'move',
       autoCropArea: 0.8,
@@ -1257,10 +1266,12 @@ function openCropModal(srcDataUrl, onSave) {
     if (!_cropper) return;
     try {
       const canvas = _cropper.getCroppedCanvas({
-        width: 256, height: 256,
+        width: outputWidth, height: outputHeight,
         imageSmoothingEnabled: true, imageSmoothingQuality: 'high',
       });
-      const dataUrl = canvas.toDataURL('image/png');
+      const dataUrl = (outputType === 'image/jpeg' || outputType === 'image/webp')
+        ? canvas.toDataURL(outputType, outputQuality)
+        : canvas.toDataURL(outputType);
       onSave(dataUrl);
       cleanup();
     } catch (e) {
@@ -1273,7 +1284,8 @@ function openCropModal(srcDataUrl, onSave) {
 
 // === Logo search modal — fetch suggestions and let user pick ===
 // === Camera modal — ถ่ายรูปจากกล้อง → crop modal ===
-function openCameraModal(onSave) {
+function openCameraModal(onSave, cropOpts) {
+  // cropOpts: ส่งต่อให้ openCropModal (เช่น aspectRatio, outputType, outputWidth/Height)
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   bg.style.zIndex = '1100';
@@ -1361,7 +1373,7 @@ function openCameraModal(onSave) {
     ctx.drawImage(video, 0, 0);
     const dataUrl = canvas.toDataURL('image/png');
     cleanup();
-    openCropModal(dataUrl, onSave);
+    openCropModal(dataUrl, onSave, cropOpts);
   });
 
   startCamera();
@@ -6464,8 +6476,14 @@ function renderHardwareRow(h) {
     ? `<span title="${escapeHtml(h.current_member_username || '')}" style="display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(16,185,129,.10);color:var(--green)">👤 ${escapeHtml(h.current_member_label)}</span>`
     : `<span style="display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;background:var(--bg-soft);color:var(--text-muted)">🔓 ยังไม่ผูก</span>`;
 
+  // Photo thumbnail (left side) — 60x45 4:3 thumb, click to preview full size
+  const thumb = h.photo_data
+    ? `<button type="button" data-hw-act="preview-photo" data-hw-id="${h.id}" data-hw-name="${escapeHtml(h.name)}" style="background:transparent;border:none;padding:0;cursor:pointer;flex-shrink:0" title="คลิกเพื่อดูภาพเต็ม"><img src="${h.photo_data}" alt="photo" style="width:60px;height:45px;object-fit:cover;border-radius:6px;border:1px solid var(--border)" /></button>`
+    : `<div style="width:60px;height:45px;border-radius:6px;border:1px dashed var(--border);background:var(--bg-soft);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px">${HW_TYPES.find(t => t.id === h.hw_type)?.icon || '📦'}</div>`;
+
   return `
     <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px;padding:10px 14px">
+      ${thumb}
       <div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:3px;overflow:hidden">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <span style="font-weight:700;font-size:14.5px;color:var(--text)">${escapeHtml(h.name)}</span>
@@ -6498,7 +6516,32 @@ async function handleHardwareAction(btn) {
     } catch (e) { alert('ลบไม่สำเร็จ: ' + e.message); }
   } else if (act === 'history') {
     showHardwareHistoryModal(id, btn.dataset.hwName);
+  } else if (act === 'preview-photo') {
+    const h = _hwCache.find(x => x.id === id);
+    if (h && h.photo_data) showHardwarePhotoModal(h);
   }
+}
+
+// Lightbox modal — แสดงรูปเต็ม
+function showHardwarePhotoModal(h) {
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.style.zIndex = '1100';
+  bg.innerHTML = `
+    <div class="modal modal-wide" style="max-width:720px">
+      <h3 style="margin:0 0 10px;font-size:16px;font-weight:700">🖼 ${escapeHtml(h.name)}</h3>
+      <div style="background:#0f172a;border-radius:10px;overflow:hidden">
+        <img src="${h.photo_data}" alt="photo" style="display:block;width:100%;height:auto;max-height:70vh;object-fit:contain;background:#0f172a" />
+      </div>
+      <div class="modal-actions" style="margin-top:14px">
+        <button class="btn primary" id="hp-close">ปิด</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(bg);
+  const close = () => bg.remove();
+  bg.querySelector('#hp-close').addEventListener('click', close);
+  bg.addEventListener('click', e => { if (e.target === bg) close(); });
 }
 
 function showHardwareModal(hw, type) {
@@ -6579,6 +6622,25 @@ function showHardwareModal(hw, type) {
         <select id="hm-owner" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">${memberOptions}</select>
         <div class="hint" style="font-size:11.5px;color:var(--text-muted);margin-top:4px">${isEdit ? 'เปลี่ยน owner → ปิด assignment เก่า + เปิดใหม่อัตโนมัติ (เก็บประวัติ)' : 'จะสร้าง initial assignment ให้อัตโนมัติ'}</div>
       </div>
+      <!-- รูปภาพ -->
+      <div class="field">
+        <label>รูปภาพ</label>
+        <div style="display:flex;gap:14px;align-items:flex-start;margin-top:6px">
+          <div id="hm-photo-preview" style="width:120px;height:90px;border-radius:8px;border:1.5px dashed var(--border);background:${(isEdit && hw.photo_data) ? 'var(--bg-card)' : 'var(--bg-soft)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden">
+            ${(isEdit && hw.photo_data)
+              ? `<img src="${hw.photo_data}" alt="photo" style="width:100%;height:100%;object-fit:cover" />`
+              : `<span style="color:var(--text-muted);font-size:11px;text-align:center;line-height:1.3">ยังไม่มี<br/>รูปภาพ</span>`
+            }
+          </div>
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px">
+            <button type="button" class="btn" id="hm-photo-upload-btn" style="font-size:12.5px;padding:7px 12px;text-align:left">📷 อัพโหลดไฟล์...</button>
+            <button type="button" class="btn" id="hm-photo-camera-btn" style="font-size:12.5px;padding:7px 12px;text-align:left">📸 ถ่ายรูปจากกล้อง</button>
+            <button type="button" class="btn danger" id="hm-photo-remove-btn" style="font-size:12.5px;padding:7px 12px;text-align:left;${(isEdit && hw.photo_data) ? '' : 'display:none'}">🗑 ลบรูป</button>
+            <input type="file" id="hm-photo-file-input" accept="image/*" style="display:none" />
+          </div>
+        </div>
+        <input type="hidden" id="hm-photo-data" value="${escapeHtml((isEdit && hw.photo_data) || '')}" />
+      </div>
       <div class="field">
         <label>หมายเหตุ</label>
         <textarea id="hm-notes" rows="2" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical">${isEdit ? escapeHtml(hw.notes || '') : ''}</textarea>
@@ -6602,6 +6664,15 @@ function showHardwareModal(hw, type) {
         data.device_subtype = $('hm-subtype').value.trim() || null;
         data.capacity = $('hm-capacity').value.trim() || null;
       }
+      // Photo — ส่งเฉพาะถ้าเปลี่ยน
+      const photoEl = $('hm-photo-data');
+      if (photoEl) {
+        const cur = photoEl.value;
+        const initial = photoEl.dataset.initial || '';
+        if (cur !== initial) {
+          data.photo_data = cur;   // '' = clear, non-empty = set
+        }
+      }
       if (!data.name) throw new Error('กรอกชื่อ');
       const url = isEdit ? `/api/admin/hardware/${hw.id}` : '/api/admin/hardware';
       const method = isEdit ? 'PATCH' : 'POST';
@@ -6610,6 +6681,56 @@ function showHardwareModal(hw, type) {
       await fetchJson(url, { method, body: JSON.stringify(data) });
       await loadHardware();
     },
+  });
+
+  // ---- Photo wiring (after modal in DOM) ----
+  const photoEl = $('hm-photo-data');
+  if (photoEl) photoEl.dataset.initial = photoEl.value;
+
+  const setHmPhoto = (dataUrl) => {
+    const el = $('hm-photo-data');
+    const preview = $('hm-photo-preview');
+    const removeBtn = $('hm-photo-remove-btn');
+    if (!el || !preview) return;
+    el.value = dataUrl || '';
+    if (dataUrl) {
+      preview.style.background = 'var(--bg-card)';
+      preview.innerHTML = `<img src="${dataUrl}" alt="photo" style="width:100%;height:100%;object-fit:cover" />`;
+      if (removeBtn) removeBtn.style.display = '';
+    } else {
+      preview.style.background = 'var(--bg-soft)';
+      preview.innerHTML = `<span style="color:var(--text-muted);font-size:11px;text-align:center;line-height:1.3">ยังไม่มี<br/>รูปภาพ</span>`;
+      if (removeBtn) removeBtn.style.display = 'none';
+    }
+  };
+  // Crop config สำหรับ hardware photo: 4:3 landscape, JPEG, 640x480
+  const cropOpts = {
+    aspectRatio: 4 / 3,
+    outputWidth: 640,
+    outputHeight: 480,
+    outputType: 'image/jpeg',
+    outputQuality: 0.85,
+    title: '✂️ Crop รูปภาพ (สัดส่วน 4:3)',
+  };
+  // Upload
+  const fileInput = $('hm-photo-file-input');
+  $('hm-photo-upload-btn').addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => openCropModal(ev.target.result, setHmPhoto, cropOpts);
+    reader.readAsDataURL(file);
+    fileInput.value = '';
+  });
+  // Camera — openCameraModal forward cropOpts → openCropModal ครั้งเดียว
+  $('hm-photo-camera-btn').addEventListener('click', () => {
+    openCameraModal(setHmPhoto, cropOpts);
+  });
+  // Remove
+  $('hm-photo-remove-btn').addEventListener('click', () => {
+    if (!confirm('ลบรูปของรายการนี้?')) return;
+    setHmPhoto('');
   });
 }
 

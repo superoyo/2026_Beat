@@ -281,7 +281,9 @@ def init_db() -> None:
                 device_subtype    TEXT,            -- 'External HDD' / 'WACOM' / 'Monitor' (free-form)
                 capacity          TEXT,            -- '1TB' / '4K 27"' (free-form)
                 -- ผูกกับ member ปัจจุบัน
-                current_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL
+                current_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+                -- v1.9.37: รูปภาพ (base64 JPEG, ~640x480)
+                photo_data        TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_hardware_type ON hardware(hw_type);
             CREATE INDEX IF NOT EXISTS idx_hardware_member ON hardware(current_member_id);
@@ -408,6 +410,17 @@ def init_db() -> None:
         # v1.9.30 — logo (base64 data URL) สำหรับ Website/Domain card
         if "logo_data" not in domain_cols:
             conn.execute("ALTER TABLE domains ADD COLUMN logo_data TEXT")
+
+        # v1.9.37 — photo (base64 JPEG) สำหรับ hardware item
+        try:
+            hw_cols = {
+                row["name"] for row in conn.execute("PRAGMA table_info(hardware)").fetchall()
+            }
+            if hw_cols and "photo_data" not in hw_cols:
+                conn.execute("ALTER TABLE hardware ADD COLUMN photo_data TEXT")
+        except sqlite3.OperationalError:
+            # hardware table อาจไม่มีอยู่ (DB เก่ามาก) — schema CREATE TABLE จะสร้างให้ในรอบนี้
+            pass
 
         # credentials table — billing/lifecycle fields ย้ายมาจาก sites (v1.10)
         # หลังจากนี้ user จะ config ที่ระดับ credential แทน site
@@ -4028,6 +4041,8 @@ class HardwareIn(BaseModel):
     capacity: Optional[str] = Field(None, max_length=120)
     # Owner
     current_member_id: Optional[int] = None
+    # Photo (base64 data URL — JPEG ~640x480)
+    photo_data: Optional[str] = Field(None, max_length=1_500_000)
 
     @field_validator("hw_type")
     @classmethod
@@ -4051,6 +4066,8 @@ class HardwarePatchIn(BaseModel):
     capacity: Optional[str] = Field(None, max_length=120)
     # Owner change — `null` = clear owner, undefined (omitted) = no change
     current_member_id: Optional[int] = None
+    # Photo: '' = clear, non-empty = set; omitted = unchanged
+    photo_data: Optional[str] = Field(None, max_length=1_500_000)
     _set_owner: bool = False    # internal flag (not used yet)
 
 
@@ -4125,8 +4142,9 @@ def admin_create_hardware(
     with db_conn() as conn:
         cur = conn.execute(
             "INSERT INTO hardware(hw_type, name, asset_number, purchased_at, notes, created_at, "
-            "                     os, cpu, ram, storage, device_subtype, capacity, current_member_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "                     os, cpu, ram, storage, device_subtype, capacity, current_member_id, "
+            "                     photo_data) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 payload.hw_type,
                 payload.name.strip(),
@@ -4141,6 +4159,7 @@ def admin_create_hardware(
                 (payload.device_subtype or "").strip() or None,
                 (payload.capacity or "").strip() or None,
                 payload.current_member_id,
+                payload.photo_data or None,
             ),
         )
         hw_id = cur.lastrowid
@@ -4173,6 +4192,10 @@ def admin_update_hardware(
         if f in raw_body:
             v = raw_body[f]
             updates[f] = (v.strip() if isinstance(v, str) else v) or None
+    # photo_data: '' = clear, non-empty = set, omitted = unchanged
+    if "photo_data" in raw_body:
+        v = raw_body["photo_data"]
+        updates["photo_data"] = v if v else None
 
     with db_conn() as conn:
         existing = conn.execute("SELECT * FROM hardware WHERE id = ?", (hw_id,)).fetchone()
