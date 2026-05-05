@@ -771,6 +771,7 @@
         <a href="#/dashboard" data-route="dashboard">📊 Dashboard</a>
         <a href="#/platforms" data-route="platforms">🚀 Platforms</a>
         <a href="#/calendar" data-route="calendar">📅 Calendar</a>
+        <a href="#/my-device" data-route="my-device">🖥️ My Device</a>
         <a href="#/extension" data-route="extension">🧩 Extension</a>
         <a href="#/account" data-route="account">👤 บัญชีของฉัน</a>
       </div>
@@ -915,6 +916,7 @@ const routes = {
   'hardware-pc':      () => renderHardwarePage('pc'),
   'hardware-device':  () => renderHardwarePage('device'),
   'hardware-network': () => renderHardwarePage('network'),
+  'my-device':        renderMyDevicePage,
   'domains-config':   renderDomainsConfigPage,
   'services-config':  renderServicesConfigPage,
   'websites':         renderWebsitesPage,
@@ -6654,6 +6656,192 @@ function showHardwarePhotoModal(h) {
   const close = () => bg.remove();
   bg.querySelector('#hp-close').addEventListener('click', close);
   bg.addEventListener('click', e => { if (e.target === bg) close(); });
+}
+
+// =========================================================================
+// My Device — member-side page (อุปกรณ์ที่ผูกกับตัวเอง + อัพโหลดรูปได้)
+// =========================================================================
+let _myDeviceCache = [];
+
+async function renderMyDevicePage() {
+  $('main').innerHTML = `
+    <div class="page-head">
+      <h2 class="page-title">🖥️ My Device</h2>
+    </div>
+    <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px">
+      อุปกรณ์ทั้งหมดที่ผูกกับคุณ — แก้ไขข้อมูลไม่ได้ แต่<strong>อัพโหลดรูปอุปกรณ์</strong>เองได้
+    </div>
+    <div id="md-list"><div class="empty">กำลังโหลด…</div></div>
+  `;
+  await loadMyDevice();
+}
+
+async function loadMyDevice() {
+  let data;
+  try {
+    data = await fetchJson('/api/my-hardware');
+  } catch (e) {
+    if ($('md-list')) $('md-list').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  _myDeviceCache = data.hardware || [];
+  renderMyDeviceList();
+}
+
+function renderMyDeviceList() {
+  const listEl = $('md-list');
+  if (!listEl) return;
+  if (_myDeviceCache.length === 0) {
+    listEl.innerHTML = `
+      <div class="empty" style="padding:32px;text-align:center;line-height:1.6">
+        <div style="font-size:48px;margin-bottom:8px">📭</div>
+        <div style="font-weight:600;color:var(--text);margin-bottom:4px">ยังไม่มีอุปกรณ์ที่ผูกกับคุณ</div>
+        <div style="font-size:13px;color:var(--text-muted)">ติดต่อ admin เพื่อขอผูกอุปกรณ์</div>
+      </div>
+    `;
+    return;
+  }
+  // Group by hw_type
+  const groups = { pc: [], device: [], network: [] };
+  _myDeviceCache.forEach(h => {
+    if (groups[h.hw_type]) groups[h.hw_type].push(h);
+  });
+  const sections = HW_TYPES.filter(t => groups[t.id].length > 0).map(t => `
+    <div style="margin-bottom:24px">
+      <div style="font-size:12px;font-weight:700;color:var(--primary-dark);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+        <span style="font-size:16px">${t.icon}</span>
+        <span>${escapeHtml(t.label)}</span>
+        <span style="background:var(--bg-soft);color:var(--text-muted);font-size:11px;padding:1px 8px;border-radius:999px;font-weight:600">${groups[t.id].length}</span>
+      </div>
+      ${groups[t.id].map(h => renderMyDeviceCard(h)).join('')}
+    </div>
+  `).join('');
+  listEl.innerHTML = sections;
+  listEl.querySelectorAll('button[data-md-act]').forEach(btn => {
+    btn.addEventListener('click', () => handleMyDeviceAction(btn));
+  });
+}
+
+function renderMyDeviceCard(h) {
+  const tab = HW_TYPES.find(t => t.id === h.hw_type) || HW_TYPES[0];
+  // Photo block — ขนาดใหญ่ (160x120) — คลิกเพื่อดูเต็ม
+  const photoBlock = h.photo_data
+    ? `<button type="button" data-md-act="preview" data-md-id="${h.id}" title="คลิกเพื่อดูภาพเต็ม"
+         style="width:160px;height:120px;border-radius:8px;border:1px solid var(--border);background:var(--bg-soft);overflow:hidden;padding:0;cursor:pointer;flex-shrink:0">
+         <img src="${h.photo_data}" alt="" style="width:100%;height:100%;object-fit:cover;display:block" />
+       </button>`
+    : `<div style="width:160px;height:120px;border-radius:8px;border:1.5px dashed var(--border);background:var(--bg-soft);display:flex;align-items:center;justify-content:center;flex-shrink:0;flex-direction:column;gap:4px;color:var(--text-muted);font-size:11.5px">
+         <span style="font-size:32px;opacity:.6">${tab.icon}</span>
+         <span>ยังไม่มีรูป</span>
+       </div>`;
+
+  // Specs
+  const specs = [];
+  if (h.hw_type === 'pc') {
+    if (h.model) specs.push(`📦 ${escapeHtml(h.model)}`);
+    if (h.os) specs.push(`💿 ${escapeHtml(h.os)}${h.os_version ? ' ' + escapeHtml(h.os_version) : ''}`);
+    if (h.cpu) specs.push(`🔧 ${escapeHtml(h.cpu)}`);
+    if (h.ram) specs.push(`🧠 ${escapeHtml(h.ram)}`);
+    if (h.storage) specs.push(`💾 ${escapeHtml(h.storage)}`);
+    if (h.display) specs.push(`🖥️ ${escapeHtml(h.display)}`);
+  } else if (h.hw_type === 'device') {
+    if (h.device_subtype) specs.push(`📦 ${escapeHtml(h.device_subtype)}`);
+    if (h.capacity) specs.push(`📏 ${escapeHtml(h.capacity)}`);
+  }
+  if (h.serial_number) specs.push(`#️⃣ ${escapeHtml(h.serial_number)}`);
+  if (h.asset_number) specs.push(`🔖 ${escapeHtml(h.asset_number)}`);
+  if (h.department || h.location) {
+    const dl = [h.department, h.location].filter(Boolean).map(escapeHtml).join(' / ');
+    specs.push(`📍 ${dl}`);
+  }
+  if (h.purchased_at) {
+    const dateLabel = (h.hw_type === 'pc') ? fmtMonthYearThai(h.purchased_at) : fmtDateThai(h.purchased_at);
+    specs.push(`📅 ${escapeHtml(dateLabel)}`);
+  }
+  const specHtml = specs.length
+    ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:4px 14px;font-size:12.5px;color:var(--text-muted);line-height:1.7">${specs.map(s => `<div>${s}</div>`).join('')}</div>`
+    : '<div style="font-size:12px;color:var(--text-muted);font-style:italic">— ไม่มีรายละเอียด —</div>';
+
+  // Status badge (PC only)
+  let statusBadge = '';
+  if (h.hw_type === 'pc' && h.status) {
+    const map = {
+      active:  { c: 'rgba(16,185,129,.12);color:var(--green)',     l: '✓ ใช้งาน' },
+      repair:  { c: 'rgba(245,158,11,.15);color:#92400e',          l: '🔧 ซ่อม' },
+      stock:   { c: 'rgba(99,102,241,.10);color:#3730a3',          l: '📦 Stock' },
+      retired: { c: 'rgba(220,38,38,.10);color:var(--critical)',   l: '⚠ ปลดระวาง' },
+    };
+    const m = map[h.status];
+    if (m) statusBadge = `<span style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:${m.c}">${m.l}</span>`;
+  }
+
+  return `
+    <div class="card" style="display:flex;gap:14px;flex-wrap:wrap;padding:14px;margin-bottom:10px;align-items:flex-start">
+      ${photoBlock}
+      <div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:15px;font-weight:700;color:var(--text)">${escapeHtml(h.name)}</span>
+          ${statusBadge}
+        </div>
+        ${specHtml}
+        ${h.notes ? `<div style="font-size:12px;color:var(--text-muted);font-style:italic;padding:6px 10px;background:var(--bg-soft);border-radius:6px">📝 ${escapeHtml(h.notes)}</div>` : ''}
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px">
+          <button class="btn" data-md-act="upload" data-md-id="${h.id}" style="font-size:12.5px;padding:6px 12px">📷 อัพโหลดรูป</button>
+          <button class="btn" data-md-act="camera" data-md-id="${h.id}" style="font-size:12.5px;padding:6px 12px">📸 ถ่ายจากกล้อง</button>
+          ${h.photo_data ? `<button class="btn danger" data-md-act="remove-photo" data-md-id="${h.id}" data-md-name="${escapeHtml(h.name)}" style="font-size:12.5px;padding:6px 12px">🗑 ลบรูป</button>` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function uploadMyDevicePhoto(hwId, dataUrl) {
+  try {
+    await fetchJson(`/api/my-hardware/${hwId}/photo`, {
+      method: 'PATCH',
+      body: JSON.stringify({ photo_data: dataUrl || '' }),
+    });
+    await loadMyDevice();
+  } catch (e) {
+    alert('บันทึกรูปไม่สำเร็จ: ' + e.message);
+  }
+}
+
+function handleMyDeviceAction(btn) {
+  const act = btn.dataset.mdAct;
+  const id = parseInt(btn.dataset.mdId, 10);
+  const h = _myDeviceCache.find(x => x.id === id);
+  if (!h) return;
+  // Crop config — เหมือน admin Hardware module: 4:3, 640x480, JPEG q=0.85
+  const cropOpts = {
+    aspectRatio: 4 / 3,
+    outputWidth: 640,
+    outputHeight: 480,
+    outputType: 'image/jpeg',
+    outputQuality: 0.85,
+    title: '✂️ Crop รูปอุปกรณ์ (สัดส่วน 4:3)',
+  };
+  if (act === 'preview') {
+    if (h.photo_data) showHardwarePhotoModal(h);
+  } else if (act === 'upload') {
+    // สร้าง file input ชั่วคราว
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => openCropModal(ev.target.result, (dataUrl) => uploadMyDevicePhoto(id, dataUrl), cropOpts);
+      reader.readAsDataURL(file);
+    });
+    input.click();
+  } else if (act === 'camera') {
+    openCameraModal((dataUrl) => uploadMyDevicePhoto(id, dataUrl), cropOpts);
+  } else if (act === 'remove-photo') {
+    if (!confirm(`ลบรูปของ "${btn.dataset.mdName}"?`)) return;
+    uploadMyDevicePhoto(id, '');
+  }
 }
 
 // === Hardware: Owner picker (avatar + display_name + email) ===

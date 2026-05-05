@@ -4331,6 +4331,53 @@ def admin_member_hardware(
     return {"hardware": [dict(r) for r in rows]}
 
 
+# ----- Member-side: My Device -----
+# v1.9.42 — สำหรับผู้ใช้ทั่วไปดูอุปกรณ์ของตัวเอง + อัพโหลดรูปได้
+class MyHardwarePhotoIn(BaseModel):
+    # photo_data: '' = clear, non-empty data URL = set
+    photo_data: Optional[str] = Field(None, max_length=1_500_000)
+
+
+@app.get("/api/my-hardware")
+def my_hardware(
+    sess: dict = Depends(require_admin_or_member),
+) -> dict[str, Any]:
+    """อุปกรณ์ทั้งหมดที่ผูกกับ current member — super admin (ไม่มี member_id) → list ว่าง"""
+    member_id = sess.get("member_id")
+    if not member_id:
+        return {"hardware": []}
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM hardware WHERE current_member_id = ? "
+            "ORDER BY hw_type ASC, name COLLATE NOCASE ASC",
+            (member_id,),
+        ).fetchall()
+    return {"hardware": [dict(r) for r in rows]}
+
+
+@app.patch("/api/my-hardware/{hw_id}/photo")
+def my_hardware_update_photo(
+    hw_id: int,
+    payload: MyHardwarePhotoIn,
+    fct_member_session: Optional[str] = Cookie(default=None),
+) -> dict[str, Any]:
+    """Member อัพโหลด/ลบรูปอุปกรณ์ของตัวเอง — verify ownership ก่อน"""
+    sess = _require_member_session(fct_member_session)
+    member_id = sess["member_id"]
+    with db_conn() as conn:
+        existing = conn.execute(
+            "SELECT current_member_id FROM hardware WHERE id = ?", (hw_id,)
+        ).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="hardware not found")
+        if existing["current_member_id"] != member_id:
+            raise HTTPException(status_code=403, detail="อุปกรณ์นี้ไม่ได้ผูกกับคุณ")
+        new_photo = payload.photo_data if payload.photo_data else None
+        conn.execute(
+            "UPDATE hardware SET photo_data = ? WHERE id = ?",
+            (new_photo, hw_id),
+        )
+    return {"ok": True}
 
 
 

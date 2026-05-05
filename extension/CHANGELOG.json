@@ -2,6 +2,22 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.42",
+      "date": "2026-05-05",
+      "title": "Member: เมนู My Device — ดูอุปกรณ์ของตัวเอง + อัพโหลดรูปได้",
+      "summary": "ผู้ใช้ทั่วไปเห็นอุปกรณ์ที่ admin ผูกให้ (PC/Device/Network) จัดกลุ่มตามประเภท + อัพโหลดรูปอุปกรณ์ของตัวเองได้ผ่านไฟล์/กล้อง",
+      "changes": [
+        "Backend: GET /api/my-hardware — list อุปกรณ์ที่ current_member_id = ตัวเอง",
+        "Backend: PATCH /api/my-hardware/{hw_id}/photo — อัพโหลด/ลบรูป + verify ownership (403 ถ้าไม่ใช่ของตัวเอง)",
+        "Frontend: เพิ่ม nav link '🖥️ My Device' ใน top section (เห็นทุก role)",
+        "Frontend: renderMyDevicePage — จัดกลุ่ม PC / Device / Network แยก section + count badge",
+        "Card design: photo 160x120 (คลิกดูเต็ม) + ชื่อ/status/specs grid + notes + action buttons",
+        "Photo upload: 📷 อัพโหลดไฟล์ + 📸 ถ่ายจากกล้อง (reuse openCropModal/openCameraModal — 4:3 640x480 JPEG)",
+        "Member แก้ไข spec/owner ไม่ได้ — ทำได้เฉพาะรูป (read-only field อื่น)",
+        "Empty state สวย: 📭 + คำแนะนำให้ติดต่อ admin เมื่อยังไม่มีอุปกรณ์ผูก"
+      ]
+    },
+    {
       "version": "1.9.41",
       "date": "2026-05-05",
       "title": "Hardware Owner picker: avatar + ชื่อจริง + email (แทน <select> ธรรมดา)",
