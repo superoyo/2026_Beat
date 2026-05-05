@@ -6504,16 +6504,20 @@ function renderHwSidebar() {
       .map(k => itemHtml(`os:${k}`, osLabels[k], osCounts[k], _hwOsFilter === k))
   ];
 
-  const sectStyle = 'background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:3px;box-shadow:var(--shadow-sm)';
-  const headStyle = 'font-size:11.5px;font-weight:700;color:var(--primary-dark);text-transform:uppercase;letter-spacing:.5px;padding:4px 10px;margin-bottom:4px';
+  const sectStyle = 'background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:6px;box-shadow:var(--shadow-sm)';
+  const headStyle = 'font-size:11.5px;font-weight:700;color:var(--primary-dark);text-transform:uppercase;letter-spacing:.5px;padding:4px 10px';
+  // ห่อ items ใน scrollable container — header ค้างอยู่นอก scroll
+  // dept อาจมีเยอะ → max-height 260px ; OS มีไม่เกิน 5 → ปล่อยอิสระ
+  const scrollItems = (items, maxH) =>
+    `<div style="display:flex;flex-direction:column;gap:3px;${maxH ? `max-height:${maxH}px;overflow-y:auto;` : ''}padding-right:2px">${items.join('')}</div>`;
   wrap.innerHTML = `
     <section style="${sectStyle}">
       <div style="${headStyle}">🏢 แผนก</div>
-      ${deptItems.join('')}
+      ${scrollItems(deptItems, 260)}
     </section>
     <section style="${sectStyle}">
       <div style="${headStyle}">💿 OS</div>
-      ${osItems.join('')}
+      ${scrollItems(osItems, 0)}
     </section>
   `;
 

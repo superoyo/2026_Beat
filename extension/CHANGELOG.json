@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.46",
+      "date": "2026-05-05",
+      "title": "PC sidebar: scroll กล่องแผนก ไม่ให้ยาวเกิน",
+      "summary": "กล่อง 🏢 แผนก ใน sidebar กรองกล่องสูงไม่เกิน 260px + scroll bar เมื่อ list ยาว — header section ค้างอยู่นอก scroll เห็นเสมอ",
+      "changes": [
+        "เพิ่ม helper scrollItems(items, maxH) — wrap items ใน div ที่ scroll ได้",
+        "🏢 แผนก: max-height 260px + overflow-y:auto",
+        "💿 OS: ปล่อยอิสระ (มีไม่เกิน 5 items ไม่จำเป็นต้อง scroll)"
+      ]
+    },
+    {
       "version": "1.9.45",
       "date": "2026-05-05",
       "title": "PC list: 2-column layout — sidebar กรองแผนก/OS แทน dropdown ด้านบน",
