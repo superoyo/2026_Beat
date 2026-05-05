@@ -6678,10 +6678,23 @@ function renderHardwareRow(h) {
     ? `<span title="${escapeHtml(h.current_member_username || '')}" style="display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(16,185,129,.10);color:var(--green)">👤 ${escapeHtml(h.current_member_label)}</span>`
     : `<span style="display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;background:var(--bg-soft);color:var(--text-muted)">🔓 ยังไม่ผูก</span>`;
 
-  // Photo thumbnail (left side) — 60x45 4:3 thumb, click to preview full size
+  // Owner avatar overlay (มุมขวาล่างของรูปอุปกรณ์) — แสดงเฉพาะถ้าผูกกับ owner
+  let ownerAvatarOverlay = '';
+  if (h.current_member_id) {
+    const m = _hwMembersCache.find(x => x.id === h.current_member_id);
+    if (m) {
+      const display = h.current_member_label || m.display_name || m.email || '?';
+      const inner = m.avatar_data
+        ? `<img src="${m.avatar_data}" alt="" style="width:100%;height:100%;object-fit:cover;display:block" />`
+        : `<span style="width:100%;height:100%;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:11px">${escapeHtml((display.trim().charAt(0) || '?').toUpperCase())}</span>`;
+      ownerAvatarOverlay = `<div title="${escapeHtml(display)}" style="position:absolute;right:-5px;bottom:-5px;width:22px;height:22px;border-radius:50%;overflow:hidden;border:2px solid var(--bg-card);background:var(--bg-card);box-shadow:0 1px 3px rgba(0,0,0,.18);pointer-events:none">${inner}</div>`;
+    }
+  }
+  // Photo thumbnail (left side) — 60x45 4:3 thumb + owner overlay มุมขวาล่าง
+  const thumbStyleCommon = 'position:relative;flex-shrink:0;overflow:visible';
   const thumb = h.photo_data
-    ? `<button type="button" data-hw-act="preview-photo" data-hw-id="${h.id}" data-hw-name="${escapeHtml(h.name)}" style="background:transparent;border:none;padding:0;cursor:pointer;flex-shrink:0" title="คลิกเพื่อดูภาพเต็ม"><img src="${h.photo_data}" alt="photo" style="width:60px;height:45px;object-fit:cover;border-radius:6px;border:1px solid var(--border)" /></button>`
-    : `<div style="width:60px;height:45px;border-radius:6px;border:1px dashed var(--border);background:var(--bg-soft);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px">${HW_TYPES.find(t => t.id === h.hw_type)?.icon || '📦'}</div>`;
+    ? `<button type="button" data-hw-act="preview-photo" data-hw-id="${h.id}" data-hw-name="${escapeHtml(h.name)}" style="${thumbStyleCommon};background:transparent;border:none;padding:0;cursor:pointer" title="คลิกเพื่อดูภาพเต็ม"><img src="${h.photo_data}" alt="photo" style="width:60px;height:45px;object-fit:cover;border-radius:6px;border:1px solid var(--border);display:block" />${ownerAvatarOverlay}</button>`
+    : `<div style="${thumbStyleCommon};width:60px;height:45px;border-radius:6px;border:1px dashed var(--border);background:var(--bg-soft);display:flex;align-items:center;justify-content:center;font-size:18px">${HW_TYPES.find(t => t.id === h.hw_type)?.icon || '📦'}${ownerAvatarOverlay}</div>`;
 
   return `
     <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px;padding:10px 14px">

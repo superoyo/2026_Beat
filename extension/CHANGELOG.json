@@ -2,6 +2,20 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.48",
+      "date": "2026-05-05",
+      "title": "Hardware list: avatar เจ้าของซ้อนมุมขวาล่างของรูปอุปกรณ์",
+      "summary": "ในรายการอุปกรณ์ทุก tab (PC/Device/Network) — ถ้ามีการผูกกับ owner จะแสดง avatar ของเจ้าของเป็นวงกลมเล็ก 22px ซ้อนมุมขวาล่างของรูปอุปกรณ์ พร้อมขอบขาวเพื่อแยกชั้น",
+      "changes": [
+        "Avatar overlay 22x22 round + border 2px var(--bg-card) + box-shadow ลอยเล็กน้อย",
+        "ใช้ avatar_data จาก _hwMembersCache (โหลดอยู่แล้วใน renderHardwarePage)",
+        "ถ้า member ไม่มีรูป → วงกลมไล่สีน้ำเงิน-ม่วง + อักษรแรกของชื่อ",
+        "Tooltip บน overlay: ชื่อจริงของ owner",
+        "pointer-events:none — ไม่ขัดจังหวะ click photo เพื่อดูเต็ม",
+        "ใช้กับทั้งรูปจริงและ placeholder block (กรณีอุปกรณ์ยังไม่มีรูป)"
+      ]
+    },
+    {
       "version": "1.9.47",
       "date": "2026-05-05",
       "title": "PC sidebar: เพิ่มกล่องกรอง 'การเชื่อมโยง' (เชื่อม/ยังไม่ได้เชื่อม)",
