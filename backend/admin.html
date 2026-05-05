@@ -6656,6 +6656,119 @@ function showHardwarePhotoModal(h) {
   bg.addEventListener('click', e => { if (e.target === bg) close(); });
 }
 
+// === Hardware: Owner picker (avatar + display_name + email) ===
+// แทน <select> ธรรมดาเพื่อให้ผู้ใช้เลือก member ได้อย่างถูกต้องโดยดูหน้าตาประกอบ
+function renderHwMemberRow(m, compact) {
+  const display = m.display_name || m.email || m.phone || `member#${m.id}`;
+  const initial = (display.trim().charAt(0) || '?').toUpperCase();
+  const sub = m.email || m.phone || '';
+  const size = compact ? 28 : 34;
+  const fontSize = compact ? 12 : 14;
+  const avatar = m.avatar_data
+    ? `<img src="${m.avatar_data}" alt="" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;border:1px solid var(--border);flex-shrink:0" />`
+    : `<div style="width:${size}px;height:${size}px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:${fontSize}px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(initial)}</div>`;
+  return `
+    <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
+      ${avatar}
+      <div style="display:flex;flex-direction:column;min-width:0;line-height:1.3">
+        <span style="font-weight:600;font-size:13.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(display)}</span>
+        ${sub ? `<span style="font-size:11.5px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(sub)}</span>` : ''}
+      </div>
+    </div>
+  `;
+}
+function renderHwOwnerTriggerContent(memberId) {
+  if (!memberId) {
+    return `<span style="color:var(--text-muted);font-size:13px">— ยังไม่ผูก (คลิกเพื่อเลือกผู้ดูแล) —</span>`;
+  }
+  const m = _hwMembersCache.find(x => x.id === memberId);
+  if (!m) return `<span style="color:var(--text-muted)">member#${memberId} (ไม่พบในระบบ)</span>`;
+  return renderHwMemberRow(m, true);
+}
+function renderHwOwnerPickerHtml(currentMemberId) {
+  const cid = currentMemberId || '';
+  return `
+    <div id="hm-owner-wrap" style="position:relative">
+      <button type="button" id="hm-owner-trigger" style="width:100%;padding:6px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;cursor:pointer;text-align:left;display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px">
+        <span id="hm-owner-trigger-content" style="flex:1;min-width:0;display:flex">${renderHwOwnerTriggerContent(currentMemberId)}</span>
+        <span id="hm-owner-trigger-arrow" style="color:var(--text-muted);font-size:11px">▼</span>
+      </button>
+      <div id="hm-owner-panel" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:50;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:8px;flex-direction:column;gap:6px">
+        <input id="hm-owner-search" type="text" placeholder="🔍 ค้นหาชื่อ / email / เบอร์..." autocomplete="off" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;background:var(--bg-input);color:var(--text);box-sizing:border-box" />
+        <div id="hm-owner-list" style="overflow-y:auto;max-height:280px;display:flex;flex-direction:column;gap:2px"></div>
+      </div>
+      <input type="hidden" id="hm-owner" value="${cid}" />
+    </div>
+  `;
+}
+let _hwOwnerOutsideListenerAttached = false;
+function wireHwOwnerPicker() {
+  const wrap = $('hm-owner-wrap');
+  if (!wrap) return;
+  const trigger = $('hm-owner-trigger');
+  const panel   = $('hm-owner-panel');
+  const arrow   = $('hm-owner-trigger-arrow');
+  const search  = $('hm-owner-search');
+  const listEl  = $('hm-owner-list');
+  const hidden  = $('hm-owner');
+  let q = '';
+
+  const isOpen = () => panel.style.display === 'flex';
+  const open  = () => { panel.style.display = 'flex'; arrow.textContent = '▲'; q = ''; search.value = ''; refresh(); setTimeout(() => search.focus(), 0); };
+  const close = () => { panel.style.display = 'none'; arrow.textContent = '▼'; };
+
+  const refresh = () => {
+    const ql = q.trim().toLowerCase();
+    const filtered = _hwMembersCache.filter(m => {
+      if (!ql) return true;
+      return (m.display_name || '').toLowerCase().includes(ql)
+          || (m.email || '').toLowerCase().includes(ql)
+          || (m.phone || '').toLowerCase().includes(ql);
+    });
+    const noneRow = `
+      <button type="button" data-mid="" style="cursor:pointer;padding:8px 10px;border-radius:6px;display:flex;align-items:center;gap:10px;color:var(--text-muted);font-size:13px;background:transparent;border:none;font-family:inherit;text-align:left">
+        <span style="width:28px;height:28px;border-radius:50%;border:1px dashed var(--border);display:inline-flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">∅</span>
+        <span>— ไม่ผูก —</span>
+      </button>`;
+    const memberRows = filtered.map(m => `
+      <button type="button" data-mid="${m.id}" style="cursor:pointer;padding:6px 8px;border-radius:6px;display:flex;background:transparent;border:none;font-family:inherit;text-align:left;width:100%;box-sizing:border-box">
+        ${renderHwMemberRow(m, false)}
+      </button>`).join('');
+    const emptyMsg = (filtered.length === 0 && ql)
+      ? `<div style="padding:10px;text-align:center;color:var(--text-muted);font-size:12px">ไม่พบ member ที่ตรงกับ "${escapeHtml(q)}"</div>`
+      : '';
+    listEl.innerHTML = noneRow + memberRows + emptyMsg;
+    listEl.querySelectorAll('button[data-mid]').forEach(btn => {
+      btn.addEventListener('mouseenter', () => btn.style.background = 'var(--bg-soft)');
+      btn.addEventListener('mouseleave', () => btn.style.background = 'transparent');
+      btn.addEventListener('click', () => {
+        const mid = btn.dataset.mid;
+        hidden.value = mid;
+        const newId = mid ? parseInt(mid, 10) : null;
+        $('hm-owner-trigger-content').innerHTML = renderHwOwnerTriggerContent(newId);
+        close();
+      });
+    });
+  };
+
+  trigger.addEventListener('click', (e) => { e.stopPropagation(); isOpen() ? close() : open(); });
+  search.addEventListener('input', (e) => { q = e.target.value; refresh(); });
+  // Outside-click → close (attach once globally — modal is short-lived)
+  if (!_hwOwnerOutsideListenerAttached) {
+    document.addEventListener('click', (e) => {
+      const w = document.getElementById('hm-owner-wrap');
+      const p = document.getElementById('hm-owner-panel');
+      if (!w || !p || p.style.display !== 'flex') return;
+      if (!w.contains(e.target)) {
+        p.style.display = 'none';
+        const a = document.getElementById('hm-owner-trigger-arrow');
+        if (a) a.textContent = '▼';
+      }
+    });
+    _hwOwnerOutsideListenerAttached = true;
+  }
+}
+
 function showHardwareModal(hw, type) {
   const isEdit = !!hw;
   const tabInfo = HW_TYPES.find(t => t.id === type) || HW_TYPES[0];
@@ -6663,14 +6776,8 @@ function showHardwareModal(hw, type) {
   const showPC = (type === 'pc');
   const showDevice = (type === 'device');
 
-  // Member options (Members ทั้งหมด สำหรับ owner dropdown)
-  const memberOptions = [`<option value="">— ไม่ผูก —</option>`].concat(
-    _hwMembersCache.map(m => {
-      const label = m.display_name || m.username || `member#${m.id}`;
-      const sel = (isEdit && hw.current_member_id === m.id) ? ' selected' : '';
-      return `<option value="${m.id}"${sel}>${escapeHtml(label)} (${escapeHtml(m.username || '')})</option>`;
-    })
-  ).join('');
+  // Owner picker HTML — สร้างก่อน (ใช้ใน 2 ฟอร์ม)
+  const ownerPickerHtml = renderHwOwnerPickerHtml(isEdit ? hw.current_member_id : null);
 
   // Status options
   const HW_STATUS_OPTS = [
@@ -6791,7 +6898,7 @@ function showHardwareModal(hw, type) {
         </div>
         <div class="field">
           <label>ผู้ดูแลปัจจุบัน (Owner)</label>
-          <select id="hm-owner" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">${memberOptions}</select>
+          ${ownerPickerHtml}
           <div class="hint" style="font-size:11.5px;color:var(--text-muted);margin-top:4px">${isEdit ? 'เปลี่ยน owner → ปิด assignment เก่า + เปิดใหม่อัตโนมัติ (เก็บประวัติ)' : 'จะสร้าง initial assignment ให้อัตโนมัติ'}</div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -6860,7 +6967,7 @@ function showHardwareModal(hw, type) {
         </div>
         <div class="field">
           <label>ผู้ดูแลปัจจุบัน (Owner)</label>
-          <select id="hm-owner" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">${memberOptions}</select>
+          ${ownerPickerHtml}
         </div>
         <div class="field">
           <label>รูปภาพ</label>
@@ -6935,6 +7042,9 @@ function showHardwareModal(hw, type) {
       await loadHardware();
     },
   });
+
+  // ---- Owner picker wiring (after modal in DOM) ----
+  wireHwOwnerPicker();
 
   // ---- Photo wiring (after modal in DOM) ----
   const photoEl = $('hm-photo-data');

@@ -2,6 +2,21 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.41",
+      "date": "2026-05-05",
+      "title": "Hardware Owner picker: avatar + ชื่อจริง + email (แทน <select> ธรรมดา)",
+      "summary": "ฟอร์ม Hardware (PC/Device/Network) — ช่อง 'ผู้ดูแลปัจจุบัน' เปลี่ยนเป็น custom dropdown แสดงรูปภาพ member + ชื่อจริง + email เพื่อให้เลือกได้ถูกคน + มีช่องค้นหาในตัว",
+      "changes": [
+        "Frontend: เพิ่ม helper `renderHwMemberRow(m, compact)` แสดง row member มาตรฐาน (avatar 28-34px + display_name + email)",
+        "Avatar: ใช้ `m.avatar_data` ถ้ามี — ถ้าไม่มีก็แสดงวงกลมไล่สีพร้อมตัวอักษรแรกของชื่อ",
+        "Frontend: trigger button แทน <select> — แสดง avatar + name ของ owner ปัจจุบันที่ผูกอยู่ (หรือ '— ยังไม่ผูก —')",
+        "คลิก trigger → เปิด panel ลอยใต้ปุ่ม (z-index 50, click outside เพื่อปิด)",
+        "ในแผงมีช่องค้นหา realtime — กรองด้วย display_name / email / phone (case-insensitive)",
+        "เลือกแล้ว → set hidden input `hm-owner` (form submit เดิมไม่ต้องเปลี่ยน)",
+        "ลบโค้ดเดิมที่ใช้ `m.username` (ไม่มี column นี้ในตาราง members) — เคยทำให้ option แสดง 'member#N' ทั้งหมด"
+      ]
+    },
+    {
       "version": "1.9.40",
       "date": "2026-05-05",
       "title": "Hardware (PC): filter ตามประเภทเครื่อง (Mac/Windows/Linux) + ตามแผนก",
