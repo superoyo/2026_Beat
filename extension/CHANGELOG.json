@@ -2,6 +2,23 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.45",
+      "date": "2026-05-05",
+      "title": "PC list: 2-column layout — sidebar กรองแผนก/OS แทน dropdown ด้านบน",
+      "summary": "หน้า Personal Computer เปลี่ยนเป็น 2 คอลัมน์ — ซ้ายเป็น sidebar list (แผนก + OS) คลิกเลือกได้พร้อม count, ขวาเป็นรายการอุปกรณ์ ด้านบนเหลือเฉพาะช่องค้นหา",
+      "changes": [
+        "Layout: <aside id='hw-sidebar' width=240> + <div id='hw-list' flex:1> (sticky sidebar, top:14px)",
+        "Top bar: ลบ <select> OS + <select> แผนก เหลือเฉพาะ <input> ค้นหา + counter",
+        "Sidebar 2 sections: 🏢 แผนก / 💿 OS — แต่ละ item แสดง label + count badge",
+        "OS section: แสดงเฉพาะกลุ่มที่มีจริง (count > 0): Mac/Windows/Linux/อื่น ๆ",
+        "แผนก: list dynamic จาก unique departments — sort ภาษาไทย",
+        "Active state: button พื้น primary ขาว + count badge โปร่งแสง",
+        "Hover: bg-soft (ไม่เขียนทับ active)",
+        "เพิ่ม helper renderHwSidebar() — เรียกจาก renderHardwareRows ทุกครั้งที่ filter/data เปลี่ยน",
+        "Device + Network — single column เหมือนเดิม (ไม่มี sidebar)"
+      ]
+    },
+    {
       "version": "1.9.44",
       "date": "2026-05-05",
       "title": "Sidebar: รวม My Device + Extension เป็นเมนูย่อยใต้ 'บัญชีของฉัน'",
