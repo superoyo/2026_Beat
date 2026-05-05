@@ -6405,6 +6405,7 @@ let _hwActiveType = 'pc';   // 'pc' | 'device' | 'network'
 let _hwSearch = '';
 let _hwOsFilter = '';       // PC only: '' | 'mac' | 'windows' | 'linux' | 'other'
 let _hwDeptFilter = '';     // PC only: '' หรือชื่อแผนก (exact match)
+let _hwLinkFilter = '';     // PC only: '' (ทั้งหมด) | 'linked' (มี owner) | 'unlinked' (ยังไม่ผูก)
 let _hwMembersCache = [];   // members list (สำหรับ owner dropdown)
 
 // แบ่ง os string เป็นกลุ่มสำหรับ filter — รองรับการพิมพ์อิสระ (case-insensitive)
@@ -6423,6 +6424,7 @@ async function renderHardwarePage(type) {
   _hwSearch = '';
   _hwOsFilter = '';
   _hwDeptFilter = '';
+  _hwLinkFilter = '';
   const tab = HW_TYPES.find(t => t.id === _hwActiveType) || HW_TYPES[0];
   const isPc = _hwActiveType === 'pc';
   $('main').innerHTML = `
@@ -6486,6 +6488,12 @@ function renderHwSidebar() {
   // ถ้า dept filter ปัจจุบันไม่มีในข้อมูลแล้ว → reset
   if (_hwDeptFilter && !depts.includes(_hwDeptFilter)) _hwDeptFilter = '';
 
+  // นับ linked / unlinked
+  let linkedCount = 0, unlinkedCount = 0;
+  _hwCache.forEach(h => {
+    if (h.current_member_id) linkedCount++; else unlinkedCount++;
+  });
+
   const itemHtml = (key, label, count, isActive) => `
     <button type="button" data-filter-key="${escapeHtml(key)}"
        style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 10px;border:1px solid ${isActive ? 'var(--primary)' : 'transparent'};background:${isActive ? 'var(--primary)' : 'transparent'};color:${isActive ? '#fff' : 'var(--text)'};border-radius:6px;cursor:pointer;font-family:inherit;font-size:13px;text-align:left;font-weight:${isActive ? 600 : 500};width:100%;box-sizing:border-box;transition:background .12s">
@@ -6494,6 +6502,11 @@ function renderHwSidebar() {
     </button>
   `;
 
+  const linkItems = [
+    itemHtml('link:', '📋 ทั้งหมด', _hwCache.length, _hwLinkFilter === ''),
+    itemHtml('link:linked', '✅ เชื่อมแล้ว', linkedCount, _hwLinkFilter === 'linked'),
+    itemHtml('link:unlinked', '🔓 ยังไม่ได้เชื่อม', unlinkedCount, _hwLinkFilter === 'unlinked'),
+  ];
   const deptItems = [
     itemHtml('dept:', '📋 ทุกแผนก', _hwCache.length, _hwDeptFilter === ''),
     ...depts.map(d => itemHtml(`dept:${d}`, escapeHtml(d), deptCounts[d], _hwDeptFilter === d))
@@ -6511,6 +6524,10 @@ function renderHwSidebar() {
   const scrollItems = (items, maxH) =>
     `<div style="display:flex;flex-direction:column;gap:3px;${maxH ? `max-height:${maxH}px;overflow-y:auto;` : ''}padding-right:2px">${items.join('')}</div>`;
   wrap.innerHTML = `
+    <section style="${sectStyle}">
+      <div style="${headStyle}">🔗 การเชื่อมโยง</div>
+      ${scrollItems(linkItems, 0)}
+    </section>
     <section style="${sectStyle}">
       <div style="${headStyle}">🏢 แผนก</div>
       ${scrollItems(deptItems, 260)}
@@ -6530,13 +6547,15 @@ function renderHwSidebar() {
     btn.addEventListener('mouseleave', () => {
       const k = btn.dataset.filterKey;
       const isActive = (k.startsWith('os:') && k.slice(3) === _hwOsFilter)
-                    || (k.startsWith('dept:') && k.slice(5) === _hwDeptFilter);
+                    || (k.startsWith('dept:') && k.slice(5) === _hwDeptFilter)
+                    || (k.startsWith('link:') && k.slice(5) === _hwLinkFilter);
       if (!isActive) btn.style.background = 'transparent';
     });
     btn.addEventListener('click', () => {
       const k = btn.dataset.filterKey;
       if (k.startsWith('os:')) _hwOsFilter = k.slice(3);
       else if (k.startsWith('dept:')) _hwDeptFilter = k.slice(5);
+      else if (k.startsWith('link:')) _hwLinkFilter = k.slice(5);
       renderHardwareRows();
     });
   });
@@ -6576,10 +6595,12 @@ function renderHardwareRows() {
     }
     if (isPc && _hwOsFilter && classifyHwOs(h.os) !== _hwOsFilter) return false;
     if (isPc && _hwDeptFilter && (h.department || '').trim() !== _hwDeptFilter) return false;
+    if (isPc && _hwLinkFilter === 'linked' && !h.current_member_id) return false;
+    if (isPc && _hwLinkFilter === 'unlinked' && h.current_member_id) return false;
     return true;
   });
 
-  const filterActive = !!q || (isPc && (_hwOsFilter || _hwDeptFilter));
+  const filterActive = !!q || (isPc && (_hwOsFilter || _hwDeptFilter || _hwLinkFilter));
   if ($('hw-count')) {
     $('hw-count').textContent = filterActive
       ? `${list.length} / ${_hwCache.length} รายการ`
@@ -6597,6 +6618,10 @@ function renderHardwareRows() {
       reasons.push(`OS = <strong>${labels[_hwOsFilter] || _hwOsFilter}</strong>`);
     }
     if (isPc && _hwDeptFilter) reasons.push(`แผนก = <strong>${escapeHtml(_hwDeptFilter)}</strong>`);
+    if (isPc && _hwLinkFilter) {
+      const linkLabels = { linked: '✅ เชื่อมแล้ว', unlinked: '🔓 ยังไม่ได้เชื่อม' };
+      reasons.push(`การเชื่อมโยง = <strong>${linkLabels[_hwLinkFilter] || _hwLinkFilter}</strong>`);
+    }
     listEl.innerHTML = `<div class="empty">ไม่พบรายการที่ตรงกับ ${reasons.join(' + ')}</div>`;
     return;
   }

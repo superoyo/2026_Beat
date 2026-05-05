@@ -2,6 +2,20 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.47",
+      "date": "2026-05-05",
+      "title": "PC sidebar: เพิ่มกล่องกรอง 'การเชื่อมโยง' (เชื่อม/ยังไม่ได้เชื่อม)",
+      "summary": "Sidebar ฝั่งซ้ายของหน้า Personal Computer เพิ่มกล่องที่สามด้านบนสุด — กรอง PC ตามสถานะการผูกกับ owner: ทั้งหมด / ✅ เชื่อมแล้ว / 🔓 ยังไม่ได้เชื่อม พร้อม count ต่อกลุ่ม",
+      "changes": [
+        "เพิ่ม state _hwLinkFilter ('' | 'linked' | 'unlinked') — reset เมื่อเปลี่ยน tab",
+        "Sidebar section 🔗 การเชื่อมโยง — อยู่บนสุด ก่อน 🏢 แผนก / 💿 OS",
+        "Filter logic: linked = current_member_id != null, unlinked = null",
+        "Click handler รองรับ key prefix 'link:'",
+        "Counter + empty-state reason รวม link filter ด้วย",
+        "ใช้กับ AND ของ search/dept/OS เดิมได้"
+      ]
+    },
+    {
       "version": "1.9.46",
       "date": "2026-05-05",
       "title": "PC sidebar: scroll กล่องแผนก ไม่ให้ยาวเกิน",
