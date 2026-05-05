@@ -6391,11 +6391,30 @@ const HW_DEVICE_SUBTYPES = [
 let _hwCache = [];          // hardware ของ tab ปัจจุบัน
 let _hwActiveType = 'pc';   // 'pc' | 'device' | 'network'
 let _hwSearch = '';
+let _hwOsFilter = '';       // PC only: '' | 'mac' | 'windows' | 'linux' | 'other'
+let _hwDeptFilter = '';     // PC only: '' หรือชื่อแผนก (exact match)
 let _hwMembersCache = [];   // members list (สำหรับ owner dropdown)
+
+// แบ่ง os string เป็นกลุ่มสำหรับ filter — รองรับการพิมพ์อิสระ (case-insensitive)
+function classifyHwOs(os) {
+  const v = (os || '').toLowerCase();
+  if (!v) return '';
+  if (v.includes('mac') || v.includes('osx') || v.includes('os x')) return 'mac';
+  if (v.includes('win')) return 'windows';
+  if (v.includes('linux') || v.includes('ubuntu') || v.includes('debian')
+      || v.includes('fedora') || v.includes('arch') || v.includes('mint')) return 'linux';
+  return 'other';
+}
 
 async function renderHardwarePage(type) {
   if (type) _hwActiveType = type;
+  // reset filter state ทุกครั้งที่เปิดหน้า — input/select ใน DOM ใหม่จะว่างอยู่แล้ว
+  _hwSearch = '';
+  _hwOsFilter = '';
+  _hwDeptFilter = '';
   const tab = HW_TYPES.find(t => t.id === _hwActiveType) || HW_TYPES[0];
+  const isPc = _hwActiveType === 'pc';
+  const filterStyle = 'padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--bg-card);color:var(--text);box-sizing:border-box';
   $('main').innerHTML = `
     <div class="page-head">
       <h2 class="page-title">${tab.icon} ${escapeHtml(tab.label)}</h2>
@@ -6406,7 +6425,19 @@ async function renderHardwarePage(type) {
     </div>
     <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
       <input id="hw-search" type="text" placeholder="🔍 ค้นหาชื่อ / asset / owner..." autocomplete="off"
-        style="flex:1;min-width:260px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--bg-card);color:var(--text);box-sizing:border-box" />
+        style="flex:1;min-width:220px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--bg-card);color:var(--text);box-sizing:border-box" />
+      ${isPc ? `
+        <select id="hw-os-filter" title="กรองตามประเภทเครื่อง (OS)" style="${filterStyle}">
+          <option value="">ทุก OS</option>
+          <option value="mac">🍎 Mac</option>
+          <option value="windows">🪟 Windows</option>
+          <option value="linux">🐧 Linux</option>
+          <option value="other">อื่น ๆ</option>
+        </select>
+        <select id="hw-dept-filter" title="กรองตามแผนก" style="${filterStyle};min-width:140px">
+          <option value="">ทุกแผนก</option>
+        </select>
+      ` : ''}
       <span id="hw-count" style="color:var(--text-muted);font-size:12.5px;font-weight:600;white-space:nowrap">— รายการ</span>
     </div>
     <div id="hw-list"><div class="empty">กำลังโหลด…</div></div>
@@ -6416,6 +6447,16 @@ async function renderHardwarePage(type) {
     _hwSearch = e.target.value;
     renderHardwareRows();
   });
+  if (isPc) {
+    $('hw-os-filter').addEventListener('change', (e) => {
+      _hwOsFilter = e.target.value;
+      renderHardwareRows();
+    });
+    $('hw-dept-filter').addEventListener('change', (e) => {
+      _hwDeptFilter = e.target.value;
+      renderHardwareRows();
+    });
+  }
   // โหลด members ครั้งแรก (cache)
   if (_hwMembersCache.length === 0) {
     try {
@@ -6442,17 +6483,39 @@ function renderHardwareRows() {
   const listEl = $('hw-list');
   if (!listEl) return;
   const tab = HW_TYPES.find(t => t.id === _hwActiveType);
+  const isPc = _hwActiveType === 'pc';
+
+  // Populate department dropdown (PC only) จาก unique departments ในข้อมูลจริง
+  if (isPc && $('hw-dept-filter')) {
+    const deptSel = $('hw-dept-filter');
+    const depts = [...new Set(
+      _hwCache.map(h => (h.department || '').trim()).filter(Boolean)
+    )].sort((a, b) => a.localeCompare(b, 'th'));
+    // ถ้า _hwDeptFilter ปัจจุบันไม่อยู่ใน list แล้ว → reset
+    if (_hwDeptFilter && !depts.includes(_hwDeptFilter)) _hwDeptFilter = '';
+    deptSel.innerHTML = `<option value="">ทุกแผนก</option>`
+      + depts.map(d => `<option value="${escapeHtml(d)}"${d === _hwDeptFilter ? ' selected' : ''}>${escapeHtml(d)}</option>`).join('');
+  }
+
   const q = _hwSearch.trim().toLowerCase();
-  const list = !q ? _hwCache : _hwCache.filter(h => {
-    return (h.name || '').toLowerCase().includes(q)
-        || (h.asset_number || '').toLowerCase().includes(q)
-        || (h.current_member_label || '').toLowerCase().includes(q)
-        || (h.current_member_username || '').toLowerCase().includes(q)
-        || (h.device_subtype || '').toLowerCase().includes(q)
-        || (h.notes || '').toLowerCase().includes(q);
+  const list = _hwCache.filter(h => {
+    if (q) {
+      const m = (h.name || '').toLowerCase().includes(q)
+          || (h.asset_number || '').toLowerCase().includes(q)
+          || (h.current_member_label || '').toLowerCase().includes(q)
+          || (h.current_member_username || '').toLowerCase().includes(q)
+          || (h.device_subtype || '').toLowerCase().includes(q)
+          || (h.notes || '').toLowerCase().includes(q);
+      if (!m) return false;
+    }
+    if (isPc && _hwOsFilter && classifyHwOs(h.os) !== _hwOsFilter) return false;
+    if (isPc && _hwDeptFilter && (h.department || '').trim() !== _hwDeptFilter) return false;
+    return true;
   });
+
+  const filterActive = !!q || (isPc && (_hwOsFilter || _hwDeptFilter));
   if ($('hw-count')) {
-    $('hw-count').textContent = q
+    $('hw-count').textContent = filterActive
       ? `${list.length} / ${_hwCache.length} รายการ`
       : `${_hwCache.length} รายการ`;
   }
@@ -6461,7 +6524,14 @@ function renderHardwareRows() {
     return;
   }
   if (list.length === 0) {
-    listEl.innerHTML = `<div class="empty">ไม่พบรายการที่ตรงกับ "<strong>${escapeHtml(_hwSearch)}</strong>"</div>`;
+    const reasons = [];
+    if (q) reasons.push(`คำค้น "<strong>${escapeHtml(_hwSearch)}</strong>"`);
+    if (isPc && _hwOsFilter) {
+      const labels = { mac: '🍎 Mac', windows: '🪟 Windows', linux: '🐧 Linux', other: 'อื่น ๆ' };
+      reasons.push(`OS = <strong>${labels[_hwOsFilter] || _hwOsFilter}</strong>`);
+    }
+    if (isPc && _hwDeptFilter) reasons.push(`แผนก = <strong>${escapeHtml(_hwDeptFilter)}</strong>`);
+    listEl.innerHTML = `<div class="empty">ไม่พบรายการที่ตรงกับ ${reasons.join(' + ')}</div>`;
     return;
   }
   listEl.innerHTML = list.map(h => renderHardwareRow(h)).join('');

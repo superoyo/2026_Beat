@@ -2,6 +2,21 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.40",
+      "date": "2026-05-05",
+      "title": "Hardware (PC): filter ตามประเภทเครื่อง (Mac/Windows/Linux) + ตามแผนก",
+      "summary": "เพิ่ม dropdown filter 2 ตัวเฉพาะหน้า Personal Computer — กรองได้ทั้ง OS และแผนก ทำงานร่วมกับ search bar เดิมแบบ AND",
+      "changes": [
+        "Frontend: เพิ่ม `_hwOsFilter` (mac/windows/linux/other) + `_hwDeptFilter` (exact dept name)",
+        "Frontend: helper `classifyHwOs(os)` แบ่งกลุ่ม OS string แบบ case-insensitive รองรับการพิมพ์อิสระ (เช่น 'macOS Sonoma' → mac, 'Windows 11 Pro' → windows)",
+        "UI: dropdown 'ทุก OS' / Mac / Windows / Linux / อื่น ๆ — แสดงเฉพาะ tab PC",
+        "UI: dropdown 'ทุกแผนก' — populate dynamic จาก unique departments ที่มีในข้อมูลจริง (auto-update เมื่อโหลดใหม่)",
+        "Filter เปลี่ยน tab → reset ทั้ง search/os/dept filter",
+        "Empty state: แสดงเงื่อนไข filter ที่ใช้อยู่ทั้งหมดเมื่อไม่พบรายการ",
+        "Device + Network — UI เหมือนเดิม (ไม่มี os/department field)"
+      ]
+    },
+    {
       "version": "1.9.39",
       "date": "2026-05-05",
       "title": "Hotfix: Hardware list/create/owner-change ขึ้น HTTP 500",
