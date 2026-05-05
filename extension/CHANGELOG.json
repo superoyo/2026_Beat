@@ -2,6 +2,32 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.44",
+      "date": "2026-05-05",
+      "title": "Sidebar: รวม My Device + Extension เป็นเมนูย่อยใต้ 'บัญชีของฉัน'",
+      "summary": "ลด clutter ใน sidebar — เมนู account, my-device, extension รวมเป็นกลุ่มเดียว ใช้ pattern nav-group เดิม (collapse/expand + auto-expand เมื่อ child active)",
+      "changes": [
+        "เพิ่ม <div class='nav-group' id='nav-group-account'> ครอบ 3 ลิงก์",
+        "Children: 👤 โปรไฟล์ (account) / 🖥️ My Device (my-device) / 🧩 Extension (extension)",
+        "data-group-routes='account,my-device,extension' → toggle 'has-active' + auto-expand ทำงานอัตโนมัติ",
+        "ไม่ต้องแก้ JS routing — ใช้ wireNavGroups() เดิม"
+      ]
+    },
+    {
+      "version": "1.9.43",
+      "date": "2026-05-05",
+      "title": "My Device: Calendar tile แสดงเดือน/ปีที่ซื้อแบบเด่น ๆ",
+      "summary": "หน้า My Device — เดือน/ปีที่ซื้อย้ายจาก spec line เล็ก ๆ มาเป็น calendar-style tile (แดง+ขาว) เด่นในแถวชื่อ + tooltip บอกอายุการใช้งาน",
+      "changes": [
+        "เพิ่ม helper renderMyDevicePurchaseTile(purchasedAt):",
+        "  - รับ YYYY-MM (PC) หรือ YYYY-MM-DD (Device/Network) — slice เป็น YYYY-MM",
+        "  - แสดงเป็น tile 2 บรรทัด: เดือนย่อภาษาไทย (มี.ค./เม.ย.) header แดงไล่เฉด + ปี พ.ศ. 4 หลัก ตัวเลขใหญ่หนา",
+        "  - tooltip: 'ซื้อเมื่อ ... · ใช้งานมาแล้ว X ปี Y เดือน' (auto-calc จากปัจจุบัน)",
+        "Tile ลอยขวาสุดของแถวชื่อ (margin-left:auto) — ไม่แย่ง space ของ status badge",
+        "ลบรายการวันที่ออกจาก specs grid เพื่อไม่แสดงซ้ำ"
+      ]
+    },
+    {
       "version": "1.9.42",
       "date": "2026-05-05",
       "title": "Member: เมนู My Device — ดูอุปกรณ์ของตัวเอง + อัพโหลดรูปได้",
