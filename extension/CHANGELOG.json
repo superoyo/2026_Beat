@@ -2,6 +2,20 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.39",
+      "date": "2026-05-05",
+      "title": "Hotfix: Hardware list/create/owner-change ขึ้น HTTP 500",
+      "summary": "แก้บั๊ก SQL query อ้างคอลัมน์ `username` ที่ไม่มีในตาราง members → เปลี่ยนเป็น `email`",
+      "changes": [
+        "Backend: `SELECT ... username FROM members` → `SELECT ... email FROM members` ใน 3 จุด:",
+        "  - admin_list_hardware (GET /api/admin/hardware)",
+        "  - admin_create_hardware (POST /api/admin/hardware)",
+        "  - _change_hardware_owner (helper สำหรับ PATCH owner)",
+        "Backend: `_hardware_row_to_dict` ใช้ `email` เป็น fallback label/username",
+        "ไม่กระทบ DB schema — แค่แก้ query ฝั่ง server"
+      ]
+    },
+    {
       "version": "1.9.38",
       "date": "2026-04-30",
       "title": "PC form: เพิ่ม 12 fields ใหม่ + จัดกลุ่มเป็น 5 sections + month/year picker",

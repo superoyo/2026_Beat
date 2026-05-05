@@ -4132,8 +4132,8 @@ def _hardware_row_to_dict(r: sqlite3.Row, member_lookup: dict[int, dict] = None)
     if member_lookup is not None and r["current_member_id"]:
         m = member_lookup.get(r["current_member_id"])
         if m:
-            out["current_member_label"] = m.get("display_name") or m.get("username")
-            out["current_member_username"] = m.get("username")
+            out["current_member_label"] = m.get("display_name") or m.get("email")
+            out["current_member_username"] = m.get("email")
     return out
 
 
@@ -4149,10 +4149,10 @@ def _change_hardware_owner(conn: sqlite3.Connection, hw_id: int, new_member_id: 
     # เปิด assignment ใหม่ (ถ้ามี new owner)
     if new_member_id:
         m = conn.execute(
-            "SELECT display_name, username FROM members WHERE id = ?",
+            "SELECT display_name, email FROM members WHERE id = ?",
             (new_member_id,),
         ).fetchone()
-        member_label = (m["display_name"] or m["username"]) if m else None
+        member_label = (m["display_name"] or m["email"]) if m else None
         conn.execute(
             "INSERT INTO hardware_assignments(hardware_id, member_id, member_label, assigned_at) "
             "VALUES (?, ?, ?, ?)",
@@ -4183,7 +4183,7 @@ def admin_list_hardware(
     with db_conn() as conn:
         rows = conn.execute(sql, params).fetchall()
         members = conn.execute(
-            "SELECT id, username, display_name FROM members"
+            "SELECT id, email, display_name FROM members"
         ).fetchall()
     member_lookup = {m["id"]: dict(m) for m in members}
     return {"hardware": [_hardware_row_to_dict(r, member_lookup) for r in rows]}
@@ -4237,10 +4237,10 @@ def admin_create_hardware(
         # ถ้ามี current_member_id → สร้าง initial assignment
         if payload.current_member_id:
             m = conn.execute(
-                "SELECT display_name, username FROM members WHERE id = ?",
+                "SELECT display_name, email FROM members WHERE id = ?",
                 (payload.current_member_id,),
             ).fetchone()
-            member_label = (m["display_name"] or m["username"]) if m else None
+            member_label = (m["display_name"] or m["email"]) if m else None
             conn.execute(
                 "INSERT INTO hardware_assignments(hardware_id, member_id, member_label, assigned_at) "
                 "VALUES (?, ?, ?, ?)",
