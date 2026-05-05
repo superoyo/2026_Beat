@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.49",
+      "date": "2026-05-05",
+      "title": "Hardware list: ขยาย avatar overlay เจ้าของให้ใหญ่ขึ้น (22px → 45px)",
+      "summary": "Avatar เจ้าของที่ซ้อนมุมขวาล่างของรูปอุปกรณ์ขยายให้เท่าความสูงของรูป (45×45 round) — มองเห็นใบหน้าชัดขึ้น เก็บตำแหน่งซ้อนเดิม",
+      "changes": [
+        "Avatar size 22→45px (เท่าความสูงรูปอุปกรณ์)",
+        "Border 2px → 2.5px + box-shadow แรงขึ้นเล็กน้อย",
+        "Offset right/bottom -5 → -8 ให้ลอยออกขอบรูปดูเด่นขึ้น",
+        "Initial fallback font-size 11px → 20px ให้สมส่วนกับวงกลมที่ใหญ่ขึ้น"
+      ]
+    },
+    {
       "version": "1.9.48",
       "date": "2026-05-05",
       "title": "Hardware list: avatar เจ้าของซ้อนมุมขวาล่างของรูปอุปกรณ์",
