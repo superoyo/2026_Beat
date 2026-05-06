@@ -2,6 +2,24 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.52",
+      "date": "2026-05-05",
+      "title": "Members → Hardware modal: เพิ่ม/ลบ hardware ของ member ได้จากในตัว modal",
+      "summary": "ปุ่ม 🖥️ Hardware ของแต่ละ member ในหน้า Members — เปลี่ยนจาก read-only เป็น interactive: 2 sections (ผูกอยู่ + ยังไม่ผูก) มีปุ่ม ➕ เพิ่ม / 🗑 ลบ ในแต่ละการ์ด ไม่ต้องไปหน้า Hardware",
+      "changes": [
+        "Modal ใหม่ใช้ size='wide' พร้อม shell + loading state ก่อนโหลด",
+        "Section ✅ ผูกอยู่กับคนนี้ — มีปุ่ม 🗑 ลบ (PATCH current_member_id=null + confirm)",
+        "Section 🔓 ยังไม่ผูก เพิ่มได้ — มีปุ่ม ➕ เพิ่ม (PATCH current_member_id=memberId)",
+        "ทั้ง 2 sections จัดกลุ่มย่อยตามประเภท PC/Device/Network + count",
+        "Card design: thumbnail 48x36 + ชื่อ + meta (asset/os/cpu/subtype/capacity)",
+        "Reuse PATCH /api/admin/hardware/{id} (มี _change_hardware_owner เก็บประวัติให้)",
+        "Inline refresh หลังทุก action — modal ไม่ปิด ทำได้รัวๆ",
+        "ปุ่ม disable + label '...' ระหว่างรอ network — กัน double-click",
+        "ปุ่ม 'บันทึก' ซ่อน + 'ยกเลิก' → 'ปิด' (ไม่มี submit/save)",
+        "Hardware ที่ผูกกับ member อื่นอยู่ → ไม่แสดง (ป้องกันแย่ง — ต้องใช้หน้า Hardware ปลดก่อน)"
+      ]
+    },
+    {
       "version": "1.9.51",
       "date": "2026-05-05",
       "title": "Owner picker: refresh members ทุกครั้ง — กัน stale cache",
