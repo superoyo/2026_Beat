@@ -6454,13 +6454,13 @@ async function renderHardwarePage(type) {
     _hwSearch = e.target.value;
     renderHardwareRows();
   });
-  // โหลด members ครั้งแรก (cache)
-  if (_hwMembersCache.length === 0) {
-    try {
-      const md = await fetchJson('/api/admin/members');
-      _hwMembersCache = md.members || [];
-    } catch (_) { /* ignore */ }
-  }
+  // โหลด members refresh ทุกครั้ง — กัน stale cache
+  // owner picker แสดง "ทุก member" ไม่ว่า is_admin หรือ enabled เป็นอะไร
+  // (ผู้ดูแลอุปกรณ์อาจเป็น user สถานะใดก็ได้ ไม่จำเป็นต้องเป็น admin)
+  try {
+    const md = await fetchJson('/api/admin/members');
+    _hwMembersCache = md.members || [];
+  } catch (_) { /* ignore */ }
   await loadHardware();
 }
 
@@ -7144,6 +7144,22 @@ function showHardwareModal(hw, type) {
           <div class="field">
             <label>เลข Asset</label>
             <input id="hm-asset" type="text" value="${isEdit ? escapeHtml(hw.asset_number || '') : ''}" placeholder="เช่น A-001" />
+            <!-- v1.9.50 — รูปถ่าย sticker/tag หมายเลข asset ติดบนเครื่อง -->
+            <div style="display:flex;gap:8px;margin-top:6px;align-items:flex-start">
+              <div id="hm-asset-photo-preview" style="width:80px;height:60px;border-radius:6px;border:1.5px dashed var(--border);background:${(isEdit && hw.asset_photo_data) ? 'var(--bg-card)' : 'var(--bg-soft)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden">
+                ${(isEdit && hw.asset_photo_data)
+                  ? `<img src="${hw.asset_photo_data}" alt="asset-photo" style="width:100%;height:100%;object-fit:cover" />`
+                  : `<span style="color:var(--text-muted);font-size:10.5px;text-align:center;line-height:1.3">📸<br/>ภาพ asset</span>`
+                }
+              </div>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+                <button type="button" class="btn" id="hm-asset-photo-upload-btn" style="font-size:11.5px;padding:5px 10px;text-align:left">📷 อัพโหลด</button>
+                <button type="button" class="btn" id="hm-asset-photo-camera-btn" style="font-size:11.5px;padding:5px 10px;text-align:left">📸 กล้อง</button>
+                <button type="button" class="btn danger" id="hm-asset-photo-remove-btn" style="font-size:11.5px;padding:5px 10px;text-align:left;${(isEdit && hw.asset_photo_data) ? '' : 'display:none'}">🗑 ลบรูป</button>
+                <input type="file" id="hm-asset-photo-file-input" accept="image/*" style="display:none" />
+              </div>
+            </div>
+            <input type="hidden" id="hm-asset-photo-data" value="${escapeHtml((isEdit && hw.asset_photo_data) || '')}" />
           </div>
           <div class="field">
             <label>S/N (Serial Number)</label>
@@ -7352,6 +7368,15 @@ function showHardwareModal(hw, type) {
           data.photo_data = cur;   // '' = clear, non-empty = set
         }
       }
+      // v1.9.50 — Asset photo (PC form เท่านั้น)
+      const assetPhotoEl = $('hm-asset-photo-data');
+      if (assetPhotoEl) {
+        const cur = assetPhotoEl.value;
+        const initial = assetPhotoEl.dataset.initial || '';
+        if (cur !== initial) {
+          data.asset_photo_data = cur;
+        }
+      }
       if (!data.name) throw new Error('กรอกชื่อ');
       const url = isEdit ? `/api/admin/hardware/${hw.id}` : '/api/admin/hardware';
       const method = isEdit ? 'PATCH' : 'POST';
@@ -7414,6 +7439,54 @@ function showHardwareModal(hw, type) {
     if (!confirm('ลบรูปของรายการนี้?')) return;
     setHmPhoto('');
   });
+
+  // ---- v1.9.50: Asset photo wiring (PC form เท่านั้น — element อาจไม่มี) ----
+  const assetPhotoEl = $('hm-asset-photo-data');
+  if (assetPhotoEl) {
+    assetPhotoEl.dataset.initial = assetPhotoEl.value;
+    const setHmAssetPhoto = (dataUrl) => {
+      const el = $('hm-asset-photo-data');
+      const preview = $('hm-asset-photo-preview');
+      const removeBtn = $('hm-asset-photo-remove-btn');
+      if (!el || !preview) return;
+      el.value = dataUrl || '';
+      if (dataUrl) {
+        preview.style.background = 'var(--bg-card)';
+        preview.innerHTML = `<img src="${dataUrl}" alt="asset-photo" style="width:100%;height:100%;object-fit:cover" />`;
+        if (removeBtn) removeBtn.style.display = '';
+      } else {
+        preview.style.background = 'var(--bg-soft)';
+        preview.innerHTML = `<span style="color:var(--text-muted);font-size:10.5px;text-align:center;line-height:1.3">📸<br/>ภาพ asset</span>`;
+        if (removeBtn) removeBtn.style.display = 'none';
+      }
+    };
+    // Crop config — 4:3, 640x480, JPEG (เหมือน photo หลัก) เพื่อ consistency
+    const assetCropOpts = {
+      aspectRatio: 4 / 3,
+      outputWidth: 640,
+      outputHeight: 480,
+      outputType: 'image/jpeg',
+      outputQuality: 0.85,
+      title: '✂️ Crop รูปหมายเลข asset (สัดส่วน 4:3)',
+    };
+    const assetFileInput = $('hm-asset-photo-file-input');
+    $('hm-asset-photo-upload-btn').addEventListener('click', () => assetFileInput.click());
+    assetFileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => openCropModal(ev.target.result, setHmAssetPhoto, assetCropOpts);
+      reader.readAsDataURL(file);
+      assetFileInput.value = '';
+    });
+    $('hm-asset-photo-camera-btn').addEventListener('click', () => {
+      openCameraModal(setHmAssetPhoto, assetCropOpts);
+    });
+    $('hm-asset-photo-remove-btn').addEventListener('click', () => {
+      if (!confirm('ลบรูปหมายเลข asset?')) return;
+      setHmAssetPhoto('');
+    });
+  }
 }
 
 async function showHardwareHistoryModal(hwId, hwName) {

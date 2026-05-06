@@ -2,6 +2,35 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.51",
+      "date": "2026-05-05",
+      "title": "Owner picker: refresh members ทุกครั้ง — กัน stale cache",
+      "summary": "ฟอร์ม Hardware (PC/Device/Network) — โหลด members ใหม่ทุกครั้งที่เปิดหน้า ไม่ใช้ cache ค้าง เพื่อให้ดึงทุก user ครบ ไม่ว่า is_admin หรือ enabled",
+      "changes": [
+        "เปลี่ยนเงื่อนไขจาก `if (_hwMembersCache.length === 0) → fetch` เป็น fetch ทุกครั้ง",
+        "ยืนยันใน comment: owner picker แสดงทุก member ไม่กรองตาม is_admin หรือ enabled",
+        "/api/admin/members backend ก็คืนทุก member (ไม่มี WHERE clause กรอง) — verified",
+        "แก้ปัญหากรณี: ครั้งแรกที่ load API ส่งกลับมาช้า/บางส่วน ทำให้ cache ค้างผิดเพี้ยน"
+      ]
+    },
+    {
+      "version": "1.9.50",
+      "date": "2026-05-05",
+      "title": "PC form: เพิ่ม 'ภาพหมายเลข asset' (sticker/tag close-up) อัพโหลดได้",
+      "summary": "ฟอร์มแก้ไข Personal Computer เพิ่มช่องอัพโหลดรูปหมายเลข asset ใต้ field 'เลข Asset' — รองรับทั้งอัพโหลดไฟล์และถ่ายจากกล้อง crop 4:3 640x480 JPEG",
+      "changes": [
+        "DB: ALTER TABLE hardware ADD COLUMN asset_photo_data TEXT",
+        "Backend: HardwareIn/HardwarePatchIn รองรับ asset_photo_data ('' = clear, omit = unchanged)",
+        "Backend: INSERT/PATCH (POST/PATCH /api/admin/hardware) รวม field ใหม่",
+        "Frontend: PC form มี UI แบบ compact ใต้ input เลข Asset:",
+        "  - Preview 80x60 (มี placeholder '📸 ภาพ asset' เมื่อยังไม่มีรูป)",
+        "  - ปุ่ม 📷 อัพโหลด / 📸 กล้อง / 🗑 ลบรูป",
+        "  - Hidden input id=hm-asset-photo-data เก็บค่า base64 data URL",
+        "Reuse openCropModal + openCameraModal — crop config 4:3 640x480 JPEG q=0.85",
+        "Submit: ส่ง asset_photo_data เฉพาะถ้าเปลี่ยน (compare กับ dataset.initial เหมือน photo หลัก)"
+      ]
+    },
+    {
       "version": "1.9.49",
       "date": "2026-05-05",
       "title": "Hardware list: ขยาย avatar overlay เจ้าของให้ใหญ่ขึ้น (22px → 45px)",
