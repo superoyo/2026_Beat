@@ -204,10 +204,12 @@ def init_db() -> None:
 
             -- Teams + access control
             CREATE TABLE IF NOT EXISTS teams (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                name        TEXT NOT NULL UNIQUE,
-                description TEXT,
-                created_at  TEXT NOT NULL
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                name            TEXT NOT NULL UNIQUE,
+                description     TEXT,
+                created_at      TEXT NOT NULL,
+                -- v1.9.58: รองรับ hierarchy — NULL = ทีมระดับบนสุด (root)
+                parent_team_id  INTEGER REFERENCES teams(id) ON DELETE SET NULL
             );
             CREATE TABLE IF NOT EXISTS team_members (
                 team_id    INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
@@ -413,6 +415,10 @@ def init_db() -> None:
             existing = conn.execute("SELECT id FROM teams ORDER BY created_at ASC").fetchall()
             for idx, r in enumerate(existing):
                 conn.execute("UPDATE teams SET display_order = ? WHERE id = ?", (idx, r["id"]))
+        # v1.9.58 — parent_team_id เพื่อให้ทีมเป็น hierarchy ได้
+        if "parent_team_id" not in team_cols:
+            conn.execute("ALTER TABLE teams ADD COLUMN parent_team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_teams_parent ON teams(parent_team_id)")
 
         # domains table — per-field WHOIS sync timestamps (v1.9.17)
         # ใช้ track ว่า register_date / expire_date มาจาก WHOIS เมื่อใด
@@ -1834,11 +1840,38 @@ def admin_logout(response: Response, fct_session: Optional[str] = Cookie(default
 class TeamIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     description: Optional[str] = Field(None, max_length=500)
+    # v1.9.58 — null/omitted = root team
+    parent_team_id: Optional[int] = None
 
 
 class TeamPatchIn(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=120)
     description: Optional[str] = Field(None, max_length=500)
+    # v1.9.58 — parent_team_id: null = ตั้งเป็น root, omitted = no change, int = ผูกกับ team นั้น
+    parent_team_id: Optional[int] = None
+
+
+# v1.9.58 — helper สำหรับตรวจ cycle ใน hierarchy
+def _team_would_create_cycle(conn: sqlite3.Connection, team_id: int, new_parent_id: Optional[int]) -> bool:
+    """ตั้ง team_id.parent = new_parent_id จะสร้าง cycle หรือเปล่า?
+    เดินขึ้นจาก new_parent_id ตามสาย parent — ถ้าเจอ team_id แสดงว่า cycle"""
+    if new_parent_id is None:
+        return False
+    if new_parent_id == team_id:
+        return True   # self-parent
+    cur = new_parent_id
+    visited: set[int] = set()
+    while cur is not None and cur not in visited:
+        if cur == team_id:
+            return True
+        visited.add(cur)
+        row = conn.execute(
+            "SELECT parent_team_id FROM teams WHERE id = ?", (cur,)
+        ).fetchone()
+        if not row:
+            return False
+        cur = row["parent_team_id"]
+    return False
 
 
 class TeamMemberIn(BaseModel):
@@ -1861,6 +1894,7 @@ def admin_list_teams(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
     with db_conn() as conn:
         rows = conn.execute(
             "SELECT t.id, t.name, t.description, t.created_at, t.display_order, "
+            "  t.parent_team_id, "
             "  (SELECT COUNT(*) FROM team_members WHERE team_id = t.id) AS member_count, "
             "  (SELECT COUNT(*) FROM team_sites   WHERE team_id = t.id) AS site_count "
             "FROM teams t ORDER BY t.display_order ASC, t.name COLLATE NOCASE ASC"
@@ -1903,10 +1937,23 @@ def admin_reorder_teams(
 @app.post("/api/admin/teams")
 def admin_create_team(payload: TeamIn, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
     with db_conn() as conn:
+        # v1.9.58 — validate parent_team_id (ถ้าระบุ → ต้องมีอยู่จริง)
+        if payload.parent_team_id is not None:
+            row = conn.execute(
+                "SELECT id FROM teams WHERE id = ?", (payload.parent_team_id,)
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=400, detail="parent team ไม่มีอยู่จริง")
         try:
             cur = conn.execute(
-                "INSERT INTO teams(name, description, created_at) VALUES (?, ?, ?)",
-                (payload.name.strip(), payload.description, utc_now().isoformat()),
+                "INSERT INTO teams(name, description, created_at, parent_team_id) "
+                "VALUES (?, ?, ?, ?)",
+                (
+                    payload.name.strip(),
+                    payload.description,
+                    utc_now().isoformat(),
+                    payload.parent_team_id,
+                ),
             )
         except sqlite3.IntegrityError:
             raise HTTPException(status_code=409, detail="ชื่อ team นี้ถูกใช้แล้ว")
@@ -2009,8 +2056,33 @@ def admin_get_team(team_id: int, _sess: dict = Depends(require_admin)) -> dict[s
             for mem in members_data:
                 mem["pcs"] = []
 
+    # v1.9.58 — แนบ parent (breadcrumb path ขึ้นไป root) + sub_teams (ลูกตรง)
+    team_dict = dict(team)
+    parent_path: list[dict[str, Any]] = []
+    with db_conn() as conn:
+        cur_pid = team_dict.get("parent_team_id")
+        seen: set[int] = set()
+        while cur_pid is not None and cur_pid not in seen:
+            seen.add(cur_pid)
+            prow = conn.execute(
+                "SELECT id, name, parent_team_id FROM teams WHERE id = ?", (cur_pid,)
+            ).fetchone()
+            if not prow:
+                break
+            parent_path.insert(0, {"id": prow["id"], "name": prow["name"]})
+            cur_pid = prow["parent_team_id"]
+        sub_rows = conn.execute(
+            "SELECT id, name, "
+            "  (SELECT COUNT(*) FROM team_members WHERE team_id = teams.id) AS member_count, "
+            "  (SELECT COUNT(*) FROM team_sites   WHERE team_id = teams.id) AS site_count "
+            "FROM teams WHERE parent_team_id = ? "
+            "ORDER BY display_order ASC, name COLLATE NOCASE ASC",
+            (team_id,),
+        ).fetchall()
     return {
-        "team": dict(team),
+        "team": team_dict,
+        "parent_path": parent_path,
+        "sub_teams": [dict(r) for r in sub_rows],
         "members": members_data,
         "sites": [
             {**dict(s), "credentials": site_creds.get(s["id"], [])}
@@ -2134,16 +2206,32 @@ def admin_update_team(
     payload: TeamPatchIn,
     _sess: dict = Depends(require_admin),
 ) -> dict[str, Any]:
+    raw = payload.model_dump(exclude_unset=True)
     updates: dict[str, Any] = {}
-    if payload.name is not None:
-        updates["name"] = payload.name.strip()
-    if payload.description is not None:
-        updates["description"] = payload.description
-    if not updates:
-        raise HTTPException(status_code=400, detail="ไม่มีอะไรให้บันทึก")
-    set_clause = ", ".join(f"{k} = ?" for k in updates)
-    values = list(updates.values()) + [team_id]
+    if "name" in raw and raw["name"] is not None:
+        updates["name"] = raw["name"].strip()
+    if "description" in raw:
+        updates["description"] = raw["description"]
+    # v1.9.58 — parent_team_id: null = clear (root), int = ผูกกับ team นั้น
     with db_conn() as conn:
+        if "parent_team_id" in raw:
+            new_parent = raw["parent_team_id"]
+            if new_parent is not None:
+                row = conn.execute(
+                    "SELECT id FROM teams WHERE id = ?", (new_parent,)
+                ).fetchone()
+                if not row:
+                    raise HTTPException(status_code=400, detail="parent team ไม่มีอยู่จริง")
+                if _team_would_create_cycle(conn, team_id, new_parent):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="ตั้ง parent นี้จะทำให้เกิด loop (ทีมนี้เป็น ancestor ของ parent ที่เลือกอยู่)",
+                    )
+            updates["parent_team_id"] = new_parent
+        if not updates:
+            raise HTTPException(status_code=400, detail="ไม่มีอะไรให้บันทึก")
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [team_id]
         try:
             cur = conn.execute(f"UPDATE teams SET {set_clause} WHERE id = ?", values)
         except sqlite3.IntegrityError:

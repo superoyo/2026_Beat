@@ -2667,35 +2667,45 @@ async function renderTeamsPage(selectedTeamId) {
               <span style="color:var(--text-soft);font-weight:400;text-transform:none;letter-spacing:0">⋮⋮ ลากเพื่อจัดลำดับ</span>
             </div>
             <div id="teams-list">
-              ${teams.map(t => {
-                const isActive = t.id === selectedTeamId;
-                const searchKey = ((t.name || '') + ' ' + (t.description || '')).toLowerCase();
-                return `
-                  <div class="teams-row-wrap" data-team-id="${t.id}" data-search="${escapeHtml(searchKey)}" draggable="true"
-                       style="display:flex;align-items:stretch;gap:2px;margin-bottom:3px;border-radius:8px;transition:opacity .12s">
-                    <span class="teams-drag-handle" title="ลากเพื่อจัดลำดับ"
-                          style="display:flex;align-items:center;padding:0 4px;color:var(--text-soft);cursor:grab;font-size:14px;border-radius:6px;user-select:none">⋮⋮</span>
-                    <button class="teams-row" data-team-id="${t.id}"
-                            style="flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:3px;
-                                   text-align:left;
-                                   padding:10px 12px;
-                                   background:${isActive ? 'var(--primary-soft)' : 'transparent'};
-                                   border:1px solid ${isActive ? 'rgba(37,99,235,.25)' : 'transparent'};
-                                   border-radius:8px;
-                                   cursor:pointer;font-family:inherit;
-                                   transition:all .12s;
-                                   min-width:0">
-                      <div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:8px">
-                        <span style="font-weight:${isActive ? '700' : '600'};font-size:13.5px;color:${isActive ? 'var(--primary)' : 'var(--text)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(t.name)}</span>
-                      </div>
-                      <div style="font-size:11px;color:var(--text-muted);font-weight:500;display:flex;gap:8px">
-                        <span>👤 ${t.member_count}</span>
-                        <span>🌐 ${t.site_count}</span>
-                      </div>
-                    </button>
-                  </div>
-                `;
-              }).join('')}
+              ${(() => {
+                // v1.9.58 — render เป็นต้นไม้: indent ตาม depth + แสดง breadcrumb path ใน search-key
+                const treeRoots = buildTeamTree(teams);
+                const flat = flattenTeamTreeDFS(treeRoots);
+                const byId = new Map(teams.map(x => [x.id, x]));
+                return flat.map(({ team: t, depth, hasChildren }) => {
+                  const isActive = t.id === selectedTeamId;
+                  const path = getTeamFullPath(t, byId);
+                  const searchKey = (path + ' ' + (t.description || '')).toLowerCase();
+                  const indentPx = 12 + depth * 14;
+                  const branchIcon = hasChildren ? '📂' : (depth > 0 ? '└' : '');
+                  return `
+                    <div class="teams-row-wrap" data-team-id="${t.id}" data-search="${escapeHtml(searchKey)}" data-depth="${depth}" draggable="true"
+                         style="display:flex;align-items:stretch;gap:2px;margin-bottom:3px;border-radius:8px;transition:opacity .12s">
+                      <span class="teams-drag-handle" title="ลากเพื่อจัดลำดับ"
+                            style="display:flex;align-items:center;padding:0 4px;color:var(--text-soft);cursor:grab;font-size:14px;border-radius:6px;user-select:none">⋮⋮</span>
+                      <button class="teams-row" data-team-id="${t.id}"
+                              style="flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:3px;
+                                     text-align:left;
+                                     padding:10px 12px 10px ${indentPx}px;
+                                     background:${isActive ? 'var(--primary-soft)' : 'transparent'};
+                                     border:1px solid ${isActive ? 'rgba(37,99,235,.25)' : 'transparent'};
+                                     border-left:${depth > 0 ? '2px solid var(--border)' : 'none'};
+                                     border-radius:8px;
+                                     cursor:pointer;font-family:inherit;
+                                     transition:all .12s;
+                                     min-width:0">
+                        <div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:8px">
+                          <span style="font-weight:${isActive ? '700' : '600'};font-size:13.5px;color:${isActive ? 'var(--primary)' : 'var(--text)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${branchIcon ? `<span style="color:var(--text-soft);margin-right:4px;font-size:11px">${branchIcon}</span>` : ''}${escapeHtml(t.name)}</span>
+                        </div>
+                        <div style="font-size:11px;color:var(--text-muted);font-weight:500;display:flex;gap:8px">
+                          <span>👤 ${t.member_count}</span>
+                          <span>🌐 ${t.site_count}</span>
+                        </div>
+                      </button>
+                    </div>
+                  `;
+                }).join('');
+              })()}
             </div>
             <div id="teams-no-results" class="empty" style="display:none;padding:14px;font-size:12px;color:var(--text-muted)">ไม่เจอทีมที่ตรงกับคำค้น</div>
           `
@@ -2821,7 +2831,41 @@ async function renderTeamsPage(selectedTeamId) {
   }
 }
 
-function showAddTeamModal() {
+// v1.9.58 — สร้าง <option> สำหรับ parent picker — มี indent ตาม depth
+function buildParentTeamOptions(teams, currentParentId, excludeIds) {
+  const tree = buildTeamTree(teams);
+  const flat = flattenTeamTreeDFS(tree);
+  let html = `<option value="">— ระดับบนสุด (root) —</option>`;
+  for (const { team, depth } of flat) {
+    if (excludeIds && excludeIds.has(team.id)) continue;
+    const indent = '    '.repeat(depth);
+    const arrow = depth > 0 ? '↳ ' : '';
+    const sel = (currentParentId === team.id) ? ' selected' : '';
+    html += `<option value="${team.id}"${sel}>${escapeHtml(indent + arrow + team.name)}</option>`;
+  }
+  return html;
+}
+// v1.9.58 — หา IDs ของลูกหลานทั้งหมดของ rootId (รวม rootId ด้วย) — ใช้กัน cycle
+function getTeamDescendantIds(teams, rootId) {
+  const result = new Set([rootId]);
+  let added = true;
+  while (added) {
+    added = false;
+    for (const t of teams) {
+      if (t.parent_team_id != null && result.has(t.parent_team_id) && !result.has(t.id)) {
+        result.add(t.id);
+        added = true;
+      }
+    }
+  }
+  return result;
+}
+
+async function showAddTeamModal() {
+  // โหลด teams ปัจจุบันเพื่อสร้าง parent picker
+  let teams = [];
+  try { teams = (await fetchJson('/api/admin/teams')).teams || []; } catch { /* ignore */ }
+  const parentOptionsHtml = buildParentTeamOptions(teams, null, null);
   showModal({
     title: 'สร้าง Team ใหม่',
     body: `
@@ -2833,13 +2877,22 @@ function showAddTeamModal() {
         <label>คำอธิบาย (optional)</label>
         <input id="m-desc" type="text" placeholder="ทีมเกี่ยวกับ..." />
       </div>
+      <div class="field">
+        <label>ทีมแม่ (optional) — จัดเป็นทีมย่อยภายใต้</label>
+        <select id="m-parent" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">${parentOptionsHtml}</select>
+      </div>
     `,
     onSubmit: async () => {
       const name = $('m-name').value.trim();
       if (!name) throw new Error('กรอกชื่อทีม');
+      const parentVal = $('m-parent').value;
       const r = await fetchJson('/api/admin/teams', {
         method: 'POST',
-        body: JSON.stringify({ name, description: $('m-desc').value.trim() || null }),
+        body: JSON.stringify({
+          name,
+          description: $('m-desc').value.trim() || null,
+          parent_team_id: parentVal ? parseInt(parentVal, 10) : null,
+        }),
       });
       // เด้งไป tab ของ team ใหม่ที่เพิ่งสร้าง
       if (r && r.id) {
@@ -2859,6 +2912,46 @@ let _allSites = null;     // cache list of all sites
 let _teamMembersSort = 'default';   // 'default' | 'name' | 'pc-age'
 let _lastTeamMembersData = null;    // raw members array (เก็บไว้ re-render เมื่อ sort เปลี่ยน)
 let _lastTeamMembersTeamId = null;
+
+// v1.9.58 — Teams hierarchy helpers
+function buildTeamTree(teams) {
+  const byId = new Map();
+  teams.forEach(t => byId.set(t.id, { ...t, children: [] }));
+  const roots = [];
+  byId.forEach(t => {
+    const pid = t.parent_team_id;
+    if (pid != null && byId.has(pid)) byId.get(pid).children.push(t);
+    else roots.push(t);
+  });
+  const sortLvl = (arr) => {
+    arr.sort((a, b) =>
+      ((a.display_order ?? 0) - (b.display_order ?? 0))
+      || ((a.name || '').localeCompare(b.name || '', 'th'))
+    );
+    arr.forEach(n => sortLvl(n.children));
+  };
+  sortLvl(roots);
+  return roots;
+}
+function flattenTeamTreeDFS(roots, depth = 0, out = []) {
+  for (const node of roots) {
+    out.push({ team: node, depth, hasChildren: node.children.length > 0 });
+    flattenTeamTreeDFS(node.children, depth + 1, out);
+  }
+  return out;
+}
+// แสดง path "Parent > Sub > Sub-sub" เพื่อใช้ใน search/filter ของ sidebar
+function getTeamFullPath(team, byId) {
+  const path = [];
+  let cur = team;
+  const seen = new Set();
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    path.unshift(cur.name || '');
+    cur = (cur.parent_team_id != null) ? byId.get(cur.parent_team_id) : null;
+  }
+  return path.join(' › ');
+}
 
 async function loadTeamDetail(teamId) {
   const panel = $('team-panel');
@@ -2881,9 +2974,35 @@ async function loadTeamDetail(teamId) {
     }
   }
 
+  // v1.9.58 — breadcrumb (parent path) + sub_teams ที่ backend ส่งมา
+  const parentPath = data.parent_path || [];
+  const subTeams = data.sub_teams || [];
+  const breadcrumbHtml = parentPath.length === 0 ? '' : `
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;font-size:11.5px;color:var(--text-muted)">
+      ${parentPath.map((p, i) => `
+        <a href="#/teams/${p.id}" style="color:var(--primary);text-decoration:none;font-weight:600">${escapeHtml(p.name)}</a>
+        <span style="color:var(--text-soft)">›</span>
+      `).join('')}
+      <span style="color:var(--text-soft);font-weight:500">${escapeHtml(data.team.name)}</span>
+    </div>
+  `;
+  const subTeamsHtml = subTeams.length === 0 ? '' : `
+    <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">
+      <div style="font-size:11px;font-weight:700;color:var(--primary-dark);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">📁 ทีมย่อย (${subTeams.length})</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${subTeams.map(s => `
+          <a href="#/teams/${s.id}" style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:8px;font-size:12px;font-weight:600;background:rgba(37,99,235,.08);color:var(--primary);border:1px solid rgba(37,99,235,.2);text-decoration:none;white-space:nowrap" title="คลิกเพื่อเปิดทีมย่อย">
+            👥 ${escapeHtml(s.name)}
+            <span style="color:var(--text-muted);font-weight:500;font-size:11px">${s.member_count} · ${s.site_count}</span>
+          </a>
+        `).join('')}
+      </div>
+    </div>
+  `;
   // Render team header + sub-tab structure (Members | Site Access) — เหมือนเดิมแต่ inline
   panel.innerHTML = `
     <div style="background:var(--bg-card);border:1px solid var(--border);border-top-left-radius:0;border-top-right-radius:12px;border-bottom-left-radius:12px;border-bottom-right-radius:12px;padding:18px 20px;margin-bottom:14px">
+      ${breadcrumbHtml}
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap">
         <div style="flex:1;min-width:0">
           <h3 style="margin:0 0 4px;font-size:18px;font-weight:700">${escapeHtml(data.team.name)}</h3>
@@ -2896,6 +3015,7 @@ async function loadTeamDetail(teamId) {
           <button class="btn danger" id="delete-team-btn" style="font-size:12.5px;padding:6px 12px">🗑 ลบ</button>
         </div>
       </div>
+      ${subTeamsHtml}
     </div>
 
     <div id="team-tabs" style="display:flex;gap:6px;margin:0 0 14px;border-bottom:1px solid var(--border)">
@@ -3516,7 +3636,12 @@ async function showEditTeamSiteModal(teamId, site) {
   }, 0);
 }
 
-function showEditTeamModal(team, teamId) {
+async function showEditTeamModal(team, teamId) {
+  // โหลด teams ปัจจุบันเพื่อสร้าง parent picker (กัน self + descendants)
+  let teams = [];
+  try { teams = (await fetchJson('/api/admin/teams')).teams || []; } catch { /* ignore */ }
+  const excludeIds = getTeamDescendantIds(teams, teamId);
+  const parentOptionsHtml = buildParentTeamOptions(teams, team.parent_team_id ?? null, excludeIds);
   showModal({
     title: 'แก้ไขข้อมูล Team',
     body: `
@@ -3528,13 +3653,23 @@ function showEditTeamModal(team, teamId) {
         <label>คำอธิบาย</label>
         <input id="m-desc" type="text" value="${escapeHtml(team.description || '')}" />
       </div>
+      <div class="field">
+        <label>ทีมแม่ — จัดเป็นทีมย่อยภายใต้ (เปลี่ยนได้)</label>
+        <select id="m-parent" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">${parentOptionsHtml}</select>
+        <div class="hint" style="font-size:11px;color:var(--text-muted);margin-top:4px">ตัวเอง + ทีมย่อยของตัวเองถูก exclude อัตโนมัติ — กันสร้าง loop</div>
+      </div>
     `,
     onSubmit: async () => {
       const name = $('m-name').value.trim();
       if (!name) throw new Error('กรอกชื่อทีม');
+      const parentVal = $('m-parent').value;
       await fetchJson('/api/admin/teams/' + teamId, {
         method: 'PATCH',
-        body: JSON.stringify({ name, description: $('m-desc').value.trim() || null }),
+        body: JSON.stringify({
+          name,
+          description: $('m-desc').value.trim() || null,
+          parent_team_id: parentVal ? parseInt(parentVal, 10) : null,
+        }),
       });
       // Re-render full page เพื่อ update ชื่อใน tab strip ด้วย
       await renderTeamsPage(teamId);

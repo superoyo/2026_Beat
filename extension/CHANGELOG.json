@@ -2,6 +2,26 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.58",
+      "date": "2026-05-05",
+      "title": "Teams: รองรับ hierarchy — ทีมย่อยภายใต้ทีมแม่",
+      "summary": "ทีมสามารถจัดเป็นต้นไม้ได้ (Marketing › Brand › Visual) — sidebar แสดง indent, ฟอร์ม add/edit มี parent picker, หน้า team detail มี breadcrumb + section ทีมย่อย",
+      "changes": [
+        "DB: ALTER TABLE teams ADD COLUMN parent_team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL + index",
+        "Backend TeamIn/TeamPatchIn: เพิ่ม parent_team_id (null = root, omitted = no change)",
+        "Backend: helper _team_would_create_cycle ป้องกัน loop (เดินขึ้นจาก new_parent — ถ้าเจอ self = reject)",
+        "Backend: POST/PATCH validate parent มีจริง + ไม่สร้าง cycle (HTTP 400)",
+        "Backend GET /api/admin/teams: เพิ่ม parent_team_id ใน response",
+        "Backend GET /api/admin/teams/{id}: เพิ่ม parent_path (breadcrumb ขึ้นไป root) + sub_teams (ลูกตรง พร้อม count)",
+        "Frontend: helper buildTeamTree, flattenTeamTreeDFS, getTeamFullPath, buildParentTeamOptions, getTeamDescendantIds",
+        "Sidebar: render เป็น tree DFS — indent ตาม depth (12 + depth*14)px + border-left-2px ของ child + 📂 (มี child) / └ (leaf)",
+        "Search-key เปลี่ยนจาก name+desc → fullPath เพื่อค้นหาทั้งสายได้",
+        "Add/Edit modal: <select id=hm-parent> มี option indent (↳) ตาม depth + 'ระดับบนสุด (root)' เป็น default",
+        "Edit modal: exclude self + descendants อัตโนมัติ (กัน admin เผลอตั้งให้สร้าง loop)",
+        "Team detail header: breadcrumb (parent path คลิก navigate ได้) + section 📁 ทีมย่อย แสดงเป็น chip ผูก link"
+      ]
+    },
+    {
       "version": "1.9.57",
       "date": "2026-05-05",
       "title": "Team detail: sort รายชื่อ + คลิก PC card เปิดรูปได้",
