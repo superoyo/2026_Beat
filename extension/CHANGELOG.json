@@ -2,6 +2,21 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.57",
+      "date": "2026-05-05",
+      "title": "Team detail: sort รายชื่อ + คลิก PC card เปิดรูปได้",
+      "summary": "หน้า Team detail — เพิ่ม dropdown เรียงลำดับ (วันที่เพิ่ม / ชื่อ / อายุคอมฯเก่าสุดก่อน) + คลิก PC card เปิด lightbox ดูรูปอุปกรณ์เต็ม",
+      "changes": [
+        "Backend: /api/admin/teams/{id} pcs[] เพิ่ม photo_data — สำหรับเปิด lightbox",
+        "Frontend: dropdown 🕒/🔤/⏱ เหนือรายชื่อ — sort: default = added_at DESC, name = ชื่อ A-Z (Thai locale), pc-age = อายุคอมฯเก่าสุดของ member นั้น (member ไม่มี PC ส่งไปท้ายแถว)",
+        "Sort state เก็บใน _teamMembersSort + raw data ใน _lastTeamMembersData เพื่อ re-render เมื่อเปลี่ยน sort ไม่ต้อง fetch ใหม่",
+        "renderTeamMemberPcCard: wrap เป็น <button data-tm-pc-id> + cursor:pointer + hover effect (bg + border primary)",
+        "คลิก PC card → reuse showHardwarePhotoModal (lightbox 70vh)",
+        "PC ไม่มีรูป → click alert 'ยังไม่มีรูปภาพ' (cursor default + opacity เบาๆ)",
+        "Header chip '🖼 ดูรูป' บน card ที่มีรูป — บอก affordance"
+      ]
+    },
+    {
       "version": "1.9.56",
       "date": "2026-05-05",
       "title": "Team detail: avatar member ข้างหน้าชื่อในรายชื่อทีม",

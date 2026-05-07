@@ -2855,6 +2855,10 @@ function showAddTeamModal() {
 let _currentTeam = null;
 let _allMembers = null;   // cache list of all members for "add to team" picker
 let _allSites = null;     // cache list of all sites
+// v1.9.57 — sort state สำหรับ Team detail member list
+let _teamMembersSort = 'default';   // 'default' | 'name' | 'pc-age'
+let _lastTeamMembersData = null;    // raw members array (เก็บไว้ re-render เมื่อ sort เปลี่ยน)
+let _lastTeamMembersTeamId = null;
 
 async function loadTeamDetail(teamId) {
   const panel = $('team-panel');
@@ -2929,15 +2933,71 @@ async function loadTeamDetail(teamId) {
   renderTeamSites(teamId, data.sites);
 }
 
+// v1.9.57 — sort: default = ตามที่ backend ส่งมา (added_at DESC), name = ชื่อ A-Z, pc-age = อายุคอม PC เก่าสุดของ member นั้น
+function sortTeamMembers(members, key) {
+  if (key === 'name') {
+    return [...members].sort((a, b) => {
+      const an = a.display_name || a.email || a.phone || '';
+      const bn = b.display_name || b.email || b.phone || '';
+      return an.localeCompare(bn, 'th');
+    });
+  }
+  if (key === 'pc-age') {
+    const oldestPcMonths = (m) => {
+      const pcs = m.pcs || [];
+      if (pcs.length === 0) return -1;
+      let max = 0;
+      for (const pc of pcs) {
+        if (!pc.purchased_at) continue;
+        const mt = /^(\d{4})-(\d{2})/.exec(String(pc.purchased_at));
+        if (!mt) continue;
+        const y = parseInt(mt[1], 10);
+        const mo = parseInt(mt[2], 10);
+        if (mo < 1 || mo > 12) continue;
+        const now = new Date();
+        const months = (now.getFullYear() - y) * 12 + (now.getMonth() - (mo - 1));
+        if (months > max) max = months;
+      }
+      return max;
+    };
+    return [...members].sort((a, b) => {
+      const aa = oldestPcMonths(a);
+      const bb = oldestPcMonths(b);
+      // ทั้งคู่ไม่มี PC → sort by name
+      if (aa === -1 && bb === -1) {
+        const an = a.display_name || a.email || a.phone || '';
+        const bn = b.display_name || b.email || b.phone || '';
+        return an.localeCompare(bn, 'th');
+      }
+      if (aa === -1) return 1;   // ไม่มี PC → ปลายแถว
+      if (bb === -1) return -1;
+      return bb - aa;             // อายุมาก (เก่า) → ขึ้นก่อน
+    });
+  }
+  return members;
+}
+
 function renderTeamMembers(teamId, members) {
+  // v1.9.57 — เก็บ state สำหรับ re-sort
+  _lastTeamMembersTeamId = teamId;
+  _lastTeamMembersData = members;
+  const sortedMembers = sortTeamMembers(members, _teamMembersSort);
+  const sortSelectStyle = 'padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text);font-family:inherit';
   const html = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <span class="card-sub">${members.length} member</span>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span class="card-sub">${members.length} member</span>
+        <select id="tm-sort" title="เรียงรายชื่อ" style="${sortSelectStyle}">
+          <option value="default"${_teamMembersSort === 'default' ? ' selected' : ''}>🕒 วันที่เพิ่ม (ล่าสุด)</option>
+          <option value="name"${_teamMembersSort === 'name' ? ' selected' : ''}>🔤 ชื่อ (A-Z)</option>
+          <option value="pc-age"${_teamMembersSort === 'pc-age' ? ' selected' : ''}>⏱ อายุคอมฯ (เก่าสุดก่อน)</option>
+        </select>
+      </div>
       <button class="btn primary" id="add-member-btn" style="font-size:12.5px;padding:6px 12px">+ เพิ่ม Member</button>
     </div>
-    ${members.length === 0
+    ${sortedMembers.length === 0
       ? '<div class="empty">ยังไม่มี member ในทีม</div>'
-      : members.map(m => {
+      : sortedMembers.map(m => {
           const display = m.display_name || m.email || m.phone;
           // v1.9.56 — avatar (รูปจริง หรือวงกลม initial)
           const initial = ((display || '?').trim().charAt(0) || '?').toUpperCase();
@@ -2990,6 +3050,33 @@ function renderTeamMembers(teamId, members) {
         }).join('')}
   `;
   $('tab-members').innerHTML = html;
+
+  // v1.9.57 — sort dropdown → re-render ด้วย data เดิม
+  const sortSel = $('tm-sort');
+  if (sortSel) {
+    sortSel.addEventListener('change', (e) => {
+      _teamMembersSort = e.target.value;
+      if (_lastTeamMembersData && _lastTeamMembersTeamId) {
+        renderTeamMembers(_lastTeamMembersTeamId, _lastTeamMembersData);
+      }
+    });
+  }
+
+  // v1.9.57 — คลิก PC card → เปิด photo modal (ถ้า PC นั้นมีรูป)
+  document.querySelectorAll('#tab-members button[data-tm-pc-id]').forEach(b => {
+    b.addEventListener('click', () => {
+      const pcId = parseInt(b.dataset.tmPcId, 10);
+      // หา pc object ใน _lastTeamMembersData
+      for (const m of (_lastTeamMembersData || [])) {
+        const pc = (m.pcs || []).find(p => p.id === pcId);
+        if (pc) {
+          if (pc.photo_data) showHardwarePhotoModal(pc);
+          else alert('PC นี้ยังไม่มีรูปภาพ');
+          return;
+        }
+      }
+    });
+  });
 
   $('add-member-btn').addEventListener('click', () => showAddMemberToTeamModal(teamId, members));
   document.querySelectorAll('#tab-members button[data-rm]').forEach(b => {
@@ -7059,18 +7146,26 @@ function renderTeamMemberPcCard(pc) {
     ? `${escapeHtml(pc.name)} <span style="color:var(--text-muted);font-weight:500;font-size:12px">— ${escapeHtml(pc.model)}</span>`
     : escapeHtml(pc.name);
 
+  // v1.9.57 — wrap เป็น <button> + data-tm-pc-id เพื่อให้คลิกเปิดภาพได้ใน Team detail
+  const hasPhoto = !!pc.photo_data;
+  const tooltip = hasPhoto ? 'คลิกเพื่อดูรูปอุปกรณ์' : 'PC นี้ยังไม่มีรูปภาพ';
+  const cursorStyle = hasPhoto ? 'cursor:pointer' : 'cursor:default;opacity:.95';
   return `
-    <div style="display:flex;gap:10px;align-items:flex-start;background:var(--bg-soft);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-top:6px">
+    <button type="button" data-tm-pc-id="${pc.id}" title="${escapeHtml(tooltip)}"
+       style="display:flex;gap:10px;align-items:flex-start;background:var(--bg-soft);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-top:6px;width:100%;text-align:left;font-family:inherit;${cursorStyle};transition:background .12s,border-color .12s"
+       onmouseenter="if(${hasPhoto}){this.style.background='var(--bg-card)';this.style.borderColor='var(--primary)'}"
+       onmouseleave="this.style.background='var(--bg-soft)';this.style.borderColor='var(--border)'">
       <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span style="font-weight:700;font-size:13px;color:var(--text)">💻 ${headLine}</span>
           ${statusBadge}
+          ${hasPhoto ? '<span style="font-size:10.5px;color:var(--primary);font-weight:600">🖼 ดูรูป</span>' : ''}
         </div>
         ${specs.length ? `<div style="font-size:11.5px;color:var(--text-muted);line-height:1.5">${specs.join(' <span style=\"color:var(--border)\">·</span> ')}</div>` : ''}
         ${ageStr ? `<div style="font-size:11.5px;color:var(--accent);font-weight:600">⏱ ใช้งานมาแล้ว ${escapeHtml(ageStr)}</div>` : ''}
       </div>
       ${tile}
-    </div>
+    </button>
   `;
 }
 
