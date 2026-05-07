@@ -2939,6 +2939,11 @@ function renderTeamMembers(teamId, members) {
       ? '<div class="empty">ยังไม่มี member ในทีม</div>'
       : members.map(m => {
           const display = m.display_name || m.email || m.phone;
+          // v1.9.56 — avatar (รูปจริง หรือวงกลม initial)
+          const initial = ((display || '?').trim().charAt(0) || '?').toUpperCase();
+          const avatarHtml = m.avatar_data
+            ? `<img src="${m.avatar_data}" alt="" style="width:44px;height:44px;border-radius:50%;object-fit:cover;border:1px solid var(--border);flex-shrink:0" />`
+            : `<div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:18px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(initial)}</div>`;
           // v1.14 — extra direct grants (sites ที่ member มีสิทธิ์โดยตรง แต่ team ไม่ได้ผูกไว้)
           const extras = m.extra_sites || [];
           const extraCapsules = extras.length === 0 ? '' : `
@@ -2970,7 +2975,8 @@ function renderTeamMembers(teamId, members) {
           const pcSection = pcs.length === 0 ? '' :
             `<div style="margin-top:8px">${pcs.map(pc => renderTeamMemberPcCard(pc)).join('')}</div>`;
           return `
-            <div class="card" style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px">
+            <div class="card" style="display:flex;align-items:flex-start;gap:12px">
+              ${avatarHtml}
               <div style="flex:1;min-width:0">
                 <div class="card-title">${escapeHtml(display)}</div>
                 <div class="card-sub">${escapeHtml(m.phone)}${m.email ? ' · ' + escapeHtml(m.email) : ''}${m.enabled === 0 ? ' · <span style="color:var(--critical)">⛔ ระงับ</span>' : ''}</div>

@@ -1920,7 +1920,8 @@ def admin_get_team(team_id: int, _sess: dict = Depends(require_admin)) -> dict[s
         if not team:
             raise HTTPException(status_code=404, detail="team not found")
         members = conn.execute(
-            "SELECT m.id, m.phone, m.email, m.display_name, m.enabled, tm.added_at "
+            "SELECT m.id, m.phone, m.email, m.display_name, m.enabled, m.avatar_data, "
+            "       tm.added_at "
             "FROM team_members tm JOIN members m ON m.id = tm.member_id "
             "WHERE tm.team_id = ? ORDER BY tm.added_at DESC",
             (team_id,),

@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.56",
+      "date": "2026-05-05",
+      "title": "Team detail: avatar member ข้างหน้าชื่อในรายชื่อทีม",
+      "summary": "หน้า Team detail — เพิ่ม avatar 44×44 round ข้างหน้าชื่อ member ทุกคน (รูปจริงถ้ามี avatar_data, ไม่งั้นวงกลมไล่สีน้ำเงิน-ม่วง + อักษรแรกของชื่อ)",
+      "changes": [
+        "Backend: /api/admin/teams/{id} — SELECT m.avatar_data เพิ่ม (เดิมไม่ได้ select)",
+        "Frontend renderTeamMembers: avatar 44px อยู่ก่อน info column (flex item ที่ 1)",
+        "Layout: align-items:flex-start + gap 12px (จากเดิม 14px) — avatar อยู่บน, info ขยายเต็ม"
+      ]
+    },
+    {
       "version": "1.9.55",
       "date": "2026-05-05",
       "title": "Team detail: แสดง spec PC ย่อ + อายุการใช้งาน ใต้รายชื่อ member",
