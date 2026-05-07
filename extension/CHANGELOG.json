@@ -2,6 +2,23 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.53",
+      "date": "2026-05-05",
+      "title": "Teams: เพิ่ม Member ด้วย search + avatar (แทน <select>)",
+      "summary": "Modal 'เพิ่ม Member เข้าทีม' เปลี่ยนจาก dropdown ธรรมดาเป็น search-list มีรูป + ชื่อ + email — ช่วยให้เลือกได้ถูกคน",
+      "changes": [
+        "Modal size 'wide' พร้อมช่องค้นหา realtime (display_name / email / phone)",
+        "Reuse renderHwMemberRow → row มี avatar (รูปจริง หรือวงกลม initial) + ชื่อ + email subtitle",
+        "Counter 'ทั้งหมด N คน' / 'แสดง X / Y คน' ระหว่างค้นหา",
+        "Active row: highlight bg primary เบาๆ + border + ✓ ขวาสุด",
+        "Hover: bg-soft (ไม่เขียนทับ active)",
+        "Single-click = select (highlight) → กด 'บันทึก' → POST /api/admin/teams/{id}/members",
+        "Double-click = select + submit ทันที (UX shortcut)",
+        "Refresh _allMembers ทุกครั้งที่เปิด modal — กัน stale cache",
+        "Auto-focus search input + max-height 380px + scroll"
+      ]
+    },
+    {
       "version": "1.9.52",
       "date": "2026-05-05",
       "title": "Members → Hardware modal: เพิ่ม/ลบ hardware ของ member ได้จากในตัว modal",
