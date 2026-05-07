@@ -1987,6 +1987,26 @@ def admin_get_team(team_id: int, _sess: dict = Depends(require_admin)) -> dict[s
             for mem in members_data:
                 mem["teams"] = []
 
+        # === v1.9.55 — แนบ PC spec ย่อ + วันที่ซื้อ ของแต่ละ member (ใช้ในหน้า team detail) ===
+        if member_ids:
+            pl = ",".join("?" * len(member_ids))
+            pc_rows = conn.execute(
+                f"SELECT id, name, model, cpu, ram, storage, display, os, os_version, "
+                f"       purchased_at, status, current_member_id "
+                f"FROM hardware "
+                f"WHERE hw_type = 'pc' AND current_member_id IN ({pl}) "
+                f"ORDER BY current_member_id, name COLLATE NOCASE",
+                member_ids,
+            ).fetchall()
+            pcs_by_member: dict[int, list[dict[str, Any]]] = {}
+            for r in pc_rows:
+                pcs_by_member.setdefault(r["current_member_id"], []).append(dict(r))
+            for mem in members_data:
+                mem["pcs"] = pcs_by_member.get(mem["id"], [])
+        else:
+            for mem in members_data:
+                mem["pcs"] = []
+
     return {
         "team": dict(team),
         "members": members_data,

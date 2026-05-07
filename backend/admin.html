@@ -2965,6 +2965,10 @@ function renderTeamMembers(teamId, members) {
               `).join('')}
             </div>
           `;
+          // v1.9.55 — PC spec: สำหรับ admin ใช้ตัดสินใจเรื่องอุปกรณ์ในอนาคต (เช่น "ของคนนี้เก่าแล้วต้องเปลี่ยน")
+          const pcs = m.pcs || [];
+          const pcSection = pcs.length === 0 ? '' :
+            `<div style="margin-top:8px">${pcs.map(pc => renderTeamMemberPcCard(pc)).join('')}</div>`;
           return `
             <div class="card" style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px">
               <div style="flex:1;min-width:0">
@@ -2972,6 +2976,7 @@ function renderTeamMembers(teamId, members) {
                 <div class="card-sub">${escapeHtml(m.phone)}${m.email ? ' · ' + escapeHtml(m.email) : ''}${m.enabled === 0 ? ' · <span style="color:var(--critical)">⛔ ระงับ</span>' : ''}</div>
                 ${teamChips}
                 ${extraCapsules}
+                ${pcSection}
               </div>
               <button class="btn danger" data-rm="${m.id}" style="font-size:12.5px;padding:6px 12px;flex-shrink:0">ลบออก</button>
             </div>
@@ -7000,6 +7005,65 @@ function renderMyDevicePurchaseTile(purchasedAt) {
     <div title="${escapeHtml(tooltip)}" style="margin-left:auto;display:inline-flex;flex-direction:column;align-items:stretch;border-radius:9px;overflow:hidden;border:1px solid rgba(220,38,38,.18);box-shadow:0 2px 6px rgba(220,38,38,.12);min-width:64px;flex-shrink:0">
       <div style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;padding:2px 12px;font-size:10.5px;font-weight:700;letter-spacing:.5px;text-align:center;line-height:1.5">${escapeHtml(monthLabel)}</div>
       <div style="background:#fff;color:#0f172a;padding:4px 12px;font-size:15px;font-weight:800;line-height:1.1;text-align:center;font-variant-numeric:tabular-nums">${be}</div>
+    </div>
+  `;
+}
+
+// v1.9.55 — แยก age calculation เป็น helper เพื่อใช้ซ้ำในหลายที่
+function calcHwAgeStr(purchasedAt) {
+  if (!purchasedAt) return '';
+  const ym = String(purchasedAt).slice(0, 7);
+  const m = /^(\d{4})-(\d{2})$/.exec(ym);
+  if (!m) return '';
+  const year = parseInt(m[1], 10);
+  const month = parseInt(m[2], 10);
+  if (month < 1 || month > 12) return '';
+  const now = new Date();
+  let months = (now.getFullYear() - year) * 12 + (now.getMonth() - (month - 1));
+  if (months < 0) months = 0;
+  const yrs = Math.floor(months / 12);
+  const mos = months % 12;
+  return yrs > 0 ? `${yrs} ปี${mos > 0 ? ' ' + mos + ' เดือน' : ''}` : (mos > 0 ? `${mos} เดือน` : 'ไม่ถึง 1 เดือน');
+}
+
+// v1.9.55 — PC spec card สำหรับหน้า Team detail (member row) — สรุป spec + อายุ + tile
+function renderTeamMemberPcCard(pc) {
+  const tile = renderMyDevicePurchaseTile(pc.purchased_at);
+  const ageStr = calcHwAgeStr(pc.purchased_at);
+  const specs = [];
+  if (pc.cpu) specs.push(`🔧 ${escapeHtml(pc.cpu)}`);
+  if (pc.ram) specs.push(`🧠 ${escapeHtml(pc.ram)}`);
+  if (pc.storage) specs.push(`💾 ${escapeHtml(pc.storage)}`);
+  if (pc.display) specs.push(`🖥 ${escapeHtml(pc.display)}`);
+  if (pc.os) specs.push(`💿 ${escapeHtml(pc.os)}${pc.os_version ? ' ' + escapeHtml(pc.os_version) : ''}`);
+
+  let statusBadge = '';
+  if (pc.status) {
+    const map = {
+      active:  { c: 'rgba(16,185,129,.12);color:var(--green)',     l: '✓ ใช้งาน' },
+      repair:  { c: 'rgba(245,158,11,.15);color:#92400e',          l: '🔧 ซ่อม' },
+      stock:   { c: 'rgba(99,102,241,.10);color:#3730a3',          l: '📦 Stock' },
+      retired: { c: 'rgba(220,38,38,.10);color:var(--critical)',   l: '⚠ ปลดระวาง' },
+    };
+    const mp = map[pc.status];
+    if (mp) statusBadge = `<span style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:700;background:${mp.c};white-space:nowrap">${mp.l}</span>`;
+  }
+
+  const headLine = pc.model
+    ? `${escapeHtml(pc.name)} <span style="color:var(--text-muted);font-weight:500;font-size:12px">— ${escapeHtml(pc.model)}</span>`
+    : escapeHtml(pc.name);
+
+  return `
+    <div style="display:flex;gap:10px;align-items:flex-start;background:var(--bg-soft);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-top:6px">
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-weight:700;font-size:13px;color:var(--text)">💻 ${headLine}</span>
+          ${statusBadge}
+        </div>
+        ${specs.length ? `<div style="font-size:11.5px;color:var(--text-muted);line-height:1.5">${specs.join(' <span style=\"color:var(--border)\">·</span> ')}</div>` : ''}
+        ${ageStr ? `<div style="font-size:11.5px;color:var(--accent);font-weight:600">⏱ ใช้งานมาแล้ว ${escapeHtml(ageStr)}</div>` : ''}
+      </div>
+      ${tile}
     </div>
   `;
 }

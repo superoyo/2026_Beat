@@ -2,6 +2,22 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.55",
+      "date": "2026-05-05",
+      "title": "Team detail: แสดง spec PC ย่อ + อายุการใช้งาน ใต้รายชื่อ member",
+      "summary": "ใต้แต่ละ member ในหน้า Team detail — เพิ่ม card PC spec (CPU/RAM/Storage/Display/OS) + calendar tile เดือน/ปีที่ซื้อแบบเด่น + ⏱ ใช้งานมาแล้ว X ปี Y เดือน เพื่อให้ admin ตัดสินใจเรื่องการเปลี่ยน/ซื้อใหม่ได้ง่าย",
+      "changes": [
+        "Backend: /api/admin/teams/{id} — JOIN เพิ่ม pcs[] ต่อ member (เฉพาะ hw_type='pc' ที่ผูกกับ member นั้น)",
+        "Backend payload ต่อ PC: id, name, model, cpu, ram, storage, display, os, os_version, purchased_at, status",
+        "Frontend: helper calcHwAgeStr(purchasedAt) คำนวณอายุเป็น 'X ปี Y เดือน' (ใช้ซ้ำได้)",
+        "Frontend: helper renderTeamMemberPcCard(pc) สร้าง card สรุป spec",
+        "Card layout: ซ้าย = ชื่อ + Model + status badge + spec line + ⏱ อายุ; ขวา = calendar tile เดือน/ปี",
+        "Reuse renderMyDevicePurchaseTile (calendar tile แดง-ขาว) จาก My Device",
+        "Member ที่ไม่มี PC ผูก → ไม่แสดง section",
+        "1 member มีหลาย PC → แสดงทุก card เรียงตามชื่อ"
+      ]
+    },
+    {
       "version": "1.9.54",
       "date": "2026-05-05",
       "title": "Teams: capsule บอกว่า member อยู่ทีมไหนบ้าง (team detail + add modal)",
