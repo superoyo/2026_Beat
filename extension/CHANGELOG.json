@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.54",
+      "date": "2026-05-05",
+      "title": "Teams: capsule บอกว่า member อยู่ทีมไหนบ้าง (team detail + add modal)",
+      "summary": "ใต้ชื่อ member ในหน้ารายชื่อสมาชิกของแต่ละทีม + รายการในหน้า search 'เพิ่ม Member เข้าทีม' — เพิ่ม chip 👥 ชื่อทีมที่สังกัดทุกทีม เพื่อช่วย admin เลือกได้ถูกคน",
+      "changes": [
+        "Backend: /api/admin/teams/{id} — เพิ่ม teams[] ต่อ member (ทุกทีมที่ member นี้เป็นสมาชิก) ใช้ JOIN เดียวรวมทั้งหมด",
+        "Frontend renderTeamMembers (หน้า team detail): chip 'อยู่ทีม:' ทีมอื่น ๆ ที่ไม่ใช่ทีมปัจจุบัน — ใช้ filter t.id !== teamId",
+        "Frontend renderHwMemberRow: เพิ่ม opts arg ที่ 3 รองรับ {showTeams, excludeTeamId} — backward-compatible",
+        "Add Member to Team modal: pass showTeams=true → แต่ละ row โชว์ chip ทีมทั้งหมดที่ member สังกัดอยู่ (ช่วย admin เห็นภาพรวม)",
+        "Chip style: pill เล็ก primary subtle (รัศมี 999px, font 10.5px, bg 10%, border 20%)"
+      ]
+    },
+    {
       "version": "1.9.53",
       "date": "2026-05-05",
       "title": "Teams: เพิ่ม Member ด้วย search + avatar (แทน <select>)",

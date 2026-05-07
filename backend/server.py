@@ -1965,6 +1965,28 @@ def admin_get_team(team_id: int, _sess: dict = Depends(require_admin)) -> dict[s
                 if r["id"] not in team_site_ids
             ]
 
+        # === v1.9.54 — หา teams ทั้งหมดของแต่ละ member (เพื่อโชว์ chip บอกว่าเขาอยู่ทีมไหนบ้าง) ===
+        member_ids = [m["id"] for m in members_data]
+        if member_ids:
+            placeholders = ",".join("?" * len(member_ids))
+            tm_rows = conn.execute(
+                f"SELECT tm.member_id, t.id AS team_id, t.name AS team_name "
+                f"FROM team_members tm JOIN teams t ON t.id = tm.team_id "
+                f"WHERE tm.member_id IN ({placeholders}) "
+                f"ORDER BY t.name COLLATE NOCASE",
+                member_ids,
+            ).fetchall()
+            teams_by_member: dict[int, list[dict[str, Any]]] = {}
+            for r in tm_rows:
+                teams_by_member.setdefault(r["member_id"], []).append(
+                    {"id": r["team_id"], "name": r["team_name"]}
+                )
+            for mem in members_data:
+                mem["teams"] = teams_by_member.get(mem["id"], [])
+        else:
+            for mem in members_data:
+                mem["teams"] = []
+
     return {
         "team": dict(team),
         "members": members_data,
