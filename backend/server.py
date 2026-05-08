@@ -1966,13 +1966,65 @@ def admin_get_team(team_id: int, _sess: dict = Depends(require_admin)) -> dict[s
         team = conn.execute("SELECT * FROM teams WHERE id = ?", (team_id,)).fetchone()
         if not team:
             raise HTTPException(status_code=404, detail="team not found")
-        members = conn.execute(
-            "SELECT m.id, m.phone, m.email, m.display_name, m.enabled, m.avatar_data, "
-            "       tm.added_at "
-            "FROM team_members tm JOIN members m ON m.id = tm.member_id "
-            "WHERE tm.team_id = ? ORDER BY tm.added_at DESC",
+        # v1.9.59 — รวมสมาชิกจาก subtree (current team + ทุก descendant)
+        # คลิกทีมแม่ → เห็นสมาชิกทุกคนของทีมย่อยลงไปด้วย
+        subtree_id_rows = conn.execute(
+            """
+            WITH RECURSIVE subtree(id) AS (
+                SELECT id FROM teams WHERE id = ?
+                UNION ALL
+                SELECT t.id FROM teams t INNER JOIN subtree s ON t.parent_team_id = s.id
+            )
+            SELECT id FROM subtree
+            """,
             (team_id,),
         ).fetchall()
+        subtree_ids = [r["id"] for r in subtree_id_rows]
+        if subtree_ids:
+            pl_sub = ",".join("?" * len(subtree_ids))
+            member_rows = conn.execute(
+                f"SELECT m.id, m.phone, m.email, m.display_name, m.enabled, m.avatar_data, "
+                f"  tm.team_id AS source_team_id, tm.added_at "
+                f"FROM team_members tm JOIN members m ON m.id = tm.member_id "
+                f"WHERE tm.team_id IN ({pl_sub}) "
+                f"ORDER BY tm.added_at DESC",
+                subtree_ids,
+            ).fetchall()
+            subtree_team_name_rows = conn.execute(
+                f"SELECT id, name FROM teams WHERE id IN ({pl_sub})",
+                subtree_ids,
+            ).fetchall()
+            subtree_team_names = {r["id"]: r["name"] for r in subtree_team_name_rows}
+        else:
+            member_rows = []
+            subtree_team_names = {}
+
+        # dedup โดย member.id — เก็บ row แรก (ใหม่สุด) + ทำ flag direct + รายชื่อ sub_team_names
+        members = []
+        members_index: dict[int, dict[str, Any]] = {}
+        for r in member_rows:
+            mid = r["id"]
+            if mid not in members_index:
+                d = {
+                    "id": r["id"],
+                    "phone": r["phone"],
+                    "email": r["email"],
+                    "display_name": r["display_name"],
+                    "enabled": r["enabled"],
+                    "avatar_data": r["avatar_data"],
+                    "added_at": r["added_at"],
+                    "direct": False,
+                    "sub_team_names": [],
+                }
+                members_index[mid] = d
+                members.append(d)
+            rec = members_index[mid]
+            if r["source_team_id"] == team_id:
+                rec["direct"] = True
+            else:
+                tname = subtree_team_names.get(r["source_team_id"])
+                if tname and tname not in rec["sub_team_names"]:
+                    rec["sub_team_names"].append(tname)
         sites = conn.execute(
             "SELECT s.id, s.name, s.url_pattern, ts.access_type, ts.added_at, "
             "  (SELECT COUNT(*) FROM credentials WHERE site_id = s.id) AS total_creds "

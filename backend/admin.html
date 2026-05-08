@@ -3124,6 +3124,17 @@ function renderTeamMembers(teamId, members) {
           const avatarHtml = m.avatar_data
             ? `<img src="${m.avatar_data}" alt="" style="width:44px;height:44px;border-radius:50%;object-fit:cover;border:1px solid var(--border);flex-shrink:0" />`
             : `<div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:18px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(initial)}</div>`;
+          // v1.9.59 — "จากทีมย่อย" สำหรับสมาชิกที่ไม่ได้อยู่ทีมนี้โดยตรง (มาจาก descendants)
+          const subTeamNames = m.sub_team_names || [];
+          const isIndirect = (m.direct === false) && subTeamNames.length > 0;
+          const fromSubteamChip = isIndirect ? `
+            <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;align-items:center">
+              <span style="font-size:11px;color:var(--text-muted);font-weight:500">📁 จากทีมย่อย:</span>
+              ${subTeamNames.map(n => `
+                <span style="display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(245,158,11,.10);color:#92400e;border:1px solid rgba(245,158,11,.30);white-space:nowrap">📁 ${escapeHtml(n)}</span>
+              `).join('')}
+            </div>
+          ` : '';
           // v1.14 — extra direct grants (sites ที่ member มีสิทธิ์โดยตรง แต่ team ไม่ได้ผูกไว้)
           const extras = m.extra_sites || [];
           const extraCapsules = extras.length === 0 ? '' : `
@@ -3154,17 +3165,22 @@ function renderTeamMembers(teamId, members) {
           const pcs = m.pcs || [];
           const pcSection = pcs.length === 0 ? '' :
             `<div style="margin-top:8px">${pcs.map(pc => renderTeamMemberPcCard(pc)).join('')}</div>`;
+          // v1.9.59 — ปุ่ม "ลบออก" เฉพาะสมาชิกตรง (direct=true); สมาชิก indirect แสดง label แทน
+          const removeBtnOrLabel = (m.direct !== false)
+            ? `<button class="btn danger" data-rm="${m.id}" style="font-size:12.5px;padding:6px 12px;flex-shrink:0">ลบออก</button>`
+            : `<span style="font-size:11px;color:var(--text-muted);font-style:italic;flex-shrink:0;align-self:flex-start;padding:7px 0;text-align:right;line-height:1.4">— จากทีมย่อย<br/>(จัดการที่ทีมต้นทาง) —</span>`;
           return `
-            <div class="card" style="display:flex;align-items:flex-start;gap:12px">
+            <div class="card" style="display:flex;align-items:flex-start;gap:12px${isIndirect ? ';background:rgba(245,158,11,.04)' : ''}">
               ${avatarHtml}
               <div style="flex:1;min-width:0">
                 <div class="card-title">${escapeHtml(display)}</div>
                 <div class="card-sub">${escapeHtml(m.phone)}${m.email ? ' · ' + escapeHtml(m.email) : ''}${m.enabled === 0 ? ' · <span style="color:var(--critical)">⛔ ระงับ</span>' : ''}</div>
+                ${fromSubteamChip}
                 ${teamChips}
                 ${extraCapsules}
                 ${pcSection}
               </div>
-              <button class="btn danger" data-rm="${m.id}" style="font-size:12.5px;padding:6px 12px;flex-shrink:0">ลบออก</button>
+              ${removeBtnOrLabel}
             </div>
           `;
         }).join('')}

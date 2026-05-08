@@ -2,6 +2,21 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.59",
+      "date": "2026-05-05",
+      "title": "Team detail: คลิกทีมแม่ → เห็นสมาชิกทีมย่อยด้วย (recursive)",
+      "summary": "หน้า Team detail — คลิกทีมแม่จะเห็นสมาชิกทุกคนในทีมย่อยทั้งหมดด้วย (recursive subtree) สมาชิก indirect มี chip '📁 จากทีมย่อย:' บอกว่ามาจากทีมไหน",
+      "changes": [
+        "Backend: admin_get_team ใช้ recursive CTE หา subtree IDs (current + descendants ทั้งหมด)",
+        "Member query: WHERE tm.team_id IN (subtree) — รวมสมาชิกทั้ง subtree",
+        "Dedup โดย member.id + flag direct (true=อยู่ทีมนี้โดยตรง) + sub_team_names[] (ชื่อทีมย่อยที่ membership มาจาก)",
+        "Frontend: indirect member มี chip '📁 จากทีมย่อย: <ชื่อ>' พื้นเหลืองอ่อน",
+        "Indirect member card: bg เหลืองอ่อนเล็กน้อย (rgba(245,158,11,.04)) แยกชั้นจาก direct",
+        "ปุ่ม 'ลบออก' แสดงเฉพาะ direct member (indirect แทนด้วย label '— จากทีมย่อย (จัดการที่ทีมต้นทาง) —')",
+        "ทีมย่อยทุกระดับลึกจะรวมขึ้นมา — ไม่จำกัด depth"
+      ]
+    },
+    {
       "version": "1.9.58",
       "date": "2026-05-05",
       "title": "Teams: รองรับ hierarchy — ทีมย่อยภายใต้ทีมแม่",
