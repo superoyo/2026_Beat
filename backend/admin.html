@@ -820,7 +820,7 @@
           </div>
         </div>
         <!-- Hardware group: PC / Device / Network -->
-        <div class="nav-group" id="nav-group-hardware" data-group-routes="hardware-pc,hardware-device,hardware-network">
+        <div class="nav-group" id="nav-group-hardware" data-group-routes="hardware-pc,hardware-pc-unassigned,hardware-device,hardware-network">
           <button type="button" class="nav-group-toggle" data-group-toggle="hardware">
             <span style="font-size:14px">🖥️</span>
             <span class="nav-group-label">Hardware</span>
@@ -828,6 +828,7 @@
           </button>
           <div class="nav-group-children">
             <a href="#/hardware-pc" data-route="hardware-pc">💻 Personal Computer</a>
+            <a href="#/hardware-pc-unassigned" data-route="hardware-pc-unassigned">📦 คอมส่วนกลาง</a>
             <a href="#/hardware-device" data-route="hardware-device">📱 Device</a>
             <a href="#/hardware-network" data-route="hardware-network">📡 Network</a>
           </div>
@@ -912,10 +913,10 @@ async function fetchJson(path, opts = {}) {
 }
 
 // admin-only routes — member ห้ามเข้า (bounce ไป default)
-const ADMIN_ONLY_ROUTES = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-device', 'hardware-network']);
+const ADMIN_ONLY_ROUTES = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network']);
 // menu items ที่ซ่อนใน sidebar สำหรับ member
 // (dashboard เห็นได้ทุกบทบาท — ใช้เป็นหน้าแรกของ member ด้วย)
-const HIDE_FROM_MEMBER_NAV = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-device', 'hardware-network']);
+const HIDE_FROM_MEMBER_NAV = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network']);
 
 // ---------- routing ----------
 const routes = {
@@ -924,6 +925,7 @@ const routes = {
   'calendar':         renderDomainsPage,    // primary route (Domain Names → Calendar)
   'domains':          renderDomainsPage,    // legacy alias
   'hardware-pc':      () => renderHardwarePage('pc'),
+  'hardware-pc-unassigned': renderHardwareUnassignedPcsPage,
   'hardware-device':  () => renderHardwarePage('device'),
   'hardware-network': () => renderHardwarePage('network'),
   'my-device':        renderMyDevicePage,
@@ -6859,6 +6861,177 @@ function classifyHwOs(os) {
   return 'other';
 }
 
+// v1.9.68 — Page: คอมส่วนกลาง (PC ที่ยังไม่มี owner ทั้งหมดในระบบ)
+let _hwUnassignedCache = [];
+let _hwUnassignedSearch = '';
+
+async function renderHardwareUnassignedPcsPage() {
+  $('main').innerHTML = `
+    <div class="page-head">
+      <h2 class="page-title">📦 คอมส่วนกลาง (Personal Computer ที่ไม่มี owner)</h2>
+      <span id="hu-count" class="card-sub">—</span>
+    </div>
+    <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px">
+      รายการ PC ทั้งหมดที่ยังไม่ผูก owner — จัดกลุ่มตามทีม/แผนกที่สังกัด (จากฟิลด์ <code>unassigned_team_id</code>)
+      ระบุที่เก็บใน field <code>storage_location</code> ของ PC แต่ละเครื่อง
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+      <input id="hu-search" type="text" placeholder="🔍 ค้นหาชื่อ / asset / ทีม / ที่เก็บ..." autocomplete="off"
+        style="flex:1;min-width:240px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--bg-card);color:var(--text);box-sizing:border-box" />
+    </div>
+    <div id="hu-list"><div class="empty">กำลังโหลด…</div></div>
+  `;
+  // โหลด members + teams cache (ใช้ใน edit modal)
+  if (_hwMembersCache.length === 0 || _hwTeamsCache.length === 0) {
+    try {
+      const [md, td] = await Promise.all([
+        fetchJson('/api/admin/members'),
+        fetchJson('/api/admin/teams'),
+      ]);
+      _hwMembersCache = md.members || [];
+      _hwTeamsCache = td.teams || [];
+    } catch (_) { /* ignore */ }
+  }
+  await loadUnassignedPcs();
+  $('hu-search').addEventListener('input', (e) => {
+    _hwUnassignedSearch = e.target.value;
+    renderUnassignedPcsList();
+  });
+}
+
+async function loadUnassignedPcs() {
+  let data;
+  try {
+    data = await fetchJson('/api/admin/hardware/unassigned-pcs');
+  } catch (e) {
+    const el = $('hu-list');
+    if (el) el.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  _hwUnassignedCache = data.hardware || [];
+  renderUnassignedPcsList();
+}
+
+function renderUnassignedPcsList() {
+  const listEl = $('hu-list');
+  const countEl = $('hu-count');
+  if (!listEl) return;
+  const q = _hwUnassignedSearch.trim().toLowerCase();
+  const filtered = !q ? _hwUnassignedCache : _hwUnassignedCache.filter(h => {
+    return (h.name || '').toLowerCase().includes(q)
+        || (h.asset_number || '').toLowerCase().includes(q)
+        || (h.unassigned_team_name || '').toLowerCase().includes(q)
+        || (h.storage_location || '').toLowerCase().includes(q)
+        || (h.model || '').toLowerCase().includes(q);
+  });
+  if (countEl) {
+    countEl.textContent = q
+      ? `${filtered.length} / ${_hwUnassignedCache.length} เครื่อง`
+      : `${_hwUnassignedCache.length} เครื่อง`;
+  }
+  if (_hwUnassignedCache.length === 0) {
+    listEl.innerHTML = `
+      <div class="empty" style="padding:32px;text-align:center;line-height:1.7">
+        <div style="font-size:48px;margin-bottom:6px">📭</div>
+        <div style="font-weight:600;color:var(--text);margin-bottom:4px">ยังไม่มีคอมพิวเตอร์ส่วนกลาง</div>
+        <div style="font-size:12.5px;color:var(--text-muted)">PC ที่ตั้ง owner = '— ไม่ผูก —' จะแสดงที่นี่</div>
+      </div>
+    `;
+    return;
+  }
+  if (filtered.length === 0) {
+    listEl.innerHTML = `<div class="empty">ไม่พบรายการที่ตรงกับ "<strong>${escapeHtml(_hwUnassignedSearch)}</strong>"</div>`;
+    return;
+  }
+  // group by unassigned_team_name (or '(ไม่ระบุทีม)')
+  const sorted = [...filtered].sort((a, b) => {
+    const ta = a.unassigned_team_name || 'zzz_no_team';
+    const tb = b.unassigned_team_name || 'zzz_no_team';
+    const cmp = ta.localeCompare(tb, 'th');
+    if (cmp !== 0) return cmp;
+    return (a.name || '').localeCompare(b.name || '', 'th');
+  });
+  const groups = new Map();
+  sorted.forEach(pc => {
+    const k = pc.unassigned_team_name || '(ไม่ระบุทีม)';
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(pc);
+  });
+  listEl.innerHTML = Array.from(groups.entries()).map(([teamName, items]) => `
+    <div style="margin-bottom:16px">
+      <div style="font-size:12px;font-weight:700;color:var(--primary-dark);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;display:flex;align-items:center;gap:8px">
+        🏢 ${escapeHtml(teamName)}
+        <span style="background:var(--bg-soft);color:var(--text-muted);font-size:11px;padding:1px 8px;border-radius:999px;font-weight:600">${items.length}</span>
+      </div>
+      ${items.map(pc => renderHwUnassignedPcCard(pc)).join('')}
+    </div>
+  `).join('');
+  listEl.querySelectorAll('button[data-hu-pc-id]').forEach(b => {
+    b.addEventListener('click', () => {
+      const id = parseInt(b.dataset.huPcId, 10);
+      const pc = _hwUnassignedCache.find(x => x.id === id);
+      if (pc) {
+        // เปิด detail modal — afterEdit reload list หน้านี้
+        showTeamPcDetailModal(pc, null, async () => { await loadUnassignedPcs(); });
+      }
+    });
+  });
+}
+
+function renderHwUnassignedPcCard(pc) {
+  const tile = renderMyDevicePurchaseTile(pc.purchased_at);
+  const ageStr = calcHwAgeStr(pc.purchased_at);
+  const specs = [];
+  if (pc.cpu) specs.push(`🔧 ${escapeHtml(pc.cpu)}`);
+  if (pc.ram) specs.push(`🧠 ${escapeHtml(pc.ram)}`);
+  if (pc.storage) specs.push(`💾 ${escapeHtml(pc.storage)}`);
+  if (pc.os) specs.push(`💿 ${escapeHtml(pc.os)}${pc.os_version ? ' ' + escapeHtml(pc.os_version) : ''}`);
+  let statusBadge = '';
+  if (pc.status) {
+    const map = {
+      active:  { c: 'rgba(16,185,129,.12);color:var(--green)',     l: '✓ ใช้งาน' },
+      repair:  { c: 'rgba(245,158,11,.15);color:#92400e',          l: '🔧 ซ่อม' },
+      stock:   { c: 'rgba(99,102,241,.10);color:#3730a3',          l: '📦 Stock' },
+      retired: { c: 'rgba(220,38,38,.10);color:var(--critical)',   l: '⚠ ปลดระวาง' },
+    };
+    const mp = map[pc.status];
+    if (mp) statusBadge = `<span style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:700;background:${mp.c};white-space:nowrap">${mp.l}</span>`;
+  }
+  const headLine = pc.model
+    ? `${escapeHtml(pc.name)} <span style="color:var(--text-muted);font-weight:500;font-size:12px">— ${escapeHtml(pc.model)}</span>`
+    : escapeHtml(pc.name);
+  const photoBlock = pc.photo_data
+    ? `<img src="${pc.photo_data}" alt="" style="width:72px;height:54px;object-fit:cover;border-radius:6px;border:1px solid var(--border);flex-shrink:0;display:block" />`
+    : `<div style="width:72px;height:54px;border-radius:6px;border:1px dashed var(--border);background:var(--bg-soft);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:22px">📦</div>`;
+  const storageChip = pc.storage_location
+    ? `<div style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:600;background:rgba(99,102,241,.12);color:#3730a3;border:1px solid rgba(99,102,241,.25)">📍 ${escapeHtml(pc.storage_location)}</div>`
+    : `<span style="font-size:11px;color:var(--critical);font-style:italic">⚠ ยังไม่ระบุที่เก็บ</span>`;
+
+  return `
+    <button type="button" data-hu-pc-id="${pc.id}" title="คลิกดูรายละเอียด + แก้ไข"
+       style="display:flex;gap:12px;align-items:flex-start;background:var(--bg-card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin-bottom:6px;width:100%;text-align:left;font-family:inherit;cursor:pointer;transition:background .12s,border-color .12s"
+       onmouseenter="this.style.background='var(--bg-hover)';this.style.borderColor='var(--primary)'"
+       onmouseleave="this.style.background='var(--bg-card)';this.style.borderColor='var(--border)'">
+      ${photoBlock}
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-weight:700;font-size:13.5px;color:var(--text)">💻 ${headLine}</span>
+          ${statusBadge}
+          <span style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:700;background:rgba(245,158,11,.10);color:#92400e">🔓 ไม่ระบุผู้ดูแล</span>
+          <span style="font-size:10.5px;color:var(--primary);font-weight:600">📖 รายละเอียด</span>
+        </div>
+        ${specs.length ? `<div style="font-size:11.5px;color:var(--text-muted);line-height:1.5">${specs.join(' · ')}</div>` : ''}
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:2px">
+          ${storageChip}
+          ${ageStr ? `<span style="font-size:11px;color:var(--accent);font-weight:600">⏱ ${escapeHtml(ageStr)}</span>` : ''}
+          ${pc.asset_number ? `<span style="font-size:11px;color:var(--text-muted)">🔖 ${escapeHtml(pc.asset_number)}</span>` : ''}
+        </div>
+      </div>
+      ${tile}
+    </button>
+  `;
+}
+
 async function renderHardwarePage(type) {
   if (type) _hwActiveType = type;
   _hwSearch = '';
@@ -7501,7 +7674,8 @@ function renderTeamMemberPcCard(pc) {
 
 // v1.9.62 — Detail modal สำหรับ PC ในหน้า Team detail
 // ซ้าย = ภาพ ; ขวา = รายละเอียด + ปุ่ม Edit
-function showTeamPcDetailModal(pc, teamId) {
+// v1.9.68 — รับ optional afterEdit callback สำหรับ refresh context ที่เปิด modal (เช่น unassigned page)
+function showTeamPcDetailModal(pc, teamId, afterEdit) {
   const tile = renderMyDevicePurchaseTile(pc.purchased_at);
   const ageStr = calcHwAgeStr(pc.purchased_at);
 
@@ -7627,9 +7801,13 @@ function showTeamPcDetailModal(pc, teamId) {
   bg.addEventListener('click', (e) => { if (e.target === bg) close(); });
   bg.querySelector('#tpdm-edit').addEventListener('click', () => {
     close();
-    // เปิด edit modal — หลังบันทึก reload team detail แทน loadHardware
+    // เปิด edit modal — หลังบันทึก reload context ที่เปิด modal (team detail / unassigned page / etc.)
     showHardwareModal(pc, 'pc', async () => {
-      if (teamId) await loadTeamDetail(teamId);
+      if (typeof afterEdit === 'function') {
+        await afterEdit();
+      } else if (teamId) {
+        await loadTeamDetail(teamId);
+      }
     });
   });
 }

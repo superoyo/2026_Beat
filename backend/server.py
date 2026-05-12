@@ -4535,6 +4535,20 @@ def admin_delete_hardware(
     return {"ok": True}
 
 
+@app.get("/api/admin/hardware/unassigned-pcs")
+def admin_unassigned_pcs(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    """v1.9.68 — รายการ PC ทั้งหมดที่ไม่มี owner (คอมส่วนกลาง) — JOIN teams เพื่อ snapshot ชื่อ"""
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT h.*, t.name AS unassigned_team_name "
+            "FROM hardware h "
+            "LEFT JOIN teams t ON t.id = h.unassigned_team_id "
+            "WHERE h.hw_type = 'pc' AND h.current_member_id IS NULL "
+            "ORDER BY h.name COLLATE NOCASE ASC"
+        ).fetchall()
+    return {"hardware": [dict(r) for r in rows]}
+
+
 @app.get("/api/admin/hardware/{hw_id}/history")
 def admin_hardware_history(
     hw_id: int,

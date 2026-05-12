@@ -2,6 +2,23 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.68",
+      "date": "2026-05-08",
+      "title": "Sidebar Hardware: เมนูย่อย '📦 คอมส่วนกลาง' (PC ไม่มี owner ทั้งระบบ)",
+      "summary": "เพิ่มเมนูย่อยในกลุ่ม Hardware — รายการ PC ทุกเครื่องที่ยังไม่ผูก owner ทั่วทั้งระบบ (ไม่เหมือน tab ในหน้า Team detail ที่เป็น subtree ของทีมเดียว)",
+      "changes": [
+        "Backend: GET /api/admin/hardware/unassigned-pcs — JOIN teams เพื่อ snapshot unassigned_team_name",
+        "Frontend nav: เพิ่มเมนู '📦 คอมส่วนกลาง' ใต้ Hardware (sibling ของ Personal Computer)",
+        "ADMIN_ONLY_ROUTES + HIDE_FROM_MEMBER_NAV: เพิ่ม route 'hardware-pc-unassigned'",
+        "Route 'hardware-pc-unassigned': → renderHardwareUnassignedPcsPage",
+        "Page: header + count + search input + grouped list (by team)",
+        "Group: หัวข้อ '🏢 ทีม + count' — รวมทุก PC ที่ unassigned_team_id ของทีมนั้น",
+        "Card: thumbnail 72x54 + ชื่อ/model/status + chip '🔓 ไม่ระบุผู้ดูแล' + spec + storage chip 📍",
+        "คลิก → showTeamPcDetailModal(pc, null, afterEdit) — afterEdit reload page list",
+        "showTeamPcDetailModal: รับ afterEdit callback (override teamId-based reload)"
+      ]
+    },
+    {
       "version": "1.9.67",
       "date": "2026-05-08",
       "title": "Team detail: tab ใหม่ '📦 คอมส่วนกลาง' รวม PC ที่ไม่มี owner",
