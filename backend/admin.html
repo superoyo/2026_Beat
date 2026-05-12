@@ -3183,6 +3183,7 @@ function renderTeamUnassignedPcCard(pc) {
        onmouseleave="this.style.background='var(--bg-soft)';this.style.borderColor='var(--border)'">
       ${photoBlock}
       <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+        ${renderHwAssetLine(pc.asset_number, { compact: true })}
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span style="font-weight:700;font-size:13px;color:var(--text)">💻 ${headLine}</span>
           ${statusBadge}
@@ -3193,7 +3194,6 @@ function renderTeamUnassignedPcCard(pc) {
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:2px">
           ${storageChip}
           ${ageStr ? `<span style="font-size:11px;color:var(--accent);font-weight:600">⏱ ${escapeHtml(ageStr)}</span>` : ''}
-          ${pc.asset_number ? `<span style="font-size:11px;color:var(--text-muted)">🔖 ${escapeHtml(pc.asset_number)}</span>` : ''}
         </div>
       </div>
       ${tile}
@@ -7046,6 +7046,7 @@ function renderHwUnassignedPcCard(pc) {
        onmouseleave="this.style.background='var(--bg-card)';this.style.borderColor='var(--border)'">
       ${photoBlock}
       <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+        ${renderHwAssetLine(pc.asset_number)}
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span style="font-weight:700;font-size:13.5px;color:var(--text)">💻 ${headLine}</span>
           ${statusBadge}
@@ -7056,7 +7057,6 @@ function renderHwUnassignedPcCard(pc) {
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:2px">
           ${storageChip}
           ${ageStr ? `<span style="font-size:11px;color:var(--accent);font-weight:600">⏱ ${escapeHtml(ageStr)}</span>` : ''}
-          ${pc.asset_number ? `<span style="font-size:11px;color:var(--text-muted)">🔖 ${escapeHtml(pc.asset_number)}</span>` : ''}
         </div>
       </div>
       ${tile}
@@ -7345,6 +7345,19 @@ function renderHardwareRows() {
   });
 }
 
+// v1.9.73 — Asset line component: chip + เลข asset แบบ monospace — ใช้เป็นบรรทัดแรกใน PC card
+function renderHwAssetLine(assetNumber, opts) {
+  if (!assetNumber) return '';
+  opts = opts || {};
+  const compact = opts.compact === true;
+  const chipFs = compact ? '10px' : '11px';
+  const numFs = compact ? '12.5px' : '14px';
+  return `<div style="display:flex;align-items:center;gap:6px;font-weight:800;letter-spacing:.3px">
+    <span style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:6px;font-size:${chipFs};font-weight:700;background:rgba(37,99,235,.12);color:var(--primary);letter-spacing:.5px;text-transform:uppercase">🔖 Asset</span>
+    <span style="font-family:ui-monospace,Menlo,monospace;font-size:${numFs};color:var(--text)">${escapeHtml(assetNumber)}</span>
+  </div>`;
+}
+
 function renderHardwareRow(h) {
   // Spec line — แตกต่างกันตาม type
   const specs = [];
@@ -7359,7 +7372,7 @@ function renderHardwareRow(h) {
     if (h.device_subtype) specs.push(`📦 ${escapeHtml(h.device_subtype)}`);
     if (h.capacity) specs.push(`📏 ${escapeHtml(h.capacity)}`);
   }
-  if (h.asset_number) specs.push(`🔖 ${escapeHtml(h.asset_number)}`);
+  // v1.9.73 — asset_number ไม่อยู่ใน specs แล้ว ไปอยู่บรรทัดแรกแทน (ดูด้านล่าง)
   if (h.serial_number) specs.push(`#️⃣ ${escapeHtml(h.serial_number)}`);
   if (h.purchased_at) {
     // PC ใช้ month/year ส่วน device/network ใช้ full date
@@ -7411,10 +7424,13 @@ function renderHardwareRow(h) {
     ? `<button type="button" data-hw-act="preview-photo" data-hw-id="${h.id}" data-hw-name="${escapeHtml(h.name)}" style="${thumbStyleCommon};background:transparent;border:none;padding:0;cursor:pointer" title="คลิกเพื่อดูภาพเต็ม"><img src="${h.photo_data}" alt="photo" style="width:60px;height:45px;object-fit:cover;border-radius:6px;border:1px solid var(--border);display:block" />${ownerAvatarOverlay}</button>`
     : `<div style="${thumbStyleCommon};width:60px;height:45px;border-radius:6px;border:1px dashed var(--border);background:var(--bg-soft);display:flex;align-items:center;justify-content:center;font-size:18px">${HW_TYPES.find(t => t.id === h.hw_type)?.icon || '📦'}${ownerAvatarOverlay}</div>`;
 
+  // v1.9.73 — Asset No เป็นบรรทัดแรกที่เด่น (ถ้ามี) — รายการอื่นอยู่ถัดไป
+  const assetLine = renderHwAssetLine(h.asset_number);
   return `
     <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px;padding:10px 14px">
       ${thumb}
       <div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:3px;overflow:hidden">
+        ${assetLine}
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <span style="font-weight:700;font-size:14.5px;color:var(--text)">${escapeHtml(h.name)}</span>
           ${statusBadge}
@@ -7566,7 +7582,7 @@ function renderMyDeviceCard(h) {
     if (h.capacity) specs.push(`📏 ${escapeHtml(h.capacity)}`);
   }
   if (h.serial_number) specs.push(`#️⃣ ${escapeHtml(h.serial_number)}`);
-  if (h.asset_number) specs.push(`🔖 ${escapeHtml(h.asset_number)}`);
+  // v1.9.73 — asset_number ไม่อยู่ใน specs (ไปอยู่บรรทัดแรกแล้ว)
   if (h.department || h.location) {
     const dl = [h.department, h.location].filter(Boolean).map(escapeHtml).join(' / ');
     specs.push(`📍 ${dl}`);
@@ -7594,6 +7610,7 @@ function renderMyDeviceCard(h) {
     <div class="card" style="display:flex;gap:14px;flex-wrap:wrap;padding:14px;margin-bottom:10px;align-items:flex-start">
       ${photoBlock}
       <div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:8px">
+        ${renderHwAssetLine(h.asset_number)}
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <span style="font-size:15px;font-weight:700;color:var(--text)">${escapeHtml(h.name)}</span>
           ${statusBadge}
@@ -7691,6 +7708,7 @@ function renderTeamMemberPcCard(pc) {
        onmouseenter="this.style.background='var(--bg-card)';this.style.borderColor='var(--primary)'"
        onmouseleave="this.style.background='var(--bg-soft)';this.style.borderColor='var(--border)'">
       <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+        ${renderHwAssetLine(pc.asset_number, { compact: true })}
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span style="font-weight:700;font-size:13px;color:var(--text)">💻 ${headLine}</span>
           ${statusBadge}
@@ -9426,8 +9444,8 @@ const _MH_TYPE_INFO = {
 
 function _renderMhCard(h, action) {
   const tag = _MH_TYPE_INFO[h.hw_type] || { icon: '📦' };
+  // v1.9.73 — asset_number ย้ายไปบรรทัดแรก (chip) ไม่อยู่ใน meta
   const meta = [];
-  if (h.asset_number) meta.push(`🔖 ${escapeHtml(h.asset_number)}`);
   if (h.os) meta.push(`💿 ${escapeHtml(h.os)}`);
   if (h.cpu) meta.push(`🔧 ${escapeHtml(h.cpu)}`);
   if (h.device_subtype) meta.push(`📦 ${escapeHtml(h.device_subtype)}`);
@@ -9442,6 +9460,7 @@ function _renderMhCard(h, action) {
     <div class="card" style="display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:5px">
       ${thumb}
       <div style="flex:1;min-width:0">
+        ${renderHwAssetLine(h.asset_number, { compact: true })}
         <div style="font-weight:700;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(h.name)}</div>
         ${meta.length ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${meta.join(' · ')}</div>` : ''}
       </div>

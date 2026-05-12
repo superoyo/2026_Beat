@@ -2,6 +2,22 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.73",
+      "date": "2026-05-13",
+      "title": "PC card: เลข Asset เป็นบรรทัดแรกแบบเด่น (ถ้ามี)",
+      "summary": "ทุก PC card ในระบบ — เลข Asset (ถ้ามี) ขึ้นเป็นบรรทัดแรกในรูป chip 🔖 Asset + เลข monospace ชัดเจน รายการอื่น (ชื่อ/spec/...) แสดงต่อ; ถ้าไม่มี asset → ขึ้นชื่อตามปกติ",
+      "changes": [
+        "helper renderHwAssetLine(assetNumber, opts={compact}) — chip 'Asset' + เลข monospace",
+        "Apply ใน renderHardwareRow (Hardware > PC list)",
+        "Apply ใน renderTeamMemberPcCard (Team detail member's PC)",
+        "Apply ใน renderTeamUnassignedPcCard (Team detail tab คอมส่วนกลาง)",
+        "Apply ใน renderHwUnassignedPcCard (Hardware > คอมส่วนกลาง page)",
+        "Apply ใน renderMyDeviceCard (member-side My Device)",
+        "Apply ใน _renderMhCard (showMemberHardwareModal)",
+        "ลบ asset_number ออกจาก specs/meta arrays ในแต่ละ renderer (กันแสดงซ้ำ)"
+      ]
+    },
+    {
       "version": "1.9.72",
       "date": "2026-05-13",
       "title": "Modal: รวมปุ่ม Cancel/Close ไปข้างปุ่ม Save/Edit บนขวา (sticky)",
