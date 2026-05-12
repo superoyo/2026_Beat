@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.72",
+      "date": "2026-05-13",
+      "title": "Modal: รวมปุ่ม Cancel/Close ไปข้างปุ่ม Save/Edit บนขวา (sticky)",
+      "summary": "ทั้ง Detail modal และ Edit modal — ปุ่ม 'ปิด/ยกเลิก' ย้ายมาวางใกล้ปุ่ม 'แก้ไข/บันทึก' ที่บนขวา + ซ่อน action bar ด้านล่าง",
+      "changes": [
+        "Detail modal: [ปิด] [✏️ แก้ไขรายละเอียด] อยู่ข้างกัน + tile ใต้",
+        "Edit modal: btnGroup รวม [ยกเลิก] [บันทึก] วางใน sticky header ทางขวา",
+        "ซ่อน .modal-actions ด้านล่าง (ปุ่มย้ายขึ้นมาบนทั้งหมดแล้ว)"
+      ]
+    },
+    {
       "version": "1.9.71",
       "date": "2026-05-13",
       "title": "Modal: ปุ่ม Edit/Save ไปบนขวา + sticky (ไม่ต้องเลื่อนลงล่าง)",

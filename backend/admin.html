@@ -7807,7 +7807,10 @@ function showTeamPcDetailModal(pc, teamId, afterEdit) {
           ${statusBadge}
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0">
-          <button class="btn primary" id="tpdm-edit" style="font-size:13px;padding:7px 14px;white-space:nowrap">✏️ แก้ไขรายละเอียด</button>
+          <div style="display:flex;gap:6px">
+            <button class="btn" id="tpdm-close" style="font-size:13px;padding:7px 14px;white-space:nowrap">ปิด</button>
+            <button class="btn primary" id="tpdm-edit" style="font-size:13px;padding:7px 14px;white-space:nowrap">✏️ แก้ไขรายละเอียด</button>
+          </div>
           ${tile}
         </div>
       </div>
@@ -7824,9 +7827,6 @@ function showTeamPcDetailModal(pc, teamId, afterEdit) {
           ${sect('🏢', 'การจัดสรร', allocContent)}
           ${sect('📝', 'หมายเหตุ', notesContent)}
         </div>
-      </div>
-      <div class="modal-actions" style="margin-top:18px">
-        <button class="btn" id="tpdm-close">ปิด</button>
       </div>
     </div>
   `;
@@ -8415,12 +8415,13 @@ async function showHardwareModal(hw, type, afterSubmit) {
     },
   });
 
-  // ---- v1.9.71 — ย้ายปุ่มบันทึก (#m-ok) ไปแถวบนขวา + sticky ----
+  // ---- v1.9.71 — ย้าย #m-cancel + #m-ok ไปแถวบนขวา + sticky (v1.9.72: รวมปุ่มยกเลิก) ----
   setTimeout(() => {
     const modal = document.querySelector('.modal-bg .modal');
     if (!modal) return;
     const h3 = modal.querySelector(':scope > h3');
     const okBtn = modal.querySelector('#m-ok');
+    const cancelBtn = modal.querySelector('#m-cancel');
     if (!h3 || !okBtn) return;
     if (h3.parentElement && h3.parentElement.dataset.hmSticky === '1') return;
     const wrap = document.createElement('div');
@@ -8431,10 +8432,21 @@ async function showHardwareModal(hw, type, afterSubmit) {
     h3.style.minWidth = '0';
     modal.insertBefore(wrap, h3);
     wrap.appendChild(h3);
-    okBtn.style.flexShrink = '0';
+    // กลุ่มปุ่ม cancel + ok ขวาสุด
+    const btnGroup = document.createElement('div');
+    btnGroup.style.cssText = 'display:flex;gap:6px;flex-shrink:0';
+    if (cancelBtn) {
+      cancelBtn.style.fontSize = '13px';
+      cancelBtn.style.padding = '7px 14px';
+      btnGroup.appendChild(cancelBtn);
+    }
     okBtn.style.fontSize = '13px';
     okBtn.style.padding = '7px 16px';
-    wrap.appendChild(okBtn);
+    btnGroup.appendChild(okBtn);
+    wrap.appendChild(btnGroup);
+    // ซ่อน modal-actions ด้านล่าง (ปุ่มย้ายขึ้นมาบนหมดแล้ว)
+    const bottomActions = modal.querySelector(':scope > .modal-actions');
+    if (bottomActions) bottomActions.style.display = 'none';
   }, 0);
 
   // ---- v1.9.64 — Tab switching (PC only) ----
