@@ -2089,12 +2089,11 @@ def admin_get_team(team_id: int, _sess: dict = Depends(require_admin)) -> dict[s
 
         # === v1.9.55 — แนบ PC spec ย่อ + วันที่ซื้อ ของแต่ละ member (ใช้ในหน้า team detail) ===
         # v1.9.57 — เพิ่ม photo_data เพื่อให้คลิกเปิดดูรูปได้
+        # v1.9.62 — SELECT * เพื่อให้ frontend เปิด detail modal + edit ได้ครบ field
         if member_ids:
             pl = ",".join("?" * len(member_ids))
             pc_rows = conn.execute(
-                f"SELECT id, name, model, cpu, ram, storage, display, os, os_version, "
-                f"       purchased_at, status, current_member_id, photo_data "
-                f"FROM hardware "
+                f"SELECT * FROM hardware "
                 f"WHERE hw_type = 'pc' AND current_member_id IN ({pl}) "
                 f"ORDER BY current_member_id, name COLLATE NOCASE",
                 member_ids,

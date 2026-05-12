@@ -2,6 +2,23 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.62",
+      "date": "2026-05-08",
+      "title": "Team detail: คลิก PC card → modal รายละเอียด + ปุ่ม Edit (แทน lightbox รูปอย่างเดียว)",
+      "summary": "หน้า Team detail — คลิก PC card เปิด modal xwide แสดงภาพด้านซ้าย + spec ละเอียดด้านขวา + ปุ่ม Edit สำหรับแก้ไขทันที (เก็บประวัติ owner ผ่าน backend เดิม)",
+      "changes": [
+        "Backend: SELECT pcs[] เปลี่ยนเป็น SELECT * เพื่อให้ครบทุก field สำหรับ edit",
+        "Frontend showHardwareModal(hw, type, afterSubmit?): รับ optional afterSubmit callback แทน loadHardware (backward-compatible)",
+        "Frontend showTeamPcDetailModal(pc, teamId): 2 column layout (xwide 920px)",
+        "  - ซ้าย 300px: ภาพ PC + ภาพหมายเลข asset (ถ้ามี)",
+        "  - ขวา: Owner + ข้อมูลทั่วไป (asset/serial/ซื้อเมื่อ/อายุ/quotation) + Specification (CPU/RAM/Storage/Display/Mainboard/GPU/Battery/UPS) + OS + การจัดสรร (Department/Location) + หมายเหตุ",
+        "Header: ชื่อ + model + status badge + calendar tile",
+        "Footer: ปุ่ม 'ปิด' + 'แก้ไขรายละเอียด'",
+        "Edit → close detail modal → showHardwareModal(pc, 'pc', () => loadTeamDetail(teamId)) — auto refresh หลังบันทึก",
+        "PC card chip เปลี่ยนจาก '🖼 ดูรูป' (เฉพาะมีรูป) → '📖 รายละเอียด' (ทุก card คลิกได้เสมอ)"
+      ]
+    },
+    {
       "version": "1.9.61",
       "date": "2026-05-08",
       "title": "PC sidebar: แผนก = team tree + cross-filter counts (ทุกกล่องอัพเดทพร้อมกัน)",
