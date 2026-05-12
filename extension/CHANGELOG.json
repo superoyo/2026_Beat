@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.60",
+      "date": "2026-05-08",
+      "title": "Members → แก้ไขทีม: แสดง checkbox list เป็นโครงสร้างต้นไม้",
+      "summary": "modal 'แก้ไขทีมของ ...' ในหน้า Members — เปลี่ยนจาก list แบนๆ เป็นต้นไม้ตามโครงสร้าง parent_team_id (แผนกหลัก / แผนกย่อย) — indent ตาม depth + 📂/└─ icon + border-left ของ child",
+      "changes": [
+        "Reuse buildTeamTree + flattenTeamTreeDFS — DFS order",
+        "padding-left: 10 + depth * 18 px",
+        "Branch icon: 📂 (มี child) / └─ (leaf depth>0) / ไม่มี (root leaf)",
+        "Border-left 3px primary subtle สำหรับ child (depth>0) แทน border ปกติ",
+        "max-height 400 → 440 เพื่อรองรับ tree ที่อาจสูงกว่า"
+      ]
+    },
+    {
       "version": "1.9.59",
       "date": "2026-05-05",
       "title": "Team detail: คลิกทีมแม่ → เห็นสมาชิกทีมย่อยด้วย (recursive)",
