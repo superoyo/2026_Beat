@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.66",
+      "date": "2026-05-08",
+      "title": "Hotfix: PC edit modal เปิดจาก Team detail — owner picker/team dropdown ว่าง",
+      "summary": "เมื่อเปิด showHardwareModal จาก context ที่ไม่ผ่าน renderHardwarePage (เช่น Team detail → Edit PC) _hwMembersCache + _hwTeamsCache จะว่าง ทำให้ owner picker แสดง 'ไม่พบ member' และ team tree dropdown ว่าง → fix ให้ async fetch ก่อน render",
+      "changes": [
+        "showHardwareModal เปลี่ยนเป็น async",
+        "เช็ค cache empty → Promise.all fetch /api/admin/members + /api/admin/teams ก่อน render",
+        "ถ้า fetch fail → render ต่อ (graceful)"
+      ]
+    },
+    {
       "version": "1.9.65",
       "date": "2026-05-08",
       "title": "PC: เครื่องที่ยังไม่ผูก owner — ระบุทีมที่สังกัด (tree) + ตำแหน่งเก็บ",

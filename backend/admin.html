@@ -7696,7 +7696,18 @@ function wireHwOwnerPicker(onChange) {
 }
 
 // v1.9.62 — afterSubmit: optional callback แทน loadHardware() — สำหรับเปิดจากหน้าอื่น (Team detail) แล้ว reload ตรง context
-function showHardwareModal(hw, type, afterSubmit) {
+// v1.9.66 — async + ensure caches โหลด (กรณีเปิดจาก context ที่ยังไม่ได้ pre-load — เช่น Team detail page)
+async function showHardwareModal(hw, type, afterSubmit) {
+  if (_hwMembersCache.length === 0 || _hwTeamsCache.length === 0) {
+    try {
+      const [md, td] = await Promise.all([
+        fetchJson('/api/admin/members'),
+        fetchJson('/api/admin/teams'),
+      ]);
+      _hwMembersCache = md.members || [];
+      _hwTeamsCache = td.teams || [];
+    } catch (_) { /* ignore — render ต่อแม้ load fail */ }
+  }
   const isEdit = !!hw;
   const tabInfo = HW_TYPES.find(t => t.id === type) || HW_TYPES[0];
   // PC fields visible เฉพาะ type='pc' / Device fields เฉพาะ 'device'
