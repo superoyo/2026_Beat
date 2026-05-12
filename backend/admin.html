@@ -7383,9 +7383,12 @@ function showTeamPcDetailModal(pc, teamId) {
   const ageStr = calcHwAgeStr(pc.purchased_at);
 
   // Owner row (avatar + ชื่อ + email)
+  // v1.9.63 — หาเจ้าของจาก _lastTeamMembersData ก่อน (มีอยู่แน่นอนเพราะ PC ผูกอยู่กับ member ในทีม)
+  // fallback _hwMembersCache สำหรับกรณีโหลดจาก context อื่น
   let ownerRow;
   if (pc.current_member_id) {
-    const m = _hwMembersCache.find(x => x.id === pc.current_member_id);
+    const m = (_lastTeamMembersData || []).find(x => x.id === pc.current_member_id)
+           || _hwMembersCache.find(x => x.id === pc.current_member_id);
     ownerRow = m
       ? renderHwMemberRow(m, false)
       : `<span style="color:var(--text-muted)">member#${pc.current_member_id} (ไม่พบในระบบ)</span>`;

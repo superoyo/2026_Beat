@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.63",
+      "date": "2026-05-08",
+      "title": "Hotfix: PC detail modal ใน Team แสดง 'member#N (ไม่พบในระบบ)'",
+      "summary": "modal รายละเอียด PC ในหน้า Team detail หา owner ไม่เจอเพราะ _hwMembersCache ยังว่าง (โหลดเฉพาะหน้า Hardware) → fix ให้ดูจาก _lastTeamMembersData ก่อน fallback ค่อยใช้ _hwMembersCache",
+      "changes": [
+        "showTeamPcDetailModal: ลำดับ lookup owner เปลี่ยนเป็น _lastTeamMembersData → _hwMembersCache → null",
+        "_lastTeamMembersData มี member object ครบอยู่แล้ว (avatar/display_name/email/phone/teams) จาก /api/admin/teams/{id} response"
+      ]
+    },
+    {
       "version": "1.9.62",
       "date": "2026-05-08",
       "title": "Team detail: คลิก PC card → modal รายละเอียด + ปุ่ม Edit (แทน lightbox รูปอย่างเดียว)",
