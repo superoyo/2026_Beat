@@ -6823,9 +6823,13 @@ function applyHwFiltersExcept(h, excludeKey, q) {
     if (!Number.isFinite(tid)) return false;
     const subtree = getTeamDescendantIds(_hwTeamsCache, tid);
     const ownerTids = getHwOwnerTeamIds(h);
-    if (!ownerTids) return false;
     let hit = false;
-    for (const t of ownerTids) { if (subtree.has(t)) { hit = true; break; } }
+    if (ownerTids && ownerTids.size > 0) {
+      for (const t of ownerTids) { if (subtree.has(t)) { hit = true; break; } }
+    } else if (h.unassigned_team_id != null) {
+      // v1.9.65 — unlinked PC: ใช้ unassigned_team_id
+      if (subtree.has(h.unassigned_team_id)) hit = true;
+    }
     if (!hit) return false;
   }
   return true;
@@ -6859,20 +6863,25 @@ function renderHwSidebar() {
   // นับ PC ต่อ team (รวม descendant) — PC contributes ให้ทุก team ที่ owner อยู่ และ ancestor ของทีมเหล่านั้น
   const teamCounts = {};   // team_id → count
   const teamById = new Map(_hwTeamsCache.map(t => [t.id, t]));
+  // helper: walk จาก team_id ขึ้นไปทุก ancestor → add ใน set
+  const walkUpToAncestors = (startId, out) => {
+    let cur = startId;
+    const seen = new Set();
+    while (cur != null && !seen.has(cur)) {
+      seen.add(cur);
+      out.add(cur);
+      const t = teamById.get(cur);
+      cur = t ? (t.parent_team_id ?? null) : null;
+    }
+  };
   visForDept.forEach(h => {
-    const ownerTids = getHwOwnerTeamIds(h);
-    if (!ownerTids || ownerTids.size === 0) return;
-    // walk up to all ancestors of each owner team → mark contributes
     const contributedTo = new Set();
-    for (const tid of ownerTids) {
-      let cur = tid;
-      const seen = new Set();
-      while (cur != null && !seen.has(cur)) {
-        seen.add(cur);
-        contributedTo.add(cur);
-        const t = teamById.get(cur);
-        cur = t ? (t.parent_team_id ?? null) : null;
-      }
+    const ownerTids = getHwOwnerTeamIds(h);
+    if (ownerTids && ownerTids.size > 0) {
+      for (const tid of ownerTids) walkUpToAncestors(tid, contributedTo);
+    } else if (h.unassigned_team_id != null) {
+      // v1.9.65 — unlinked PC: ใช้ unassigned_team_id
+      walkUpToAncestors(h.unassigned_team_id, contributedTo);
     }
     contributedTo.forEach(tid => { teamCounts[tid] = (teamCounts[tid] || 0) + 1; });
   });
@@ -7616,7 +7625,8 @@ function renderHwOwnerPickerHtml(currentMemberId) {
   `;
 }
 let _hwOwnerOutsideListenerAttached = false;
-function wireHwOwnerPicker() {
+// v1.9.65 — onChange(newMemberId|null): callback หลังจาก user เลือก member ใหม่
+function wireHwOwnerPicker(onChange) {
   const wrap = $('hm-owner-wrap');
   if (!wrap) return;
   const trigger = $('hm-owner-trigger');
@@ -7661,6 +7671,8 @@ function wireHwOwnerPicker() {
         const newId = mid ? parseInt(mid, 10) : null;
         $('hm-owner-trigger-content').innerHTML = renderHwOwnerTriggerContent(newId);
         close();
+        // v1.9.65 — fire callback for unlinked-fields toggle
+        if (typeof onChange === 'function') onChange(newId);
       });
     });
   };
@@ -7877,6 +7889,34 @@ function showHardwareModal(hw, type, afterSubmit) {
             ${ownerPickerHtml}
             <div class="hint" style="font-size:11.5px;color:var(--text-muted);margin-top:4px">${isEdit ? 'เปลี่ยน owner → ปิด assignment เก่า (set วันสิ้นสุด = ปัจจุบัน) + เปิดใหม่อัตโนมัติ — เก็บประวัติให้ในแท็บนี้' : 'จะสร้าง initial assignment ให้อัตโนมัติหลังบันทึกครั้งแรก'}</div>
           </div>
+
+          <!-- v1.9.65 — เมื่อเลือก 'ไม่ผูก' → แสดงช่องระบุทีม/แผนกที่สังกัด + ที่เก็บเครื่อง -->
+          <div id="hm-unlinked-fields" style="${(isEdit && hw.current_member_id) ? 'display:none' : ''};padding:12px 14px;background:rgba(245,158,11,.06);border:1px dashed rgba(245,158,11,.4);border-radius:10px;margin-top:10px">
+            <div style="font-size:11.5px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">📦 เครื่องที่ยังไม่ผูก owner — ระบุที่สังกัด + ที่เก็บ</div>
+            <div class="field">
+              <label>ทีม/แผนก ที่เครื่องนี้สังกัด (เลือกจากต้นไม้)</label>
+              <select id="hm-unassigned-team" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
+                ${(() => {
+                  const tree = buildTeamTree(_hwTeamsCache);
+                  const flat = flattenTeamTreeDFS(tree);
+                  const cid = (isEdit && hw.unassigned_team_id != null) ? hw.unassigned_team_id : null;
+                  let html = '<option value="">— ไม่ระบุ —</option>';
+                  for (const { team, depth } of flat) {
+                    const indent = '    '.repeat(depth);
+                    const arrow = depth > 0 ? '↳ ' : '';
+                    const sel = (cid === team.id) ? ' selected' : '';
+                    html += `<option value="${team.id}"${sel}>${escapeHtml(indent + arrow + team.name)}</option>`;
+                  }
+                  return html;
+                })()}
+              </select>
+            </div>
+            <div class="field" style="margin-top:8px">
+              <label>ตำแหน่งเก็บ (เช่น 'ตู้ A-1 ห้อง IT', 'Stock ชั้น 3')</label>
+              <input id="hm-storage-location" type="text" value="${isEdit ? escapeHtml(hw.storage_location || '') : ''}" placeholder="เช่น ตู้ A-1 ห้อง IT" />
+            </div>
+          </div>
+
           ${isEdit ? `
             ${sect('📜', 'ประวัติการครอบครอง')}
             <div id="hm-history-list" style="display:flex;flex-direction:column;gap:6px"><div class="empty" style="padding:18px;font-size:12.5px">กำลังโหลด…</div></div>
@@ -7969,6 +8009,15 @@ function showHardwareModal(hw, type, afterSubmit) {
         data.ups = $('hm-ups').value.trim() || null;
         data.status = $('hm-status').value || null;
         data.quotation = $('hm-quotation').value.trim() || null;
+        // v1.9.65 — unlinked fields: ส่งเฉพาะ unassigned_team_id + storage_location
+        // (เก็บเสมอ ไม่ว่าจะมี owner หรือไม่ — ถ้ามี owner ก็ยังเก็บเผื่อ admin ระบุไว้)
+        const untSel = $('hm-unassigned-team');
+        if (untSel) {
+          const v = untSel.value;
+          data.unassigned_team_id = v ? parseInt(v, 10) : null;
+        }
+        const stLoc = $('hm-storage-location');
+        if (stLoc) data.storage_location = stLoc.value.trim() || null;
       }
       if (showDevice) {
         data.device_subtype = $('hm-subtype').value.trim() || null;
@@ -8035,7 +8084,11 @@ function showHardwareModal(hw, type, afterSubmit) {
   }
 
   // ---- Owner picker wiring (after modal in DOM) ----
-  wireHwOwnerPicker();
+  // v1.9.65 — onChange → toggle unlinked-fields visibility
+  wireHwOwnerPicker((newMemberId) => {
+    const el = document.getElementById('hm-unlinked-fields');
+    if (el) el.style.display = newMemberId ? 'none' : '';
+  });
 
   // ---- Photo wiring (after modal in DOM) ----
   const photoEl = $('hm-photo-data');

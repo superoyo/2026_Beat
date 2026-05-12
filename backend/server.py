@@ -300,7 +300,11 @@ def init_db() -> None:
                 status            TEXT,
                 quotation         TEXT,
                 -- v1.9.50: รูปภาพหมายเลข asset (ติด tag/sticker บนเครื่อง)
-                asset_photo_data  TEXT
+                asset_photo_data  TEXT,
+                -- v1.9.65: ทีม/แผนกที่เครื่องสังกัด เมื่อยังไม่มี owner (เช่น เก็บใน stock)
+                unassigned_team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+                -- v1.9.65: ตำแหน่งเก็บฟิสิคัล (ตู้/ชั้น) เมื่อยังไม่มี owner
+                storage_location  TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_hardware_type ON hardware(hw_type);
             CREATE INDEX IF NOT EXISTS idx_hardware_member ON hardware(current_member_id);
@@ -454,6 +458,9 @@ def init_db() -> None:
                 ("quotation", "TEXT"),
                 # v1.9.50
                 ("asset_photo_data", "TEXT"),
+                # v1.9.65
+                ("unassigned_team_id", "INTEGER REFERENCES teams(id) ON DELETE SET NULL"),
+                ("storage_location", "TEXT"),
             ]
             for col_name, col_type in extra_cols:
                 if hw_cols and col_name not in hw_cols:
@@ -4275,6 +4282,9 @@ class HardwareIn(BaseModel):
     photo_data: Optional[str] = Field(None, max_length=1_500_000)
     # v1.9.50 — รูปภาพหมายเลข asset (close-up sticker/tag)
     asset_photo_data: Optional[str] = Field(None, max_length=1_500_000)
+    # v1.9.65 — สำหรับเครื่องที่ยังไม่มี owner: ระบุทีม/แผนกที่สังกัด + ตำแหน่งเก็บ
+    unassigned_team_id: Optional[int] = None
+    storage_location: Optional[str] = Field(None, max_length=200)
 
     @field_validator("hw_type")
     @classmethod
@@ -4315,6 +4325,9 @@ class HardwarePatchIn(BaseModel):
     photo_data: Optional[str] = Field(None, max_length=1_500_000)
     # v1.9.50 — รูปภาพหมายเลข asset: '' = clear, non-empty = set, omitted = unchanged
     asset_photo_data: Optional[str] = Field(None, max_length=1_500_000)
+    # v1.9.65 — unlinked fields: null = clear, int/string = set, omitted = no change
+    unassigned_team_id: Optional[int] = None
+    storage_location: Optional[str] = Field(None, max_length=200)
     _set_owner: bool = False    # internal flag (not used yet)
 
 
@@ -4393,8 +4406,9 @@ def admin_create_hardware(
             "                     os, cpu, ram, storage, "
             "                     serial_number, display, department, location, os_version, model, "
             "                     mainboard, gpu, battery, ups, status, quotation, "
-            "                     device_subtype, capacity, current_member_id, photo_data, asset_photo_data) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "                     device_subtype, capacity, current_member_id, photo_data, asset_photo_data, "
+            "                     unassigned_team_id, storage_location) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 payload.hw_type,
                 payload.name.strip(),
@@ -4423,6 +4437,8 @@ def admin_create_hardware(
                 payload.current_member_id,
                 payload.photo_data or None,
                 payload.asset_photo_data or None,
+                payload.unassigned_team_id,
+                s(payload.storage_location),
             ),
         )
         hw_id = cur.lastrowid
@@ -4453,7 +4469,9 @@ def admin_update_hardware(
     for f in ("name", "asset_number", "purchased_at", "notes", "os", "cpu", "ram",
               "storage", "device_subtype", "capacity",
               "serial_number", "display", "department", "location", "os_version",
-              "model", "mainboard", "gpu", "battery", "ups", "status", "quotation"):
+              "model", "mainboard", "gpu", "battery", "ups", "status", "quotation",
+              # v1.9.65
+              "storage_location"):
         if f in raw_body:
             v = raw_body[f]
             updates[f] = (v.strip() if isinstance(v, str) else v) or None
@@ -4465,6 +4483,9 @@ def admin_update_hardware(
     if "asset_photo_data" in raw_body:
         v = raw_body["asset_photo_data"]
         updates["asset_photo_data"] = v if v else None
+    # v1.9.65 — unassigned_team_id: null = clear, int = set, omitted = unchanged
+    if "unassigned_team_id" in raw_body:
+        updates["unassigned_team_id"] = raw_body["unassigned_team_id"]
 
     with db_conn() as conn:
         existing = conn.execute("SELECT * FROM hardware WHERE id = ?", (hw_id,)).fetchone()

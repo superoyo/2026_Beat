@@ -2,6 +2,25 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.65",
+      "date": "2026-05-08",
+      "title": "PC: เครื่องที่ยังไม่ผูก owner — ระบุทีมที่สังกัด (tree) + ตำแหน่งเก็บ",
+      "summary": "เมื่อ PC ยังไม่มี owner ใน tab 2 จะมีกล่องเหลือง 2 ฟิลด์ — เลือกทีม/แผนกที่สังกัด (dropdown tree) + ระบุที่เก็บเครื่อง (เช่น 'ตู้ A-1 ห้อง IT') + sidebar filter รองรับด้วย",
+      "changes": [
+        "DB: ALTER TABLE hardware ADD COLUMN unassigned_team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL + storage_location TEXT",
+        "Backend HardwareIn/HardwarePatchIn: เพิ่ม 2 fields (null = clear, int/str = set, omit = unchanged)",
+        "Backend POST/PATCH: รวม fields ใหม่",
+        "Frontend wireHwOwnerPicker(onChange?): callback หลัง user เลือก member ใหม่",
+        "Frontend Tab 2 (PC modal): เพิ่ม #hm-unlinked-fields (พื้นเหลือง):",
+        "  - dropdown 'ทีม/แผนกที่สังกัด' — ใช้ buildTeamTree + flattenTeamTreeDFS แสดง indent ↳ ตาม depth",
+        "  - input 'ตำแหน่งเก็บ' — เช่น 'ตู้ A-1 ห้อง IT'",
+        "  - แสดงเฉพาะตอน owner = ไม่ผูก (toggle ผ่าน wireHwOwnerPicker callback)",
+        "Sidebar filter 'แผนก' รองรับ unassigned PC:",
+        "  - PC ไม่มี owner แต่มี unassigned_team_id → contribute count ให้ทีมนั้น + ancestor",
+        "  - PC ไม่มี owner ไม่มี unassigned_team_id → ไม่ contribute (ไม่นับใน team filter)"
+      ]
+    },
+    {
       "version": "1.9.64",
       "date": "2026-05-08",
       "title": "PC edit modal: แยก tab 'ผู้ดูแลปัจจุบัน + ประวัติ' พร้อม edit/delete record",
