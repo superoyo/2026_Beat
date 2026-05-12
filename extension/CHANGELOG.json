@@ -2,6 +2,24 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.61",
+      "date": "2026-05-08",
+      "title": "PC sidebar: แผนก = team tree + cross-filter counts (ทุกกล่องอัพเดทพร้อมกัน)",
+      "summary": "หน้า Hardware > Personal Computer: เปลี่ยน 'แผนก' filter จาก hardware.department (free-form) เป็น team-tree filter — และ filter ทั้ง 3 กล่อง (การเชื่อมโยง/แผนก/OS) cross-update count ซึ่งกันและกัน เมื่อกดอันใดอันหนึ่ง อันอื่นจะรีเฟรชจำนวนทันที",
+      "changes": [
+        "Frontend: state _hwDeptFilter เปลี่ยน semantics จาก dept name → team_id string",
+        "Frontend: _hwTeamsCache โหลดพร้อม _hwMembersCache ใน renderHardwarePage (Promise.all)",
+        "helper getHwOwnerTeamIds(h): ดึง team IDs ของ owner จาก _hwMembersCache",
+        "helper applyHwFiltersExcept(h, exclude, q): apply filters ทั้งหมดยกเว้น excludeKey ('os'|'dept'|'link'|null)",
+        "Sidebar กล่อง 🏢 แผนก: render team tree (DFS + indent 14px/depth) + 📂/└─/🏢 icon",
+        "Subtree match: PC contributes ให้ทีมที่ owner สังกัด + ancestor ทุกระดับ — รวมขึ้น root",
+        "ซ่อนทีมที่ count=0 ในปัจจุบัน list (เปลี่ยนตาม filter อื่น)",
+        "Cross-filter counts: แต่ละกล่องคำนวณบน 'PC ที่ผ่าน filter อื่นทั้งหมดยกเว้นกล่องตัวเอง'",
+        "renderHardwareRows: ใช้ applyHwFiltersExcept(h, null, q) (PC) หรือ search อย่างเดียว (Device/Network)",
+        "Empty-state reason: dept filter แสดงชื่อทีม (lookup จาก _hwTeamsCache) แทน team_id"
+      ]
+    },
+    {
       "version": "1.9.60",
       "date": "2026-05-08",
       "title": "Members → แก้ไขทีม: แสดง checkbox list เป็นโครงสร้างต้นไม้",
