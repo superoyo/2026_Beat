@@ -9985,7 +9985,7 @@ async function renderMemberAccountPage() {
       <div class="card" style="display:block;margin-bottom:14px">
         <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">แก้ไขข้อมูล</h3>
         <div class="hint" style="margin-bottom:14px;font-size:12.5px;color:var(--text-muted)">
-          ตั้งชื่อแสดง + อีเมล เพื่อใช้แสดงและใช้ login ครั้งถัดไป
+          ตั้งชื่อแสดง + อีเมล + เบอร์มือถือ + ขนาดเสื้อ
         </div>
         <div class="field">
           <label>ชื่อแสดง</label>
@@ -9995,6 +9995,28 @@ async function renderMemberAccountPage() {
           <label>อีเมล</label>
           <input id="m-email" type="email" placeholder="you@example.com" maxlength="200" />
           <div class="hint">ใช้เป็น username เวลาเข้าระบบด้วยอีเมล + รหัสผ่าน</div>
+        </div>
+        <!-- v1.9.74 — phone editable -->
+        <div class="field">
+          <label>เบอร์มือถือ</label>
+          <input id="m-phone" type="tel" placeholder="เช่น 0812345678" maxlength="40" />
+          <div class="hint">ใช้รับการแจ้งเตือน / เป็น username ทางเลือก (ห้ามว่าง)</div>
+        </div>
+        <!-- v1.9.74 — shirt size: buttons XS/S/M/L/XL/XXL + อื่น ๆ -->
+        <div class="field">
+          <label>ขนาดเสื้อ</label>
+          <div id="m-shirt-size-group" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+            ${['XS','S','M','L','XL','XXL'].map(sz => `
+              <button type="button" class="m-shirt-opt" data-size="${sz}"
+                style="padding:7px 16px;font-size:13px;font-weight:700;font-family:inherit;border:1.5px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text);cursor:pointer;min-width:54px;transition:all .12s">${sz}</button>
+            `).join('')}
+            <button type="button" class="m-shirt-opt" data-size="__other__"
+              style="padding:7px 14px;font-size:13px;font-weight:600;font-family:inherit;border:1.5px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text);cursor:pointer;transition:all .12s">อื่น ๆ ...</button>
+          </div>
+          <div id="m-shirt-other-wrap" style="display:none;margin-top:8px">
+            <input id="m-shirt-other" type="text" placeholder="ระบุขนาดเสื้อ (เช่น 3XL, FreeSize, ลึก 16)" maxlength="40" />
+          </div>
+          <input type="hidden" id="m-shirt-size" value="" />
         </div>
         <div class="hint" id="m-profile-msg" style="margin-bottom:10px;display:none"></div>
         <button class="btn primary" id="m-save-profile">บันทึกข้อมูล</button>
@@ -10029,6 +10051,30 @@ async function renderMemberAccountPage() {
     : '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(245,158,11,.12);color:#b45309">⚠ ยังไม่ตั้ง</span>';
 
   let member = null;
+  const SHIRT_OPTS = ['XS','S','M','L','XL','XXL'];
+  function applyShirtSizeUI(value) {
+    // value: 'XS'/'S'/.../'XXL' หรือข้อความอิสระ หรือ null
+    const v = (value || '').trim();
+    const isStd = SHIRT_OPTS.includes(v);
+    document.querySelectorAll('#m-shirt-size-group .m-shirt-opt').forEach(b => {
+      const sz = b.dataset.size;
+      const active = (sz === v) || (sz === '__other__' && v && !isStd);
+      b.style.background = active ? 'var(--primary)' : 'var(--bg-card)';
+      b.style.color = active ? '#fff' : 'var(--text)';
+      b.style.borderColor = active ? 'var(--primary)' : 'var(--border)';
+    });
+    const otherWrap = $('m-shirt-other-wrap');
+    const otherInp = $('m-shirt-other');
+    if (v && !isStd) {
+      if (otherWrap) otherWrap.style.display = '';
+      if (otherInp) otherInp.value = v;
+    } else {
+      if (otherWrap) otherWrap.style.display = 'none';
+      if (otherInp) otherInp.value = '';
+    }
+    const hidden = $('m-shirt-size');
+    if (hidden) hidden.value = v;
+  }
   function renderInfo() {
     $('m-info-phone').textContent = member.phone;
     $('m-info-email').innerHTML = member.email
@@ -10038,6 +10084,8 @@ async function renderMemberAccountPage() {
     $('m-info-created').textContent = fmtDate(member.created_at);
     $('m-display_name').value = member.display_name || '';
     $('m-email').value = member.email || '';
+    if ($('m-phone')) $('m-phone').value = member.phone || '';
+    applyShirtSizeUI(member.shirt_size || '');
     // Avatar preview
     updateMyAvatarPreview(member.avatar_data || '');
   }
@@ -10091,6 +10139,39 @@ async function renderMemberAccountPage() {
       if (!confirm('ลบรูปประจำตัว?')) return;
       saveAvatar('');
     });
+    // v1.9.74 — wire shirt-size buttons
+    document.querySelectorAll('#m-shirt-size-group .m-shirt-opt').forEach(b => {
+      b.addEventListener('click', () => {
+        const sz = b.dataset.size;
+        if (sz === '__other__') {
+          // toggle other-wrap visible — focus input
+          const otherWrap = $('m-shirt-other-wrap');
+          const otherInp = $('m-shirt-other');
+          if (otherWrap) otherWrap.style.display = '';
+          if (otherInp) otherInp.focus();
+          // highlight 'อื่น ๆ' button
+          document.querySelectorAll('#m-shirt-size-group .m-shirt-opt').forEach(x => {
+            const a = x === b;
+            x.style.background = a ? 'var(--primary)' : 'var(--bg-card)';
+            x.style.color = a ? '#fff' : 'var(--text)';
+            x.style.borderColor = a ? 'var(--primary)' : 'var(--border)';
+          });
+          const hidden = $('m-shirt-size');
+          if (hidden) hidden.value = (otherInp && otherInp.value.trim()) || '';
+        } else {
+          applyShirtSizeUI(sz);
+        }
+      });
+    });
+    // ขณะพิมพ์ในช่อง 'อื่น ๆ' → update hidden + active state
+    const otherInp = $('m-shirt-other');
+    if (otherInp) {
+      otherInp.addEventListener('input', () => {
+        const v = otherInp.value.trim();
+        const hidden = $('m-shirt-size');
+        if (hidden) hidden.value = v;
+      });
+    }
   }, 0);
 
   function setMsg(elId, text, isErr) {
@@ -10115,11 +10196,14 @@ async function renderMemberAccountPage() {
   $('m-save-profile').addEventListener('click', async () => {
     const display_name = $('m-display_name').value.trim();
     const email = $('m-email').value.trim();
+    const phone = ($('m-phone') ? $('m-phone').value.trim() : '');
+    const shirt_size = ($('m-shirt-size') ? $('m-shirt-size').value.trim() : '');
+    if (!phone) { setMsg('m-profile-msg', 'เบอร์มือถือห้ามว่าง', true); return; }
     $('m-save-profile').disabled = true;
     try {
       const data = await fetchJson('/api/member/profile', {
         method: 'PATCH',
-        body: JSON.stringify({ display_name, email }),
+        body: JSON.stringify({ display_name, email, phone, shirt_size }),
       });
       member = data.member;
       renderInfo();

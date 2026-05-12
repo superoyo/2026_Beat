@@ -2,6 +2,24 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.74",
+      "date": "2026-05-13",
+      "title": "Member profile: แก้ไขเบอร์มือถือ + เลือกขนาดเสื้อ (XS-XXL หรืออื่น ๆ)",
+      "summary": "หน้า 'บัญชีของฉัน' (member) — เพิ่มฟิลด์แก้เบอร์มือถือใน form แก้ไข + button group เลือกขนาดเสื้อ XS/S/M/L/XL/XXL + 'อื่น ๆ' กรอกเอง",
+      "changes": [
+        "DB: ALTER TABLE members ADD COLUMN shirt_size TEXT",
+        "Backend MemberProfileIn: เพิ่ม phone, shirt_size",
+        "Backend PATCH /api/member/profile: validate phone (digits/+/-/space/parens) + check unique (409 ถ้าซ้ำ) + shirt_size '' = clear",
+        "Backend GET /api/member/me: SELECT shirt_size",
+        "Backend _member_row_to_profile: รวม shirt_size",
+        "Frontend: ย้าย phone จาก info read-only → editable input ใน form แก้ไข",
+        "Frontend: button group ขนาดเสื้อ — 6 ปุ่ม XS/S/M/L/XL/XXL + 'อื่น ๆ' (แสดง text input)",
+        "Active state: ปุ่มที่เลือกพื้น primary ขาว",
+        "applyShirtSizeUI(value): sync state จาก member.shirt_size — auto-detect standard vs custom",
+        "Validation: phone ห้ามว่าง"
+      ]
+    },
+    {
       "version": "1.9.73",
       "date": "2026-05-13",
       "title": "PC card: เลข Asset เป็นบรรทัดแรกแบบเด่น (ถ้ามี)",

@@ -505,6 +505,8 @@ def init_db() -> None:
             # v1.17 — extension version tracking (per-member)
             ("extension_version",      "TEXT"),
             ("extension_last_used_at", "TEXT"),
+            # v1.9.74 — shirt size สำหรับ admin order เสื้อพนักงาน
+            ("shirt_size",             "TEXT"),
         ]:
             if col_name not in member_cols:
                 conn.execute(f"ALTER TABLE members ADD COLUMN {col_name} {col_def}")
@@ -3811,6 +3813,10 @@ class MemberProfileIn(BaseModel):
     email: Optional[str] = Field(None, max_length=200)
     password: Optional[str] = Field(None, min_length=4, max_length=200)
     avatar_data: Optional[str] = Field(None, max_length=700_000)   # data:image/png;base64,...
+    # v1.9.74 — phone (เบอร์มือถือ): สามารถแก้ได้เอง (unique)
+    phone: Optional[str] = Field(None, min_length=4, max_length=40)
+    # v1.9.74 — shirt_size: 'XS' / 'S' / 'M' / 'L' / 'XL' / 'XXL' / หรือข้อความอิสระ
+    shirt_size: Optional[str] = Field(None, max_length=40)
 
 
 def _require_member_session(token: Optional[str]) -> dict[str, Any]:
@@ -3830,6 +3836,10 @@ def _member_row_to_profile(row: sqlite3.Row) -> dict[str, Any]:
         avatar_data = row["avatar_data"]
     except (KeyError, IndexError):
         avatar_data = None
+    try:
+        shirt_size = row["shirt_size"]
+    except (KeyError, IndexError):
+        shirt_size = None
     return {
         "id": row["id"],
         "phone": row["phone"],
@@ -3838,6 +3848,7 @@ def _member_row_to_profile(row: sqlite3.Row) -> dict[str, Any]:
         "has_password": bool(row["pw_hash"]),
         "is_admin": is_admin,
         "avatar_data": avatar_data,
+        "shirt_size": shirt_size,
         "created_at": row["created_at"],
         "last_login_at": row["last_login_at"],
     }
@@ -3976,6 +3987,19 @@ def member_update_profile(
     if payload.avatar_data is not None:
         # ส่ง '' (empty string) → ลบ avatar (NULL)
         updates["avatar_data"] = payload.avatar_data or None
+    # v1.9.74 — phone (เบอร์มือถือ): unique constraint ใน DB — ถ้าซ้ำ → 409
+    if payload.phone is not None:
+        v = payload.phone.strip()
+        if v:
+            # validate basic: ตัวเลข + อาจมี + - space ได้
+            if not re.fullmatch(r"[\d+\-\s()]{4,40}", v):
+                raise HTTPException(status_code=400, detail="รูปแบบเบอร์มือถือไม่ถูกต้อง")
+            updates["phone"] = v
+        # ถ้าส่ง empty string → ไม่ update (phone ห้ามว่าง — เป็น UNIQUE NOT NULL)
+    # v1.9.74 — shirt_size: '' = clear, non-empty = set
+    if payload.shirt_size is not None:
+        v = payload.shirt_size.strip()
+        updates["shirt_size"] = v or None
 
     if not updates:
         raise HTTPException(status_code=400, detail="ไม่มีอะไรให้บันทึก")
@@ -3987,12 +4011,14 @@ def member_update_profile(
             conn.execute(f"UPDATE members SET {set_clause} WHERE id = ?", values)
             row = conn.execute(
                 "SELECT id, phone, email, display_name, pw_hash, is_admin, avatar_data, "
-                "       created_at, last_login_at "
+                "       shirt_size, created_at, last_login_at "
                 "FROM members WHERE id = ?",
                 (member_id,),
             ).fetchone()
     except sqlite3.IntegrityError as e:
-        # email ซ้ำ
+        # email/phone ซ้ำ — บอกแบบ generic แต่ระบุ context จาก updates
+        if "phone" in updates:
+            raise HTTPException(status_code=409, detail="เบอร์มือถือนี้ถูกใช้แล้ว") from e
         raise HTTPException(status_code=409, detail="อีเมลนี้ถูกใช้แล้ว") from e
 
     return {"ok": True, "member": _member_row_to_profile(row)}
@@ -5793,7 +5819,7 @@ def member_me(
     with db_conn() as conn:
         row = conn.execute(
             "SELECT id, phone, email, display_name, pw_hash, is_admin, avatar_data, "
-            "       created_at, last_login_at "
+            "       shirt_size, created_at, last_login_at "
             "FROM members WHERE id = ?",
             (sess["member_id"],),
         ).fetchone()
