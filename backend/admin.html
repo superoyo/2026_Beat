@@ -8063,7 +8063,8 @@ async function showHardwareModal(hw, type, afterSubmit) {
 
   showModal({
     title: isEdit ? `แก้ไข ${tabInfo.label}: ${hw.name}` : `+ เพิ่ม ${tabInfo.label}`,
-    size: 'wide',
+    // v1.9.70 — xwide สำหรับ PC เพื่อให้ layout 2 column (ซ้าย=รูป ขวา=ฟิลด์) เหมือนหน้า detail
+    size: showPC ? 'xwide' : 'wide',
     body: `
       ${showPC ? `
         <!-- v1.9.64 — Tab strip: รายละเอียดอุปกรณ์ | ผู้ดูแลปัจจุบัน + ประวัติ -->
@@ -8073,6 +8074,58 @@ async function showHardwareModal(hw, type, afterSubmit) {
         </div>
 
         <div class="hm-tab-pane" data-hm-pane="details">
+        <!-- v1.9.70 — 2-column layout: ซ้าย=รูป ขวา=ฟิลด์ (เหมือนหน้า detail) -->
+        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+          <!-- LEFT COLUMN: photos -->
+          <div style="flex:0 0 280px;max-width:100%;display:flex;flex-direction:column;gap:16px">
+            <!-- Main PC photo -->
+            <div>
+              <div style="font-size:11.5px;font-weight:700;color:var(--primary-dark);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">🖼 รูปอุปกรณ์</div>
+              <div id="hm-photo-preview" style="width:100%;aspect-ratio:4/3;border-radius:10px;border:1.5px dashed var(--border);background:${(isEdit && hw.photo_data) ? 'var(--bg-card)' : 'var(--bg-soft)'};display:flex;align-items:center;justify-content:center;overflow:hidden">
+                ${(isEdit && hw.photo_data)
+                  ? `<img src="${hw.photo_data}" alt="photo" style="width:100%;height:100%;object-fit:cover;display:block" />`
+                  : `<span style="color:var(--text-muted);font-size:12px;text-align:center;line-height:1.3">ยังไม่มี<br/>รูปอุปกรณ์</span>`
+                }
+              </div>
+              <div style="display:flex;flex-direction:column;gap:5px;margin-top:8px">
+                <button type="button" class="btn" id="hm-photo-upload-btn" style="font-size:12px;padding:6px 10px;text-align:left">📷 อัพโหลดไฟล์...</button>
+                <button type="button" class="btn" id="hm-photo-camera-btn" style="font-size:12px;padding:6px 10px;text-align:left">📸 ถ่ายรูปจากกล้อง</button>
+                <button type="button" class="btn danger" id="hm-photo-remove-btn" style="font-size:12px;padding:6px 10px;text-align:left;${(isEdit && hw.photo_data) ? '' : 'display:none'}">🗑 ลบรูป</button>
+                <input type="file" id="hm-photo-file-input" accept="image/*" style="display:none" />
+              </div>
+              <input type="hidden" id="hm-photo-data" value="${escapeHtml((isEdit && hw.photo_data) || '')}" />
+            </div>
+            <!-- Asset photo + OCR -->
+            <div>
+              <div style="font-size:11.5px;font-weight:700;color:var(--primary-dark);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">📸 รูปหมายเลข asset</div>
+              <div id="hm-asset-photo-preview" style="width:100%;aspect-ratio:4/3;border-radius:10px;border:1.5px dashed var(--border);background:${(isEdit && hw.asset_photo_data) ? 'var(--bg-card)' : 'var(--bg-soft)'};display:flex;align-items:center;justify-content:center;overflow:hidden">
+                ${(isEdit && hw.asset_photo_data)
+                  ? `<img src="${hw.asset_photo_data}" alt="asset-photo" style="width:100%;height:100%;object-fit:cover;display:block" />`
+                  : `<span style="color:var(--text-muted);font-size:11.5px;text-align:center;line-height:1.3">📸<br/>ภาพ asset</span>`
+                }
+              </div>
+              <div style="display:flex;flex-direction:column;gap:5px;margin-top:8px">
+                <button type="button" class="btn" id="hm-asset-photo-upload-btn" style="font-size:11.5px;padding:5px 10px;text-align:left">📷 อัพโหลด</button>
+                <button type="button" class="btn" id="hm-asset-photo-camera-btn" style="font-size:11.5px;padding:5px 10px;text-align:left">📸 กล้อง</button>
+                <button type="button" class="btn" id="hm-asset-photo-ocr-btn" style="font-size:11.5px;padding:5px 10px;text-align:left;background:rgba(245,158,11,.15);color:#92400e;border-color:rgba(245,158,11,.3)" title="ใช้ OCR อ่านเลข asset จากรูป">🔍 OCR อ่านเลข asset</button>
+                <button type="button" class="btn danger" id="hm-asset-photo-remove-btn" style="font-size:11.5px;padding:5px 10px;text-align:left;${(isEdit && hw.asset_photo_data) ? '' : 'display:none'}">🗑 ลบรูป</button>
+                <input type="file" id="hm-asset-photo-file-input" accept="image/*" style="display:none" />
+              </div>
+              <!-- v1.9.69 — OCR result panel -->
+              <div id="hm-asset-ocr-result" style="display:none;margin-top:8px;padding:8px 10px;background:rgba(245,158,11,.08);border:1px dashed rgba(245,158,11,.35);border-radius:6px">
+                <div style="font-size:11px;color:#92400e;font-weight:700;margin-bottom:4px">📄 ผลการอ่าน OCR (แก้ก่อนใช้ได้)</div>
+                <textarea id="hm-asset-ocr-text" rows="2" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text);font-family:inherit;resize:vertical;box-sizing:border-box"></textarea>
+                <div style="display:flex;gap:6px;margin-top:6px">
+                  <button type="button" class="btn primary" id="hm-asset-ocr-apply" style="font-size:11.5px;padding:5px 10px">✓ ใช้ค่านี้เป็น Asset</button>
+                  <button type="button" class="btn" id="hm-asset-ocr-close" style="font-size:11.5px;padding:5px 10px">ยกเลิก</button>
+                </div>
+              </div>
+              <input type="hidden" id="hm-asset-photo-data" value="${escapeHtml((isEdit && hw.asset_photo_data) || '')}" />
+            </div>
+          </div>
+
+          <!-- RIGHT COLUMN: fields -->
+          <div style="flex:1;min-width:320px">
         ${sect('📋', 'ข้อมูลทั่วไป')}
         <div class="field">
           <label>ชื่อ *</label>
@@ -8094,32 +8147,6 @@ async function showHardwareModal(hw, type, afterSubmit) {
           <div class="field">
             <label>เลข Asset</label>
             <input id="hm-asset" type="text" value="${isEdit ? escapeHtml(hw.asset_number || '') : ''}" placeholder="เช่น A-001" />
-            <!-- v1.9.50 — รูปถ่าย sticker/tag หมายเลข asset ติดบนเครื่อง -->
-            <div style="display:flex;gap:8px;margin-top:6px;align-items:flex-start">
-              <div id="hm-asset-photo-preview" style="width:80px;height:60px;border-radius:6px;border:1.5px dashed var(--border);background:${(isEdit && hw.asset_photo_data) ? 'var(--bg-card)' : 'var(--bg-soft)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden">
-                ${(isEdit && hw.asset_photo_data)
-                  ? `<img src="${hw.asset_photo_data}" alt="asset-photo" style="width:100%;height:100%;object-fit:cover" />`
-                  : `<span style="color:var(--text-muted);font-size:10.5px;text-align:center;line-height:1.3">📸<br/>ภาพ asset</span>`
-                }
-              </div>
-              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
-                <button type="button" class="btn" id="hm-asset-photo-upload-btn" style="font-size:11.5px;padding:5px 10px;text-align:left">📷 อัพโหลด</button>
-                <button type="button" class="btn" id="hm-asset-photo-camera-btn" style="font-size:11.5px;padding:5px 10px;text-align:left">📸 กล้อง</button>
-                <button type="button" class="btn" id="hm-asset-photo-ocr-btn" style="font-size:11.5px;padding:5px 10px;text-align:left;background:rgba(245,158,11,.15);color:#92400e;border-color:rgba(245,158,11,.3)" title="ใช้ OCR อ่านเลข asset จากรูป">🔍 OCR อ่านเลข asset</button>
-                <button type="button" class="btn danger" id="hm-asset-photo-remove-btn" style="font-size:11.5px;padding:5px 10px;text-align:left;${(isEdit && hw.asset_photo_data) ? '' : 'display:none'}">🗑 ลบรูป</button>
-                <input type="file" id="hm-asset-photo-file-input" accept="image/*" style="display:none" />
-              </div>
-            </div>
-            <!-- v1.9.69 — OCR result panel (เริ่มต้นซ่อน) -->
-            <div id="hm-asset-ocr-result" style="display:none;margin-top:8px;padding:8px 10px;background:rgba(245,158,11,.08);border:1px dashed rgba(245,158,11,.35);border-radius:6px">
-              <div style="font-size:11px;color:#92400e;font-weight:700;margin-bottom:4px">📄 ผลการอ่าน OCR (แก้ก่อนใช้ได้)</div>
-              <textarea id="hm-asset-ocr-text" rows="2" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text);font-family:inherit;resize:vertical;box-sizing:border-box"></textarea>
-              <div style="display:flex;gap:6px;margin-top:6px">
-                <button type="button" class="btn primary" id="hm-asset-ocr-apply" style="font-size:11.5px;padding:5px 10px">✓ ใช้ค่านี้เป็น Asset</button>
-                <button type="button" class="btn" id="hm-asset-ocr-close" style="font-size:11.5px;padding:5px 10px">ยกเลิก</button>
-              </div>
-            </div>
-            <input type="hidden" id="hm-asset-photo-data" value="${escapeHtml((isEdit && hw.asset_photo_data) || '')}" />
           </div>
           <div class="field">
             <label>S/N (Serial Number)</label>
@@ -8202,28 +8229,12 @@ async function showHardwareModal(hw, type, afterSubmit) {
           </div>
         </div>
 
-        ${sect('🖼', 'รูปภาพ + หมายเหตุ')}
+        ${sect('📝', 'หมายเหตุ')}
         <div class="field">
-          <div style="display:flex;gap:14px;align-items:flex-start;margin-top:2px">
-            <div id="hm-photo-preview" style="width:120px;height:90px;border-radius:8px;border:1.5px dashed var(--border);background:${(isEdit && hw.photo_data) ? 'var(--bg-card)' : 'var(--bg-soft)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden">
-              ${(isEdit && hw.photo_data)
-                ? `<img src="${hw.photo_data}" alt="photo" style="width:100%;height:100%;object-fit:cover" />`
-                : `<span style="color:var(--text-muted);font-size:11px;text-align:center;line-height:1.3">ยังไม่มี<br/>รูปภาพ</span>`
-              }
-            </div>
-            <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px">
-              <button type="button" class="btn" id="hm-photo-upload-btn" style="font-size:12.5px;padding:7px 12px;text-align:left">📷 อัพโหลดไฟล์...</button>
-              <button type="button" class="btn" id="hm-photo-camera-btn" style="font-size:12.5px;padding:7px 12px;text-align:left">📸 ถ่ายรูปจากกล้อง</button>
-              <button type="button" class="btn danger" id="hm-photo-remove-btn" style="font-size:12.5px;padding:7px 12px;text-align:left;${(isEdit && hw.photo_data) ? '' : 'display:none'}">🗑 ลบรูป</button>
-              <input type="file" id="hm-photo-file-input" accept="image/*" style="display:none" />
-            </div>
-          </div>
-          <input type="hidden" id="hm-photo-data" value="${escapeHtml((isEdit && hw.photo_data) || '')}" />
+          <textarea id="hm-notes" rows="3" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical" placeholder="หมายเหตุเพิ่มเติม (optional)">${isEdit ? escapeHtml(hw.notes || '') : ''}</textarea>
         </div>
-        <div class="field">
-          <label>หมายเหตุ</label>
-          <textarea id="hm-notes" rows="2" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical">${isEdit ? escapeHtml(hw.notes || '') : ''}</textarea>
-        </div>
+          </div><!-- /right column -->
+        </div><!-- /2-col flex -->
         </div><!-- /details pane -->
 
         <!-- v1.9.64 — Tab: ผู้ดูแลปัจจุบัน + ประวัติ -->

@@ -2,6 +2,23 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.70",
+      "date": "2026-05-08",
+      "title": "PC edit modal: 2-column layout (ซ้าย=รูป / ขวา=ฟิลด์) — เหมือนหน้า detail",
+      "summary": "ฟอร์มแก้ไข PC จัด layout ใหม่ให้สอดคล้องกับหน้าดูรายละเอียด — ซ้าย 280px = รูปอุปกรณ์ + รูปหมายเลข asset + ปุ่มทั้งหมด, ขวา = ฟิลด์ทุกตัว",
+      "changes": [
+        "Modal size: PC = 'xwide' (920px) เพื่อให้พื้นที่ครบ; Device/Network ยังคง 'wide'",
+        "Tab 1 (รายละเอียดอุปกรณ์): flex 2 column + flex-wrap (มือถือ wrap อัตโนมัติ)",
+        "ซ้าย flex:0 0 280px:",
+        "  - 🖼 รูปอุปกรณ์ — aspect-ratio:4/3 + ปุ่ม 📷/📸/🗑 stack แนวตั้ง",
+        "  - 📸 รูปหมายเลข asset — aspect-ratio:4/3 + ปุ่ม 📷/📸/🔍 OCR/🗑 + result panel",
+        "ขวา flex:1 (min-width:320px): ข้อมูลทั่วไป + Specification + ระบบปฏิบัติการ + แผนก/สถานที่/การซื้อ + หมายเหตุ",
+        "ฟิลด์ Asset Number ไม่มีรูปฝังในนั้นแล้ว — รูปแยกไปซ้าย",
+        "Section 'รูปภาพ + หมายเหตุ' เหลือเฉพาะ '📝 หมายเหตุ' (รูปย้ายไปซ้ายแล้ว)",
+        "Tab 2 (ผู้ดูแลปัจจุบัน) — layout เหมือนเดิม (single column)"
+      ]
+    },
+    {
       "version": "1.9.69",
       "date": "2026-05-08",
       "title": "PC edit: ปุ่ม OCR อ่านเลข Asset จากรูป → copy ใส่ช่อง Asset อัตโนมัติ",
