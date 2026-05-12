@@ -7719,6 +7719,13 @@ function showHardwareModal(hw, type, afterSubmit) {
     size: 'wide',
     body: `
       ${showPC ? `
+        <!-- v1.9.64 — Tab strip: รายละเอียดอุปกรณ์ | ผู้ดูแลปัจจุบัน + ประวัติ -->
+        <div class="hm-tabs" style="display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:14px">
+          <button type="button" class="hm-tab" data-hm-tab="details" style="background:none;border:none;border-bottom:2px solid var(--primary);padding:10px 14px;font-size:13.5px;color:var(--primary);font-weight:600;cursor:pointer">📋 รายละเอียดอุปกรณ์</button>
+          <button type="button" class="hm-tab" data-hm-tab="owner" style="background:none;border:none;padding:10px 14px;font-size:13.5px;color:var(--text-muted);font-weight:500;cursor:pointer">👤 ผู้ดูแลปัจจุบัน${isEdit ? ' + ประวัติ' : ''}</button>
+        </div>
+
+        <div class="hm-tab-pane" data-hm-pane="details">
         ${sect('📋', 'ข้อมูลทั่วไป')}
         <div class="field">
           <label>ชื่อ *</label>
@@ -7816,7 +7823,7 @@ function showHardwareModal(hw, type, afterSubmit) {
           </div>
         </div>
 
-        ${sect('👤', 'การจัดสรร')}
+        ${sect('🏢', 'แผนก / สถานที่ / การซื้อ')}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
           <div class="field">
             <label>Department</label>
@@ -7826,11 +7833,6 @@ function showHardwareModal(hw, type, afterSubmit) {
             <label>Location</label>
             <input id="hm-location" type="text" value="${isEdit ? escapeHtml(hw.location || '') : ''}" placeholder="เช่น HQ ชั้น 3 / Home Office" />
           </div>
-        </div>
-        <div class="field">
-          <label>ผู้ดูแลปัจจุบัน (Owner)</label>
-          ${ownerPickerHtml}
-          <div class="hint" style="font-size:11.5px;color:var(--text-muted);margin-top:4px">${isEdit ? 'เปลี่ยน owner → ปิด assignment เก่า + เปิดใหม่อัตโนมัติ (เก็บประวัติ)' : 'จะสร้าง initial assignment ให้อัตโนมัติ'}</div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
           <div class="field">
@@ -7864,6 +7866,23 @@ function showHardwareModal(hw, type, afterSubmit) {
         <div class="field">
           <label>หมายเหตุ</label>
           <textarea id="hm-notes" rows="2" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical">${isEdit ? escapeHtml(hw.notes || '') : ''}</textarea>
+        </div>
+        </div><!-- /details pane -->
+
+        <!-- v1.9.64 — Tab: ผู้ดูแลปัจจุบัน + ประวัติ -->
+        <div class="hm-tab-pane" data-hm-pane="owner" style="display:none">
+          ${sect('👤', 'ผู้ดูแลปัจจุบัน')}
+          <div class="field">
+            <label>เลือกผู้ดูแล</label>
+            ${ownerPickerHtml}
+            <div class="hint" style="font-size:11.5px;color:var(--text-muted);margin-top:4px">${isEdit ? 'เปลี่ยน owner → ปิด assignment เก่า (set วันสิ้นสุด = ปัจจุบัน) + เปิดใหม่อัตโนมัติ — เก็บประวัติให้ในแท็บนี้' : 'จะสร้าง initial assignment ให้อัตโนมัติหลังบันทึกครั้งแรก'}</div>
+          </div>
+          ${isEdit ? `
+            ${sect('📜', 'ประวัติการครอบครอง')}
+            <div id="hm-history-list" style="display:flex;flex-direction:column;gap:6px"><div class="empty" style="padding:18px;font-size:12.5px">กำลังโหลด…</div></div>
+          ` : `
+            <div class="hint" style="margin-top:14px;font-size:12px;color:var(--text-muted);font-style:italic">📜 ประวัติการครอบครองจะปรากฏหลังบันทึกครั้งแรก</div>
+          `}
         </div>
       ` : `
         <!-- Device / Network — keep simpler form -->
@@ -7988,6 +8007,33 @@ function showHardwareModal(hw, type, afterSubmit) {
     },
   });
 
+  // ---- v1.9.64 — Tab switching (PC only) ----
+  if (showPC) {
+    document.querySelectorAll('.modal-bg .modal .hm-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = btn.dataset.hmTab;
+        document.querySelectorAll('.modal-bg .modal .hm-tab').forEach(b => {
+          const active = b === btn;
+          b.style.color = active ? 'var(--primary)' : 'var(--text-muted)';
+          b.style.fontWeight = active ? '600' : '500';
+          b.style.borderBottom = active ? '2px solid var(--primary)' : '';
+        });
+        document.querySelectorAll('.modal-bg .modal .hm-tab-pane').forEach(p => {
+          p.style.display = (p.dataset.hmPane === target) ? '' : 'none';
+        });
+        // โหลด history เฉพาะตอนคลิก tab owner ครั้งแรก (lazy)
+        if (target === 'owner' && isEdit && hw && hw.id && !btn.dataset.hmHistoryLoaded) {
+          btn.dataset.hmHistoryLoaded = '1';
+          loadHmHistory(hw.id);
+        }
+      });
+    });
+    // โหลด history เลยเพื่อให้ user ที่กด tab เห็นทันที (background — ไม่ block)
+    if (isEdit && hw && hw.id) {
+      loadHmHistory(hw.id);
+    }
+  }
+
   // ---- Owner picker wiring (after modal in DOM) ----
   wireHwOwnerPicker();
 
@@ -8088,6 +8134,114 @@ function showHardwareModal(hw, type, afterSubmit) {
       setHmAssetPhoto('');
     });
   }
+}
+
+// v1.9.64 — โหลด+render ประวัติการครอบครองสำหรับ tab 'ผู้ดูแลปัจจุบัน' ใน showHardwareModal
+async function loadHmHistory(hwId) {
+  let items = [];
+  try {
+    const d = await fetchJson(`/api/admin/hardware/${hwId}/history`);
+    items = d.history || [];
+  } catch (_) { /* ignore */ }
+  renderHmHistoryList(hwId, items);
+}
+
+function renderHmHistoryList(hwId, items) {
+  const listEl = $('hm-history-list');
+  if (!listEl) return;
+  if (items.length === 0) {
+    listEl.innerHTML = '<div class="empty" style="padding:14px;font-size:12.5px">ยังไม่มีประวัติ — รายการแรกจะถูกสร้างเมื่อตั้ง owner</div>';
+    return;
+  }
+  listEl.innerHTML = items.map(r => {
+    const fromYm = (r.assigned_at || '').slice(0, 7);
+    const toYm = r.unassigned_at ? r.unassigned_at.slice(0, 7) : null;
+    const fromLabel = fromYm ? fmtMonthYearThai(fromYm) : '—';
+    const toLabel = toYm ? fmtMonthYearThai(toYm) : '<span style="color:var(--green);font-weight:700">ปัจจุบัน</span>';
+    const isActive = !r.unassigned_at;
+    return `
+      <div class="card" style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:9px 12px;${isActive ? 'border-color:var(--primary);background:rgba(37,99,235,.04)' : ''}">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-weight:700;font-size:13px">👤 ${escapeHtml(r.member_label || '— ไม่ผูก —')}</span>
+            ${isActive ? '<span style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:700;background:rgba(16,185,129,.12);color:var(--green)">⭐ ปัจจุบัน</span>' : ''}
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:3px">📅 <strong>${escapeHtml(fromLabel)}</strong> → ${toLabel}</div>
+          ${r.note ? `<div style="font-size:11.5px;color:var(--text-muted);font-style:italic;margin-top:4px">📝 ${escapeHtml(r.note)}</div>` : ''}
+        </div>
+        <div style="display:flex;gap:4px;flex-shrink:0">
+          <button type="button" class="btn" data-ha-edit="${r.id}" style="font-size:11.5px;padding:4px 9px" title="แก้ไข">✏️</button>
+          <button type="button" class="btn danger" data-ha-del="${r.id}" data-ha-label="${escapeHtml(r.member_label || '')}" style="font-size:11.5px;padding:4px 9px" title="ลบ">🗑</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+  listEl.querySelectorAll('button[data-ha-edit]').forEach(b => {
+    b.addEventListener('click', (e) => {
+      e.preventDefault();
+      const id = parseInt(b.dataset.haEdit, 10);
+      const rec = items.find(x => x.id === id);
+      if (rec) showAssignmentEditModal(hwId, rec);
+    });
+  });
+  listEl.querySelectorAll('button[data-ha-del]').forEach(b => {
+    b.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const id = parseInt(b.dataset.haDel, 10);
+      const lbl = b.dataset.haLabel || '';
+      if (!confirm(`ลบประวัติของ "${lbl}"?\n(ไม่กระทบ owner ปัจจุบัน — แค่ลบ record ในประวัติ)`)) return;
+      try {
+        await fetchJson(`/api/admin/hardware-assignments/${id}`, { method: 'DELETE' });
+        await loadHmHistory(hwId);
+      } catch (err) {
+        alert('ลบไม่สำเร็จ: ' + err.message);
+      }
+    });
+  });
+}
+
+function showAssignmentEditModal(hwId, record) {
+  const fromYm = (record.assigned_at || '').slice(0, 7);
+  const toYm = record.unassigned_at ? record.unassigned_at.slice(0, 7) : '';
+  showModal({
+    title: 'แก้ไขประวัติการครอบครอง',
+    body: `
+      <div class="field">
+        <label>ผู้ดูแล</label>
+        <div style="padding:9px 12px;background:var(--bg-soft);border:1px solid var(--border);border-radius:8px;font-size:13.5px;font-weight:600">👤 ${escapeHtml(record.member_label || '— ไม่ผูก —')}</div>
+        <div class="hint" style="font-size:11px;color:var(--text-muted);margin-top:4px">ต้องการเปลี่ยนตัว owner → ไปที่ tab 'ผู้ดูแลปัจจุบัน' เลือกใหม่ (จะ auto-close รายการเดิม + เปิดรายการใหม่)</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="field">
+          <label>วันที่เริ่ม (เดือน/ปี) *</label>
+          <input id="hae-start" type="month" value="${escapeHtml(fromYm)}" />
+        </div>
+        <div class="field">
+          <label>วันที่สิ้นสุด (เว้นว่าง = ปัจจุบัน)</label>
+          <input id="hae-end" type="month" value="${escapeHtml(toYm)}" />
+        </div>
+      </div>
+      <div class="field">
+        <label>หมายเหตุ (optional)</label>
+        <input id="hae-note" type="text" value="${escapeHtml(record.note || '')}" placeholder="เช่น โอนจาก/ไป แผนกอื่น" />
+      </div>
+    `,
+    onSubmit: async () => {
+      const start = $('hae-start').value;
+      if (!start) throw new Error('กรอกวันที่เริ่ม');
+      const end = $('hae-end').value;
+      const note = $('hae-note').value.trim();
+      await fetchJson(`/api/admin/hardware-assignments/${record.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          assigned_at: start,
+          unassigned_at: end || '',   // '' = clear → backend แปลงเป็น null
+          note: note || null,
+        }),
+      });
+      await loadHmHistory(hwId);
+    },
+  });
 }
 
 async function showHardwareHistoryModal(hwId, hwName) {

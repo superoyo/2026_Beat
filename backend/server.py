@@ -4512,6 +4512,99 @@ def admin_hardware_history(
     return {"history": [dict(r) for r in rows]}
 
 
+# v1.9.64 — admin แก้ไข/ลบ record ประวัติการครอบครองได้
+class HardwareAssignmentPatchIn(BaseModel):
+    member_id: Optional[int] = None         # null = clear; omitted = no change
+    member_label: Optional[str] = Field(None, max_length=200)
+    assigned_at: Optional[str] = Field(None, max_length=40)    # ISO string หรือ YYYY-MM
+    unassigned_at: Optional[str] = Field(None, max_length=40)  # '' = clear (= ปัจจุบัน)
+    note: Optional[str] = Field(None, max_length=500)
+
+
+@app.patch("/api/admin/hardware-assignments/{aid}")
+def admin_update_hardware_assignment(
+    aid: int,
+    payload: HardwareAssignmentPatchIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """แก้ไขประวัติการครอบครอง — admin ปรับวันที่/หมายเหตุ/member ได้"""
+    raw = payload.model_dump(exclude_unset=True)
+    updates: dict[str, Any] = {}
+    with db_conn() as conn:
+        existing = conn.execute(
+            "SELECT * FROM hardware_assignments WHERE id = ?", (aid,)
+        ).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="assignment not found")
+        # member_id: null = clear; int = ตั้งใหม่ → re-snapshot member_label
+        if "member_id" in raw:
+            new_mid = raw["member_id"]
+            updates["member_id"] = new_mid
+            if new_mid is not None:
+                m = conn.execute(
+                    "SELECT display_name, email FROM members WHERE id = ?", (new_mid,)
+                ).fetchone()
+                if not m:
+                    raise HTTPException(status_code=400, detail="member ไม่มีอยู่จริง")
+                updates["member_label"] = m["display_name"] or m["email"]
+            else:
+                updates["member_label"] = None
+        # member_label: ถ้าส่งมาเอง override (อาจ rare)
+        if "member_label" in raw and "member_id" not in raw:
+            updates["member_label"] = raw["member_label"]
+        # assigned_at: ต้องไม่ว่าง (timestamp = required)
+        if "assigned_at" in raw:
+            v = raw["assigned_at"]
+            if not v:
+                raise HTTPException(status_code=400, detail="assigned_at ห้ามว่าง")
+            updates["assigned_at"] = _normalize_assignment_ts(v)
+        # unassigned_at: '' หรือ null = clear (= ปัจจุบัน), non-empty = ตั้งใหม่
+        if "unassigned_at" in raw:
+            v = raw["unassigned_at"]
+            updates["unassigned_at"] = _normalize_assignment_ts(v) if v else None
+        if "note" in raw:
+            n = raw["note"]
+            updates["note"] = (n.strip() if isinstance(n, str) else n) or None
+        if not updates:
+            raise HTTPException(status_code=400, detail="ไม่มีอะไรให้บันทึก")
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        conn.execute(
+            f"UPDATE hardware_assignments SET {set_clause} WHERE id = ?",
+            list(updates.values()) + [aid],
+        )
+    return {"ok": True}
+
+
+def _normalize_assignment_ts(v: str) -> str:
+    """รับ 'YYYY-MM' หรือ 'YYYY-MM-DD' หรือ ISO timestamp → คืน ISO format
+    (วันที่ 1 ของเดือนถ้าให้มาแค่เดือน)"""
+    s = str(v).strip()
+    if not s:
+        return s
+    # 'YYYY-MM' → 'YYYY-MM-01T00:00:00+00:00'
+    if len(s) == 7 and s[4] == "-":
+        return f"{s}-01T00:00:00+00:00"
+    # 'YYYY-MM-DD' → 'YYYY-MM-DDT00:00:00+00:00'
+    if len(s) == 10 and s[4] == "-" and s[7] == "-":
+        return f"{s}T00:00:00+00:00"
+    return s
+
+
+@app.delete("/api/admin/hardware-assignments/{aid}")
+def admin_delete_hardware_assignment(
+    aid: int,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """ลบ record ประวัติการครอบครอง — ไม่กระทบ hardware.current_member_id"""
+    with db_conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM hardware_assignments WHERE id = ?", (aid,)
+        )
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="assignment not found")
+    return {"ok": True}
+
+
 @app.get("/api/admin/members/{member_id}/hardware")
 def admin_member_hardware(
     member_id: int,

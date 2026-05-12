@@ -2,6 +2,24 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.64",
+      "date": "2026-05-08",
+      "title": "PC edit modal: แยก tab 'ผู้ดูแลปัจจุบัน + ประวัติ' พร้อม edit/delete record",
+      "summary": "ฟอร์มแก้ไข Personal Computer แบ่งเป็น 2 tabs — Tab 1 รายละเอียดอุปกรณ์ (ทุก field เดิม ยกเว้น owner), Tab 2 ผู้ดูแลปัจจุบัน + ประวัติ assignment (admin แก้ไข/ลบ record ได้)",
+      "changes": [
+        "Backend PATCH /api/admin/hardware-assignments/{aid}: แก้ assigned_at, unassigned_at, note, (member_id) — รองรับ YYYY-MM → normalize เป็น ISO timestamp",
+        "Backend DELETE /api/admin/hardware-assignments/{aid}: ลบ record (ไม่กระทบ hardware.current_member_id)",
+        "Frontend showHardwareModal (PC): ห่อใน tab strip — '📋 รายละเอียดอุปกรณ์' / '👤 ผู้ดูแลปัจจุบัน + ประวัติ'",
+        "ย้าย owner picker จาก section 'การจัดสรร' → tab 2",
+        "Section 'การจัดสรร' เปลี่ยนชื่อเป็น '🏢 แผนก / สถานที่ / การซื้อ' (เก็บ Department/Location/วันที่ซื้อ/Quotation)",
+        "Tab 2 (edit mode): โหลด history จาก /api/admin/hardware/{id}/history → render เป็น card list",
+        "Card list: ผู้ดูแล + ⭐ ปัจจุบัน badge (สำหรับ active assignment) + 📅 ตั้งแต่ → ถึง + 📝 note + ปุ่ม ✏️ / 🗑",
+        "✏️ เปิด sub-modal: แก้ assigned_at (month/year) + unassigned_at (month/year หรือเว้นว่าง = ปัจจุบัน) + note",
+        "🗑 confirm + DELETE record",
+        "เปลี่ยน owner ใน Tab 2 → backend _change_hardware_owner ปิด assignment เก่า (set unassigned_at = now) + เปิดใหม่อัตโนมัติ"
+      ]
+    },
+    {
       "version": "1.9.63",
       "date": "2026-05-08",
       "title": "Hotfix: PC detail modal ใน Team แสดง 'member#N (ไม่พบในระบบ)'",
