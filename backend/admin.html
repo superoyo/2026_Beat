@@ -10002,6 +10002,12 @@ async function renderMemberAccountPage() {
           <input id="m-phone" type="tel" placeholder="เช่น 0812345678" maxlength="40" />
           <div class="hint">ใช้รับการแจ้งเตือน / เป็น username ทางเลือก (ห้ามว่าง)</div>
         </div>
+        <!-- v1.9.75 — วันเกิด + คำนวณอายุ -->
+        <div class="field">
+          <label>วันเกิด</label>
+          <input id="m-birthdate" type="date" style="width:auto;min-width:200px" />
+          <div class="hint" id="m-age-hint" style="margin-top:4px">— ยังไม่ได้กรอก</div>
+        </div>
         <!-- v1.9.74 — shirt size: buttons XS/S/M/L/XL/XXL + อื่น ๆ -->
         <div class="field">
           <label>ขนาดเสื้อ</label>
@@ -10052,6 +10058,34 @@ async function renderMemberAccountPage() {
 
   let member = null;
   const SHIRT_OPTS = ['XS','S','M','L','XL','XXL'];
+
+  // v1.9.75 — คำนวณ "อายุ X ปี Y เดือน" + "(ตรงกับ พ.ศ. YYYY)" จาก birthdate
+  function calcAgeText(birthdate) {
+    if (!birthdate) return '— ยังไม่ได้กรอก';
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(birthdate));
+    if (!m) return '— รูปแบบไม่ถูกต้อง';
+    const by = +m[1], bm = +m[2], bd = +m[3];
+    const t = new Date();
+    let years = t.getFullYear() - by;
+    let months = t.getMonth() + 1 - bm;
+    let days = t.getDate() - bd;
+    if (days < 0) months -= 1;
+    if (months < 0) { years -= 1; months += 12; }
+    if (years < 0) return '— วันเกิดอยู่ในอนาคต (ตรวจสอบใหม่)';
+    const ageStr = years > 0
+      ? `${years} ปี${months > 0 ? ' ' + months + ' เดือน' : ''}`
+      : `${months} เดือน`;
+    const be = by + 543;
+    const monthsTh = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+    const dateLabel = `${bd} ${monthsTh[bm - 1]} ${be}`;
+    return `🎂 ${dateLabel} · อายุ <strong>${ageStr}</strong>`;
+  }
+  function updateAgeHint() {
+    const inp = $('m-birthdate');
+    const hint = $('m-age-hint');
+    if (inp && hint) hint.innerHTML = calcAgeText(inp.value);
+  }
+
   function applyShirtSizeUI(value) {
     // value: 'XS'/'S'/.../'XXL' หรือข้อความอิสระ หรือ null
     const v = (value || '').trim();
@@ -10086,6 +10120,11 @@ async function renderMemberAccountPage() {
     $('m-email').value = member.email || '';
     if ($('m-phone')) $('m-phone').value = member.phone || '';
     applyShirtSizeUI(member.shirt_size || '');
+    // v1.9.75 — birthdate + age hint
+    if ($('m-birthdate')) {
+      $('m-birthdate').value = member.birthdate || '';
+      updateAgeHint();
+    }
     // Avatar preview
     updateMyAvatarPreview(member.avatar_data || '');
   }
@@ -10172,6 +10211,13 @@ async function renderMemberAccountPage() {
         if (hidden) hidden.value = v;
       });
     }
+    // v1.9.75 — birthdate change → update age hint live + set max=today
+    const birthdayInp = $('m-birthdate');
+    if (birthdayInp) {
+      birthdayInp.setAttribute('max', new Date().toISOString().slice(0, 10));
+      birthdayInp.addEventListener('input', updateAgeHint);
+      birthdayInp.addEventListener('change', updateAgeHint);
+    }
   }, 0);
 
   function setMsg(elId, text, isErr) {
@@ -10198,12 +10244,13 @@ async function renderMemberAccountPage() {
     const email = $('m-email').value.trim();
     const phone = ($('m-phone') ? $('m-phone').value.trim() : '');
     const shirt_size = ($('m-shirt-size') ? $('m-shirt-size').value.trim() : '');
+    const birthdate = ($('m-birthdate') ? $('m-birthdate').value.trim() : '');
     if (!phone) { setMsg('m-profile-msg', 'เบอร์มือถือห้ามว่าง', true); return; }
     $('m-save-profile').disabled = true;
     try {
       const data = await fetchJson('/api/member/profile', {
         method: 'PATCH',
-        body: JSON.stringify({ display_name, email, phone, shirt_size }),
+        body: JSON.stringify({ display_name, email, phone, shirt_size, birthdate }),
       });
       member = data.member;
       renderInfo();

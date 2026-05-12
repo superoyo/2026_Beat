@@ -507,6 +507,8 @@ def init_db() -> None:
             ("extension_last_used_at", "TEXT"),
             # v1.9.74 — shirt size สำหรับ admin order เสื้อพนักงาน
             ("shirt_size",             "TEXT"),
+            # v1.9.75 — วันเกิด (ISO YYYY-MM-DD)
+            ("birthdate",              "TEXT"),
         ]:
             if col_name not in member_cols:
                 conn.execute(f"ALTER TABLE members ADD COLUMN {col_name} {col_def}")
@@ -3817,6 +3819,8 @@ class MemberProfileIn(BaseModel):
     phone: Optional[str] = Field(None, min_length=4, max_length=40)
     # v1.9.74 — shirt_size: 'XS' / 'S' / 'M' / 'L' / 'XL' / 'XXL' / หรือข้อความอิสระ
     shirt_size: Optional[str] = Field(None, max_length=40)
+    # v1.9.75 — birthdate: ISO YYYY-MM-DD; '' = clear
+    birthdate: Optional[str] = Field(None, max_length=20)
 
 
 def _require_member_session(token: Optional[str]) -> dict[str, Any]:
@@ -3840,6 +3844,10 @@ def _member_row_to_profile(row: sqlite3.Row) -> dict[str, Any]:
         shirt_size = row["shirt_size"]
     except (KeyError, IndexError):
         shirt_size = None
+    try:
+        birthdate = row["birthdate"]
+    except (KeyError, IndexError):
+        birthdate = None
     return {
         "id": row["id"],
         "phone": row["phone"],
@@ -3849,6 +3857,7 @@ def _member_row_to_profile(row: sqlite3.Row) -> dict[str, Any]:
         "is_admin": is_admin,
         "avatar_data": avatar_data,
         "shirt_size": shirt_size,
+        "birthdate": birthdate,
         "created_at": row["created_at"],
         "last_login_at": row["last_login_at"],
     }
@@ -4000,6 +4009,15 @@ def member_update_profile(
     if payload.shirt_size is not None:
         v = payload.shirt_size.strip()
         updates["shirt_size"] = v or None
+    # v1.9.75 — birthdate: '' = clear; expects YYYY-MM-DD
+    if payload.birthdate is not None:
+        v = payload.birthdate.strip()
+        if v:
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", v):
+                raise HTTPException(status_code=400, detail="วันเกิดต้องเป็นรูปแบบ YYYY-MM-DD")
+            updates["birthdate"] = v
+        else:
+            updates["birthdate"] = None
 
     if not updates:
         raise HTTPException(status_code=400, detail="ไม่มีอะไรให้บันทึก")
@@ -5819,7 +5837,7 @@ def member_me(
     with db_conn() as conn:
         row = conn.execute(
             "SELECT id, phone, email, display_name, pw_hash, is_admin, avatar_data, "
-            "       shirt_size, created_at, last_login_at "
+            "       shirt_size, birthdate, created_at, last_login_at "
             "FROM members WHERE id = ?",
             (sess["member_id"],),
         ).fetchone()

@@ -2,6 +2,22 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.75",
+      "date": "2026-05-13",
+      "title": "Member profile: เพิ่มวันเกิด + คำนวณอายุ (ปี/เดือน) + แสดง พ.ศ.",
+      "summary": "หน้า 'บัญชีของฉัน' (member) — เพิ่มช่อง 'วันเกิด' native date picker + แสดง 'อายุ X ปี Y เดือน' พร้อมแปลงเป็น พ.ศ. แบบไทย (เช่น '15 มี.ค. 2538') คำนวณ live ตอนพิมพ์",
+      "changes": [
+        "DB: ALTER TABLE members ADD COLUMN birthdate TEXT (ISO YYYY-MM-DD)",
+        "Backend MemberProfileIn: เพิ่ม birthdate (regex YYYY-MM-DD, '' = clear)",
+        "Backend PATCH /api/member/profile: validate + save birthdate",
+        "Backend GET /api/member/me + _member_row_to_profile: รวม birthdate",
+        "Frontend: <input type='date' max=today> — native date picker",
+        "Helper calcAgeText(birthdate): คืน '🎂 DD ม.ค./.../ธ.ค. พ.ศ.XXXX · อายุ X ปี Y เดือน'",
+        "Live update — change/input event → updateAgeHint()",
+        "วันเกิดในอนาคต → แจ้งเตือน"
+      ]
+    },
+    {
       "version": "1.9.74",
       "date": "2026-05-13",
       "title": "Member profile: แก้ไขเบอร์มือถือ + เลือกขนาดเสื้อ (XS-XXL หรืออื่น ๆ)",
