@@ -7800,12 +7800,16 @@ function showTeamPcDetailModal(pc, teamId, afterEdit) {
   bg.className = 'modal-bg';
   bg.innerHTML = `
     <div class="modal modal-xwide">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:14px;flex-wrap:wrap">
+      <!-- v1.9.71 — sticky header + ปุ่ม Edit ไปบนขวา -->
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin:-14px -14px 14px;padding:14px 14px 12px;background:var(--bg-card);border-bottom:1px solid var(--border);position:sticky;top:-14px;z-index:5;flex-wrap:wrap">
         <div style="flex:1;min-width:0">
           <h3 style="margin:0 0 6px;font-size:18px;font-weight:700">💻 ${headLine}</h3>
           ${statusBadge}
         </div>
-        ${tile}
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0">
+          <button class="btn primary" id="tpdm-edit" style="font-size:13px;padding:7px 14px;white-space:nowrap">✏️ แก้ไขรายละเอียด</button>
+          ${tile}
+        </div>
       </div>
       <div style="display:grid;grid-template-columns:300px 1fr;gap:18px;align-items:flex-start">
         <div>
@@ -7823,7 +7827,6 @@ function showTeamPcDetailModal(pc, teamId, afterEdit) {
       </div>
       <div class="modal-actions" style="margin-top:18px">
         <button class="btn" id="tpdm-close">ปิด</button>
-        <button class="btn primary" id="tpdm-edit">✏️ แก้ไขรายละเอียด</button>
       </div>
     </div>
   `;
@@ -8411,6 +8414,28 @@ async function showHardwareModal(hw, type, afterSubmit) {
       }
     },
   });
+
+  // ---- v1.9.71 — ย้ายปุ่มบันทึก (#m-ok) ไปแถวบนขวา + sticky ----
+  setTimeout(() => {
+    const modal = document.querySelector('.modal-bg .modal');
+    if (!modal) return;
+    const h3 = modal.querySelector(':scope > h3');
+    const okBtn = modal.querySelector('#m-ok');
+    if (!h3 || !okBtn) return;
+    if (h3.parentElement && h3.parentElement.dataset.hmSticky === '1') return;
+    const wrap = document.createElement('div');
+    wrap.dataset.hmSticky = '1';
+    wrap.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:14px;margin:-26px -26px 14px;padding:18px 26px;background:var(--bg-card);border-bottom:1px solid var(--border);position:sticky;top:-26px;z-index:5;flex-wrap:wrap';
+    h3.style.margin = '0';
+    h3.style.flex = '1';
+    h3.style.minWidth = '0';
+    modal.insertBefore(wrap, h3);
+    wrap.appendChild(h3);
+    okBtn.style.flexShrink = '0';
+    okBtn.style.fontSize = '13px';
+    okBtn.style.padding = '7px 16px';
+    wrap.appendChild(okBtn);
+  }, 0);
 
   // ---- v1.9.64 — Tab switching (PC only) ----
   if (showPC) {

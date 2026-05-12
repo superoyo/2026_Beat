@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.71",
+      "date": "2026-05-13",
+      "title": "Modal: ปุ่ม Edit/Save ไปบนขวา + sticky (ไม่ต้องเลื่อนลงล่าง)",
+      "summary": "Detail modal (showTeamPcDetailModal) — ปุ่ม '✏️ แก้ไขรายละเอียด' ย้ายไปแถวบนขวา + Edit modal (showHardwareModal ทุก hw type) — ปุ่ม 'บันทึก' (#m-ok) ย้ายไปแถวบนขวา ทั้งสองเป็น sticky header ติดตามตลอด scroll",
+      "changes": [
+        "showTeamPcDetailModal: title row จัด layout ใหม่ — h3+status ซ้าย, ปุ่ม Edit+tile ขวา (stack แนวตั้ง) + sticky bar (full-width banner via negative margin -14 + bottom border)",
+        "showTeamPcDetailModal: modal-actions ด้านล่างเหลือเฉพาะปุ่ม 'ปิด'",
+        "showHardwareModal: DOM manipulation หลัง showModal — ย้าย #m-ok ไปอยู่ในแถวเดียวกับ h3 (top right) + sticky banner",
+        "Sticky header: position:sticky + top:-26px + negative margin -26 (offset modal padding 26px) → ปุ่มลอยตามเสมอ",
+        "เลื่อน scroll ลงล่าง ปุ่มยังเห็นได้ตลอด ไม่ต้องเลื่อนกลับขึ้นมา"
+      ]
+    },
+    {
       "version": "1.9.70",
       "date": "2026-05-08",
       "title": "PC edit modal: 2-column layout (ซ้าย=รูป / ขวา=ฟิลด์) — เหมือนหน้า detail",
