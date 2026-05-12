@@ -2,6 +2,22 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.69",
+      "date": "2026-05-08",
+      "title": "PC edit: ปุ่ม OCR อ่านเลข Asset จากรูป → copy ใส่ช่อง Asset อัตโนมัติ",
+      "summary": "หน้าแก้ไข PC: เพิ่มปุ่ม '🔍 OCR อ่านเลข asset' ข้างปุ่มอัพโหลดรูป asset → ใช้ Tesseract.js client-side อ่านเลขจากรูป → แสดงผลใน textarea แก้ได้ → กด '✓ ใช้ค่านี้' เพื่อ copy ไปช่อง Asset อัตโนมัติ",
+      "changes": [
+        "lazy load Tesseract.js v5 จาก unpkg CDN (โหลดครั้งแรกที่กด OCR)",
+        "helper ensureTesseract() / ocrImage(dataUrl, lang, onProgress) / guessAssetFromOcrText(text)",
+        "guessAssetFromOcrText: เลือกบรรทัดที่มีตัวเลข + ความยาว ≤ 40 char (asset code typically alphanumeric)",
+        "Modal PC: ปุ่ม '🔍 OCR' สีส้มอ่อน ข้างปุ่ม 📷/📸/🗑 (ใต้รูป preview)",
+        "Progress UI: '⏳ recognizing-text 85%' บนปุ่มขณะอ่าน",
+        "Result panel (พื้นเหลือง dashed): textarea แสดงผล + ปุ่ม '✓ ใช้ค่านี้' / 'ยกเลิก'",
+        "Apply: เติม value ลง #hm-asset + flash bg เขียวอ่อน 1.2s + focus input",
+        "ถ้ายังไม่มีรูป → alert บอกให้อัพโหลดก่อน"
+      ]
+    },
+    {
       "version": "1.9.68",
       "date": "2026-05-08",
       "title": "Sidebar Hardware: เมนูย่อย '📦 คอมส่วนกลาง' (PC ไม่มี owner ทั้งระบบ)",

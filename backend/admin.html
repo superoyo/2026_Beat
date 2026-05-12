@@ -890,6 +890,38 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// v1.9.69 — Tesseract.js (OCR) lazy loader + helper สำหรับอ่านรูปภาพหมายเลข asset
+let _tesseractLoading = null;
+function ensureTesseract() {
+  if (window.Tesseract) return Promise.resolve(window.Tesseract);
+  if (_tesseractLoading) return _tesseractLoading;
+  _tesseractLoading = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://unpkg.com/tesseract.js@5/dist/tesseract.min.js';
+    s.onload = () => resolve(window.Tesseract);
+    s.onerror = () => { _tesseractLoading = null; reject(new Error('โหลด Tesseract OCR ไม่สำเร็จ (เช็คอินเทอร์เน็ต)')); };
+    document.head.appendChild(s);
+  });
+  return _tesseractLoading;
+}
+async function ocrImage(dataUrl, lang = 'eng', onProgress) {
+  const T = await ensureTesseract();
+  const opts = onProgress ? { logger: onProgress } : undefined;
+  const result = await T.recognize(dataUrl, lang, opts);
+  return ((result && result.data && result.data.text) || '').trim();
+}
+// แยก OCR text → guess asset number ที่น่าจะถูก (บรรทัดที่มีตัวเลข + ความยาวเหมาะ)
+function guessAssetFromOcrText(text) {
+  const lines = (text || '').split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
+  if (lines.length === 0) return '';
+  // priority: short lines with digits (typical asset codes like "A-001", "FCT-2024-005")
+  const candidates = lines
+    .filter(l => /\d/.test(l) && l.length <= 40)
+    .sort((a, b) => a.length - b.length);
+  if (candidates.length > 0) return candidates[0];
+  return lines[0];
+}
+
 let currentRole = null;  // 'admin' | 'member' | null
 
 async function fetchJson(path, opts = {}) {
@@ -8073,8 +8105,18 @@ async function showHardwareModal(hw, type, afterSubmit) {
               <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
                 <button type="button" class="btn" id="hm-asset-photo-upload-btn" style="font-size:11.5px;padding:5px 10px;text-align:left">📷 อัพโหลด</button>
                 <button type="button" class="btn" id="hm-asset-photo-camera-btn" style="font-size:11.5px;padding:5px 10px;text-align:left">📸 กล้อง</button>
+                <button type="button" class="btn" id="hm-asset-photo-ocr-btn" style="font-size:11.5px;padding:5px 10px;text-align:left;background:rgba(245,158,11,.15);color:#92400e;border-color:rgba(245,158,11,.3)" title="ใช้ OCR อ่านเลข asset จากรูป">🔍 OCR อ่านเลข asset</button>
                 <button type="button" class="btn danger" id="hm-asset-photo-remove-btn" style="font-size:11.5px;padding:5px 10px;text-align:left;${(isEdit && hw.asset_photo_data) ? '' : 'display:none'}">🗑 ลบรูป</button>
                 <input type="file" id="hm-asset-photo-file-input" accept="image/*" style="display:none" />
+              </div>
+            </div>
+            <!-- v1.9.69 — OCR result panel (เริ่มต้นซ่อน) -->
+            <div id="hm-asset-ocr-result" style="display:none;margin-top:8px;padding:8px 10px;background:rgba(245,158,11,.08);border:1px dashed rgba(245,158,11,.35);border-radius:6px">
+              <div style="font-size:11px;color:#92400e;font-weight:700;margin-bottom:4px">📄 ผลการอ่าน OCR (แก้ก่อนใช้ได้)</div>
+              <textarea id="hm-asset-ocr-text" rows="2" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text);font-family:inherit;resize:vertical;box-sizing:border-box"></textarea>
+              <div style="display:flex;gap:6px;margin-top:6px">
+                <button type="button" class="btn primary" id="hm-asset-ocr-apply" style="font-size:11.5px;padding:5px 10px">✓ ใช้ค่านี้เป็น Asset</button>
+                <button type="button" class="btn" id="hm-asset-ocr-close" style="font-size:11.5px;padding:5px 10px">ยกเลิก</button>
               </div>
             </div>
             <input type="hidden" id="hm-asset-photo-data" value="${escapeHtml((isEdit && hw.asset_photo_data) || '')}" />
@@ -8489,6 +8531,59 @@ async function showHardwareModal(hw, type, afterSubmit) {
       if (!confirm('ลบรูปหมายเลข asset?')) return;
       setHmAssetPhoto('');
     });
+    // v1.9.69 — OCR button: อ่านเลข asset จากรูป + ปุ่ม Copy ใส่ในช่อง Asset
+    const ocrBtn = $('hm-asset-photo-ocr-btn');
+    const ocrResult = $('hm-asset-ocr-result');
+    const ocrText = $('hm-asset-ocr-text');
+    if (ocrBtn) {
+      ocrBtn.addEventListener('click', async () => {
+        const dataUrl = $('hm-asset-photo-data').value;
+        if (!dataUrl) {
+          alert('กรุณาอัพโหลดภาพหมายเลข asset ก่อน');
+          return;
+        }
+        const orig = ocrBtn.textContent;
+        ocrBtn.disabled = true;
+        ocrBtn.textContent = '⏳ กำลังอ่าน...';
+        try {
+          const text = await ocrImage(dataUrl, 'eng', (m) => {
+            // progress: m.status / m.progress (0..1)
+            if (m && m.status && typeof m.progress === 'number') {
+              const pct = Math.round(m.progress * 100);
+              ocrBtn.textContent = `⏳ ${m.status} ${pct}%`;
+            }
+          });
+          if (ocrText) ocrText.value = guessAssetFromOcrText(text);
+          if (ocrResult) ocrResult.style.display = '';
+        } catch (e) {
+          alert('OCR ผิดพลาด: ' + e.message);
+        } finally {
+          ocrBtn.disabled = false;
+          ocrBtn.textContent = orig;
+        }
+      });
+    }
+    const ocrApply = $('hm-asset-ocr-apply');
+    if (ocrApply) {
+      ocrApply.addEventListener('click', () => {
+        const v = (ocrText.value || '').trim();
+        if (!v) { alert('ผลการอ่านว่างเปล่า — แก้ใน textarea ก่อน'); return; }
+        const assetInput = $('hm-asset');
+        if (assetInput) {
+          assetInput.value = v;
+          assetInput.focus();
+          assetInput.style.background = 'rgba(16,185,129,.10)';
+          setTimeout(() => { assetInput.style.background = ''; }, 1200);
+        }
+        if (ocrResult) ocrResult.style.display = 'none';
+      });
+    }
+    const ocrClose = $('hm-asset-ocr-close');
+    if (ocrClose) {
+      ocrClose.addEventListener('click', () => {
+        if (ocrResult) ocrResult.style.display = 'none';
+      });
+    }
   }
 }
 
