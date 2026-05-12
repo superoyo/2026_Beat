@@ -3018,12 +3018,14 @@ async function loadTeamDetail(teamId) {
       ${subTeamsHtml}
     </div>
 
-    <div id="team-tabs" style="display:flex;gap:6px;margin:0 0 14px;border-bottom:1px solid var(--border)">
+    <div id="team-tabs" style="display:flex;gap:6px;margin:0 0 14px;border-bottom:1px solid var(--border);flex-wrap:wrap">
       <button class="team-tab active" data-tab="members" style="background:none;border:none;padding:10px 14px;font-size:13.5px;color:var(--primary);font-weight:600;cursor:pointer;border-bottom:2px solid var(--primary)">👥 Members</button>
       <button class="team-tab" data-tab="sites" style="background:none;border:none;padding:10px 14px;font-size:13.5px;color:var(--text-muted);cursor:pointer">🌐 Site Access</button>
+      <button class="team-tab" data-tab="unassigned" style="background:none;border:none;padding:10px 14px;font-size:13.5px;color:var(--text-muted);cursor:pointer">📦 คอมส่วนกลาง ${(data.unassigned_pcs || []).length > 0 ? `<span style="display:inline-flex;align-items:center;margin-left:4px;background:rgba(245,158,11,.15);color:#92400e;font-size:11px;font-weight:700;padding:1px 8px;border-radius:999px">${(data.unassigned_pcs || []).length}</span>` : ''}</button>
     </div>
     <div id="tab-members" class="team-tab-pane"></div>
     <div id="tab-sites" class="team-tab-pane" style="display:none"></div>
+    <div id="tab-unassigned" class="team-tab-pane" style="display:none"></div>
   `;
 
   document.querySelectorAll('#team-tabs .team-tab').forEach(b => {
@@ -3051,6 +3053,118 @@ async function loadTeamDetail(teamId) {
 
   renderTeamMembers(teamId, data.members);
   renderTeamSites(teamId, data.sites);
+  renderTeamUnassignedPcs(teamId, data.unassigned_pcs || []);
+}
+
+// v1.9.67 — Tab: คอมส่วนกลาง (unassigned PCs ใน subtree ของทีมนี้)
+function renderTeamUnassignedPcs(teamId, pcs) {
+  const el = $('tab-unassigned');
+  if (!el) return;
+  if (pcs.length === 0) {
+    el.innerHTML = `
+      <div class="empty" style="padding:24px;text-align:center;line-height:1.6">
+        <div style="font-size:48px;margin-bottom:6px">📭</div>
+        <div style="font-weight:600;color:var(--text);margin-bottom:4px">ยังไม่มีคอมพิวเตอร์ส่วนกลางสำหรับทีมนี้</div>
+        <div style="font-size:12.5px;color:var(--text-muted)">
+          PC ที่ยังไม่มี owner จะแสดงที่นี่ — ระบุ "ทีม/แผนกที่สังกัด" + "ตำแหน่งเก็บ" ในหน้า edit PC
+        </div>
+      </div>
+    `;
+    return;
+  }
+  // sort: by team name → by name
+  const sorted = [...pcs].sort((a, b) => {
+    const tn = (a.unassigned_team_name || '').localeCompare(b.unassigned_team_name || '', 'th');
+    if (tn !== 0) return tn;
+    return (a.name || '').localeCompare(b.name || '', 'th');
+  });
+
+  // group by unassigned_team_name
+  const groups = new Map();
+  sorted.forEach(pc => {
+    const k = pc.unassigned_team_name || '(ไม่ระบุทีม)';
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(pc);
+  });
+
+  const html = `
+    <div class="hint" style="margin-bottom:12px;color:var(--text-muted);font-size:12.5px">
+      📦 รายการ PC ของทีม + ทีมย่อยทั้งหมดที่ <strong>ไม่มี owner</strong> (เก็บเป็นคอมส่วนกลาง/stock) — รวม ${pcs.length} เครื่อง
+    </div>
+    ${Array.from(groups.entries()).map(([teamName, list]) => `
+      <div style="margin-bottom:14px">
+        <div style="font-size:11.5px;font-weight:700;color:var(--primary-dark);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;display:flex;align-items:center;gap:8px">
+          🏢 ${escapeHtml(teamName)}
+          <span style="background:var(--bg-soft);color:var(--text-muted);font-size:11px;padding:1px 8px;border-radius:999px;font-weight:600">${list.length}</span>
+        </div>
+        ${list.map(pc => renderTeamUnassignedPcCard(pc)).join('')}
+      </div>
+    `).join('')}
+  `;
+  el.innerHTML = html;
+
+  // Wire click → detail modal
+  el.querySelectorAll('button[data-tu-pc-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const pcId = parseInt(btn.dataset.tuPcId, 10);
+      const pc = pcs.find(x => x.id === pcId);
+      if (pc) showTeamPcDetailModal(pc, teamId);
+    });
+  });
+}
+
+function renderTeamUnassignedPcCard(pc) {
+  const tile = renderMyDevicePurchaseTile(pc.purchased_at);
+  const ageStr = calcHwAgeStr(pc.purchased_at);
+  const specs = [];
+  if (pc.cpu) specs.push(`🔧 ${escapeHtml(pc.cpu)}`);
+  if (pc.ram) specs.push(`🧠 ${escapeHtml(pc.ram)}`);
+  if (pc.storage) specs.push(`💾 ${escapeHtml(pc.storage)}`);
+  if (pc.os) specs.push(`💿 ${escapeHtml(pc.os)}${pc.os_version ? ' ' + escapeHtml(pc.os_version) : ''}`);
+  let statusBadge = '';
+  if (pc.status) {
+    const map = {
+      active:  { c: 'rgba(16,185,129,.12);color:var(--green)',     l: '✓ ใช้งาน' },
+      repair:  { c: 'rgba(245,158,11,.15);color:#92400e',          l: '🔧 ซ่อม' },
+      stock:   { c: 'rgba(99,102,241,.10);color:#3730a3',          l: '📦 Stock' },
+      retired: { c: 'rgba(220,38,38,.10);color:var(--critical)',   l: '⚠ ปลดระวาง' },
+    };
+    const mp = map[pc.status];
+    if (mp) statusBadge = `<span style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:700;background:${mp.c};white-space:nowrap">${mp.l}</span>`;
+  }
+  const headLine = pc.model
+    ? `${escapeHtml(pc.name)} <span style="color:var(--text-muted);font-weight:500;font-size:12px">— ${escapeHtml(pc.model)}</span>`
+    : escapeHtml(pc.name);
+  const photoBlock = pc.photo_data
+    ? `<img src="${pc.photo_data}" alt="" style="width:64px;height:48px;object-fit:cover;border-radius:5px;border:1px solid var(--border);flex-shrink:0;display:block" />`
+    : `<div style="width:64px;height:48px;border-radius:5px;border:1px dashed var(--border);background:var(--bg-soft);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:20px">📦</div>`;
+  const storageChip = pc.storage_location
+    ? `<div style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:600;background:rgba(99,102,241,.12);color:#3730a3;border:1px solid rgba(99,102,241,.25)">📍 ${escapeHtml(pc.storage_location)}</div>`
+    : `<span style="font-size:11px;color:var(--critical);font-style:italic">⚠ ยังไม่ระบุที่เก็บ</span>`;
+
+  return `
+    <button type="button" data-tu-pc-id="${pc.id}" title="คลิกดูรายละเอียด + แก้ไข"
+       style="display:flex;gap:10px;align-items:flex-start;background:var(--bg-soft);border:1px solid var(--border);border-radius:8px;padding:9px 11px;margin-bottom:6px;width:100%;text-align:left;font-family:inherit;cursor:pointer;transition:background .12s,border-color .12s"
+       onmouseenter="this.style.background='var(--bg-card)';this.style.borderColor='var(--primary)'"
+       onmouseleave="this.style.background='var(--bg-soft)';this.style.borderColor='var(--border)'">
+      ${photoBlock}
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-weight:700;font-size:13px;color:var(--text)">💻 ${headLine}</span>
+          ${statusBadge}
+          <span style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:700;background:rgba(245,158,11,.10);color:#92400e">🔓 ไม่ระบุผู้ดูแล</span>
+          <span style="font-size:10.5px;color:var(--primary);font-weight:600">📖 รายละเอียด</span>
+        </div>
+        ${specs.length ? `<div style="font-size:11.5px;color:var(--text-muted);line-height:1.5">${specs.join(' · ')}</div>` : ''}
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:2px">
+          ${storageChip}
+          ${ageStr ? `<span style="font-size:11px;color:var(--accent);font-weight:600">⏱ ${escapeHtml(ageStr)}</span>` : ''}
+          ${pc.asset_number ? `<span style="font-size:11px;color:var(--text-muted)">🔖 ${escapeHtml(pc.asset_number)}</span>` : ''}
+        </div>
+      </div>
+      ${tile}
+    </button>
+  `;
 }
 
 // v1.9.57 — sort: default = ตามที่ backend ส่งมา (added_at DESC), name = ชื่อ A-Z, pc-age = อายุคอม PC เก่าสุดของ member นั้น

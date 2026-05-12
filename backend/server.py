@@ -2137,11 +2137,28 @@ def admin_get_team(team_id: int, _sess: dict = Depends(require_admin)) -> dict[s
             "ORDER BY display_order ASC, name COLLATE NOCASE ASC",
             (team_id,),
         ).fetchall()
+    # v1.9.67 — unassigned PCs (คอมส่วนกลางที่ยังไม่ผูก owner) ใน subtree นี้
+    with db_conn() as conn:
+        if subtree_ids:
+            pl2 = ",".join("?" * len(subtree_ids))
+            up_rows = conn.execute(
+                f"SELECT h.*, t.name AS unassigned_team_name "
+                f"FROM hardware h "
+                f"LEFT JOIN teams t ON t.id = h.unassigned_team_id "
+                f"WHERE h.hw_type = 'pc' AND h.current_member_id IS NULL "
+                f"  AND h.unassigned_team_id IN ({pl2}) "
+                f"ORDER BY h.name COLLATE NOCASE",
+                subtree_ids,
+            ).fetchall()
+            unassigned_pcs = [dict(r) for r in up_rows]
+        else:
+            unassigned_pcs = []
     return {
         "team": team_dict,
         "parent_path": parent_path,
         "sub_teams": [dict(r) for r in sub_rows],
         "members": members_data,
+        "unassigned_pcs": unassigned_pcs,
         "sites": [
             {**dict(s), "credentials": site_creds.get(s["id"], [])}
             for s in sites

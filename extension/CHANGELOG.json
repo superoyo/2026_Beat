@@ -2,6 +2,22 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.67",
+      "date": "2026-05-08",
+      "title": "Team detail: tab ใหม่ '📦 คอมส่วนกลาง' รวม PC ที่ไม่มี owner",
+      "summary": "หน้า Team detail เพิ่ม tab ที่ 3 — แสดง PC ของทีม + ทีมย่อยที่ยังไม่ผูก owner (เก็บเป็นคอมส่วนกลาง/stock) พร้อม count badge ใน tab + group ตามทีม + แสดง storage location เด่น",
+      "changes": [
+        "Backend admin_get_team: เพิ่ม unassigned_pcs[] — JOIN กับ teams เพื่อ snapshot unassigned_team_name",
+        "Query: WHERE hw_type='pc' AND current_member_id IS NULL AND unassigned_team_id IN (subtree)",
+        "Frontend tab strip: '👥 Members | 🌐 Site Access | 📦 คอมส่วนกลาง (N)' — count badge สีส้มอ่อนเมื่อมี PC",
+        "renderTeamUnassignedPcs: group ตาม unassigned_team_name → แต่ละ group มี header 🏢 + count",
+        "renderTeamUnassignedPcCard: thumbnail 64x48 + ชื่อ/model/status + chip '🔓 ไม่ระบุผู้ดูแล' + spec line + storage chip 📍",
+        "Storage location: chip สีน้ำเงิน-ม่วง — ถ้าไม่มีระบุ → ⚠ 'ยังไม่ระบุที่เก็บ' (เตือน admin)",
+        "คลิก card → showTeamPcDetailModal เปิด detail + edit",
+        "Empty state: 📭 + คำแนะนำให้ระบุ 'ทีม/แผนกที่สังกัด' + 'ตำแหน่งเก็บ' ในหน้า edit PC"
+      ]
+    },
+    {
       "version": "1.9.66",
       "date": "2026-05-08",
       "title": "Hotfix: PC edit modal เปิดจาก Team detail — owner picker/team dropdown ว่าง",
