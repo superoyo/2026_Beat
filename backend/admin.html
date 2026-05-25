@@ -833,6 +833,8 @@
             <a href="#/hardware-network" data-route="hardware-network">📡 Network</a>
           </div>
         </div>
+        <!-- v1.9.76 — Financial Document -->
+        <a href="#/financial-documents" data-route="financial-documents">💰 Financial Document</a>
         <!-- Setting group: รวม Logs + API Key -->
         <div class="nav-group" id="nav-group-setting" data-group-routes="logs,security">
           <button type="button" class="nav-group-toggle" data-group-toggle="setting">
@@ -945,10 +947,10 @@ async function fetchJson(path, opts = {}) {
 }
 
 // admin-only routes — member ห้ามเข้า (bounce ไป default)
-const ADMIN_ONLY_ROUTES = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network']);
+const ADMIN_ONLY_ROUTES = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents']);
 // menu items ที่ซ่อนใน sidebar สำหรับ member
 // (dashboard เห็นได้ทุกบทบาท — ใช้เป็นหน้าแรกของ member ด้วย)
-const HIDE_FROM_MEMBER_NAV = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network']);
+const HIDE_FROM_MEMBER_NAV = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents']);
 
 // ---------- routing ----------
 const routes = {
@@ -960,6 +962,7 @@ const routes = {
   'hardware-pc-unassigned': renderHardwareUnassignedPcsPage,
   'hardware-device':  () => renderHardwarePage('device'),
   'hardware-network': () => renderHardwarePage('network'),
+  'financial-documents': renderFinancialDocumentsPage,
   'my-device':        renderMyDevicePage,
   'domains-config':   renderDomainsConfigPage,
   'services-config':  renderServicesConfigPage,
@@ -7062,6 +7065,522 @@ function renderHwUnassignedPcCard(pc) {
       ${tile}
     </button>
   `;
+}
+
+// =========================================================================
+// v1.9.76 — Financial Documents (เอกสารการสั่งซื้อ + OCR auto-fill)
+// =========================================================================
+let _findocList = [];
+let _findocCurrentDoc = null;
+let _findocCurrentPages = [];
+let _findocViewMode = 'list';   // 'list' | 'detail'
+let _findocCurrentId = null;
+
+// Compress image to JPEG dataURL (max width + quality)
+async function compressImageToJpeg(input, maxWidth = 1200, quality = 0.85) {
+  const dataUrl = (typeof input === 'string')
+    ? input
+    : await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = e => res(e.target.result);
+        r.onerror = rej;
+        r.readAsDataURL(input);
+      });
+  const img = await new Promise((res, rej) => {
+    const i = new Image();
+    i.onload = () => res(i);
+    i.onerror = rej;
+    i.src = dataUrl;
+  });
+  const ratio = Math.min(1, maxWidth / img.naturalWidth);
+  const w = Math.round(img.naturalWidth * ratio);
+  const h = Math.round(img.naturalHeight * ratio);
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+  return canvas.toDataURL('image/jpeg', quality);
+}
+
+// Try parse "ใบสั่งจ่าย" → { name, doc_date, amount }
+function parsePaymentOrderText(text) {
+  const t = String(text || '');
+  const isPaymentOrder = /ใบสั่ง\s*จ่าย|payment\s*order|ใบสั่ง\s*ซื้อ|purchase\s*order/i.test(t);
+  if (!isPaymentOrder) return null;
+  const out = { name: null, doc_date: null, amount: null };
+  // Particulars / รายการ → next non-empty line
+  const partMatch = /(?:รายการ|particulars)\s*:?[ \t]*([^\n\r]{2,200})/i.exec(t)
+                 || /(?:รายการ|particulars)[\s\S]{0,3}\n+\s*([^\n\r]{2,200})/i.exec(t);
+  if (partMatch) out.name = partMatch[1].trim().replace(/\s+/g, ' ').slice(0, 200);
+  // Date — DD/MM/YYYY, DD-MM-YYYY, etc.
+  const dateMatch = /(\d{1,2})[\/\-\.\s](\d{1,2})[\/\-\.\s](\d{2,4})/.exec(t);
+  if (dateMatch) {
+    let d = parseInt(dateMatch[1], 10);
+    let mo = parseInt(dateMatch[2], 10);
+    let y = parseInt(dateMatch[3], 10);
+    if (y < 100) y += 2500;        // 2-digit BE
+    if (y > 2400 && y < 2700) y -= 543;  // BE → Gregorian
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31 && y >= 1900 && y <= 2100) {
+      out.doc_date = `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    }
+  }
+  // Amount — look for big number near รวม/total/บาท
+  const amtMatch = /(?:รวม|total|จำนวนเงิน|ยอดเงิน|amount)\D*([\d,]+\.?\d{0,2})/i.exec(t)
+                || /([\d,]{4,}\.\d{2})\s*(?:บาท|baht)/i.exec(t)
+                || /([\d,]{4,})\s*(?:บาท|baht)\b/i.exec(t);
+  if (amtMatch) {
+    const n = parseFloat(amtMatch[1].replace(/,/g, ''));
+    if (!isNaN(n) && n > 0) out.amount = n;
+  }
+  return out;
+}
+
+function fmtFinDocDate(iso) {
+  if (!iso) return '—';
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!m) return iso;
+  const monthsTh = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  return `${parseInt(m[3], 10)} ${monthsTh[parseInt(m[2], 10) - 1]} ${parseInt(m[1], 10) + 543}`;
+}
+function fmtFinDocAmount(amt, ccy) {
+  if (amt == null) return '—';
+  const n = Number(amt);
+  if (isNaN(n)) return '—';
+  return n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ' + (ccy || 'THB');
+}
+
+async function renderFinancialDocumentsPage() {
+  if (_findocViewMode === 'detail' && _findocCurrentId != null) {
+    return renderFinDocDetailPage(_findocCurrentId);
+  }
+  return renderFinDocListPage();
+}
+
+async function renderFinDocListPage() {
+  _findocViewMode = 'list';
+  _findocCurrentId = null;
+  $('main').innerHTML = `
+    <style id="fd-style">
+      .fd-grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); }
+      .fd-card { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:10px; cursor:pointer; transition:border-color .12s, box-shadow .12s; display:flex; flex-direction:column; gap:8px; }
+      .fd-card:hover { border-color:var(--primary); box-shadow:0 2px 8px rgba(0,0,0,.08); }
+      .fd-thumb { width:100%; aspect-ratio:3/4; background:#0f172a; border-radius:8px; overflow:hidden; display:flex; align-items:center; justify-content:center; color:#64748b; font-size:36px; }
+      .fd-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+      .fd-name { font-weight:700; font-size:14px; color:var(--text); line-height:1.4; word-break:break-word; }
+      .fd-meta { font-size:12px; color:var(--text-muted); line-height:1.5; }
+      .fd-amount { font-weight:700; color:var(--green); font-variant-numeric:tabular-nums; }
+      @media (max-width: 768px) {
+        .fd-grid { grid-template-columns:1fr; }
+        .fd-thumb { aspect-ratio:4/3; }
+        .fd-card { padding:14px; }
+        .fd-card .btn { font-size:14px; padding:10px 14px; min-height:42px; }
+        #fd-add-btn { font-size:15px; padding:11px 18px; min-height:44px; width:100%; }
+      }
+    </style>
+    <div class="page-head" style="flex-wrap:wrap;gap:10px">
+      <h2 class="page-title">💰 Financial Document</h2>
+      <button class="btn primary" id="fd-add-btn">+ เพิ่มเอกสาร</button>
+    </div>
+    <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px">
+      เอกสารการสั่งซื้อ (ใบสั่งจ่าย/ใบเสร็จ/อื่น ๆ) — 1 ชุดมีหลายหน้า อัพโหลดทีละหน้าหรือถ่ายจากมือถือ
+      OCR จะอ่าน "ใบสั่งจ่าย" อัตโนมัติแล้ว auto-fill ชื่อ/วันที่/จำนวนเงิน
+    </div>
+    <div id="fd-list"><div class="empty">กำลังโหลด…</div></div>
+  `;
+  $('fd-add-btn').addEventListener('click', () => showFinDocCreateModal());
+  await loadFinDocList();
+}
+
+async function loadFinDocList() {
+  try {
+    const d = await fetchJson('/api/admin/financial-documents');
+    _findocList = d.documents || [];
+  } catch (e) {
+    const el = $('fd-list');
+    if (el) el.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  renderFinDocList();
+}
+
+function renderFinDocList() {
+  const el = $('fd-list');
+  if (!el) return;
+  if (_findocList.length === 0) {
+    el.innerHTML = `
+      <div class="empty" style="padding:32px;text-align:center;line-height:1.7">
+        <div style="font-size:48px;margin-bottom:8px">📄</div>
+        <div style="font-weight:600;color:var(--text);margin-bottom:4px">ยังไม่มีเอกสาร</div>
+        <div style="font-size:12.5px;color:var(--text-muted)">กดปุ่ม <strong>+ เพิ่มเอกสาร</strong> เพื่ออัพโหลด</div>
+      </div>
+    `;
+    return;
+  }
+  el.innerHTML = `<div class="fd-grid">${_findocList.map(d => `
+    <button type="button" class="fd-card" data-fd-id="${d.id}" style="text-align:left;font-family:inherit;border:1px solid var(--border)">
+      <div class="fd-thumb">${d.first_page_image ? `<img src="${d.first_page_image}" alt="" />` : '📄'}</div>
+      <div class="fd-name">${escapeHtml(d.name)}</div>
+      <div class="fd-meta">📅 ${escapeHtml(fmtFinDocDate(d.doc_date))} · 📃 ${d.page_count} หน้า</div>
+      <div class="fd-amount">${escapeHtml(fmtFinDocAmount(d.amount, d.currency))}</div>
+    </button>
+  `).join('')}</div>`;
+  el.querySelectorAll('button[data-fd-id]').forEach(b => {
+    b.addEventListener('click', () => {
+      const id = parseInt(b.dataset.fdId, 10);
+      _findocViewMode = 'detail';
+      _findocCurrentId = id;
+      renderFinDocDetailPage(id);
+    });
+  });
+}
+
+async function renderFinDocDetailPage(docId) {
+  _findocViewMode = 'detail';
+  _findocCurrentId = docId;
+  $('main').innerHTML = `
+    <style id="fd-style">
+      .fd-pages { display:grid; gap:10px; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); }
+      .fd-page-card { background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:6px; position:relative; }
+      .fd-page-card img { width:100%; aspect-ratio:3/4; object-fit:cover; border-radius:5px; display:block; cursor:zoom-in; }
+      .fd-page-num { position:absolute; top:8px; left:8px; background:rgba(15,23,42,.85); color:#fff; font-size:11px; font-weight:700; padding:2px 8px; border-radius:6px; }
+      .fd-page-del { position:absolute; top:8px; right:8px; background:var(--critical); color:#fff; border:none; width:24px; height:24px; border-radius:50%; cursor:pointer; font-size:12px; }
+      @media (max-width: 768px) {
+        .fd-pages { grid-template-columns:repeat(2,1fr); }
+        .fd-form-grid { grid-template-columns:1fr !important; }
+        .fd-page-del { width:32px; height:32px; font-size:14px; }
+      }
+    </style>
+    <div class="page-head" style="flex-wrap:wrap;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <button class="btn" id="fd-back" style="font-size:12.5px;padding:5px 12px">← ย้อนกลับ</button>
+        <h2 class="page-title" style="margin:0">📄 รายละเอียดเอกสาร</h2>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn danger" id="fd-del" style="font-size:12.5px;padding:5px 12px">🗑 ลบ</button>
+      </div>
+    </div>
+    <div id="fd-detail-body"><div class="empty">กำลังโหลด…</div></div>
+  `;
+  $('fd-back').addEventListener('click', () => {
+    _findocViewMode = 'list';
+    _findocCurrentId = null;
+    location.hash = '#/financial-documents';
+  });
+  $('fd-del').addEventListener('click', async () => {
+    if (!confirm('ลบเอกสารชุดนี้ทั้งหมด? (รวมทุกหน้า)')) return;
+    try {
+      await fetchJson(`/api/admin/financial-documents/${docId}`, { method: 'DELETE' });
+      _findocViewMode = 'list';
+      _findocCurrentId = null;
+      location.hash = '#/financial-documents';
+    } catch (e) { alert('ลบไม่สำเร็จ: ' + e.message); }
+  });
+  await loadFinDocDetail(docId);
+}
+
+async function loadFinDocDetail(docId) {
+  let data;
+  try {
+    data = await fetchJson(`/api/admin/financial-documents/${docId}`);
+  } catch (e) {
+    const el = $('fd-detail-body');
+    if (el) el.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  _findocCurrentDoc = data.document;
+  _findocCurrentPages = data.pages || [];
+  renderFinDocDetailBody();
+}
+
+function renderFinDocDetailBody() {
+  const el = $('fd-detail-body');
+  if (!el || !_findocCurrentDoc) return;
+  const d = _findocCurrentDoc;
+  el.innerHTML = `
+    <!-- Header form -->
+    <div class="card" style="display:block;margin-bottom:14px;padding:14px">
+      <h3 style="margin:0 0 12px;font-size:14.5px;font-weight:700">📋 ข้อมูลชุดเอกสาร</h3>
+      <div class="field">
+        <label>ชื่อชุดเอกสาร *</label>
+        <input id="fd-h-name" type="text" value="${escapeHtml(d.name || '')}" placeholder="เช่น ใบสั่งจ่าย — ค่าโฮสติ้ง" maxlength="300" />
+      </div>
+      <div class="fd-form-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+        <div class="field">
+          <label>วันที่</label>
+          <input id="fd-h-date" type="date" value="${escapeHtml(d.doc_date || '')}" />
+        </div>
+        <div class="field">
+          <label>จำนวนเงิน</label>
+          <input id="fd-h-amount" type="number" step="0.01" value="${d.amount != null ? d.amount : ''}" placeholder="0.00" />
+        </div>
+        <div class="field">
+          <label>สกุลเงิน</label>
+          <input id="fd-h-ccy" type="text" value="${escapeHtml(d.currency || 'THB')}" maxlength="10" />
+        </div>
+      </div>
+      <div class="field">
+        <label>ผู้รับเงิน / vendor</label>
+        <input id="fd-h-vendor" type="text" value="${escapeHtml(d.vendor || '')}" placeholder="ชื่อผู้รับเงิน" maxlength="200" />
+      </div>
+      <div class="field">
+        <label>หมายเหตุ</label>
+        <textarea id="fd-h-notes" rows="2" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical">${escapeHtml(d.notes || '')}</textarea>
+      </div>
+      <div class="hint" id="fd-h-msg" style="display:none;margin:6px 0"></div>
+      <button class="btn primary" id="fd-save-header">บันทึก</button>
+    </div>
+
+    <!-- Pages grid -->
+    <div class="card" style="display:block;padding:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+        <h3 style="margin:0;font-size:14.5px;font-weight:700">📃 หน้าเอกสาร (${_findocCurrentPages.length})</h3>
+        <button class="btn primary" id="fd-add-page-btn">+ เพิ่มหน้า</button>
+      </div>
+      ${_findocCurrentPages.length === 0
+        ? '<div class="empty" style="padding:18px">ยังไม่มีหน้า — กด <strong>+ เพิ่มหน้า</strong></div>'
+        : `<div class="fd-pages">${_findocCurrentPages.map((p, i) => `
+            <div class="fd-page-card">
+              <div class="fd-page-num">${i + 1}</div>
+              <button class="fd-page-del" data-fd-page-del="${p.id}" title="ลบหน้านี้">×</button>
+              <img src="${p.image_data}" alt="page ${i + 1}" data-fd-page-preview="${p.id}" />
+            </div>
+          `).join('')}</div>`
+      }
+    </div>
+  `;
+  // Wire header save
+  $('fd-save-header').addEventListener('click', async () => {
+    const body = {
+      name: $('fd-h-name').value.trim(),
+      doc_date: $('fd-h-date').value || null,
+      amount: $('fd-h-amount').value ? parseFloat($('fd-h-amount').value) : null,
+      currency: $('fd-h-ccy').value.trim() || null,
+      vendor: $('fd-h-vendor').value.trim() || null,
+      notes: $('fd-h-notes').value.trim() || null,
+    };
+    if (!body.name) { setFdMsg('fd-h-msg', 'กรอกชื่อชุดเอกสาร', true); return; }
+    try {
+      await fetchJson(`/api/admin/financial-documents/${_findocCurrentId}`, {
+        method: 'PATCH', body: JSON.stringify(body),
+      });
+      setFdMsg('fd-h-msg', '✓ บันทึกแล้ว', false);
+    } catch (e) { setFdMsg('fd-h-msg', e.message, true); }
+  });
+  // Wire add page
+  $('fd-add-page-btn').addEventListener('click', () => showFinDocAddPageModal(_findocCurrentId, false));
+  // Wire delete page
+  document.querySelectorAll('button[data-fd-page-del]').forEach(b => {
+    b.addEventListener('click', async () => {
+      const pid = parseInt(b.dataset.fdPageDel, 10);
+      if (!confirm('ลบหน้านี้?')) return;
+      try {
+        await fetchJson(`/api/admin/financial-document-pages/${pid}`, { method: 'DELETE' });
+        await loadFinDocDetail(_findocCurrentId);
+      } catch (e) { alert('ลบไม่สำเร็จ: ' + e.message); }
+    });
+  });
+  // Wire preview (lightbox)
+  document.querySelectorAll('img[data-fd-page-preview]').forEach(img => {
+    img.addEventListener('click', () => {
+      const bg = document.createElement('div');
+      bg.className = 'modal-bg';
+      bg.style.zIndex = '1100';
+      bg.innerHTML = `<div class="modal modal-xwide" style="padding:14px"><img src="${img.src}" style="display:block;width:100%;max-height:80vh;object-fit:contain;background:#0f172a;border-radius:8px" /><div class="modal-actions" style="margin-top:10px"><button class="btn primary" id="fdp-close">ปิด</button></div></div>`;
+      document.body.appendChild(bg);
+      const close = () => bg.remove();
+      bg.querySelector('#fdp-close').addEventListener('click', close);
+      bg.addEventListener('click', e => { if (e.target === bg) close(); });
+    });
+  });
+}
+function setFdMsg(id, text, isErr) {
+  const el = $(id);
+  if (!el) return;
+  el.textContent = text;
+  el.style.display = '';
+  el.style.color = isErr ? 'var(--critical)' : 'var(--green)';
+}
+
+// Modal: เพิ่มเอกสารชุดใหม่ — drag-drop ไฟล์ + ถ่ายกล้อง + auto-OCR หน้าแรก
+function showFinDocCreateModal() {
+  showModal({
+    title: '+ เพิ่มเอกสารใหม่',
+    size: 'wide',
+    body: `
+      <div class="hint" style="margin-bottom:10px;color:var(--text-muted);font-size:12.5px">
+        อัพโหลดรูปหน้าแรกของเอกสาร — ระบบจะ OCR หาคำว่า "ใบสั่งจ่าย" แล้วเติมข้อมูลให้อัตโนมัติ
+      </div>
+      <div id="fd-drop" style="border:2.5px dashed var(--border);border-radius:10px;padding:24px;text-align:center;background:var(--bg-soft);cursor:pointer;transition:border-color .12s, background .12s">
+        <div style="font-size:36px;margin-bottom:8px">📥</div>
+        <div style="font-weight:600;font-size:14px;margin-bottom:4px">ลากไฟล์มาวาง หรือคลิกเพื่อเลือก</div>
+        <div style="font-size:11.5px;color:var(--text-muted)">รองรับ JPG / PNG / HEIC</div>
+        <input type="file" id="fd-create-file" accept="image/*" style="display:none" />
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button type="button" class="btn" id="fd-create-camera" style="flex:1;min-width:140px;font-size:13px;padding:9px">📸 ถ่ายจากกล้อง</button>
+      </div>
+      <div id="fd-create-status" style="display:none;margin-top:10px;padding:8px 10px;background:rgba(37,99,235,.08);border-radius:6px;font-size:12.5px;color:var(--primary-dark)"></div>
+    `,
+    onSubmit: async () => { /* no submit — actions inline */ },
+  });
+  setTimeout(() => {
+    const okBtn = document.querySelector('.modal-bg .modal #m-ok');
+    if (okBtn) okBtn.style.display = 'none';
+    const drop = document.querySelector('.modal-bg #fd-drop');
+    const fileInp = document.querySelector('.modal-bg #fd-create-file');
+    const camBtn = document.querySelector('.modal-bg #fd-create-camera');
+    const status = document.querySelector('.modal-bg #fd-create-status');
+    if (!drop || !fileInp || !camBtn) return;
+    const handleFile = (file) => processFinDocFirstPage(file, status);
+    drop.addEventListener('click', () => fileInp.click());
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.style.borderColor = 'var(--primary)'; drop.style.background = 'rgba(37,99,235,.05)'; });
+    drop.addEventListener('dragleave', () => { drop.style.borderColor = 'var(--border)'; drop.style.background = 'var(--bg-soft)'; });
+    drop.addEventListener('drop', (e) => {
+      e.preventDefault();
+      drop.style.borderColor = 'var(--border)';
+      drop.style.background = 'var(--bg-soft)';
+      const f = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) handleFile(f);
+    });
+    fileInp.addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (f) handleFile(f);
+      fileInp.value = '';
+    });
+    camBtn.addEventListener('click', () => {
+      // Reuse openCameraModal — callback receives dataUrl
+      openCameraModal(async (dataUrl) => {
+        if (dataUrl) processFinDocFirstPage(dataUrl, status);
+      });
+    });
+  }, 10);
+}
+
+async function processFinDocFirstPage(input, statusEl) {
+  const setStatus = (msg) => {
+    if (statusEl) { statusEl.style.display = ''; statusEl.innerHTML = msg; }
+  };
+  try {
+    setStatus('⏳ กำลังย่อรูป...');
+    const compressed = await compressImageToJpeg(input, 1200, 0.85);
+    setStatus('⏳ กำลัง OCR อ่านเอกสาร... (อาจใช้เวลา 5-10 วินาที)');
+    let ocrText = '';
+    try {
+      ocrText = await ocrImage(compressed, 'eng+tha', (m) => {
+        if (m && m.status && typeof m.progress === 'number') {
+          const pct = Math.round(m.progress * 100);
+          setStatus(`⏳ OCR: ${m.status} ${pct}%`);
+        }
+      });
+    } catch (e) {
+      // OCR fail → ดำเนินการต่อโดยไม่มี parse
+      ocrText = '';
+    }
+    const parsed = parsePaymentOrderText(ocrText) || {};
+    // สร้างเอกสารใหม่
+    const name = parsed.name || `เอกสาร ${new Date().toLocaleDateString('th-TH')}`;
+    setStatus('⏳ กำลังบันทึกเอกสาร...');
+    const created = await fetchJson('/api/admin/financial-documents', {
+      method: 'POST',
+      body: JSON.stringify({
+        name,
+        doc_date: parsed.doc_date || null,
+        amount: parsed.amount || null,
+        currency: 'THB',
+      }),
+    });
+    // Upload หน้าแรก
+    await fetchJson(`/api/admin/financial-documents/${created.id}/pages`, {
+      method: 'POST',
+      body: JSON.stringify({
+        image_data: compressed,
+        ocr_text: ocrText || null,
+      }),
+    });
+    // Close modal + navigate to detail
+    const bg = document.querySelector('.modal-bg');
+    if (bg) bg.remove();
+    _findocViewMode = 'detail';
+    _findocCurrentId = created.id;
+    location.hash = '#/financial-documents';
+    await renderFinDocDetailPage(created.id);
+    if (parsed.name || parsed.doc_date || parsed.amount) {
+      showSavedToast(`✓ OCR สำเร็จ — เติม ${[parsed.name && 'ชื่อ', parsed.doc_date && 'วันที่', parsed.amount && 'จำนวนเงิน'].filter(Boolean).join('/')} ให้แล้ว`);
+    } else {
+      showSavedToast('✓ บันทึกหน้าแรกแล้ว (OCR ไม่เจอ "ใบสั่งจ่าย" — กรอกข้อมูลเอง)');
+    }
+  } catch (e) {
+    setStatus('❌ ' + e.message);
+  }
+}
+
+// Modal: เพิ่มหน้าใหม่เข้าเอกสารที่มีอยู่ (drag-drop + camera, ไม่ OCR auto-fill)
+function showFinDocAddPageModal(docId) {
+  showModal({
+    title: '+ เพิ่มหน้าเอกสาร',
+    size: 'wide',
+    body: `
+      <div id="fd-drop2" style="border:2.5px dashed var(--border);border-radius:10px;padding:24px;text-align:center;background:var(--bg-soft);cursor:pointer">
+        <div style="font-size:36px;margin-bottom:8px">📥</div>
+        <div style="font-weight:600;font-size:14px;margin-bottom:4px">ลากไฟล์มาวาง หรือคลิกเพื่อเลือก</div>
+        <input type="file" id="fd-page-file" accept="image/*" multiple style="display:none" />
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button type="button" class="btn" id="fd-page-cam" style="flex:1;font-size:13px;padding:9px">📸 ถ่ายจากกล้อง</button>
+      </div>
+      <div id="fd-page-status" style="display:none;margin-top:10px;padding:8px 10px;background:rgba(37,99,235,.08);border-radius:6px;font-size:12.5px;color:var(--primary-dark)"></div>
+    `,
+    onSubmit: async () => {},
+  });
+  setTimeout(() => {
+    const okBtn = document.querySelector('.modal-bg .modal #m-ok');
+    if (okBtn) okBtn.style.display = 'none';
+    const drop = document.querySelector('.modal-bg #fd-drop2');
+    const fileInp = document.querySelector('.modal-bg #fd-page-file');
+    const cam = document.querySelector('.modal-bg #fd-page-cam');
+    const status = document.querySelector('.modal-bg #fd-page-status');
+    const addPage = async (input) => {
+      try {
+        status.style.display = '';
+        status.textContent = '⏳ กำลังย่อรูป...';
+        const dataUrl = await compressImageToJpeg(input, 1200, 0.85);
+        status.textContent = '⏳ กำลังบันทึก...';
+        await fetchJson(`/api/admin/financial-documents/${docId}/pages`, {
+          method: 'POST',
+          body: JSON.stringify({ image_data: dataUrl }),
+        });
+        const bg = document.querySelector('.modal-bg');
+        if (bg) bg.remove();
+        await loadFinDocDetail(docId);
+        showSavedToast('✓ เพิ่มหน้าแล้ว');
+      } catch (e) {
+        status.textContent = '❌ ' + e.message;
+      }
+    };
+    drop.addEventListener('click', () => fileInp.click());
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.style.borderColor = 'var(--primary)'; });
+    drop.addEventListener('dragleave', () => { drop.style.borderColor = 'var(--border)'; });
+    drop.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      drop.style.borderColor = 'var(--border)';
+      const files = Array.from(e.dataTransfer.files || []);
+      // Upload sequentially
+      for (const f of files) await addPage(f);
+    });
+    fileInp.addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files || []);
+      for (const f of files) await addPage(f);
+      fileInp.value = '';
+    });
+    cam.addEventListener('click', () => {
+      openCameraModal(async (dataUrl) => {
+        if (dataUrl) await addPage(dataUrl);
+      });
+    });
+  }, 10);
 }
 
 async function renderHardwarePage(type) {

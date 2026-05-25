@@ -2,6 +2,24 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.76",
+      "date": "2026-05-13",
+      "title": "Financial Document: เมนูใหม่ — เก็บเอกสารสั่งซื้อ + OCR auto-fill (Phase 1)",
+      "summary": "เมนูใหม่ '💰 Financial Document' — เก็บเอกสารการสั่งซื้อหลายหน้าต่อชุด อัพโหลดผ่าน drag-drop หรือกล้องมือถือ มี OCR อ่าน 'ใบสั่งจ่าย' auto-fill ชื่อ/วันที่/จำนวนเงิน + responsive layout (mobile-friendly) — Phase 2: ผูกกับ Hardware items",
+      "changes": [
+        "DB: 2 tables ใหม่ — financial_documents (header: name/doc_date/amount/currency/vendor/notes) + financial_document_pages (M:1 images ต่อ doc)",
+        "Backend APIs: GET/POST/PATCH/DELETE /api/admin/financial-documents + POST/DELETE pages",
+        "Frontend: เมนู '💰 Financial Document' ใน sidebar (admin only)",
+        "Helper: compressImageToJpeg(input, maxWidth=1200, quality=0.85) — client-side resize",
+        "Helper: parsePaymentOrderText(text) — regex detect 'ใบสั่งจ่าย' → extract Particulars (next line after 'รายการ') + Date (DD/MM/YYYY or BE/AD) + Amount (near รวม/total/บาท)",
+        "List page: card grid (responsive — auto-fill minmax 260px → 1 col บนมือถือ) + thumb หน้าแรก + ชื่อ/วันที่ พ.ศ./จำนวน/page count",
+        "Detail page: header form (ชื่อ/วันที่/จำนวน/สกุล/vendor/notes) + pages grid (responsive 150px → 2 cols mobile) + ลบ/preview lightbox",
+        "Add modal: drag-drop area + ปุ่ม 📸 ถ่ายจากกล้อง (reuse openCameraModal) → process แรก: compress → OCR (eng+tha) → parsePaymentOrderText → auto-create doc + upload page",
+        "Add-page modal: drag-drop หลายไฟล์พร้อมกัน + camera (ไม่ OCR — เพิ่มหน้าธรรมดา)",
+        "Mobile-friendly @media (max-width:768px): card grid → 1 col, buttons larger (min 42-44px), thumbnails 4:3 instead of 3:4, page grid 2 cols"
+      ]
+    },
+    {
       "version": "1.9.75",
       "date": "2026-05-13",
       "title": "Member profile: เพิ่มวันเกิด + คำนวณอายุ (ปี/เดือน) + แสดง พ.ศ.",

@@ -320,6 +320,28 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_hw_asg_hw ON hardware_assignments(hardware_id);
             CREATE INDEX IF NOT EXISTS idx_hw_asg_member ON hardware_assignments(member_id);
 
+            -- v1.9.76 — Financial Document (เอกสารการสั่งซื้อ) + หลายหน้าต่อชุด
+            CREATE TABLE IF NOT EXISTS financial_documents (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT NOT NULL,           -- ชื่อชุดเอกสาร (auto จาก OCR หรือ user)
+                doc_date    TEXT,                    -- ISO YYYY-MM-DD (จาก OCR หรือ user)
+                amount      REAL,                    -- จำนวนเงิน (จาก OCR หรือ user)
+                currency    TEXT DEFAULT 'THB',
+                vendor      TEXT,                    -- ผู้รับเงิน (optional)
+                notes       TEXT,
+                created_at  TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_findoc_date ON financial_documents(doc_date);
+            CREATE TABLE IF NOT EXISTS financial_document_pages (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                document_id  INTEGER NOT NULL REFERENCES financial_documents(id) ON DELETE CASCADE,
+                page_order   INTEGER NOT NULL DEFAULT 0,
+                image_data   TEXT NOT NULL,          -- base64 JPEG ~1200px q=0.85
+                ocr_text     TEXT,                   -- ผล OCR (ไว้ debug / search future)
+                created_at   TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_findoc_pages_doc ON financial_document_pages(document_id, page_order);
+
             -- v1.9.25 — บริการ Hosting / SSL / Others + ผูกกับ domain (Website)
             CREATE TABLE IF NOT EXISTS services (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4764,6 +4786,189 @@ def my_hardware_update_photo(
         )
     return {"ok": True}
 
+
+# =============================================================================
+# v1.9.76 — Financial Documents (เอกสารการสั่งซื้อ) + หลายหน้าต่อชุด
+# =============================================================================
+
+class FinDocIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=300)
+    doc_date: Optional[str] = Field(None, max_length=20)  # ISO YYYY-MM-DD
+    amount: Optional[float] = Field(None, ge=0)
+    currency: Optional[str] = Field(None, max_length=10)
+    vendor: Optional[str] = Field(None, max_length=200)
+    notes: Optional[str] = Field(None, max_length=2000)
+
+
+class FinDocPatchIn(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=300)
+    doc_date: Optional[str] = Field(None, max_length=20)
+    amount: Optional[float] = Field(None, ge=0)
+    currency: Optional[str] = Field(None, max_length=10)
+    vendor: Optional[str] = Field(None, max_length=200)
+    notes: Optional[str] = Field(None, max_length=2000)
+
+
+class FinDocPageIn(BaseModel):
+    image_data: str = Field(..., max_length=2_500_000)  # base64 data URL JPEG ~1200px
+    ocr_text: Optional[str] = Field(None, max_length=20000)
+
+
+def _findoc_row(r: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": r["id"],
+        "name": r["name"],
+        "doc_date": r["doc_date"],
+        "amount": r["amount"],
+        "currency": r["currency"],
+        "vendor": r["vendor"],
+        "notes": r["notes"],
+        "created_at": r["created_at"],
+    }
+
+
+@app.get("/api/admin/financial-documents")
+def admin_list_findocs(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    """List financial documents — รวม page_count + first_page_thumb (JPEG resized 200px)"""
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT d.id, d.name, d.doc_date, d.amount, d.currency, d.vendor, d.notes, "
+            "  d.created_at, "
+            "  (SELECT COUNT(*) FROM financial_document_pages WHERE document_id = d.id) AS page_count, "
+            "  (SELECT image_data FROM financial_document_pages WHERE document_id = d.id "
+            "    ORDER BY page_order ASC, id ASC LIMIT 1) AS first_page_image "
+            "FROM financial_documents d "
+            "ORDER BY COALESCE(d.doc_date, d.created_at) DESC, d.id DESC"
+        ).fetchall()
+    return {"documents": [dict(r) for r in rows]}
+
+
+@app.post("/api/admin/financial-documents")
+def admin_create_findoc(
+    payload: FinDocIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    now = utc_now().isoformat()
+    s = lambda v: (v.strip() if isinstance(v, str) else v) or None
+    with db_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO financial_documents(name, doc_date, amount, currency, vendor, notes, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                payload.name.strip(),
+                s(payload.doc_date),
+                payload.amount,
+                s(payload.currency) or "THB",
+                s(payload.vendor),
+                s(payload.notes),
+                now,
+            ),
+        )
+    return {"ok": True, "id": cur.lastrowid}
+
+
+@app.get("/api/admin/financial-documents/{doc_id}")
+def admin_get_findoc(
+    doc_id: int,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    with db_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM financial_documents WHERE id = ?", (doc_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="document not found")
+        pages = conn.execute(
+            "SELECT id, page_order, image_data, ocr_text, created_at "
+            "FROM financial_document_pages WHERE document_id = ? "
+            "ORDER BY page_order ASC, id ASC",
+            (doc_id,),
+        ).fetchall()
+    return {
+        "document": _findoc_row(row),
+        "pages": [dict(p) for p in pages],
+    }
+
+
+@app.patch("/api/admin/financial-documents/{doc_id}")
+def admin_update_findoc(
+    doc_id: int,
+    payload: FinDocPatchIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    raw = payload.model_dump(exclude_unset=True)
+    updates: dict[str, Any] = {}
+    for f in ("name", "doc_date", "currency", "vendor", "notes"):
+        if f in raw:
+            v = raw[f]
+            updates[f] = (v.strip() if isinstance(v, str) else v) or None
+    if "amount" in raw:
+        updates["amount"] = raw["amount"]
+    if not updates:
+        raise HTTPException(status_code=400, detail="ไม่มีอะไรให้บันทึก")
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    with db_conn() as conn:
+        cur = conn.execute(
+            f"UPDATE financial_documents SET {set_clause} WHERE id = ?",
+            list(updates.values()) + [doc_id],
+        )
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="document not found")
+    return {"ok": True}
+
+
+@app.delete("/api/admin/financial-documents/{doc_id}")
+def admin_delete_findoc(
+    doc_id: int,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    with db_conn() as conn:
+        cur = conn.execute("DELETE FROM financial_documents WHERE id = ?", (doc_id,))
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="document not found")
+    return {"ok": True}
+
+
+@app.post("/api/admin/financial-documents/{doc_id}/pages")
+def admin_add_findoc_page(
+    doc_id: int,
+    payload: FinDocPageIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """เพิ่มหน้าใหม่ — page_order = max + 1 (auto)"""
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        exists = conn.execute(
+            "SELECT id FROM financial_documents WHERE id = ?", (doc_id,)
+        ).fetchone()
+        if not exists:
+            raise HTTPException(status_code=404, detail="document not found")
+        next_order_row = conn.execute(
+            "SELECT COALESCE(MAX(page_order), -1) + 1 AS next_order "
+            "FROM financial_document_pages WHERE document_id = ?",
+            (doc_id,),
+        ).fetchone()
+        next_order = next_order_row["next_order"] if next_order_row else 0
+        cur = conn.execute(
+            "INSERT INTO financial_document_pages(document_id, page_order, image_data, ocr_text, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (doc_id, next_order, payload.image_data, payload.ocr_text, now),
+        )
+    return {"ok": True, "id": cur.lastrowid, "page_order": next_order}
+
+
+@app.delete("/api/admin/financial-document-pages/{page_id}")
+def admin_delete_findoc_page(
+    page_id: int,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    with db_conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM financial_document_pages WHERE id = ?", (page_id,)
+        )
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="page not found")
+    return {"ok": True}
 
 
 class ServiceIn(BaseModel):
