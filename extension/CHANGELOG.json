@@ -2,6 +2,21 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.79",
+      "date": "2026-05-13",
+      "title": "Financial Document: รูปคมชัดขึ้น + lightbox ใหญ่ขึ้น + คลิกซูม 1:1",
+      "summary": "เพิ่มคุณภาพรูป — canvas high-quality smoothing + 2000px q=0.92 + lightbox 95vw/95vh + click image toggle zoom 1:1 (natural size scrollable)",
+      "changes": [
+        "compressImageToJpeg: เพิ่ม ctx.imageSmoothingQuality='high' (downsampling คุณภาพสูง — ลดเบลอตัวอักษร) + default 1200→2000px / 0.85→0.92",
+        "Callers: bump 1800→2000px q=0.92 ทั้ง 2 จุด (process first page + add page modal)",
+        "Backend max_length: 4M → 5M chars (JPEG 2000px q=0.92 อาจ ~2.5MB binary)",
+        "Lightbox modal: width 920px → 95vw, max-height 95vh, padding ลด, layout flex column",
+        "Lightbox image: เริ่ม fit-to-view (max 100% / 95vh-80px) + click image → toggle zoom เป็นขนาด natural (width:naturalWidth;height:naturalHeight) → scrollable inside wrap",
+        "Hint บอก user: 'คลิกที่ภาพเพื่อซูม 1:1'",
+        "หมายเหตุ: รูปเก่าก่อน v1.9.77/79 เป็น 1200px → ลบทิ้งแล้วอัพใหม่จึงได้คุณภาพใหม่"
+      ]
+    },
+    {
       "version": "1.9.78",
       "date": "2026-05-13",
       "title": "Admin: responsive sidebar — เก็บเป็น hamburger menu บนมือถือ",

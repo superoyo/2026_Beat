@@ -7130,7 +7130,8 @@ let _findocViewMode = 'list';   // 'list' | 'detail'
 let _findocCurrentId = null;
 
 // Compress image to JPEG dataURL (max width + quality)
-async function compressImageToJpeg(input, maxWidth = 1200, quality = 0.85) {
+// v1.9.79 — high-quality smoothing + บัฟใหญ่ขึ้นเป็น 2000px q=0.92 default
+async function compressImageToJpeg(input, maxWidth = 2000, quality = 0.92) {
   const dataUrl = (typeof input === 'string')
     ? input
     : await new Promise((res, rej) => {
@@ -7152,6 +7153,9 @@ async function compressImageToJpeg(input, maxWidth = 1200, quality = 0.85) {
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext('2d');
+  // v1.9.79 — high-quality downsampling เพื่อให้ตัวอักษรในเอกสารคมชัด
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, w, h);
   ctx.drawImage(img, 0, 0, w, h);
@@ -7436,17 +7440,48 @@ function renderFinDocDetailBody() {
       } catch (e) { alert('ลบไม่สำเร็จ: ' + e.message); }
     });
   });
-  // Wire preview (lightbox)
+  // Wire preview (lightbox) — v1.9.79 ขยาย modal + click image toggle zoom 1:1
   document.querySelectorAll('img[data-fd-page-preview]').forEach(img => {
     img.addEventListener('click', () => {
       const bg = document.createElement('div');
       bg.className = 'modal-bg';
       bg.style.zIndex = '1100';
-      bg.innerHTML = `<div class="modal modal-xwide" style="padding:14px"><img src="${img.src}" style="display:block;width:100%;max-height:80vh;object-fit:contain;background:#0f172a;border-radius:8px" /><div class="modal-actions" style="margin-top:10px"><button class="btn primary" id="fdp-close">ปิด</button></div></div>`;
+      bg.style.padding = '12px';
+      bg.innerHTML = `
+        <div class="modal" style="width:95vw;max-width:none;max-height:95vh;padding:12px;display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:12px;color:var(--text-muted)">
+            <span>คลิกที่ภาพเพื่อ <strong>ซูม 1:1</strong> / ดูเต็ม</span>
+            <button class="btn primary" id="fdp-close" style="font-size:12px;padding:5px 12px">ปิด</button>
+          </div>
+          <div id="fdp-img-wrap" style="flex:1;overflow:auto;background:#0f172a;border-radius:8px;display:flex;align-items:center;justify-content:center;min-height:0">
+            <img id="fdp-img" src="${img.src}" data-zoomed="0" style="display:block;max-width:100%;max-height:calc(95vh - 80px);object-fit:contain;cursor:zoom-in;transition:transform .15s" />
+          </div>
+        </div>`;
       document.body.appendChild(bg);
       const close = () => bg.remove();
       bg.querySelector('#fdp-close').addEventListener('click', close);
       bg.addEventListener('click', e => { if (e.target === bg) close(); });
+      // click image → toggle zoom 1:1 (natural size, scrollable inside wrap)
+      const imgEl = bg.querySelector('#fdp-img');
+      imgEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const zoomed = imgEl.dataset.zoomed === '1';
+        if (zoomed) {
+          imgEl.dataset.zoomed = '0';
+          imgEl.style.maxWidth = '100%';
+          imgEl.style.maxHeight = 'calc(95vh - 80px)';
+          imgEl.style.width = '';
+          imgEl.style.height = '';
+          imgEl.style.cursor = 'zoom-in';
+        } else {
+          imgEl.dataset.zoomed = '1';
+          imgEl.style.maxWidth = 'none';
+          imgEl.style.maxHeight = 'none';
+          imgEl.style.width = imgEl.naturalWidth + 'px';
+          imgEl.style.height = imgEl.naturalHeight + 'px';
+          imgEl.style.cursor = 'zoom-out';
+        }
+      });
     });
   });
 }
@@ -7519,7 +7554,7 @@ async function processFinDocFirstPage(input, statusEl) {
   };
   try {
     setStatus('⏳ กำลังย่อรูป...');
-    const compressed = await compressImageToJpeg(input, 1800, 0.92);
+    const compressed = await compressImageToJpeg(input, 2000, 0.92);
     setStatus('⏳ กำลัง OCR อ่านเอกสาร... (อาจใช้เวลา 5-10 วินาที)');
     let ocrText = '';
     try {
@@ -7600,7 +7635,7 @@ function showFinDocAddPageModal(docId) {
       try {
         status.style.display = '';
         status.textContent = '⏳ กำลังย่อรูป...';
-        const dataUrl = await compressImageToJpeg(input, 1800, 0.92);
+        const dataUrl = await compressImageToJpeg(input, 2000, 0.92);
         status.textContent = '⏳ กำลังบันทึก...';
         await fetchJson(`/api/admin/financial-documents/${docId}/pages`, {
           method: 'POST',

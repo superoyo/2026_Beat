@@ -4810,8 +4810,8 @@ class FinDocPatchIn(BaseModel):
 
 
 class FinDocPageIn(BaseModel):
-    # v1.9.77 — bump limit เพื่อรองรับ JPEG 1800px q=0.92 (~1-2MB binary = ~2.7M base64 chars)
-    image_data: str = Field(..., max_length=4_000_000)
+    # v1.9.79 — bump limit เพื่อรองรับ JPEG 2000px q=0.92 high-quality (~2-2.5MB = ~3.4M base64 chars)
+    image_data: str = Field(..., max_length=5_000_000)
     ocr_text: Optional[str] = Field(None, max_length=20000)
 
 
