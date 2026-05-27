@@ -424,6 +424,53 @@
       #teams-layout { grid-template-columns: 1fr !important; }
       #teams-sidebar { position: static !important; max-height: none !important; }
     }
+    /* v1.9.78 — Mobile-friendly admin (hamburger menu) */
+    .mobile-topbar { display: none; }
+    .mobile-backdrop { display: none; }
+    @media (max-width: 768px) {
+      body { padding-top: 54px; }
+      .mobile-topbar {
+        display: flex;
+        position: fixed; top: 0; left: 0; right: 0; height: 54px;
+        background: var(--bg-card); border-bottom: 1px solid var(--border);
+        z-index: 150; align-items: center; gap: 12px; padding: 0 14px;
+        box-shadow: 0 1px 3px rgba(15,23,42,.08);
+      }
+      .mobile-topbar-toggle {
+        background: transparent; border: 1px solid var(--border);
+        border-radius: 8px; width: 38px; height: 38px;
+        display: inline-flex; align-items: center; justify-content: center;
+        cursor: pointer; color: var(--text); padding: 0; font-size: 20px; line-height: 1;
+        flex-shrink: 0;
+      }
+      .mobile-topbar-toggle:active { background: var(--bg-soft); }
+      .mobile-topbar-title {
+        font-weight: 700; font-size: 14.5px; color: var(--text);
+        flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        letter-spacing: -0.01em;
+      }
+      /* Sidebar: slide-in drawer */
+      aside {
+        position: fixed; left: 0; top: 0; bottom: 0;
+        width: 282px; max-width: 86vw;
+        transform: translateX(-100%); transition: transform .22s ease;
+        z-index: 220; box-shadow: 6px 0 24px rgba(15,23,42,.22);
+      }
+      aside.is-open { transform: translateX(0); }
+      /* Backdrop */
+      .mobile-backdrop {
+        display: block; position: fixed; inset: 0;
+        background: rgba(15,23,42,.5); z-index: 200;
+        opacity: 0; pointer-events: none; transition: opacity .2s ease;
+      }
+      .mobile-backdrop.is-open { opacity: 1; pointer-events: auto; }
+      /* Main: reduce padding + push down for topbar */
+      main { padding: 16px 14px; }
+      .page-head {
+        flex-direction: column; align-items: stretch; gap: 10px; margin-bottom: 14px;
+      }
+      h2.page-title { font-size: 18px; }
+    }
     .field-section-label {
       grid-column: 1 / -1;
       font-size: 11.5px; font-weight: 600;
@@ -740,6 +787,12 @@
   <script defer src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.1/dist/cropper.min.js"></script>
 </head>
 <body>
+  <!-- v1.9.78 — Mobile top bar (hamburger) — แสดงเฉพาะ ≤ 768px -->
+  <div class="mobile-topbar">
+    <button class="mobile-topbar-toggle" id="mobile-menu-toggle" aria-label="เปิดเมนู" type="button">☰</button>
+    <div class="mobile-topbar-title" id="mobile-topbar-title">FEFL Beat</div>
+  </div>
+  <div class="mobile-backdrop" id="mobile-backdrop"></div>
   <aside>
     <div class="brand">
       <div class="brand-row">
@@ -11526,6 +11579,38 @@ function showModal({ title, body, onSubmit, size }) {
   document.querySelectorAll('.brand-menu-item[data-host]').forEach(a => {
     if (a.dataset.host === location.hostname) a.classList.add('current');
   });
+})();
+
+// v1.9.78 — Mobile drawer (sidebar slide-in on ≤768px)
+(() => {
+  const toggle = $('mobile-menu-toggle');
+  const backdrop = $('mobile-backdrop');
+  const sidebar = document.querySelector('body > aside');
+  const titleEl = $('mobile-topbar-title');
+  if (!toggle || !backdrop || !sidebar) return;
+  const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
+  const open  = () => { sidebar.classList.add('is-open'); backdrop.classList.add('is-open'); };
+  const close = () => { sidebar.classList.remove('is-open'); backdrop.classList.remove('is-open'); };
+  toggle.addEventListener('click', open);
+  backdrop.addEventListener('click', close);
+  // close เมื่อกด nav link (เพื่อให้ user เห็น content)
+  document.querySelectorAll('aside .nav a, aside .nav-group-children a').forEach(a => {
+    a.addEventListener('click', () => { if (isMobile()) close(); });
+  });
+  // resize → ถ้ากลับเป็น desktop ปิด drawer อัตโนมัติ
+  window.addEventListener('resize', () => { if (!isMobile()) close(); });
+  // อัพเดท title ตาม route (page-title ของ main)
+  const updateTitle = () => {
+    if (!titleEl) return;
+    const pt = document.querySelector('main h2.page-title');
+    titleEl.textContent = pt ? pt.textContent.trim() : 'FEFL Beat';
+  };
+  // observe DOM mutations ใน main เพื่ออัพเดท title อัตโนมัติ
+  const main = document.getElementById('main');
+  if (main && typeof MutationObserver !== 'undefined') {
+    new MutationObserver(() => updateTitle()).observe(main, { childList: true, subtree: true });
+  }
+  setTimeout(updateTitle, 100);
 })();
 
 // ===== Multi-profile localStorage =====

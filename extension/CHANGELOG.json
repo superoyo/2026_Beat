@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.78",
+      "date": "2026-05-13",
+      "title": "Admin: responsive sidebar — เก็บเป็น hamburger menu บนมือถือ",
+      "summary": "Sidebar admin (≤ 768px) เก็บออกนอกจอเป็น drawer + topbar ใหม่มีปุ่ม hamburger + ชื่อเพจปัจจุบัน → คลิกเปิด/ปิด → content ได้พื้นที่เต็มจอ",
+      "changes": [
+        "CSS @media (max-width:768px): aside position:fixed transform:translateX(-100%) + .is-open → slide in + backdrop (.45 opacity) + body padding-top:54px เผื่อ topbar",
+        "HTML: <div class='mobile-topbar'> ปุ่ม ☰ + ชื่อเพจ + .mobile-backdrop (แสดงเฉพาะ ≤768px)",
+        "JS: toggle/backdrop click → open/close, click nav link → auto-close (เพื่อให้เห็น content), resize → desktop → auto-close",
+        "Page title sync: MutationObserver บน main h2.page-title → update topbar title แบบ real-time ตาม route",
+        "Main padding ลด 32px → 16px บนมือถือ + page-head stack แนวตั้ง"
+      ]
+    },
+    {
       "version": "1.9.77",
       "date": "2026-05-13",
       "title": "Financial Document: hotfix รูปไม่ชัด + ปุ่มย้อนกลับไม่ทำงาน",
