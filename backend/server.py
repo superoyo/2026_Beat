@@ -336,7 +336,8 @@ def init_db() -> None:
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
                 document_id  INTEGER NOT NULL REFERENCES financial_documents(id) ON DELETE CASCADE,
                 page_order   INTEGER NOT NULL DEFAULT 0,
-                image_data   TEXT NOT NULL,          -- base64 JPEG ~1200px q=0.85
+                image_data   TEXT NOT NULL,          -- v1.9.80: base64 ต้นฉบับ (no recompress)
+                thumb_data   TEXT,                   -- v1.9.80: base64 JPEG ~300px สำหรับ grid
                 ocr_text     TEXT,                   -- ผล OCR (ไว้ debug / search future)
                 created_at   TEXT NOT NULL
             );
@@ -489,6 +490,16 @@ def init_db() -> None:
                     conn.execute(f"ALTER TABLE hardware ADD COLUMN {col_name} {col_type}")
         except sqlite3.OperationalError:
             # hardware table อาจไม่มีอยู่ (DB เก่ามาก) — schema CREATE TABLE จะสร้างให้ในรอบนี้
+            pass
+
+        # v1.9.80 — financial_document_pages: เพิ่ม thumb_data column สำหรับ grid display
+        try:
+            fp_cols = {
+                row["name"] for row in conn.execute("PRAGMA table_info(financial_document_pages)").fetchall()
+            }
+            if fp_cols and "thumb_data" not in fp_cols:
+                conn.execute("ALTER TABLE financial_document_pages ADD COLUMN thumb_data TEXT")
+        except sqlite3.OperationalError:
             pass
 
         # credentials table — billing/lifecycle fields ย้ายมาจาก sites (v1.10)
@@ -4810,8 +4821,9 @@ class FinDocPatchIn(BaseModel):
 
 
 class FinDocPageIn(BaseModel):
-    # v1.9.79 — bump limit เพื่อรองรับ JPEG 2000px q=0.92 high-quality (~2-2.5MB = ~3.4M base64 chars)
-    image_data: str = Field(..., max_length=5_000_000)
+    # v1.9.80 — เก็บภาพต้นฉบับ (no recompress); thumb_data แยกสำหรับ grid display
+    image_data: str = Field(..., max_length=15_000_000)    # ภาพต้นฉบับ (~10MB binary = ~14M base64)
+    thumb_data: Optional[str] = Field(None, max_length=400_000)  # thumb ~300px (~200-300KB binary)
     ocr_text: Optional[str] = Field(None, max_length=20000)
 
 
@@ -4830,13 +4842,13 @@ def _findoc_row(r: sqlite3.Row) -> dict[str, Any]:
 
 @app.get("/api/admin/financial-documents")
 def admin_list_findocs(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
-    """List financial documents — รวม page_count + first_page_thumb (JPEG resized 200px)"""
+    """List financial documents — รวม page_count + first_page_image (ใช้ thumb_data ถ้ามี ถอย fallback image_data)"""
     with db_conn() as conn:
         rows = conn.execute(
             "SELECT d.id, d.name, d.doc_date, d.amount, d.currency, d.vendor, d.notes, "
             "  d.created_at, "
             "  (SELECT COUNT(*) FROM financial_document_pages WHERE document_id = d.id) AS page_count, "
-            "  (SELECT image_data FROM financial_document_pages WHERE document_id = d.id "
+            "  (SELECT COALESCE(thumb_data, image_data) FROM financial_document_pages WHERE document_id = d.id "
             "    ORDER BY page_order ASC, id ASC LIMIT 1) AS first_page_image "
             "FROM financial_documents d "
             "ORDER BY COALESCE(d.doc_date, d.created_at) DESC, d.id DESC"
@@ -4880,7 +4892,7 @@ def admin_get_findoc(
         if not row:
             raise HTTPException(status_code=404, detail="document not found")
         pages = conn.execute(
-            "SELECT id, page_order, image_data, ocr_text, created_at "
+            "SELECT id, page_order, image_data, thumb_data, ocr_text, created_at "
             "FROM financial_document_pages WHERE document_id = ? "
             "ORDER BY page_order ASC, id ASC",
             (doc_id,),
@@ -4951,9 +4963,9 @@ def admin_add_findoc_page(
         ).fetchone()
         next_order = next_order_row["next_order"] if next_order_row else 0
         cur = conn.execute(
-            "INSERT INTO financial_document_pages(document_id, page_order, image_data, ocr_text, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (doc_id, next_order, payload.image_data, payload.ocr_text, now),
+            "INSERT INTO financial_document_pages(document_id, page_order, image_data, thumb_data, ocr_text, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (doc_id, next_order, payload.image_data, payload.thumb_data, payload.ocr_text, now),
         )
     return {"ok": True, "id": cur.lastrowid, "page_order": next_order}
 

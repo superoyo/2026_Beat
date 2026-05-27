@@ -2,6 +2,24 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.80",
+      "date": "2026-05-13",
+      "title": "Financial Document: เก็บภาพต้นฉบับ (no recompress) + thumb แยก",
+      "summary": "เปลี่ยน flow — อัพโหลดเก็บภาพต้นฉบับเลย (no recompress/crop) ไม่เสียคุณภาพ + gen thumbnail 300px แยกเก็บใน DB → grid ใช้ thumb (เร็ว) / คลิกดู → lightbox ใช้ภาพเต็มต้นฉบับ",
+      "changes": [
+        "DB: ALTER TABLE financial_document_pages ADD COLUMN thumb_data TEXT + migration block",
+        "Backend FinDocPageIn: image_data max 15M chars (~10MB binary), thumb_data 400K chars",
+        "Backend admin_list_findocs: SELECT COALESCE(thumb_data, image_data) AS first_page_image — fallback สำหรับ pages เก่า",
+        "Backend admin_get_findoc: include thumb_data ใน pages[]",
+        "Backend admin_add_findoc_page: INSERT รวม thumb_data",
+        "Frontend: เพิ่ม helper fileToDataUrl(file) — read original file → data URL ไม่ผ่าน canvas (no recompress)",
+        "processFinDocFirstPage: read original → thumb (300px q=0.8) → OCR ใช้ตัวกลาง (1500px q=0.88) → upload original + thumb",
+        "Add-page modal: read original → thumb → upload ทั้งคู่",
+        "Grid display: ใช้ p.thumb_data || p.image_data + loading='lazy'",
+        "Lightbox click: lookup full image_data จาก _findocCurrentPages by id"
+      ]
+    },
+    {
       "version": "1.9.79",
       "date": "2026-05-13",
       "title": "Financial Document: รูปคมชัดขึ้น + lightbox ใหญ่ขึ้น + คลิกซูม 1:1",
