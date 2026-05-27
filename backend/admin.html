@@ -7264,10 +7264,11 @@ async function renderFinDocDetailPage(docId) {
     </div>
     <div id="fd-detail-body"><div class="empty">กำลังโหลด…</div></div>
   `;
+  // v1.9.77 — กลับโดยเรียก render ตรง ๆ (hash ไม่เปลี่ยน → router ไม่ fire)
   $('fd-back').addEventListener('click', () => {
     _findocViewMode = 'list';
     _findocCurrentId = null;
-    location.hash = '#/financial-documents';
+    renderFinDocListPage();
   });
   $('fd-del').addEventListener('click', async () => {
     if (!confirm('ลบเอกสารชุดนี้ทั้งหมด? (รวมทุกหน้า)')) return;
@@ -7275,7 +7276,7 @@ async function renderFinDocDetailPage(docId) {
       await fetchJson(`/api/admin/financial-documents/${docId}`, { method: 'DELETE' });
       _findocViewMode = 'list';
       _findocCurrentId = null;
-      location.hash = '#/financial-documents';
+      renderFinDocListPage();
     } catch (e) { alert('ลบไม่สำเร็จ: ' + e.message); }
   });
   await loadFinDocDetail(docId);
@@ -7465,7 +7466,7 @@ async function processFinDocFirstPage(input, statusEl) {
   };
   try {
     setStatus('⏳ กำลังย่อรูป...');
-    const compressed = await compressImageToJpeg(input, 1200, 0.85);
+    const compressed = await compressImageToJpeg(input, 1800, 0.92);
     setStatus('⏳ กำลัง OCR อ่านเอกสาร... (อาจใช้เวลา 5-10 วินาที)');
     let ocrText = '';
     try {
@@ -7546,7 +7547,7 @@ function showFinDocAddPageModal(docId) {
       try {
         status.style.display = '';
         status.textContent = '⏳ กำลังย่อรูป...';
-        const dataUrl = await compressImageToJpeg(input, 1200, 0.85);
+        const dataUrl = await compressImageToJpeg(input, 1800, 0.92);
         status.textContent = '⏳ กำลังบันทึก...';
         await fetchJson(`/api/admin/financial-documents/${docId}/pages`, {
           method: 'POST',

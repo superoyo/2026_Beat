@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.77",
+      "date": "2026-05-13",
+      "title": "Financial Document: hotfix รูปไม่ชัด + ปุ่มย้อนกลับไม่ทำงาน",
+      "summary": "Phase 1 hotfix — ปรับ image compression ให้คมขึ้น (1800px q=0.92 เหมาะกับ document) + ปุ่ม 'ย้อนกลับ' กดครั้งเดียวก็ใช้งานได้แล้ว",
+      "changes": [
+        "compressImageToJpeg: 1200px q=0.85 → 1800px q=0.92 (เหมาะกับ document ที่มีตัวอักษร — ลด JPEG artifact บนขอบตัวอักษร)",
+        "Backend FinDocPageIn.image_data max_length: 2.5M → 4M chars (รองรับ JPEG ~2MB binary)",
+        "Bug: ปุ่ม 'ย้อนกลับ' ใน detail page → ทำ location.hash = ปัจจุบัน → no-op → router ไม่ fire → screen ค้าง",
+        "Fix: เรียก renderFinDocListPage() ตรง ๆ แทนการ set hash (เปลี่ยน state ก่อน + render)",
+        "Same fix สำหรับปุ่ม 'ลบ' หลังลบสำเร็จ"
+      ]
+    },
+    {
       "version": "1.9.76",
       "date": "2026-05-13",
       "title": "Financial Document: เมนูใหม่ — เก็บเอกสารสั่งซื้อ + OCR auto-fill (Phase 1)",
