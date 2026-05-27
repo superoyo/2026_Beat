@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.81",
+      "date": "2026-05-13",
+      "title": "Financial Document: camera ไม่ crop อีกแล้ว — เก็บภาพต้นฉบับ + resolution 2560px",
+      "summary": "เดิม openCameraModal บังคับเข้า openCropModal ทุกครั้ง (default crop 256x256 → re-encode JPEG → คุณภาพลด) → fix ให้รองรับ skipCrop=true → save JPEG q=0.95 ตรง ๆ + ขอ video resolution 2560px สำหรับโหมดเอกสาร",
+      "changes": [
+        "openCameraModal: เพิ่ม cropOpts.skipCrop = true → bypass openCropModal + save JPEG q=0.95 ตรง ๆ จาก canvas",
+        "ถ้า skipCrop=true → getUserMedia ขอ width/height ideal 2560 (แทน 1280) เพื่อขอ resolution สูงสุดที่กล้องรองรับ",
+        "default behaviour ของ openCameraModal ยังเหมือนเดิม (ต้องผ่าน crop) เพื่อ backward-compat สำหรับ avatar/logo/hardware photo",
+        "Financial Document camera calls (create + add page): pass { skipCrop: true } → ภาพต้นฉบับ + เก็บใน DB เลย"
+      ]
+    },
+    {
       "version": "1.9.80",
       "date": "2026-05-13",
       "title": "Financial Document: เก็บภาพต้นฉบับ (no recompress) + thumb แยก",

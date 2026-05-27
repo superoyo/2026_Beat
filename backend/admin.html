@@ -1388,6 +1388,7 @@ function openCropModal(srcDataUrl, onSave, options) {
 // === Camera modal — ถ่ายรูปจากกล้อง → crop modal ===
 function openCameraModal(onSave, cropOpts) {
   // cropOpts: ส่งต่อให้ openCropModal (เช่น aspectRatio, outputType, outputWidth/Height)
+  // v1.9.81 — cropOpts.skipCrop = true → bypass crop, save JPEG q=0.95 ตรง ๆ (สำหรับเอกสารที่ไม่ต้องการ crop)
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   bg.style.zIndex = '1100';
@@ -1435,8 +1436,10 @@ function openCameraModal(onSave, cropOpts) {
       return;
     }
     try {
+      // v1.9.81 — ถ้า skipCrop = true (โหมดเอกสาร) → ขอ resolution สูงสุดที่กล้องรองรับ
+      const ideal = (cropOpts && cropOpts.skipCrop) ? 2560 : 1280;
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode, width: { ideal: 1280 }, height: { ideal: 1280 } },
+        video: { facingMode, width: { ideal }, height: { ideal } },
         audio: false,
       });
       video.srcObject = stream;
@@ -1473,9 +1476,16 @@ function openCameraModal(onSave, cropOpts) {
       ctx.scale(-1, 1);
     }
     ctx.drawImage(video, 0, 0);
-    const dataUrl = canvas.toDataURL('image/png');
-    cleanup();
-    openCropModal(dataUrl, onSave, cropOpts);
+    // v1.9.81 — skipCrop = save JPEG q=0.95 ตรง ๆ ; default = PNG → openCropModal
+    if (cropOpts && cropOpts.skipCrop) {
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+      cleanup();
+      onSave(dataUrl);
+    } else {
+      const dataUrl = canvas.toDataURL('image/png');
+      cleanup();
+      openCropModal(dataUrl, onSave, cropOpts);
+    }
   });
 
   startCamera();
@@ -7553,10 +7563,10 @@ function showFinDocCreateModal() {
       fileInp.value = '';
     });
     camBtn.addEventListener('click', () => {
-      // Reuse openCameraModal — callback receives dataUrl
+      // v1.9.81 — skipCrop = เก็บภาพต้นฉบับจากกล้อง (ไม่ผ่าน crop)
       openCameraModal(async (dataUrl) => {
         if (dataUrl) processFinDocFirstPage(dataUrl, status);
-      });
+      }, { skipCrop: true });
     });
   }, 10);
 }
@@ -7686,9 +7696,10 @@ function showFinDocAddPageModal(docId) {
       fileInp.value = '';
     });
     cam.addEventListener('click', () => {
+      // v1.9.81 — skipCrop = เก็บภาพต้นฉบับ
       openCameraModal(async (dataUrl) => {
         if (dataUrl) await addPage(dataUrl);
-      });
+      }, { skipCrop: true });
     });
   }, 10);
 }
