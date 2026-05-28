@@ -4361,6 +4361,53 @@ def auth_wazzup_login(payload: WazzupLoginIn, response: Response) -> dict[str, A
     }
 
 
+class WazzupPhotoIn(BaseModel):
+    photo_url: str = Field(..., min_length=1, max_length=2000)
+
+
+@app.post("/api/auth/wazzup-photo")
+def auth_wazzup_photo(payload: WazzupPhotoIn, request: Request) -> dict[str, Any]:
+    """v1.9.89 — proxy ดึงรูปจาก Wazzup (ใช้ Bearer token จาก sessionStorage)"""
+    auth = request.headers.get("Authorization", "")
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="ต้องมี Wazzup Bearer token ใน Authorization header")
+    token = auth.split(" ", 1)[1].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Wazzup token ว่าง")
+    # Validate photo_url — ต้องเป็น URL บน Wazzup host เท่านั้น
+    url = payload.photo_url.strip()
+    if url.startswith("/"):
+        url = WAZZUP_BASE_URL.rstrip("/") + url
+    if not (url.startswith("http://") or url.startswith("https://")):
+        raise HTTPException(status_code=400, detail="photo_url รูปแบบไม่ถูกต้อง")
+    try:
+        pu = _urlparse(url)
+        pb = _urlparse(WAZZUP_BASE_URL)
+    except Exception:
+        raise HTTPException(status_code=400, detail="photo_url parse ไม่ได้")
+    if pu.netloc and pb.netloc and pu.netloc.lower() != pb.netloc.lower():
+        raise HTTPException(status_code=400, detail="photo_url ไม่ใช่ Wazzup host — ปฏิเสธ")
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}", "Accept": "image/*"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = resp.read()
+            ct = (resp.headers.get("Content-Type") or "image/jpeg").split(";")[0].strip()
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            raise HTTPException(status_code=401, detail="Wazzup token หมดอายุ — login ใหม่")
+        if e.code == 404:
+            raise HTTPException(status_code=404, detail="Wazzup ไม่มีรูปประจำตัวสำหรับบัญชีนี้")
+        raise HTTPException(status_code=502, detail=f"โหลดรูปจาก Wazzup ไม่สำเร็จ (HTTP {e.code})")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"เชื่อมต่อ Wazzup ไม่สำเร็จ: {e}")
+    if not ct.startswith("image/"):
+        raise HTTPException(status_code=502, detail=f"Wazzup ส่ง content-type ที่ไม่ใช่รูป: {ct}")
+    if len(data) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="รูปจาก Wazzup ใหญ่เกิน 8MB")
+    b64 = _b64.b64encode(data).decode("ascii")
+    return {"ok": True, "data_url": f"data:{ct};base64,{b64}", "bytes": len(data)}
+
+
 @app.post("/api/member/signup-email")
 def member_signup_email(payload: MemberSignupEmailIn, response: Response) -> dict[str, Any]:
     """v1.9.82 — สมัครด้วยอีเมล + รหัสผ่าน (ไม่ต้องผ่าน Firebase phone OTP)"""

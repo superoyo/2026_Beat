@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.89",
+      "date": "2026-05-28",
+      "title": "บัญชีของฉัน: เพิ่มตัวเลือกเอารูปจาก Wazzup + preview ก่อนยืนยัน",
+      "summary": "ในการ์ด 'รูปประจำตัว' — เพิ่มปุ่ม '🏢 เอาภาพจาก Wazzup' (แสดงเฉพาะ user ที่ login ผ่าน Wazzup) → backend proxy ดึงรูปด้วย Bearer token → แสดง preview ใน modal → กดบันทึกถึงจะ apply",
+      "changes": [
+        "Backend POST /api/auth/wazzup-photo: รับ Bearer token ใน Authorization header + photo_url ใน body → proxy ดึงรูปจาก Wazzup host → return data URL (base64)",
+        "Backend validate: photo_url ต้องอยู่บน Wazzup host เท่านั้น, content-type ต้องเป็น image/*, ขนาดไม่เกิน 8MB",
+        "Frontend ปุ่ม 'เอาภาพจาก Wazzup': แสดงเฉพาะถ้ามี Wazzup session + profileURL + token ยังไม่หมดอายุ",
+        "Frontend loadAvatarFromWazzup(): ใช้ Bearer token จาก sessionStorage (ไม่ส่งใน URL/query/log ตาม SKILL.md)",
+        "Preview modal: แสดงรูป 200x200 + ปุ่ม 'บันทึก' → saveAvatar(dataUrl) เดิม"
+      ]
+    },
+    {
       "version": "1.9.88",
       "date": "2026-05-28",
       "title": "บัญชีของฉัน: แสดง chips บอกว่า profile นี้ login ได้กี่แบบ",

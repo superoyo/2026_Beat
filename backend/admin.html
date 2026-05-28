@@ -10934,6 +10934,8 @@ async function renderMemberAccountPage() {
           <div style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:8px">
             <button type="button" class="btn" id="m-avatar-upload-btn" style="font-size:13px;padding:8px 14px;text-align:left">📷 อัพโหลดรูปจากเครื่อง</button>
             <button type="button" class="btn" id="m-avatar-camera-btn" style="font-size:13px;padding:8px 14px;text-align:left">📸 ถ่ายจากกล้อง</button>
+            <!-- v1.9.89 — โหลดรูปจาก Wazzup (แสดงเฉพาะถ้ามี Wazzup session) -->
+            <button type="button" class="btn" id="m-avatar-wazzup-btn" style="font-size:13px;padding:8px 14px;text-align:left;display:none">🏢 เอาภาพจาก Wazzup</button>
             <button type="button" class="btn danger" id="m-avatar-remove-btn" style="font-size:13px;padding:8px 14px;text-align:left;display:none">🗑 ลบรูป</button>
             <div class="hint" style="font-size:11.5px;color:var(--text-muted);line-height:1.5">
               รูปจะถูก crop เป็นสี่เหลี่ยมจัตุรัสก่อนบันทึก<br/>
@@ -11153,6 +11155,53 @@ async function renderMemberAccountPage() {
     }
   }
 
+  // v1.9.89 — โหลดรูปจาก Wazzup → preview → confirm → saveAvatar
+  async function loadAvatarFromWazzup() {
+    const waz = getWazzupSession();
+    const token = getWazzupToken();
+    if (!waz || !token) {
+      showSavedToast('❌ ต้อง login ด้วย Wazzup ก่อน', 'error');
+      return;
+    }
+    const photoUrl = waz.profileURL;
+    if (!photoUrl) {
+      showSavedToast('❌ Wazzup ไม่ได้ส่ง URL รูปประจำตัว', 'error');
+      return;
+    }
+    const btn = $('m-avatar-wazzup-btn');
+    const origLabel = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ กำลังโหลด...'; }
+    try {
+      const r = await fetchJson('/api/auth/wazzup-photo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ photo_url: photoUrl }),
+      });
+      openWazzupPhotoPreview(r.data_url);
+    } catch (e) {
+      showSavedToast('❌ ' + e.message, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = origLabel; }
+    }
+  }
+
+  function openWazzupPhotoPreview(dataUrl) {
+    showModal({
+      title: '🏢 รูปจาก Wazzup',
+      size: undefined,
+      body: `
+        <div style="text-align:center">
+          <img src="${dataUrl}" alt="wazzup avatar" style="width:200px;height:200px;border-radius:50%;object-fit:cover;border:2px solid var(--border);background:var(--bg-soft)" />
+          <div style="margin-top:14px;font-size:13px;color:var(--text)">นี่คือรูปจาก Wazzup ของคุณ</div>
+          <div style="margin-top:4px;font-size:12px;color:var(--text-muted)">กด "บันทึก" เพื่อใช้รูปนี้เป็นรูปประจำตัว</div>
+        </div>
+      `,
+      onSubmit: async () => {
+        await saveAvatar(dataUrl);
+      },
+    });
+  }
+
   // Save callback — PATCH /api/member/profile with avatar_data, then update preview + reload member
   async function saveAvatar(dataUrl) {
     try {
@@ -11185,6 +11234,15 @@ async function renderMemberAccountPage() {
       if (!confirm('ลบรูปประจำตัว?')) return;
       saveAvatar('');
     });
+    // v1.9.89 — Wazzup avatar: แสดงปุ่มเฉพาะถ้ามี session + profileURL
+    const wazBtn = $('m-avatar-wazzup-btn');
+    if (wazBtn) {
+      const waz = getWazzupSession();
+      if (waz && waz.profileURL && getWazzupToken()) {
+        wazBtn.style.display = '';
+        wazBtn.addEventListener('click', loadAvatarFromWazzup);
+      }
+    }
     // v1.9.74 — wire shirt-size buttons
     document.querySelectorAll('#m-shirt-size-group .m-shirt-opt').forEach(b => {
       b.addEventListener('click', () => {
