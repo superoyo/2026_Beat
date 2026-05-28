@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.91",
+      "date": "2026-05-28",
+      "title": "Wazzup photo: URL-encode cache-buster ที่มีช่องว่าง (?YYYY-MM-DD HH:MM:SS.)",
+      "summary": "Wazzup ใส่ cache-buster timestamp ต่อท้าย profileURL เช่น '?2026-05-28 19:09:25.' ซึ่งมีช่องว่าง — urllib reject ด้วย 'URL can't contain control characters' → fix: urlsplit + quote path/query แยกกัน ก่อนยิง",
+      "changes": [
+        "Backend /api/auth/wazzup-photo: urlsplit → quote(path) + quote(query) → urlunsplit",
+        "ผลลัพธ์: ' ' → '%20' (และ control chars อื่นๆ ที่ Wazzup อาจส่งมา)"
+      ]
+    },
+    {
       "version": "1.9.90",
       "date": "2026-05-28",
       "title": "Wazzup photo URL: robust resolution + error diagnostic",

@@ -4375,22 +4375,26 @@ def auth_wazzup_photo(payload: WazzupPhotoIn, request: Request) -> dict[str, Any
     if not token:
         raise HTTPException(status_code=401, detail="Wazzup token ว่าง")
     # Validate photo_url — ต้องเป็น URL บน Wazzup host เท่านั้น
-    # v1.9.90 — robust resolution: ใช้ urljoin handle ทั้ง absolute, /relative, relative ที่ไม่มี leading slash
+    # v1.9.91 — robust resolution + URL-encode path/query (Wazzup ใส่ cache-buster ?YYYY-MM-DD HH:MM:SS. ที่มีช่องว่าง)
     raw = (payload.photo_url or "").strip().lstrip("﻿").strip()
     if not raw:
         raise HTTPException(status_code=400, detail="photo_url ว่าง")
-    from urllib.parse import urljoin as _urljoin
+    from urllib.parse import urljoin as _urljoin, urlsplit as _urlsplit, urlunsplit as _urlunsplit, quote as _quote
     base = WAZZUP_BASE_URL.rstrip("/") + "/"
-    url = _urljoin(base, raw)
-    if not (url.startswith("http://") or url.startswith("https://")):
-        raise HTTPException(status_code=400, detail=f"photo_url รูปแบบไม่ถูกต้อง (raw={raw!r}, resolved={url!r})")
+    resolved = _urljoin(base, raw)
+    if not (resolved.startswith("http://") or resolved.startswith("https://")):
+        raise HTTPException(status_code=400, detail=f"photo_url รูปแบบไม่ถูกต้อง (raw={raw!r}, resolved={resolved!r})")
     try:
-        pu = _urlparse(url)
+        sp = _urlsplit(resolved)
         pb = _urlparse(WAZZUP_BASE_URL)
     except Exception:
         raise HTTPException(status_code=400, detail="photo_url parse ไม่ได้")
-    if pu.netloc and pb.netloc and pu.netloc.lower() != pb.netloc.lower():
-        raise HTTPException(status_code=400, detail=f"photo_url ไม่ใช่ Wazzup host — ปฏิเสธ ({pu.netloc})")
+    if sp.netloc and pb.netloc and sp.netloc.lower() != pb.netloc.lower():
+        raise HTTPException(status_code=400, detail=f"photo_url ไม่ใช่ Wazzup host — ปฏิเสธ ({sp.netloc})")
+    # encode any spaces / control characters ใน path + query (Wazzup cache-buster มีช่องว่าง)
+    safe_path = _quote(sp.path, safe="/%")
+    safe_query = _quote(sp.query, safe="=&%")
+    url = _urlunsplit((sp.scheme, sp.netloc, safe_path, safe_query, ""))
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}", "Accept": "image/*"})
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
