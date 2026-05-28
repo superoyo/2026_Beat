@@ -2,6 +2,21 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.85",
+      "date": "2026-05-13",
+      "title": "Merge: login เดิมทุก path → เจอ profile เดียวกัน (alias table)",
+      "summary": "เพิ่ม member_aliases — เก็บค่า identity (phone/firebase_uid/email) ของ source ที่ถูก merge → ทุก login path เดิมยังเจอ primary profile",
+      "changes": [
+        "DB: CREATE TABLE member_aliases (id, member_id, kind, value, source, created_at) + UNIQUE(kind, value) + index",
+        "Merge endpoint: ก่อน DELETE source — INSERT alias ของ phone+firebase_uid+email (ข้าม placeholder email:...) → primary",
+        "skip ค่าที่ตรงกับของ primary อยู่แล้ว (กัน UNIQUE)",
+        "member_verify (Firebase OTP): fallback lookup member_aliases.firebase_uid; ถ้า match ผ่าน alias → update last_login_at เท่านั้น (ไม่ overwrite primary's phone)",
+        "member_login (email+pw): fallback lookup member_aliases.email",
+        "auth_wazzup_login: fallback lookup member_aliases.email",
+        "ผลลัพธ์: หลัง merge แล้ว login ด้วย phone OTP เดิม / email-password เดิม / Wazzup เดิม ทั้งหมดเจอ primary profile"
+      ]
+    },
+    {
       "version": "1.9.84",
       "date": "2026-05-13",
       "title": "Members: รวม 2 บัญชีเข้าด้วยกัน (กรณีคนเดียวกัน)",

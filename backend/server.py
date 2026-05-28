@@ -343,6 +343,19 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_findoc_pages_doc ON financial_document_pages(document_id, page_order);
 
+            -- v1.9.85 — member aliases: เก็บค่า identity เดิมของ account ที่ถูก merge เข้ามา
+            -- เพื่อให้ login เดิม (phone/firebase_uid/email) ยังเจอ profile ใหม่ (primary)
+            CREATE TABLE IF NOT EXISTS member_aliases (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                member_id   INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+                kind        TEXT NOT NULL,           -- 'phone' | 'email' | 'firebase_uid'
+                value       TEXT NOT NULL,
+                source      TEXT,                    -- e.g. 'merged_from:42'
+                created_at  TEXT NOT NULL,
+                UNIQUE (kind, value)
+            );
+            CREATE INDEX IF NOT EXISTS idx_member_aliases_member ON member_aliases(member_id);
+
             -- v1.9.82 — M:N link ระหว่าง hardware (PC) กับ financial documents
             CREATE TABLE IF NOT EXISTS hardware_financial_documents (
                 hardware_id            INTEGER NOT NULL REFERENCES hardware(id) ON DELETE CASCADE,
@@ -2856,6 +2869,33 @@ def admin_merge_members(
         if sll > pll:
             updates["last_login_at"] = sll
 
+        # v1.9.85 — เก็บ identity values ของ source เป็น alias → primary
+        # เพื่อให้ login เดิม (phone OTP / email / Wazzup) ยังเจอ primary หลัง source ถูกลบ
+        now_iso = utc_now().isoformat()
+        src_origin = f"merged_from:{source_id}"
+        def _maybe_alias(kind, value):
+            if not value:
+                return
+            if isinstance(value, str) and value.startswith("email:"):
+                return  # ข้าม placeholder (ไม่ใช่ค่าจริง)
+            # อย่า alias ค่าที่ตรงกับของ primary อยู่แล้ว
+            prim_val = prim_d.get(kind)
+            if prim_val and value == prim_val:
+                return
+            try:
+                conn.execute(
+                    "INSERT OR IGNORE INTO member_aliases(member_id, kind, value, source, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (primary_id, kind, value, src_origin, now_iso),
+                )
+            except Exception:
+                pass
+        _maybe_alias("phone",        src_d.get("phone"))
+        _maybe_alias("firebase_uid", src_d.get("firebase_uid"))
+        em = src_d.get("email")
+        if em:
+            _maybe_alias("email", em.lower())
+
         # 7) ลบ source ก่อน (ปลด UNIQUE constraint)
         _invalidate_member_sessions(source_id)
         conn.execute("DELETE FROM members WHERE id = ?", (source_id,))
@@ -4089,14 +4129,31 @@ def member_verify(payload: MemberVerifyIn, response: Response) -> dict[str, Any]
         existing = conn.execute(
             "SELECT id, enabled FROM members WHERE firebase_uid = ?", (firebase_uid,)
         ).fetchone()
+        # v1.9.85 — fallback: หาใน member_aliases (กรณีบัญชีนี้ถูก merge ไปแล้ว)
+        via_alias = False
+        if not existing:
+            existing = conn.execute(
+                "SELECT m.id, m.enabled FROM member_aliases a "
+                "JOIN members m ON m.id = a.member_id "
+                "WHERE a.kind = 'firebase_uid' AND a.value = ?",
+                (firebase_uid,),
+            ).fetchone()
+            via_alias = bool(existing)
         if existing and _is_member_disabled(existing):
             raise HTTPException(status_code=403, detail="บัญชีนี้ถูกระงับการใช้งาน")
         if existing:
-            conn.execute(
-                "UPDATE members SET phone = ?, display_name = COALESCE(?, display_name), "
-                "last_login_at = ? WHERE id = ?",
-                (phone, display_name, now, existing["id"]),
-            )
+            # v1.9.85 — ถ้า match ผ่าน alias ไม่ overwrite phone (primary's identity ต่างกัน)
+            if via_alias:
+                conn.execute(
+                    "UPDATE members SET last_login_at = ? WHERE id = ?",
+                    (now, existing["id"]),
+                )
+            else:
+                conn.execute(
+                    "UPDATE members SET phone = ?, display_name = COALESCE(?, display_name), "
+                    "last_login_at = ? WHERE id = ?",
+                    (phone, display_name, now, existing["id"]),
+                )
             member_id = existing["id"]
             is_new = False
         else:
@@ -4174,6 +4231,14 @@ def auth_wazzup_login(payload: WazzupLoginIn, response: Response) -> dict[str, A
             "SELECT id, phone, firebase_uid, enabled FROM members WHERE LOWER(email) = ?",
             (email,),
         ).fetchone()
+        # v1.9.85 — fallback: หาใน member_aliases (กรณีบัญชีนี้ถูก merge ไปแล้ว)
+        if not existing:
+            existing = conn.execute(
+                "SELECT m.id, m.phone, m.firebase_uid, m.enabled "
+                "FROM member_aliases a JOIN members m ON m.id = a.member_id "
+                "WHERE a.kind = 'email' AND a.value = ?",
+                (email,),
+            ).fetchone()
         if existing and _is_member_disabled(existing):
             raise HTTPException(status_code=403, detail="บัญชีนี้ถูกระงับการใช้งาน")
         if existing:
@@ -4261,6 +4326,14 @@ def member_login(payload: MemberLoginIn, response: Response) -> dict[str, Any]:
             "SELECT id, phone, email, pw_hash, pw_salt, enabled FROM members WHERE LOWER(email) = ?",
             (email,),
         ).fetchone()
+        # v1.9.85 — fallback: หาใน member_aliases
+        if not row:
+            row = conn.execute(
+                "SELECT m.id, m.phone, m.email, m.pw_hash, m.pw_salt, m.enabled "
+                "FROM member_aliases a JOIN members m ON m.id = a.member_id "
+                "WHERE a.kind = 'email' AND a.value = ?",
+                (email,),
+            ).fetchone()
     if not row or not row["pw_hash"]:
         raise HTTPException(status_code=401, detail="email หรือ password ไม่ถูกต้อง")
     if _is_member_disabled(row):
