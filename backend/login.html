@@ -199,6 +199,11 @@
     <!-- ============== Panel: email/username + password ============== -->
     <div class="panel active" id="panel-email">
       <form id="emailForm">
+        <!-- v1.9.82 — display_name field (โผล่เฉพาะ signup-member mode) -->
+        <div class="field" id="signup-name-field" style="display:none">
+          <label for="signup-name">ชื่อแสดง (optional)</label>
+          <input id="signup-name" type="text" autocomplete="name" placeholder="เช่น สมชาย ใจดี" maxlength="120" />
+        </div>
         <div class="field">
           <label for="email">อีเมล หรือ Username</label>
           <input id="email" type="text" autocomplete="username" placeholder="you@example.com หรือ admin@gmail.com" />
@@ -207,15 +212,22 @@
           <label for="password">รหัสผ่าน</label>
           <input id="password" type="password" autocomplete="current-password" />
         </div>
-        <!-- ช่องยืนยัน password (โผล่เฉพาะ setup admin mode) -->
+        <!-- ช่องยืนยัน password (โผล่เฉพาะ setup admin / signup-member mode) -->
         <div class="field" id="confirm-field" style="display:none">
           <label for="confirm-password">ยืนยันรหัสผ่าน</label>
           <input id="confirm-password" type="password" autocomplete="new-password" />
         </div>
         <button type="submit" class="primary-btn" id="emailLoginBtn">เข้าสู่ระบบ</button>
       </form>
-      <div style="text-align:center;margin-top:14px;font-size:13px;color:var(--text-muted)">
-        ยังไม่มีบัญชี? <a href="#" id="goPhoneBtn" style="color:var(--primary);text-decoration:none">สมัครด้วยเบอร์มือถือ</a>
+      <!-- v1.9.82 — toggle Login / Signup + ยังมี option สมัครด้วยเบอร์ -->
+      <div style="text-align:center;margin-top:14px;font-size:13px;color:var(--text-muted)" id="email-mode-toggle">
+        ยังไม่มีบัญชี?
+        <a href="#" id="goSignupEmailBtn" style="color:var(--primary);text-decoration:none;font-weight:600">สมัครด้วยอีเมล</a>
+        ·
+        <a href="#" id="goPhoneBtn" style="color:var(--primary);text-decoration:none">สมัครด้วยเบอร์มือถือ</a>
+      </div>
+      <div style="text-align:center;margin-top:14px;font-size:13px;color:var(--text-muted);display:none" id="email-back-toggle">
+        มีบัญชีอยู่แล้ว? <a href="#" id="backToLoginBtn" style="color:var(--primary);text-decoration:none;font-weight:600">← กลับไป Login</a>
       </div>
     </div>
 
@@ -290,8 +302,28 @@
     });
     $('goPhoneBtn').addEventListener('click', (e) => { e.preventDefault(); goTab('phone'); });
 
-    // ============== Detect mode: setup-admin? login? ==============
-    let mode = 'login';   // 'login' | 'setup-admin'
+    // ============== Detect mode: setup-admin? login? signup-member? ==============
+    let mode = 'login';   // 'login' | 'setup-admin' | 'signup-member'
+
+    // v1.9.82 — สลับโหมด signup-member ↔ login (เฉพาะตอนไม่อยู่ในโหมด setup-admin)
+    function setEmailMode(newMode) {
+      if (mode === 'setup-admin') return;   // setup mode ไม่สลับ
+      mode = newMode;
+      const isSignup = (newMode === 'signup-member');
+      $('signup-name-field').style.display = isSignup ? '' : 'none';
+      $('confirm-field').style.display = isSignup ? '' : 'none';
+      $('email-mode-toggle').style.display = isSignup ? 'none' : '';
+      $('email-back-toggle').style.display = isSignup ? '' : 'none';
+      $('emailLoginBtn').textContent = isSignup ? '✨ สร้างบัญชีใหม่' : 'เข้าสู่ระบบ';
+      $('password').setAttribute('autocomplete', isSignup ? 'new-password' : 'current-password');
+      $('page-title').textContent = isSignup ? 'สมัครสมาชิกใหม่' : 'เข้าสู่ระบบ';
+      $('page-sub').textContent = isSignup
+        ? 'กรอกอีเมล + ตั้งรหัสผ่าน — ใช้เข้าระบบครั้งต่อไป'
+        : 'ใช้อีเมล + รหัสผ่าน หรือลงทะเบียนด้วยเบอร์มือถือ';
+      clearMsg();
+    }
+    $('goSignupEmailBtn').addEventListener('click', (e) => { e.preventDefault(); setEmailMode('signup-member'); });
+    $('backToLoginBtn').addEventListener('click', (e) => { e.preventDefault(); setEmailMode('login'); });
     try {
       const adminState = await fetch('/api/admin/state').then(r => r.json());
       if (!adminState.has_admin) {
@@ -331,6 +363,29 @@
           const data = await res.json();
           addProfile({ token: data.token, role: data.role, label: data.label });
           showOk('สร้าง admin สำเร็จ — กำลังพาไปหน้า admin…');
+          setTimeout(() => location.replace('/admin'), 600);
+          return;
+        }
+
+        // v1.9.82 — signup-member: สมัครด้วยอีเมล + รหัสผ่าน
+        if (mode === 'signup-member') {
+          if (password.length < 4) { showErr('รหัสผ่านอย่างน้อย 4 ตัว'); return; }
+          if (password !== $('confirm-password').value) { showErr('รหัสผ่านไม่ตรงกัน'); return; }
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(username)) { showErr('รูปแบบอีเมลไม่ถูกต้อง'); return; }
+          const displayName = ($('signup-name').value || '').trim();
+          const res = await fetch('/api/member/signup-email', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: username, password, display_name: displayName || null }),
+          });
+          if (!res.ok) {
+            const j = await res.json().catch(() => ({}));
+            throw new Error(j.detail || ('HTTP ' + res.status));
+          }
+          const data = await res.json();
+          addProfile({ token: data.token, role: data.role, label: data.label });
+          showOk('สมัครสำเร็จ — กำลังพาไประบบ…');
           setTimeout(() => location.replace('/admin'), 600);
           return;
         }

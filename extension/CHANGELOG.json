@@ -2,6 +2,22 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.82",
+      "date": "2026-05-13",
+      "title": "Email signup + FinDoc layout reorder + Hardware-FinDoc M:N link",
+      "summary": "3 ฟีเจอร์รวด: (1) สมัครด้วยอีเมล + รหัสผ่าน (ไม่ต้องใช้ Firebase phone) (2) Financial Document detail: pages อยู่บน header form ล่าง (3) Hardware PC edit modal: tab 💰 Financial Document ผูกเอกสารแบบ M:N กับอุปกรณ์",
+      "changes": [
+        "Backend POST /api/member/signup-email: รับ email/password/display_name — placeholder phone+firebase_uid = 'email:<email>' (กัน UNIQUE NOT NULL constraint)",
+        "Backend: _member_row_to_profile + admin_list_members strip 'email:' prefix → คืน phone=null ให้ frontend",
+        "Backend DB: hardware_financial_documents (hardware_id, financial_document_id, created_at, PK composite) + index",
+        "Backend APIs: GET/POST/DELETE /api/admin/hardware/{hw}/financial-documents — list/link/unlink",
+        "Frontend admin: FinDoc detail page — pages grid อยู่บน + header form อยู่ล่าง (ผู้ใช้เน้นรูป)",
+        "Frontend admin PC modal: tab 3 '💰 Financial Document' (เฉพาะ isEdit) + รายการ docs ที่ผูก + ปุ่ม + ผูกเอกสาร",
+        "Picker modal: search realtime + toggle link/unlink (instant) + sync underlying list หลังคลิก",
+        "Frontend login: signup-member mode toggle — แสดง display_name + confirm fields + เปลี่ยน button → '✨ สร้างบัญชีใหม่' + ลิงก์สลับ Login/Signup"
+      ]
+    },
+    {
       "version": "1.9.81",
       "date": "2026-05-13",
       "title": "Financial Document: camera ไม่ crop อีกแล้ว — เก็บภาพต้นฉบับ + resolution 2560px",

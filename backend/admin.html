@@ -7378,8 +7378,26 @@ function renderFinDocDetailBody() {
   if (!el || !_findocCurrentDoc) return;
   const d = _findocCurrentDoc;
   el.innerHTML = `
-    <!-- Header form -->
-    <div class="card" style="display:block;margin-bottom:14px;padding:14px">
+    <!-- v1.9.82 — Pages grid อยู่บน (ผู้ใช้เน้นรูป ไม่ใช่ form) -->
+    <div class="card" style="display:block;padding:14px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+        <h3 style="margin:0;font-size:14.5px;font-weight:700">📃 หน้าเอกสาร (${_findocCurrentPages.length})</h3>
+        <button class="btn primary" id="fd-add-page-btn">+ เพิ่มหน้า</button>
+      </div>
+      ${_findocCurrentPages.length === 0
+        ? '<div class="empty" style="padding:18px">ยังไม่มีหน้า — กด <strong>+ เพิ่มหน้า</strong></div>'
+        : `<div class="fd-pages">${_findocCurrentPages.map((p, i) => `
+            <div class="fd-page-card">
+              <div class="fd-page-num">${i + 1}</div>
+              <button class="fd-page-del" data-fd-page-del="${p.id}" title="ลบหน้านี้">×</button>
+              <img src="${p.thumb_data || p.image_data}" alt="page ${i + 1}" data-fd-page-preview="${p.id}" loading="lazy" />
+            </div>
+          `).join('')}</div>`
+      }
+    </div>
+
+    <!-- Header form อยู่ล่าง -->
+    <div class="card" style="display:block;padding:14px">
       <h3 style="margin:0 0 12px;font-size:14.5px;font-weight:700">📋 ข้อมูลชุดเอกสาร</h3>
       <div class="field">
         <label>ชื่อชุดเอกสาร *</label>
@@ -7409,24 +7427,6 @@ function renderFinDocDetailBody() {
       </div>
       <div class="hint" id="fd-h-msg" style="display:none;margin:6px 0"></div>
       <button class="btn primary" id="fd-save-header">บันทึก</button>
-    </div>
-
-    <!-- Pages grid -->
-    <div class="card" style="display:block;padding:14px">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
-        <h3 style="margin:0;font-size:14.5px;font-weight:700">📃 หน้าเอกสาร (${_findocCurrentPages.length})</h3>
-        <button class="btn primary" id="fd-add-page-btn">+ เพิ่มหน้า</button>
-      </div>
-      ${_findocCurrentPages.length === 0
-        ? '<div class="empty" style="padding:18px">ยังไม่มีหน้า — กด <strong>+ เพิ่มหน้า</strong></div>'
-        : `<div class="fd-pages">${_findocCurrentPages.map((p, i) => `
-            <div class="fd-page-card">
-              <div class="fd-page-num">${i + 1}</div>
-              <button class="fd-page-del" data-fd-page-del="${p.id}" title="ลบหน้านี้">×</button>
-              <img src="${p.thumb_data || p.image_data}" alt="page ${i + 1}" data-fd-page-preview="${p.id}" loading="lazy" />
-            </div>
-          `).join('')}</div>`
-      }
     </div>
   `;
   // Wire header save
@@ -8729,9 +8729,10 @@ async function showHardwareModal(hw, type, afterSubmit) {
     body: `
       ${showPC ? `
         <!-- v1.9.64 — Tab strip: รายละเอียดอุปกรณ์ | ผู้ดูแลปัจจุบัน + ประวัติ -->
-        <div class="hm-tabs" style="display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:14px">
+        <div class="hm-tabs" style="display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:14px;flex-wrap:wrap">
           <button type="button" class="hm-tab" data-hm-tab="details" style="background:none;border:none;border-bottom:2px solid var(--primary);padding:10px 14px;font-size:13.5px;color:var(--primary);font-weight:600;cursor:pointer">📋 รายละเอียดอุปกรณ์</button>
           <button type="button" class="hm-tab" data-hm-tab="owner" style="background:none;border:none;padding:10px 14px;font-size:13.5px;color:var(--text-muted);font-weight:500;cursor:pointer">👤 ผู้ดูแลปัจจุบัน${isEdit ? ' + ประวัติ' : ''}</button>
+          ${isEdit ? `<button type="button" class="hm-tab" data-hm-tab="findoc" style="background:none;border:none;padding:10px 14px;font-size:13.5px;color:var(--text-muted);font-weight:500;cursor:pointer">💰 Financial Document</button>` : ''}
         </div>
 
         <div class="hm-tab-pane" data-hm-pane="details">
@@ -8941,6 +8942,18 @@ async function showHardwareModal(hw, type, afterSubmit) {
             <div class="hint" style="margin-top:14px;font-size:12px;color:var(--text-muted);font-style:italic">📜 ประวัติการครอบครองจะปรากฏหลังบันทึกครั้งแรก</div>
           `}
         </div>
+
+        <!-- v1.9.82 — Tab: Financial Document (ผูกเอกสารสั่งซื้อกับอุปกรณ์นี้) -->
+        ${isEdit ? `
+        <div class="hm-tab-pane" data-hm-pane="findoc" style="display:none">
+          ${sect('💰', 'Financial Document ที่ผูกอยู่')}
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+            <div class="hint" style="font-size:12px;color:var(--text-muted);margin:0">เอกสารการสั่งซื้อ/ใบสั่งจ่ายที่เกี่ยวกับอุปกรณ์นี้ — กดผูกได้หลายชุด</div>
+            <button type="button" class="btn primary" id="hm-findoc-link-btn" style="font-size:12.5px;padding:6px 12px">+ ผูกเอกสาร</button>
+          </div>
+          <div id="hm-findoc-list" style="display:flex;flex-direction:column;gap:6px"><div class="empty" style="padding:18px;font-size:12.5px">กำลังโหลด…</div></div>
+        </div>
+        ` : ''}
       ` : `
         <!-- Device / Network — keep simpler form -->
         <div class="field">
@@ -9126,11 +9139,28 @@ async function showHardwareModal(hw, type, afterSubmit) {
           btn.dataset.hmHistoryLoaded = '1';
           loadHmHistory(hw.id);
         }
+        // v1.9.82 — โหลด financial documents tab (lazy)
+        if (target === 'findoc' && isEdit && hw && hw.id && !btn.dataset.hmFindocLoaded) {
+          btn.dataset.hmFindocLoaded = '1';
+          loadHmFinDocs(hw.id);
+        }
       });
     });
     // โหลด history เลยเพื่อให้ user ที่กด tab เห็นทันที (background — ไม่ block)
     if (isEdit && hw && hw.id) {
       loadHmHistory(hw.id);
+      loadHmFinDocs(hw.id);   // v1.9.82 — eager-load findoc tab
+    }
+    // v1.9.82 — wire ปุ่ม + ผูกเอกสาร
+    const linkBtn = document.querySelector('.modal-bg .modal #hm-findoc-link-btn');
+    if (linkBtn) {
+      linkBtn.addEventListener('click', async () => {
+        _findocHwIdForPicker = hw.id;
+        // ดึง linked ปัจจุบันจาก DOM (data-hm-findoc-unlink) เพื่อ pre-mark ใน picker
+        const linkedIds = Array.from(document.querySelectorAll('.modal-bg .modal button[data-hm-findoc-unlink]'))
+          .map(b => parseInt(b.dataset.hmFindocUnlink, 10));
+        showHmFinDocPickerModal(hw.id, linkedIds);
+      });
     }
   }
 
@@ -9294,6 +9324,167 @@ async function showHardwareModal(hw, type, afterSubmit) {
 }
 
 // v1.9.64 — โหลด+render ประวัติการครอบครองสำหรับ tab 'ผู้ดูแลปัจจุบัน' ใน showHardwareModal
+// v1.9.82 — Hardware ↔ Financial Documents (M:N)
+async function loadHmFinDocs(hwId) {
+  let items = [];
+  try {
+    const d = await fetchJson(`/api/admin/hardware/${hwId}/financial-documents`);
+    items = d.documents || [];
+  } catch (_) { /* ignore */ }
+  renderHmFinDocList(hwId, items);
+}
+
+function renderHmFinDocList(hwId, items) {
+  const el = $('hm-findoc-list');
+  if (!el) return;
+  if (items.length === 0) {
+    el.innerHTML = '<div class="empty" style="padding:14px;font-size:12.5px">ยังไม่มีเอกสารผูกอยู่ — กด <strong>+ ผูกเอกสาร</strong></div>';
+    return;
+  }
+  el.innerHTML = items.map(d => {
+    const thumb = d.first_page_image
+      ? `<img src="${d.first_page_image}" alt="" style="width:54px;height:72px;object-fit:cover;border-radius:6px;border:1px solid var(--border);flex-shrink:0;display:block" />`
+      : `<div style="width:54px;height:72px;border-radius:6px;border:1px dashed var(--border);background:var(--bg-soft);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:22px">📄</div>`;
+    return `
+      <div class="card" style="display:flex;align-items:center;gap:10px;padding:9px 11px">
+        ${thumb}
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(d.name)}</div>
+          <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px">📅 ${escapeHtml(fmtFinDocDate(d.doc_date))} · 📃 ${d.page_count} หน้า</div>
+          <div style="font-size:12px;font-weight:700;color:var(--green);margin-top:2px;font-variant-numeric:tabular-nums">${escapeHtml(fmtFinDocAmount(d.amount, d.currency))}</div>
+        </div>
+        <div style="display:flex;gap:5px;flex-shrink:0;flex-direction:column">
+          <button type="button" class="btn" data-hm-findoc-open="${d.id}" style="font-size:11.5px;padding:4px 9px" title="ดูเอกสาร">📖</button>
+          <button type="button" class="btn danger" data-hm-findoc-unlink="${d.id}" data-hm-findoc-name="${escapeHtml(d.name)}" style="font-size:11.5px;padding:4px 9px" title="ปลดล็อก">🔗❌</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+  el.querySelectorAll('button[data-hm-findoc-unlink]').forEach(b => {
+    b.addEventListener('click', async () => {
+      const did = parseInt(b.dataset.hmFindocUnlink, 10);
+      const nm = b.dataset.hmFindocName || '';
+      if (!confirm(`ปลดล็อก "${nm}" จากอุปกรณ์นี้?\n(เอกสารไม่ถูกลบ แค่ปลด link)`)) return;
+      try {
+        await fetchJson(`/api/admin/hardware/${hwId}/financial-documents/${did}`, { method: 'DELETE' });
+        await loadHmFinDocs(hwId);
+      } catch (e) { alert('ปลดล็อกไม่สำเร็จ: ' + e.message); }
+    });
+  });
+  el.querySelectorAll('button[data-hm-findoc-open]').forEach(b => {
+    b.addEventListener('click', () => {
+      const did = parseInt(b.dataset.hmFindocOpen, 10);
+      // เปิดเอกสารในแท็บใหม่ของระบบ (ผ่าน hash route)
+      _findocViewMode = 'detail';
+      _findocCurrentId = did;
+      location.hash = '#/financial-documents';
+      // ปิด modal hardware ปัจจุบัน
+      const bg = document.querySelector('.modal-bg');
+      if (bg) bg.remove();
+      renderFinDocDetailPage(did);
+    });
+  });
+}
+
+function showHmFinDocPickerModal(hwId, currentLinkedIds) {
+  showModal({
+    title: '+ ผูก Financial Document',
+    size: 'wide',
+    body: `
+      <div class="hint" style="margin-bottom:10px;color:var(--text-muted);font-size:12px">เลือกเอกสารที่ต้องการผูกกับอุปกรณ์นี้ (เลือกได้หลายชุด)</div>
+      <input id="hmfdp-search" type="text" placeholder="🔍 ค้นหาชื่อ / vendor..." autocomplete="off"
+        style="width:100%;padding:8px 12px;font-size:13px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;box-sizing:border-box" />
+      <div id="hmfdp-count" style="font-size:11.5px;color:var(--text-muted);margin-top:6px">กำลังโหลด...</div>
+      <div id="hmfdp-list" style="margin-top:8px;max-height:380px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);padding:6px;display:flex;flex-direction:column;gap:4px">
+        <div class="empty" style="padding:14px;font-size:12.5px">กำลังโหลด...</div>
+      </div>
+    `,
+    onSubmit: async () => { /* no submit — instant link on click */ },
+  });
+  setTimeout(() => {
+    const okBtn = document.querySelector('.modal-bg .modal #m-ok');
+    if (okBtn) okBtn.style.display = 'none';
+  }, 10);
+  // load all financial documents
+  let allDocs = [];
+  let q = '';
+  fetchJson('/api/admin/financial-documents').then(d => {
+    allDocs = d.documents || [];
+    refreshList();
+  }).catch(e => {
+    const el = $('hmfdp-list');
+    if (el) el.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+  });
+  const linkedSet = new Set(currentLinkedIds);
+  function refreshList() {
+    const ql = q.trim().toLowerCase();
+    const filtered = allDocs.filter(d =>
+      !ql || (d.name || '').toLowerCase().includes(ql) || (d.vendor || '').toLowerCase().includes(ql)
+    );
+    const countEl = $('hmfdp-count');
+    if (countEl) countEl.textContent = ql ? `แสดง ${filtered.length} / ${allDocs.length} ชุด` : `ทั้งหมด ${allDocs.length} ชุด`;
+    const listEl = $('hmfdp-list');
+    if (!listEl) return;
+    if (filtered.length === 0) {
+      listEl.innerHTML = `<div class="empty" style="padding:14px;font-size:12.5px">${ql ? `ไม่พบเอกสารที่ตรง "${escapeHtml(q)}"` : 'ยังไม่มีเอกสารในระบบ'}</div>`;
+      return;
+    }
+    listEl.innerHTML = filtered.map(d => {
+      const isLinked = linkedSet.has(d.id);
+      const thumb = d.first_page_image
+        ? `<img src="${d.first_page_image}" style="width:42px;height:56px;object-fit:cover;border-radius:5px;border:1px solid var(--border);flex-shrink:0;display:block" />`
+        : `<div style="width:42px;height:56px;border-radius:5px;border:1px dashed var(--border);background:var(--bg-soft);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px">📄</div>`;
+      return `
+        <div data-hmfdp-id="${d.id}" data-linked="${isLinked ? 1 : 0}" style="display:flex;align-items:center;gap:10px;padding:7px 9px;border-radius:6px;background:${isLinked ? 'rgba(16,185,129,.08)' : 'transparent'};border:1px solid ${isLinked ? 'rgba(16,185,129,.3)' : 'transparent'}">
+          ${thumb}
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(d.name)}</div>
+            <div style="font-size:11px;color:var(--text-muted)">📅 ${escapeHtml(fmtFinDocDate(d.doc_date))} · ${escapeHtml(fmtFinDocAmount(d.amount, d.currency))}</div>
+          </div>
+          <button type="button" data-hmfdp-toggle="${d.id}" class="btn ${isLinked ? '' : 'primary'}" style="font-size:11.5px;padding:5px 11px;flex-shrink:0">${isLinked ? '✓ ผูกแล้ว' : '➕ ผูก'}</button>
+        </div>
+      `;
+    }).join('');
+    listEl.querySelectorAll('button[data-hmfdp-toggle]').forEach(b => {
+      b.addEventListener('click', async () => {
+        const did = parseInt(b.dataset.hmfdpToggle, 10);
+        const wasLinked = linkedSet.has(did);
+        b.disabled = true;
+        const orig = b.textContent;
+        b.textContent = '...';
+        try {
+          if (wasLinked) {
+            await fetchJson(`/api/admin/hardware/${_findocHwIdForPicker}/financial-documents/${did}`, { method: 'DELETE' });
+            linkedSet.delete(did);
+          } else {
+            await fetchJson(`/api/admin/hardware/${_findocHwIdForPicker}/financial-documents`, {
+              method: 'POST', body: JSON.stringify({ document_id: did }),
+            });
+            linkedSet.add(did);
+          }
+          refreshList();
+          // v1.9.82 — sync underlying hardware modal findoc list ทันที
+          if (_findocHwIdForPicker) await loadHmFinDocs(_findocHwIdForPicker);
+        } catch (e) {
+          alert(e.message);
+          b.disabled = false;
+          b.textContent = orig;
+        }
+      });
+    });
+  }
+  setTimeout(() => {
+    const inp = $('hmfdp-search');
+    if (inp) {
+      inp.addEventListener('input', (e) => { q = e.target.value; refreshList(); });
+      inp.focus();
+    }
+  }, 10);
+}
+
+// store hwId เพื่อให้ picker modal ใช้ได้ (ลด param passing)
+let _findocHwIdForPicker = null;
+
 async function loadHmHistory(hwId) {
   let items = [];
   try {

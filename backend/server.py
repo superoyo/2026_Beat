@@ -343,6 +343,15 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_findoc_pages_doc ON financial_document_pages(document_id, page_order);
 
+            -- v1.9.82 — M:N link ระหว่าง hardware (PC) กับ financial documents
+            CREATE TABLE IF NOT EXISTS hardware_financial_documents (
+                hardware_id            INTEGER NOT NULL REFERENCES hardware(id) ON DELETE CASCADE,
+                financial_document_id  INTEGER NOT NULL REFERENCES financial_documents(id) ON DELETE CASCADE,
+                created_at             TEXT NOT NULL,
+                PRIMARY KEY (hardware_id, financial_document_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_hwfindoc_doc ON hardware_financial_documents(financial_document_id);
+
             -- v1.9.25 — บริการ Hosting / SSL / Others + ผูกกับ domain (Website)
             CREATE TABLE IF NOT EXISTS services (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2530,11 +2539,14 @@ def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
         teams_by_member.setdefault(r["member_id"], []).append(
             {"id": r["team_id"], "name": r["team_name"]}
         )
+    # v1.9.82 — strip placeholder phone (email:...) สำหรับ email-signup user
+    def _phone_clean(p):
+        return None if (p and p.startswith("email:")) else p
     return {
         "members": [
             {
                 "id": r["id"],
-                "phone": r["phone"],
+                "phone": _phone_clean(r["phone"]),
                 "email": r["email"],
                 "display_name": r["display_name"],
                 "enabled": bool(r["enabled"]) if r["enabled"] is not None else True,
@@ -3881,9 +3893,12 @@ def _member_row_to_profile(row: sqlite3.Row) -> dict[str, Any]:
         birthdate = row["birthdate"]
     except (KeyError, IndexError):
         birthdate = None
+    # v1.9.82 — placeholder phone สำหรับ email-signup user → คืน null ให้ frontend
+    raw_phone = row["phone"]
+    phone = None if (raw_phone and raw_phone.startswith("email:")) else raw_phone
     return {
         "id": row["id"],
-        "phone": row["phone"],
+        "phone": phone,
         "email": row["email"],
         "display_name": row["display_name"],
         "has_password": bool(row["pw_hash"]),
@@ -3975,6 +3990,46 @@ def member_verify(payload: MemberVerifyIn, response: Response) -> dict[str, Any]
     token = _set_member_cookie(response, member_id, phone)
     return {"ok": True, "role": "member", "member_id": member_id, "phone": phone,
             "is_new": is_new, "token": token, "label": display_name or phone}
+
+
+class MemberSignupEmailIn(BaseModel):
+    email: str = Field(..., min_length=3, max_length=200)
+    password: str = Field(..., min_length=4, max_length=200)
+    display_name: Optional[str] = Field(None, max_length=120)
+
+
+@app.post("/api/member/signup-email")
+def member_signup_email(payload: MemberSignupEmailIn, response: Response) -> dict[str, Any]:
+    """v1.9.82 — สมัครด้วยอีเมล + รหัสผ่าน (ไม่ต้องผ่าน Firebase phone OTP)"""
+    email = payload.email.strip().lower()
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+        raise HTTPException(status_code=400, detail="รูปแบบอีเมลไม่ถูกต้อง")
+    display_name = (payload.display_name or "").strip() or None
+    pw_hash, pw_salt = hash_password(payload.password)
+    now = utc_now().isoformat()
+    # placeholder phone + firebase_uid (UNIQUE NOT NULL constraint) — frontend จะ strip 'email:' prefix
+    placeholder = f"email:{email}"
+    try:
+        with db_conn() as conn:
+            existing = conn.execute(
+                "SELECT id FROM members WHERE LOWER(email) = ?", (email,)
+            ).fetchone()
+            if existing:
+                raise HTTPException(status_code=409, detail="อีเมลนี้ถูกใช้แล้ว")
+            cur = conn.execute(
+                "INSERT INTO members(phone, firebase_uid, email, display_name, "
+                "                    pw_hash, pw_salt, created_at, last_login_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (placeholder, placeholder, email, display_name, pw_hash, pw_salt, now, now),
+            )
+            member_id = cur.lastrowid
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=409, detail="อีเมลนี้ถูกใช้แล้ว")
+    token = _set_member_cookie(response, member_id, placeholder)
+    return {
+        "ok": True, "role": "member", "member_id": member_id,
+        "token": token, "label": display_name or email, "is_new": True,
+    }
 
 
 @app.post("/api/member/login")
@@ -4981,6 +5036,78 @@ def admin_delete_findoc_page(
         )
     if cur.rowcount == 0:
         raise HTTPException(status_code=404, detail="page not found")
+    return {"ok": True}
+
+
+# v1.9.82 — Hardware ↔ Financial Documents (M:N link)
+class HwFinDocLinkIn(BaseModel):
+    document_id: int
+
+
+@app.get("/api/admin/hardware/{hw_id}/financial-documents")
+def admin_list_hw_findocs(
+    hw_id: int,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """Documents ที่ผูกกับ hardware นี้ (รวม thumb หน้าแรก + page_count)"""
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT d.id, d.name, d.doc_date, d.amount, d.currency, d.vendor, "
+            "  d.created_at, "
+            "  (SELECT COUNT(*) FROM financial_document_pages WHERE document_id = d.id) AS page_count, "
+            "  (SELECT COALESCE(thumb_data, image_data) FROM financial_document_pages WHERE document_id = d.id "
+            "    ORDER BY page_order ASC, id ASC LIMIT 1) AS first_page_image "
+            "FROM hardware_financial_documents hfd "
+            "JOIN financial_documents d ON d.id = hfd.financial_document_id "
+            "WHERE hfd.hardware_id = ? "
+            "ORDER BY COALESCE(d.doc_date, d.created_at) DESC, d.id DESC",
+            (hw_id,),
+        ).fetchall()
+    return {"documents": [dict(r) for r in rows]}
+
+
+@app.post("/api/admin/hardware/{hw_id}/financial-documents")
+def admin_link_hw_findoc(
+    hw_id: int,
+    payload: HwFinDocLinkIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """ผูก financial document กับ hardware (M:N)"""
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        # ตรวจ hardware + document มีจริง
+        if not conn.execute("SELECT id FROM hardware WHERE id = ?", (hw_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="hardware not found")
+        if not conn.execute(
+            "SELECT id FROM financial_documents WHERE id = ?", (payload.document_id,)
+        ).fetchone():
+            raise HTTPException(status_code=404, detail="document not found")
+        try:
+            conn.execute(
+                "INSERT INTO hardware_financial_documents(hardware_id, financial_document_id, created_at) "
+                "VALUES (?, ?, ?)",
+                (hw_id, payload.document_id, now),
+            )
+        except sqlite3.IntegrityError:
+            # link มีอยู่แล้ว — ignore (idempotent)
+            return {"ok": True, "already_linked": True}
+    return {"ok": True}
+
+
+@app.delete("/api/admin/hardware/{hw_id}/financial-documents/{doc_id}")
+def admin_unlink_hw_findoc(
+    hw_id: int,
+    doc_id: int,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    with db_conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM hardware_financial_documents "
+            "WHERE hardware_id = ? AND financial_document_id = ?",
+            (hw_id, doc_id),
+        )
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="link not found")
     return {"ok": True}
 
 
