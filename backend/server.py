@@ -566,6 +566,8 @@ def init_db() -> None:
             ("birthdate",              "TEXT"),
             # v1.9.92 — เก็บ Wazzup profileURL (raw จาก Wazzup) เพื่อให้ admin ดึงรูปได้
             ("wazzup_profile_url",     "TEXT"),
+            # v1.9.93 — Wazzup employee code (admin ป้อนเอง / extract จาก profileURL ตอน login)
+            ("wazzup_emp_code",        "TEXT"),
         ]:
             if col_name not in member_cols:
                 conn.execute(f"ALTER TABLE members ADD COLUMN {col_name} {col_def}")
@@ -2540,6 +2542,7 @@ def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
             "SELECT id, phone, email, display_name, enabled, is_admin, avatar_data, "
             "       extension_version, extension_last_used_at, firebase_uid, "
             "       (pw_hash IS NOT NULL) AS has_password, "
+            "       wazzup_emp_code, "
             "       (wazzup_profile_url IS NOT NULL AND wazzup_profile_url != '') AS has_wazzup_photo, "
             "       created_at, last_login_at "
             "FROM members ORDER BY created_at DESC"
@@ -2592,7 +2595,8 @@ def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
                 "aliases": _aliases_for_display(aliases_by_member.get(r["id"], [])),
                 "alias_count": len(aliases_by_member.get(r["id"], [])),
                 "avatar_data": r["avatar_data"] if "avatar_data" in r.keys() else None,
-                "has_wazzup_photo": bool(r["has_wazzup_photo"]),  # v1.9.92 — admin มี profileURL เก็บไว้ดึงได้
+                "has_wazzup_photo": bool(r["has_wazzup_photo"]),  # v1.9.92 — มี profileURL เก็บไว้
+                "wazzup_emp_code": r["wazzup_emp_code"],  # v1.9.93 — admin pre-fill ได้ใน modal
                 "extension_version": r["extension_version"] if "extension_version" in r.keys() else None,
                 "extension_last_used_at": r["extension_last_used_at"] if "extension_last_used_at" in r.keys() else None,
                 "created_at": r["created_at"],
@@ -4306,6 +4310,13 @@ def auth_wazzup_login(payload: WazzupLoginIn, response: Response) -> dict[str, A
         raise HTTPException(status_code=502, detail="Wazzup ไม่ได้ส่ง email กลับมา — บัญชีนี้ใช้กับระบบนี้ไม่ได้")
     display_name = (waz.get("nickName") or waz.get("empThaiName") or waz.get("empEngName") or "").strip() or None
     waz_profile_url = (waz.get("profileURL") or "").strip() or None  # v1.9.92
+    # v1.9.93 — extract empCode: ลอง field 'id' ก่อน, ถ้าไม่ได้ extract จาก profileURL pattern /upload/profile/<code>_profile.<ext>
+    waz_emp_code = (waz.get("id") or "").strip() or None
+    if not waz_emp_code and waz_profile_url:
+        import re as _re
+        m = _re.search(r"/upload/profile/([^/_?#]+)_profile\.", waz_profile_url, _re.IGNORECASE)
+        if m:
+            waz_emp_code = m.group(1)
     now = utc_now().isoformat()
     # upsert member by email
     placeholder = f"email:{email}"
@@ -4327,17 +4338,18 @@ def auth_wazzup_login(payload: WazzupLoginIn, response: Response) -> dict[str, A
         if existing:
             conn.execute(
                 "UPDATE members SET display_name = COALESCE(?, display_name), "
-                "last_login_at = ?, wazzup_profile_url = COALESCE(?, wazzup_profile_url) WHERE id = ?",
-                (display_name, now, waz_profile_url, existing["id"]),
+                "last_login_at = ?, wazzup_profile_url = COALESCE(?, wazzup_profile_url), "
+                "wazzup_emp_code = COALESCE(?, wazzup_emp_code) WHERE id = ?",
+                (display_name, now, waz_profile_url, waz_emp_code, existing["id"]),
             )
             member_id = existing["id"]
             phone = existing["phone"]
             is_new = False
         else:
             cur = conn.execute(
-                "INSERT INTO members(phone, firebase_uid, email, display_name, created_at, last_login_at, wazzup_profile_url) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (placeholder, placeholder, email, display_name, now, now, waz_profile_url),
+                "INSERT INTO members(phone, firebase_uid, email, display_name, created_at, last_login_at, wazzup_profile_url, wazzup_emp_code) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (placeholder, placeholder, email, display_name, now, now, waz_profile_url, waz_emp_code),
             )
             member_id = cur.lastrowid
             phone = placeholder
@@ -4428,27 +4440,48 @@ def auth_wazzup_photo(payload: WazzupPhotoIn, request: Request) -> dict[str, Any
     return {"ok": True, **result}
 
 
-# v1.9.92 — admin ดึงรูป Wazzup ของ member อื่น (ใช้ URL ที่ member เคย login ผ่าน Wazzup แล้วเก็บไว้)
+class AdminAvatarFromWazzupIn(BaseModel):
+    emp_code: str | None = Field(None, max_length=50)  # v1.9.93 — admin ป้อน empCode → construct URL
+
+
+# v1.9.92/93 — admin ดึงรูป Wazzup ของ member อื่น
+# - ถ้าส่ง emp_code มา: construct URL '/upload/profile/<empCode>_profile.png' + save empCode
+# - ถ้าไม่ส่ง: ใช้ stored wazzup_profile_url (member ที่เคย login Wazzup เอง)
 @app.post("/api/admin/members/{member_id}/avatar-from-wazzup")
 def admin_member_avatar_from_wazzup(
     member_id: int,
+    payload: AdminAvatarFromWazzupIn,
     request: Request,
     _sess: dict = Depends(require_admin),
 ) -> dict[str, Any]:
     with db_conn() as conn:
         row = conn.execute(
-            "SELECT id, display_name, wazzup_profile_url FROM members WHERE id = ?",
+            "SELECT id, display_name, wazzup_profile_url, wazzup_emp_code FROM members WHERE id = ?",
             (member_id,),
         ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="ไม่พบ member")
-    if not row["wazzup_profile_url"]:
-        raise HTTPException(status_code=400, detail="member นี้ยังไม่เคย login ด้วย Wazzup — ไม่มี profileURL เก็บไว้")
-    # admin's own Wazzup token (optional — รูปประจำตัว Wazzup เข้าถึงได้สาธารณะ)
+    # v1.9.93 — เลือก URL: empCode (ใหม่จาก payload หรือ stored) → construct, fallback ไป stored profileURL
+    emp_code = (payload.emp_code or "").strip() or row["wazzup_emp_code"]
+    if emp_code:
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", emp_code):
+            raise HTTPException(status_code=400, detail="empCode ต้องเป็น A-Z 0-9 _ - เท่านั้น")
+        photo_url = f"/upload/profile/{emp_code}_profile.png"
+    elif row["wazzup_profile_url"]:
+        photo_url = row["wazzup_profile_url"]
+    else:
+        raise HTTPException(status_code=400, detail="ต้องระบุ Wazzup empCode (หรือให้ member login Wazzup ก่อน)")
     auth = request.headers.get("Authorization", "")
     token = auth.split(" ", 1)[1].strip() if auth.lower().startswith("bearer ") else None
-    result = _fetch_wazzup_image_as_data_url(row["wazzup_profile_url"], bearer_token=token)
-    return {"ok": True, "member_id": member_id, "display_name": row["display_name"], **result}
+    result = _fetch_wazzup_image_as_data_url(photo_url, bearer_token=token)
+    # save empCode ถ้า admin ป้อนใหม่ + fetch สำเร็จ
+    if payload.emp_code and payload.emp_code.strip() != (row["wazzup_emp_code"] or ""):
+        with db_conn() as conn:
+            conn.execute(
+                "UPDATE members SET wazzup_emp_code = ? WHERE id = ?",
+                (payload.emp_code.strip(), member_id),
+            )
+    return {"ok": True, "member_id": member_id, "display_name": row["display_name"], "emp_code_used": emp_code, **result}
 
 
 class AdminMemberAvatarIn(BaseModel):

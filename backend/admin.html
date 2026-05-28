@@ -10115,10 +10115,13 @@ function renderMembersTable(members) {
     const adminBtn = currentIsSuper ? `
       <button class="btn ${m.is_admin ? 'danger' : ''}" data-act="role" data-id="${m.id}" data-current="${m.is_admin ? 1 : 0}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px" title="${m.is_admin ? 'ถอด admin' : 'แต่งตั้ง admin'}">${m.is_admin ? '↓ Demote' : '↑ Make Admin'}</button>
     ` : '';
-    // v1.9.92 — ปุ่มดึงรูป Wazzup (เห็นเฉพาะ member ที่เคย login ผ่าน Wazzup)
-    const wazzupAvatarBtn = m.has_wazzup_photo ? `
-      <button class="btn" data-act="wazzup-avatar" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px;background:rgba(245,158,11,.10);color:#92400e;border-color:rgba(245,158,11,.30)" title="ดึงรูป profile จาก Wazzup มาเป็นรูปประจำตัว">🏢 รูปจาก Wazzup</button>
-    ` : '';
+    // v1.9.92/93 — ปุ่มดึงรูป Wazzup (เห็นทุก member — admin ป้อน empCode ถ้ายังไม่มีเก็บไว้)
+    const wazTitle = m.has_wazzup_photo
+      ? 'ดึงรูป profile จาก Wazzup'
+      : (m.wazzup_emp_code ? `ดึงรูปจาก empCode: ${m.wazzup_emp_code}` : 'ป้อน empCode → ดึงรูปจาก Wazzup');
+    const wazzupAvatarBtn = `
+      <button class="btn" data-act="wazzup-avatar" data-id="${m.id}" data-name="${safeName}" data-emp="${escapeHtml(m.wazzup_emp_code || '')}" style="font-size:11.5px;padding:5px 10px;background:rgba(245,158,11,.10);color:#92400e;border-color:rgba(245,158,11,.30)" title="${wazTitle}">🏢 รูปจาก Wazzup</button>
+    `;
     const actionsCell = `
       <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">
         ${adminBtn}
@@ -10651,28 +10654,11 @@ async function handleMemberAction(btn) {
     return;
   }
 
-  // v1.9.92 — admin ดึงรูปจาก Wazzup ของ member นี้
+  // v1.9.92/93 — admin ดึงรูปจาก Wazzup ของ member นี้ (เปิด modal ให้ป้อน empCode)
   if (act === 'wazzup-avatar') {
     const name = btn.dataset.name;
-    const wazToken = getWazzupToken();  // optional — รูปประจำตัว Wazzup เข้าถึงได้สาธารณะ
-    const origLabel = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = '⏳ กำลังโหลด...';
-    try {
-      const headers = { 'Content-Type': 'application/json' };
-      if (wazToken) headers['Authorization'] = `Bearer ${wazToken}`;
-      const r = await fetchJson(`/api/admin/members/${id}/avatar-from-wazzup`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({}),
-      });
-      showAdminWazzupAvatarPreview(parseInt(id, 10), name, r.data_url);
-    } catch (e) {
-      alert('ดึงรูปจาก Wazzup ไม่สำเร็จ: ' + e.message);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = origLabel;
-    }
+    const empPrefill = btn.dataset.emp || '';
+    showAdminWazzupEmpCodeModal(parseInt(id, 10), name, empPrefill);
     return;
   }
 
@@ -10810,18 +10796,31 @@ function showMergeMemberModal(primaryId, primaryName) {
   }, 10);
 }
 
-// v1.9.92 — admin: preview รูปจาก Wazzup ก่อนบันทึกเป็น avatar ของ member นั้น
-function showAdminWazzupAvatarPreview(memberId, memberName, dataUrl) {
+// v1.9.93 — admin: modal ป้อน empCode + ดึงรูป → preview → save
+function showAdminWazzupEmpCodeModal(memberId, memberName, empPrefill) {
   showModal({
     title: `🏢 รูปจาก Wazzup — ${memberName}`,
     body: `
-      <div style="text-align:center">
-        <img src="${dataUrl}" alt="wazzup avatar" style="width:200px;height:200px;border-radius:50%;object-fit:cover;border:2px solid var(--border);background:var(--bg-soft)" />
-        <div style="margin-top:14px;font-size:13px;color:var(--text)">นี่คือรูปจาก Wazzup ของ ${escapeHtml(memberName)}</div>
-        <div style="margin-top:4px;font-size:12px;color:var(--text-muted)">กด "บันทึก" เพื่อใช้เป็นรูปประจำตัวของ member คนนี้</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-size:13px;color:var(--text-muted);line-height:1.55">
+          ป้อน <b>Wazzup Employee Code</b> ของ ${escapeHtml(memberName)} —
+          ระบบจะดึงรูปจาก <code style="background:var(--bg-soft);padding:1px 6px;border-radius:4px;font-size:11.5px">/upload/profile/&lt;empCode&gt;_profile.png</code>
+        </div>
+        <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600">
+          Employee Code
+          <input type="text" id="m-waz-emp" value="${escapeHtml(empPrefill)}" placeholder="เช่น 100886" autocomplete="off" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-family:ui-monospace,Menlo,monospace;font-size:14px" />
+        </label>
+        <div id="m-waz-preview" style="display:none;text-align:center;margin-top:6px;padding-top:12px;border-top:1px dashed var(--border)">
+          <img id="m-waz-img" alt="preview" style="width:180px;height:180px;border-radius:50%;object-fit:cover;border:2px solid var(--border);background:var(--bg-soft)" />
+          <div style="margin-top:8px;font-size:12px;color:var(--text-muted)">กด "บันทึก" เพื่อใช้รูปนี้</div>
+        </div>
+        <button type="button" id="m-waz-fetch" class="btn primary" style="margin-top:4px;font-size:13px;padding:8px 14px">🔍 ดึงรูป + Preview</button>
       </div>
     `,
     onSubmit: async () => {
+      const img = document.getElementById('m-waz-img');
+      const dataUrl = img && img.src && img.src.startsWith('data:') ? img.src : '';
+      if (!dataUrl) throw new Error('กด "ดึงรูป + Preview" ก่อน แล้วจึงบันทึก');
       await fetchJson(`/api/admin/members/${memberId}/avatar`, {
         method: 'PATCH',
         body: JSON.stringify({ avatar_data: dataUrl }),
@@ -10830,6 +10829,41 @@ function showAdminWazzupAvatarPreview(memberId, memberName, dataUrl) {
       await loadMembersList();
     },
   });
+  setTimeout(() => {
+    const inp = document.getElementById('m-waz-emp');
+    const fetchBtn = document.getElementById('m-waz-fetch');
+    const previewBox = document.getElementById('m-waz-preview');
+    const previewImg = document.getElementById('m-waz-img');
+    if (inp) inp.focus();
+    if (fetchBtn) {
+      fetchBtn.addEventListener('click', async () => {
+        const empCode = (inp.value || '').trim();
+        if (!empCode) { alert('ป้อน Employee Code ก่อน'); inp.focus(); return; }
+        const orig = fetchBtn.textContent;
+        fetchBtn.disabled = true;
+        fetchBtn.textContent = '⏳ กำลังดึง...';
+        try {
+          const wazToken = getWazzupToken();
+          const headers = { 'Content-Type': 'application/json' };
+          if (wazToken) headers['Authorization'] = `Bearer ${wazToken}`;
+          const r = await fetchJson(`/api/admin/members/${memberId}/avatar-from-wazzup`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ emp_code: empCode }),
+          });
+          previewImg.src = r.data_url;
+          previewBox.style.display = '';
+        } catch (e) {
+          previewBox.style.display = 'none';
+          previewImg.removeAttribute('src');
+          alert('ดึงรูปไม่สำเร็จ: ' + e.message);
+        } finally {
+          fetchBtn.disabled = false;
+          fetchBtn.textContent = orig;
+        }
+      });
+    }
+  }, 30);
 }
 
 function showResetPasswordModal(memberId, memberName) {

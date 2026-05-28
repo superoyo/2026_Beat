@@ -2,6 +2,20 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.93",
+      "date": "2026-05-28",
+      "title": "Admin: ดึงรูป Wazzup ของ member ใดก็ได้ด้วย empCode",
+      "summary": "ปุ่ม '🏢 รูปจาก Wazzup' แสดงทุก member (ไม่ใช่แค่คนที่เคย login Wazzup) → admin ป้อน Wazzup Employee Code → ระบบ construct URL '/upload/profile/<empCode>_profile.png' → ดึงรูป → preview → save. ระบบยังเก็บ empCode อัตโนมัติเมื่อ member login Wazzup ครั้งแรก",
+      "changes": [
+        "Backend members table: เพิ่มคอลัมน์ wazzup_emp_code",
+        "Backend auth_wazzup_login: extract empCode จาก response.id หรือ regex จาก profileURL (/upload/profile/<code>_profile.<ext>) → save",
+        "Backend POST /api/admin/members/{id}/avatar-from-wazzup: รับ {emp_code?} → ถ้ามี construct URL + save empCode; ถ้าไม่มี fallback stored wazzup_profile_url",
+        "Backend admin_list_members: expose wazzup_emp_code field (pre-fill modal)",
+        "Frontend: ปุ่ม Wazzup แสดงทุก member (เปลี่ยนจาก has_wazzup_photo เท่านั้น)",
+        "Frontend showAdminWazzupEmpCodeModal(): input empCode (pre-fill) → '🔍 ดึงรูป + Preview' → preview ใต้ form → กดบันทึก"
+      ]
+    },
+    {
       "version": "1.9.92",
       "date": "2026-05-28",
       "title": "Admin: เปลี่ยนรูป member จาก Wazzup ได้ใน Members list",
