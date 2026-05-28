@@ -2753,6 +2753,127 @@ def admin_delete_member(
     return {"ok": True}
 
 
+# v1.9.84 — Merge 2 members into 1 (กรณีคน ๆ เดียวกันสมัครไว้ 2 บัญชี)
+class MemberMergeIn(BaseModel):
+    source_id: int   # อีกบัญชี — จะถูก merge เข้ามา + ลบทิ้ง
+
+
+def _is_placeholder_phone(v: Optional[str]) -> bool:
+    return bool(v) and str(v).startswith("email:")
+
+
+@app.post("/api/admin/members/{primary_id}/merge")
+def admin_merge_members(
+    primary_id: int,
+    payload: MemberMergeIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """รวม 2 บัญชีเข้าด้วยกัน:
+    - ย้าย FK relations (teams, credentials, hardware, history, requests, logs) จาก source → primary
+    - fill missing fields ของ primary ด้วยค่าจาก source (primary wins ถ้ามีอยู่ + ไม่ใช่ placeholder)
+    - ลบ source member"""
+    source_id = payload.source_id
+    if primary_id == source_id:
+        raise HTTPException(status_code=400, detail="primary และ source เป็นคนเดียวกัน — ผสานไม่ได้")
+    with db_conn() as conn:
+        prim = conn.execute("SELECT * FROM members WHERE id = ?", (primary_id,)).fetchone()
+        src  = conn.execute("SELECT * FROM members WHERE id = ?", (source_id,)).fetchone()
+        if not prim:
+            raise HTTPException(status_code=404, detail="primary member ไม่พบ")
+        if not src:
+            raise HTTPException(status_code=404, detail="source member ไม่พบ")
+
+        # 1) ย้าย team_members (PK = team_id+member_id — ป้องกัน duplicate ด้วย INSERT OR IGNORE)
+        conn.execute(
+            "INSERT OR IGNORE INTO team_members(team_id, member_id, added_at) "
+            "SELECT team_id, ?, added_at FROM team_members WHERE member_id = ?",
+            (primary_id, source_id),
+        )
+        conn.execute("DELETE FROM team_members WHERE member_id = ?", (source_id,))
+
+        # 2) ย้าย credential_members
+        conn.execute(
+            "INSERT OR IGNORE INTO credential_members(credential_id, member_id, added_at) "
+            "SELECT credential_id, ?, added_at FROM credential_members WHERE member_id = ?",
+            (primary_id, source_id),
+        )
+        conn.execute("DELETE FROM credential_members WHERE member_id = ?", (source_id,))
+
+        # 3) Update hardware references
+        conn.execute(
+            "UPDATE hardware SET current_member_id = ? WHERE current_member_id = ?",
+            (primary_id, source_id),
+        )
+        conn.execute(
+            "UPDATE hardware_assignments SET member_id = ? WHERE member_id = ?",
+            (primary_id, source_id),
+        )
+
+        # 4) usage_logs
+        conn.execute(
+            "UPDATE usage_logs SET member_id = ? WHERE member_id = ?",
+            (primary_id, source_id),
+        )
+
+        # 5) access_requests (uniq pending per member+site)
+        conn.execute(
+            "INSERT OR IGNORE INTO access_requests(member_id, site_id, requested_at, status, note, decided_at, decided_by) "
+            "SELECT ?, site_id, requested_at, status, note, decided_at, decided_by FROM access_requests WHERE member_id = ?",
+            (primary_id, source_id),
+        )
+        conn.execute("DELETE FROM access_requests WHERE member_id = ?", (source_id,))
+
+        # 6) Build merged fields — primary wins ยกเว้น placeholder (email:...) → ใช้ source ที่เป็นค่าจริงแทน
+        prim_d = dict(prim)
+        src_d = dict(src)
+        updates: dict[str, Any] = {}
+        # phone + firebase_uid — placeholder check
+        for f in ("phone", "firebase_uid"):
+            pv = prim_d.get(f)
+            sv = src_d.get(f)
+            if _is_placeholder_phone(pv) and sv and not _is_placeholder_phone(sv):
+                updates[f] = sv
+            elif not pv and sv:
+                updates[f] = sv
+        # อื่น ๆ — fill ถ้า primary NULL
+        for f in ("display_name", "email", "avatar_data", "shirt_size", "birthdate",
+                  "pw_hash", "pw_salt", "extension_version", "extension_last_used_at"):
+            pv = prim_d.get(f)
+            sv = src_d.get(f)
+            if not pv and sv:
+                updates[f] = sv
+        # is_admin: OR (true ถ้าฝั่งใดเป็น admin)
+        if int(prim_d.get("is_admin") or 0) == 0 and int(src_d.get("is_admin") or 0) == 1:
+            updates["is_admin"] = 1
+        # enabled: OR (true ถ้าฝั่งใด enabled)
+        prim_en = 1 if (prim_d.get("enabled") in (None, 1)) else 0
+        src_en  = 1 if (src_d.get("enabled")  in (None, 1)) else 0
+        if prim_en == 0 and src_en == 1:
+            updates["enabled"] = 1
+        # last_login_at: ใช้ค่ามากสุด (recent)
+        pll = prim_d.get("last_login_at") or ""
+        sll = src_d.get("last_login_at") or ""
+        if sll > pll:
+            updates["last_login_at"] = sll
+
+        # 7) ลบ source ก่อน (ปลด UNIQUE constraint)
+        _invalidate_member_sessions(source_id)
+        conn.execute("DELETE FROM members WHERE id = ?", (source_id,))
+
+        # 8) Update primary ด้วยค่าที่ merge
+        if updates:
+            set_clause = ", ".join(f"{k} = ?" for k in updates)
+            try:
+                conn.execute(
+                    f"UPDATE members SET {set_clause} WHERE id = ?",
+                    list(updates.values()) + [primary_id],
+                )
+            except sqlite3.IntegrityError as e:
+                raise HTTPException(status_code=409, detail=f"merge ขัดกับ UNIQUE constraint: {e}")
+
+    return {"ok": True, "merged_fields": list(updates.keys())}
+
+
 # ===========================================================================
 # Sites & Credentials (admin-protected)
 # ===========================================================================

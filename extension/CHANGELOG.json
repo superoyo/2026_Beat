@@ -2,6 +2,25 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.84",
+      "date": "2026-05-13",
+      "title": "Members: รวม 2 บัญชีเข้าด้วยกัน (กรณีคนเดียวกัน)",
+      "summary": "เพิ่มปุ่ม '🧬 Merge' ในรายการ member — admin เลือก account อื่นที่เป็นคนเดียวกัน → ระบบย้าย FK relations (teams/credentials/hardware/assignments/usage_logs/access_requests) + fill missing fields ทั้งสอง + ลบ source",
+      "changes": [
+        "Backend POST /api/admin/members/{primary_id}/merge — body {source_id}",
+        "ย้าย team_members + credential_members ด้วย INSERT OR IGNORE → DELETE (กัน PK conflict)",
+        "UPDATE hardware.current_member_id + hardware_assignments.member_id + usage_logs.member_id",
+        "ย้าย access_requests ด้วย INSERT OR IGNORE → DELETE",
+        "Fill missing fields: primary wins ยกเว้น placeholder phone/firebase_uid (email:...) → ใช้ source ที่เป็นค่าจริง",
+        "is_admin/enabled: OR (true ถ้าฝั่งใดเป็น)",
+        "last_login_at: ใช้ค่าใหม่กว่า",
+        "ลบ source ก่อน → update primary (ปลด UNIQUE constraints)",
+        "Frontend: ปุ่ม '🧬 Merge' สีม่วงในแต่ละ member row",
+        "Modal picker: search list ของ member อื่น (ใช้ renderHwMemberRow) + active highlight",
+        "Confirm dialog: warning ละเอียดก่อน merge"
+      ]
+    },
+    {
       "version": "1.9.83",
       "date": "2026-05-13",
       "title": "Wazzup SSO: เข้าระบบด้วย Fareast Fameline + เก็บ token ไว้ใช้ต่อ",

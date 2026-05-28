@@ -10097,6 +10097,7 @@ function renderMembersTable(members) {
         ${adminBtn}
         <button class="btn" data-act="sites" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px" title="ดูและแก้สิทธิ์เข้าถึง site">🌐 Site Access</button>
         <button class="btn" data-act="hardware" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px" title="Hardware ที่ดูแลอยู่">🖥️ Hardware</button>
+        <button class="btn" data-act="merge" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px;background:rgba(124,58,237,.10);color:var(--accent);border-color:rgba(124,58,237,.30)" title="รวมกับอีกบัญชี (คนเดียวกัน)">🧬 Merge</button>
         <button class="btn" data-act="reset" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px">🔑 Reset PW</button>
         <button class="btn ${m.enabled ? 'danger' : ''}" data-act="toggle" data-id="${m.id}" data-enabled="${m.enabled ? 1 : 0}" style="font-size:11.5px;padding:5px 10px">${m.enabled ? '⛔ Disable' : '✓ Enable'}</button>
         <button class="btn danger" data-act="delete" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px">🗑 ลบ</button>
@@ -10615,6 +10616,13 @@ async function handleMemberAction(btn) {
     return;
   }
 
+  // v1.9.84 — merge 2 accounts → คน ๆ เดียวกัน
+  if (act === 'merge') {
+    const name = btn.dataset.name;
+    showMergeMemberModal(parseInt(id, 10), name);
+    return;
+  }
+
   if (act === 'role') {
     const isCurrentlyAdmin = btn.dataset.current === '1';
     const name = btn.dataset.name;
@@ -10665,6 +10673,88 @@ async function handleMemberAction(btn) {
     }
     return;
   }
+}
+
+// v1.9.84 — Merge 2 member accounts (คน ๆ เดียวกัน) — primary (this) = ปลายทาง, source (เลือก) = ถูกลบ
+function showMergeMemberModal(primaryId, primaryName) {
+  const candidates = (_membersCache || []).filter(m => m.id !== primaryId);
+  let selectedId = null;
+  let searchQ = '';
+  showModal({
+    title: '🧬 รวมบัญชี — เลือก account อื่นที่เป็นคนเดียวกัน',
+    size: 'wide',
+    body: `
+      <div class="info-box" style="margin-bottom:12px;padding:10px 12px;background:rgba(124,58,237,.08);border:1px solid rgba(124,58,237,.25);border-radius:8px;color:var(--accent);font-size:12.5px;line-height:1.6">
+        ⚠️ <strong>กระบวนการนี้ไม่สามารถย้อนได้</strong> — ทุกข้อมูล (teams, sites, hardware, history, logs) ของ <em>"account ที่เลือก"</em> จะถูกย้ายมาอยู่ใต้ <strong>"${escapeHtml(primaryName)}"</strong> แล้วบัญชีนั้นจะถูกลบ
+        <br>ข้อมูลซ้ำ → ทับด้วยของ "${escapeHtml(primaryName)}"; ข้อมูลที่ว่าง → เติมจากบัญชีอีกฝั่ง
+      </div>
+      <div class="field">
+        <label>เลือก account ที่จะรวมเข้ามา</label>
+        <input id="mm-search" type="text" placeholder="🔍 ค้นหาชื่อ / email / phone..." autocomplete="off"
+          style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;box-sizing:border-box" />
+        <div id="mm-list" style="margin-top:8px;max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);padding:6px;display:flex;flex-direction:column;gap:2px"></div>
+        <input type="hidden" id="mm-selected-id" value="" />
+      </div>
+    `,
+    onSubmit: async () => {
+      const sid = parseInt(($('mm-selected-id') || {}).value || '0', 10);
+      if (!sid) throw new Error('กรุณาเลือก account ที่จะรวม');
+      if (sid === primaryId) throw new Error('คุณเลือกบัญชีตัวเอง — เลือกอีกบัญชี');
+      const srcMember = candidates.find(x => x.id === sid);
+      const srcLabel = srcMember ? (srcMember.display_name || srcMember.email || srcMember.phone || `member#${sid}`) : `member#${sid}`;
+      if (!confirm(`ยืนยันรวมบัญชี?\n\n"${srcLabel}" → "${primaryName}"\n\n* บัญชี "${srcLabel}" จะถูกลบถาวร\n* ข้อมูลทั้งหมด (teams/sites/hardware/history) จะย้ายมารวมที่ "${primaryName}"`)) {
+        throw new Error('cancelled');
+      }
+      await fetchJson(`/api/admin/members/${primaryId}/merge`, {
+        method: 'POST', body: JSON.stringify({ source_id: sid }),
+      });
+      await loadMembersList();
+      showSavedToast(`✓ รวมบัญชีสำเร็จ — "${srcLabel}" → "${primaryName}"`);
+    },
+  });
+
+  const refresh = () => {
+    const listEl = $('mm-list');
+    if (!listEl) return;
+    const ql = searchQ.trim().toLowerCase();
+    const filtered = candidates.filter(m => {
+      if (!ql) return true;
+      return (m.display_name || '').toLowerCase().includes(ql)
+          || (m.email || '').toLowerCase().includes(ql)
+          || (m.phone || '').toLowerCase().includes(ql);
+    });
+    if (filtered.length === 0) {
+      listEl.innerHTML = `<div style="padding:14px;text-align:center;color:var(--text-muted);font-size:12.5px">ไม่พบ account ที่ตรงคำค้น</div>`;
+      return;
+    }
+    listEl.innerHTML = filtered.map(m => {
+      const isSel = m.id === selectedId;
+      return `
+        <button type="button" data-mid="${m.id}" style="cursor:pointer;padding:7px 9px;border-radius:6px;display:flex;align-items:center;gap:10px;background:${isSel ? 'rgba(124,58,237,.10)' : 'transparent'};border:1px solid ${isSel ? 'var(--accent)' : 'transparent'};font-family:inherit;text-align:left;width:100%;box-sizing:border-box;transition:background .12s">
+          ${renderHwMemberRow(m, false)}
+          ${isSel ? '<span style="color:var(--accent);font-weight:700;font-size:18px;flex-shrink:0;line-height:1">✓</span>' : ''}
+        </button>
+      `;
+    }).join('');
+    listEl.querySelectorAll('button[data-mid]').forEach(btn => {
+      const mid = parseInt(btn.dataset.mid, 10);
+      btn.addEventListener('mouseenter', () => { if (mid !== selectedId) btn.style.background = 'var(--bg-soft)'; });
+      btn.addEventListener('mouseleave', () => { if (mid !== selectedId) btn.style.background = 'transparent'; });
+      btn.addEventListener('click', () => {
+        selectedId = mid;
+        if ($('mm-selected-id')) $('mm-selected-id').value = String(mid);
+        refresh();
+      });
+    });
+  };
+  setTimeout(() => {
+    const inp = $('mm-search');
+    if (inp) {
+      inp.addEventListener('input', (e) => { searchQ = e.target.value; refresh(); });
+      inp.focus();
+    }
+    refresh();
+  }, 10);
 }
 
 function showResetPasswordModal(memberId, memberName) {
