@@ -2565,28 +2565,15 @@ def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
     # v1.9.82 — strip placeholder phone (email:...) สำหรับ email-signup user
     def _phone_clean(p):
         return None if (p and p.startswith("email:")) else p
-    # v1.9.86/87 — คำนวณ login methods + label (ค่า account จริง)
+    # v1.9.86/87/88 — ใช้ shared helper _build_login_methods + _aliases_for_display
     def _login_methods(r, aliases):
-        kinds = [a["kind"] for a in aliases]
-        methods = []
-        fb = r["firebase_uid"]
-        if (fb and not fb.startswith("email:")) or "firebase_uid" in kinds:
-            primary_phone = _phone_clean(r["phone"])
-            methods.append({"kind": "phone", "label": primary_phone or "(Phone OTP)"})
-        if r["email"] and r["has_password"]:
-            methods.append({"kind": "email_pw", "label": r["email"]})
-        email_alias_vals = [a["value"] for a in aliases if a["kind"] == "email"]
-        if r["email"]:
-            methods.append({"kind": "wazzup", "label": r["email"]})
-        elif email_alias_vals:
-            methods.append({"kind": "wazzup", "label": email_alias_vals[0]})
-        return methods
-    def _aliases_for_display(aliases):
-        # แสดงเฉพาะ phone + email (firebase_uid เป็น opaque UID ไม่แสดง)
-        return [
-            {"kind": a["kind"], "value": a["value"]}
-            for a in aliases if a["kind"] in ("phone", "email")
-        ]
+        return _build_login_methods(
+            firebase_uid=r["firebase_uid"],
+            phone=r["phone"],
+            email=r["email"],
+            has_password=bool(r["has_password"]),
+            aliases=aliases,
+        )
     return {
         "members": [
             {
@@ -2809,6 +2796,61 @@ class MemberMergeIn(BaseModel):
 
 def _is_placeholder_phone(v: Optional[str]) -> bool:
     return bool(v) and str(v).startswith("email:")
+
+
+# v1.9.88 — shared helper สำหรับสร้าง login_methods (admin list + member self)
+def _build_login_methods(*, firebase_uid, phone, email, has_password, aliases) -> list[dict[str, str]]:
+    """aliases = list of dicts with 'kind' (and optional 'value' for labels)"""
+    kinds = [a["kind"] for a in aliases]
+    methods: list[dict[str, str]] = []
+    # Phone OTP: firebase_uid จริง หรือ alias kind=firebase_uid
+    if (firebase_uid and not str(firebase_uid).startswith("email:")) or "firebase_uid" in kinds:
+        primary_phone = phone if (phone and not str(phone).startswith("email:")) else None
+        methods.append({"kind": "phone", "label": primary_phone or "(Phone OTP)"})
+    # Email + Password
+    if email and has_password:
+        methods.append({"kind": "email_pw", "label": email})
+    # Wazzup: มี email (หรือ alias kind=email)
+    email_alias_vals = [a["value"] for a in aliases if a["kind"] == "email"]
+    if email:
+        methods.append({"kind": "wazzup", "label": email})
+    elif email_alias_vals:
+        methods.append({"kind": "wazzup", "label": email_alias_vals[0]})
+    return methods
+
+
+def _aliases_for_display(aliases: list[dict[str, str]]) -> list[dict[str, str]]:
+    return [
+        {"kind": a["kind"], "value": a["value"]}
+        for a in aliases if a["kind"] in ("phone", "email")
+    ]
+
+
+def _fetch_member_login_meta(conn: sqlite3.Connection, member_id: int) -> dict[str, Any]:
+    """Query aliases + return {login_methods, aliases, alias_count} สำหรับ member นี้"""
+    row = conn.execute(
+        "SELECT firebase_uid, phone, email, (pw_hash IS NOT NULL) AS has_password "
+        "FROM members WHERE id = ?",
+        (member_id,),
+    ).fetchone()
+    if not row:
+        return {"login_methods": [], "aliases": [], "alias_count": 0}
+    alias_rows = conn.execute(
+        "SELECT kind, value FROM member_aliases WHERE member_id = ?", (member_id,)
+    ).fetchall()
+    aliases = [{"kind": a["kind"], "value": a["value"]} for a in alias_rows]
+    methods = _build_login_methods(
+        firebase_uid=row["firebase_uid"],
+        phone=row["phone"],
+        email=row["email"],
+        has_password=bool(row["has_password"]),
+        aliases=aliases,
+    )
+    return {
+        "login_methods": methods,
+        "aliases": _aliases_for_display(aliases),
+        "alias_count": len(aliases),
+    }
 
 
 @app.post("/api/admin/members/{primary_id}/merge")
@@ -4446,17 +4488,20 @@ def member_update_profile(
             conn.execute(f"UPDATE members SET {set_clause} WHERE id = ?", values)
             row = conn.execute(
                 "SELECT id, phone, email, display_name, pw_hash, is_admin, avatar_data, "
-                "       shirt_size, created_at, last_login_at "
+                "       shirt_size, birthdate, created_at, last_login_at "
                 "FROM members WHERE id = ?",
                 (member_id,),
             ).fetchone()
+            member_profile = _member_row_to_profile(row)
+            # v1.9.88 — แนบ login_methods + aliases
+            member_profile.update(_fetch_member_login_meta(conn, member_id))
     except sqlite3.IntegrityError as e:
         # email/phone ซ้ำ — บอกแบบ generic แต่ระบุ context จาก updates
         if "phone" in updates:
             raise HTTPException(status_code=409, detail="เบอร์มือถือนี้ถูกใช้แล้ว") from e
         raise HTTPException(status_code=409, detail="อีเมลนี้ถูกใช้แล้ว") from e
 
-    return {"ok": True, "member": _member_row_to_profile(row)}
+    return {"ok": True, "member": member_profile}
 
 
 @app.post("/api/member/logout")
@@ -6515,9 +6560,12 @@ def member_me(
             "FROM members WHERE id = ?",
             (sess["member_id"],),
         ).fetchone()
-    if not row:
-        return {"logged_in": False}
-    return {"logged_in": True, "member": _member_row_to_profile(row)}
+        if not row:
+            return {"logged_in": False}
+        member_profile = _member_row_to_profile(row)
+        # v1.9.88 — แนบ login_methods + aliases เพื่อแสดง chips ใน 'บัญชีของฉัน'
+        member_profile.update(_fetch_member_login_meta(conn, row["id"]))
+    return {"logged_in": True, "member": member_profile}
 
 
 # ===========================================================================

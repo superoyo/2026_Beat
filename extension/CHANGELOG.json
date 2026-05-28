@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.88",
+      "date": "2026-05-28",
+      "title": "บัญชีของฉัน: แสดง chips บอกว่า profile นี้ login ได้กี่แบบ",
+      "summary": "ใน 'บัญชีของฉัน' หัวข้อโปรไฟล์ — เพิ่ม section '🔐 วิธี Login ที่ใช้ได้' แสดง chips เหมือนใน admin Members list (📱 Phone / 🔑 Email+PW / 🏢 Wazzup + 🔗 alias chips จาก merge) เพื่อให้ member เห็นเองว่า profile ของตัวเอง login ได้ทางไหนบ้าง",
+      "changes": [
+        "Backend /api/member/me: เพิ่ม login_methods[] + aliases[] + alias_count (ใช้ helper เดียวกับ admin list)",
+        "Backend PATCH /api/member/profile: return login_methods + aliases ด้วย เพื่อให้หลัง save ยัง refresh chips ได้",
+        "Backend refactor: dedupe _build_login_methods + _aliases_for_display + _fetch_member_login_meta",
+        "Frontend renderMemberAccountPage: เพิ่ม block '🔐 วิธี Login ที่ใช้ได้' ใต้ profile info grid",
+        "Frontend renderMyLoginChips(): ใช้ methodMap pattern เดียวกับ admin Members list (chips สีน้ำเงิน/เขียว/ส้ม + alias chips ม่วง dashed)"
+      ]
+    },
+    {
       "version": "1.9.87",
       "date": "2026-05-13",
       "title": "Members chips: แสดง account name ในแต่ละ login method + alias values",
