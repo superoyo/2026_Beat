@@ -564,6 +564,8 @@ def init_db() -> None:
             ("shirt_size",             "TEXT"),
             # v1.9.75 — วันเกิด (ISO YYYY-MM-DD)
             ("birthdate",              "TEXT"),
+            # v1.9.92 — เก็บ Wazzup profileURL (raw จาก Wazzup) เพื่อให้ admin ดึงรูปได้
+            ("wazzup_profile_url",     "TEXT"),
         ]:
             if col_name not in member_cols:
                 conn.execute(f"ALTER TABLE members ADD COLUMN {col_name} {col_def}")
@@ -2538,6 +2540,7 @@ def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
             "SELECT id, phone, email, display_name, enabled, is_admin, avatar_data, "
             "       extension_version, extension_last_used_at, firebase_uid, "
             "       (pw_hash IS NOT NULL) AS has_password, "
+            "       (wazzup_profile_url IS NOT NULL AND wazzup_profile_url != '') AS has_wazzup_photo, "
             "       created_at, last_login_at "
             "FROM members ORDER BY created_at DESC"
         ).fetchall()
@@ -2589,6 +2592,7 @@ def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
                 "aliases": _aliases_for_display(aliases_by_member.get(r["id"], [])),
                 "alias_count": len(aliases_by_member.get(r["id"], [])),
                 "avatar_data": r["avatar_data"] if "avatar_data" in r.keys() else None,
+                "has_wazzup_photo": bool(r["has_wazzup_photo"]),  # v1.9.92 — admin มี profileURL เก็บไว้ดึงได้
                 "extension_version": r["extension_version"] if "extension_version" in r.keys() else None,
                 "extension_last_used_at": r["extension_last_used_at"] if "extension_last_used_at" in r.keys() else None,
                 "created_at": r["created_at"],
@@ -4301,6 +4305,7 @@ def auth_wazzup_login(payload: WazzupLoginIn, response: Response) -> dict[str, A
     if not email:
         raise HTTPException(status_code=502, detail="Wazzup ไม่ได้ส่ง email กลับมา — บัญชีนี้ใช้กับระบบนี้ไม่ได้")
     display_name = (waz.get("nickName") or waz.get("empThaiName") or waz.get("empEngName") or "").strip() or None
+    waz_profile_url = (waz.get("profileURL") or "").strip() or None  # v1.9.92
     now = utc_now().isoformat()
     # upsert member by email
     placeholder = f"email:{email}"
@@ -4322,17 +4327,17 @@ def auth_wazzup_login(payload: WazzupLoginIn, response: Response) -> dict[str, A
         if existing:
             conn.execute(
                 "UPDATE members SET display_name = COALESCE(?, display_name), "
-                "last_login_at = ? WHERE id = ?",
-                (display_name, now, existing["id"]),
+                "last_login_at = ?, wazzup_profile_url = COALESCE(?, wazzup_profile_url) WHERE id = ?",
+                (display_name, now, waz_profile_url, existing["id"]),
             )
             member_id = existing["id"]
             phone = existing["phone"]
             is_new = False
         else:
             cur = conn.execute(
-                "INSERT INTO members(phone, firebase_uid, email, display_name, created_at, last_login_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (placeholder, placeholder, email, display_name, now, now),
+                "INSERT INTO members(phone, firebase_uid, email, display_name, created_at, last_login_at, wazzup_profile_url) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (placeholder, placeholder, email, display_name, now, now, waz_profile_url),
             )
             member_id = cur.lastrowid
             phone = placeholder
@@ -4365,18 +4370,10 @@ class WazzupPhotoIn(BaseModel):
     photo_url: str = Field(..., min_length=1, max_length=2000)
 
 
-@app.post("/api/auth/wazzup-photo")
-def auth_wazzup_photo(payload: WazzupPhotoIn, request: Request) -> dict[str, Any]:
-    """v1.9.89 — proxy ดึงรูปจาก Wazzup (ใช้ Bearer token จาก sessionStorage)"""
-    auth = request.headers.get("Authorization", "")
-    if not auth.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="ต้องมี Wazzup Bearer token ใน Authorization header")
-    token = auth.split(" ", 1)[1].strip()
-    if not token:
-        raise HTTPException(status_code=401, detail="Wazzup token ว่าง")
-    # Validate photo_url — ต้องเป็น URL บน Wazzup host เท่านั้น
-    # v1.9.91 — robust resolution + URL-encode path/query (Wazzup ใส่ cache-buster ?YYYY-MM-DD HH:MM:SS. ที่มีช่องว่าง)
-    raw = (payload.photo_url or "").strip().lstrip("﻿").strip()
+def _fetch_wazzup_image_as_data_url(raw_url: str, bearer_token: str | None = None) -> dict[str, Any]:
+    """v1.9.92 — Shared helper: resolve + URL-encode + GET image จาก Wazzup → return {data_url, bytes}.
+    bearer_token เป็น optional (Wazzup รูปประจำตัวเข้าถึงได้สาธารณะ — แต่ส่ง token ไปด้วยเพื่อ future-proof)"""
+    raw = (raw_url or "").strip().lstrip("﻿").strip()
     if not raw:
         raise HTTPException(status_code=400, detail="photo_url ว่าง")
     from urllib.parse import urljoin as _urljoin, urlsplit as _urlsplit, urlunsplit as _urlunsplit, quote as _quote
@@ -4391,11 +4388,13 @@ def auth_wazzup_photo(payload: WazzupPhotoIn, request: Request) -> dict[str, Any
         raise HTTPException(status_code=400, detail="photo_url parse ไม่ได้")
     if sp.netloc and pb.netloc and sp.netloc.lower() != pb.netloc.lower():
         raise HTTPException(status_code=400, detail=f"photo_url ไม่ใช่ Wazzup host — ปฏิเสธ ({sp.netloc})")
-    # encode any spaces / control characters ใน path + query (Wazzup cache-buster มีช่องว่าง)
     safe_path = _quote(sp.path, safe="/%")
     safe_query = _quote(sp.query, safe="=&%")
     url = _urlunsplit((sp.scheme, sp.netloc, safe_path, safe_query, ""))
-    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}", "Accept": "image/*"})
+    headers = {"Accept": "image/*"}
+    if bearer_token:
+        headers["Authorization"] = f"Bearer {bearer_token}"
+    req = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = resp.read()
@@ -4413,7 +4412,67 @@ def auth_wazzup_photo(payload: WazzupPhotoIn, request: Request) -> dict[str, Any
     if len(data) > 8 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="รูปจาก Wazzup ใหญ่เกิน 8MB")
     b64 = _b64.b64encode(data).decode("ascii")
-    return {"ok": True, "data_url": f"data:{ct};base64,{b64}", "bytes": len(data)}
+    return {"data_url": f"data:{ct};base64,{b64}", "bytes": len(data)}
+
+
+@app.post("/api/auth/wazzup-photo")
+def auth_wazzup_photo(payload: WazzupPhotoIn, request: Request) -> dict[str, Any]:
+    """v1.9.89 — proxy ดึงรูปจาก Wazzup (member เอารูปตัวเอง — ใช้ Bearer token จาก sessionStorage)"""
+    auth = request.headers.get("Authorization", "")
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="ต้องมี Wazzup Bearer token ใน Authorization header")
+    token = auth.split(" ", 1)[1].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Wazzup token ว่าง")
+    result = _fetch_wazzup_image_as_data_url(payload.photo_url, bearer_token=token)
+    return {"ok": True, **result}
+
+
+# v1.9.92 — admin ดึงรูป Wazzup ของ member อื่น (ใช้ URL ที่ member เคย login ผ่าน Wazzup แล้วเก็บไว้)
+@app.post("/api/admin/members/{member_id}/avatar-from-wazzup")
+def admin_member_avatar_from_wazzup(
+    member_id: int,
+    request: Request,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    with db_conn() as conn:
+        row = conn.execute(
+            "SELECT id, display_name, wazzup_profile_url FROM members WHERE id = ?",
+            (member_id,),
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="ไม่พบ member")
+    if not row["wazzup_profile_url"]:
+        raise HTTPException(status_code=400, detail="member นี้ยังไม่เคย login ด้วย Wazzup — ไม่มี profileURL เก็บไว้")
+    # admin's own Wazzup token (optional — รูปประจำตัว Wazzup เข้าถึงได้สาธารณะ)
+    auth = request.headers.get("Authorization", "")
+    token = auth.split(" ", 1)[1].strip() if auth.lower().startswith("bearer ") else None
+    result = _fetch_wazzup_image_as_data_url(row["wazzup_profile_url"], bearer_token=token)
+    return {"ok": True, "member_id": member_id, "display_name": row["display_name"], **result}
+
+
+class AdminMemberAvatarIn(BaseModel):
+    avatar_data: str | None = Field(None, max_length=4_000_000)  # base64 data URL หรือ '' เพื่อลบ
+
+
+# v1.9.92 — admin set/clear avatar ของ member อื่น
+@app.patch("/api/admin/members/{member_id}/avatar")
+def admin_member_set_avatar(
+    member_id: int,
+    payload: AdminMemberAvatarIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    new_avatar = (payload.avatar_data or "").strip() or None
+    if new_avatar and not new_avatar.startswith("data:image/"):
+        raise HTTPException(status_code=400, detail="avatar_data ต้องเป็น data URL (data:image/...)")
+    with db_conn() as conn:
+        cur = conn.execute(
+            "UPDATE members SET avatar_data = ? WHERE id = ?",
+            (new_avatar, member_id),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="ไม่พบ member")
+    return {"ok": True, "member_id": member_id, "has_avatar": bool(new_avatar)}
 
 
 @app.post("/api/member/signup-email")

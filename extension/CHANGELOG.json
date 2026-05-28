@@ -2,6 +2,22 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.92",
+      "date": "2026-05-28",
+      "title": "Admin: เปลี่ยนรูป member จาก Wazzup ได้ใน Members list",
+      "summary": "Admin เห็นปุ่ม '🏢 รูปจาก Wazzup' ในแต่ละ member ที่เคย login ผ่าน Wazzup → คลิก → preview รูป → กดบันทึก → set เป็น avatar ของ member นั้น (admin เปลี่ยนรูป member ได้ผ่าน Wazzup เท่านั้น ไม่อนุญาต upload/camera)",
+      "changes": [
+        "Backend members table: เพิ่มคอลัมน์ wazzup_profile_url (raw จาก Wazzup login response)",
+        "Backend auth_wazzup_login: save profileURL ลง member record ทุกครั้งที่ login (COALESCE — ไม่ทับถ้า Wazzup ส่ง null)",
+        "Backend POST /api/admin/members/{id}/avatar-from-wazzup: ดึงรูปจาก URL ที่เก็บไว้ → return data URL",
+        "Backend PATCH /api/admin/members/{id}/avatar: admin set/clear avatar ของ member อื่น",
+        "Backend admin_list_members: เพิ่ม has_wazzup_photo flag (true ถ้ามี wazzup_profile_url)",
+        "Backend refactor: extract _fetch_wazzup_image_as_data_url() helper (reuse กับ /api/auth/wazzup-photo)",
+        "Frontend Members list: ปุ่ม '🏢 รูปจาก Wazzup' (สีส้ม) แสดงเฉพาะ row ที่ has_wazzup_photo=true",
+        "Frontend showAdminWazzupAvatarPreview(): modal preview รูป 200x200 → กดบันทึก → PATCH avatar → reload list"
+      ]
+    },
+    {
       "version": "1.9.91",
       "date": "2026-05-28",
       "title": "Wazzup photo: URL-encode cache-buster ที่มีช่องว่าง (?YYYY-MM-DD HH:MM:SS.)",

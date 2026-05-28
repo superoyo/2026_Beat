@@ -10115,12 +10115,17 @@ function renderMembersTable(members) {
     const adminBtn = currentIsSuper ? `
       <button class="btn ${m.is_admin ? 'danger' : ''}" data-act="role" data-id="${m.id}" data-current="${m.is_admin ? 1 : 0}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px" title="${m.is_admin ? 'ถอด admin' : 'แต่งตั้ง admin'}">${m.is_admin ? '↓ Demote' : '↑ Make Admin'}</button>
     ` : '';
+    // v1.9.92 — ปุ่มดึงรูป Wazzup (เห็นเฉพาะ member ที่เคย login ผ่าน Wazzup)
+    const wazzupAvatarBtn = m.has_wazzup_photo ? `
+      <button class="btn" data-act="wazzup-avatar" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px;background:rgba(245,158,11,.10);color:#92400e;border-color:rgba(245,158,11,.30)" title="ดึงรูป profile จาก Wazzup มาเป็นรูปประจำตัว">🏢 รูปจาก Wazzup</button>
+    ` : '';
     const actionsCell = `
       <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">
         ${adminBtn}
         <button class="btn" data-act="sites" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px" title="ดูและแก้สิทธิ์เข้าถึง site">🌐 Site Access</button>
         <button class="btn" data-act="hardware" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px" title="Hardware ที่ดูแลอยู่">🖥️ Hardware</button>
         <button class="btn" data-act="merge" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px;background:rgba(124,58,237,.10);color:var(--accent);border-color:rgba(124,58,237,.30)" title="รวมกับอีกบัญชี (คนเดียวกัน)">🧬 Merge</button>
+        ${wazzupAvatarBtn}
         <button class="btn" data-act="reset" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px">🔑 Reset PW</button>
         <button class="btn ${m.enabled ? 'danger' : ''}" data-act="toggle" data-id="${m.id}" data-enabled="${m.enabled ? 1 : 0}" style="font-size:11.5px;padding:5px 10px">${m.enabled ? '⛔ Disable' : '✓ Enable'}</button>
         <button class="btn danger" data-act="delete" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px">🗑 ลบ</button>
@@ -10646,6 +10651,31 @@ async function handleMemberAction(btn) {
     return;
   }
 
+  // v1.9.92 — admin ดึงรูปจาก Wazzup ของ member นี้
+  if (act === 'wazzup-avatar') {
+    const name = btn.dataset.name;
+    const wazToken = getWazzupToken();  // optional — รูปประจำตัว Wazzup เข้าถึงได้สาธารณะ
+    const origLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ กำลังโหลด...';
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (wazToken) headers['Authorization'] = `Bearer ${wazToken}`;
+      const r = await fetchJson(`/api/admin/members/${id}/avatar-from-wazzup`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({}),
+      });
+      showAdminWazzupAvatarPreview(parseInt(id, 10), name, r.data_url);
+    } catch (e) {
+      alert('ดึงรูปจาก Wazzup ไม่สำเร็จ: ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = origLabel;
+    }
+    return;
+  }
+
   if (act === 'role') {
     const isCurrentlyAdmin = btn.dataset.current === '1';
     const name = btn.dataset.name;
@@ -10778,6 +10808,28 @@ function showMergeMemberModal(primaryId, primaryName) {
     }
     refresh();
   }, 10);
+}
+
+// v1.9.92 — admin: preview รูปจาก Wazzup ก่อนบันทึกเป็น avatar ของ member นั้น
+function showAdminWazzupAvatarPreview(memberId, memberName, dataUrl) {
+  showModal({
+    title: `🏢 รูปจาก Wazzup — ${memberName}`,
+    body: `
+      <div style="text-align:center">
+        <img src="${dataUrl}" alt="wazzup avatar" style="width:200px;height:200px;border-radius:50%;object-fit:cover;border:2px solid var(--border);background:var(--bg-soft)" />
+        <div style="margin-top:14px;font-size:13px;color:var(--text)">นี่คือรูปจาก Wazzup ของ ${escapeHtml(memberName)}</div>
+        <div style="margin-top:4px;font-size:12px;color:var(--text-muted)">กด "บันทึก" เพื่อใช้เป็นรูปประจำตัวของ member คนนี้</div>
+      </div>
+    `,
+    onSubmit: async () => {
+      await fetchJson(`/api/admin/members/${memberId}/avatar`, {
+        method: 'PATCH',
+        body: JSON.stringify({ avatar_data: dataUrl }),
+      });
+      showSavedToast('✓ เปลี่ยนรูปแล้ว');
+      await loadMembersList();
+    },
+  });
 }
 
 function showResetPasswordModal(memberId, memberName) {
