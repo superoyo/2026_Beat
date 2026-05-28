@@ -2,6 +2,21 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.86",
+      "date": "2026-05-13",
+      "title": "Members list: chips บอก login methods ที่ใช้ได้แต่ละคน",
+      "summary": "ใต้ชื่อ/email/phone ของ member แต่ละคน — เพิ่ม chips: 📱 Phone OTP / 🔑 Email+Password / 🏢 Wazzup + 🔗 merged (ถ้ามี alias) — admin เห็นทันทีว่าแต่ละคน login ได้กี่แบบ",
+      "changes": [
+        "Backend admin_list_members: เพิ่ม login_methods[] + alias_count ในแต่ละ member",
+        "Derivation rules:",
+        "  - phone: firebase_uid จริง (ไม่ใช่ placeholder 'email:...') OR alias kind=firebase_uid",
+        "  - email_pw: email + has_password",
+        "  - wazzup: email (or alias kind=email)",
+        "Frontend: methodMap สี chips — phone=น้ำเงิน, email_pw=เขียว, wazzup=ส้ม",
+        "alias_count > 0 → chip '🔗 merged' (ม่วง) บอกว่าเคยรวมจาก account อื่น"
+      ]
+    },
+    {
       "version": "1.9.85",
       "date": "2026-05-13",
       "title": "Merge: login เดิมทุก path → เจอ profile เดียวกัน (alias table)",

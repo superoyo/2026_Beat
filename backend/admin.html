@@ -10023,6 +10023,24 @@ function renderMembersTable(members) {
       ? `<div class="m-row m-row-muted">🕐 ล่าสุด ${fmtMemberDate(m.last_login_at)}</div>`
       : `<div class="m-row m-row-muted">🕐 ยังไม่เคยเข้าระบบ</div>`;
 
+    // v1.9.86 — login methods chips (ทุกแบบที่ member นี้ login ได้)
+    const methodMap = {
+      phone:    { icon: '📱', label: 'Phone OTP',     bg: 'rgba(37,99,235,.10)',  fg: 'var(--primary)',     bd: 'rgba(37,99,235,.20)' },
+      email_pw: { icon: '🔑', label: 'Email + Password', bg: 'rgba(16,185,129,.10)', fg: 'var(--green)',       bd: 'rgba(16,185,129,.25)' },
+      wazzup:   { icon: '🏢', label: 'Wazzup SSO',     bg: 'rgba(245,158,11,.12)', fg: '#92400e',            bd: 'rgba(245,158,11,.25)' },
+    };
+    const lm = m.login_methods || [];
+    const loginChips = lm.length === 0
+      ? '<span style="font-size:10.5px;color:var(--text-muted);font-style:italic">— ยังไม่มี login method —</span>'
+      : lm.map(k => {
+          const mm = methodMap[k]; if (!mm) return '';
+          return `<span title="${escapeHtml(mm.label)}" style="display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:600;background:${mm.bg};color:${mm.fg};border:1px solid ${mm.bd};white-space:nowrap">${mm.icon} ${escapeHtml(mm.label)}</span>`;
+        }).join('');
+    const aliasChip = (m.alias_count > 0)
+      ? `<span title="ถูก merge มาจาก ${m.alias_count} identity" style="display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:600;background:rgba(124,58,237,.10);color:var(--accent);border:1px solid rgba(124,58,237,.25);white-space:nowrap">🔗 merged</span>`
+      : '';
+    const loginMethodsLine = `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;align-items:center"><span style="font-size:10px;color:var(--text-muted);font-weight:500;margin-right:2px">login:</span>${loginChips}${aliasChip}</div>`;
+
     const identityCell = `
       <div style="display:flex;gap:11px;align-items:flex-start">
         <div style="width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:15px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(initial)}</div>
@@ -10036,6 +10054,7 @@ function renderMembersTable(members) {
           ${emailLine}
           ${phoneLine}
           ${lastLine}
+          ${loginMethodsLine}
         </div>
       </div>
     `;

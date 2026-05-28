@@ -2536,7 +2536,7 @@ def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
     with db_conn() as conn:
         rows = conn.execute(
             "SELECT id, phone, email, display_name, enabled, is_admin, avatar_data, "
-            "       extension_version, extension_last_used_at, "
+            "       extension_version, extension_last_used_at, firebase_uid, "
             "       (pw_hash IS NOT NULL) AS has_password, "
             "       created_at, last_login_at "
             "FROM members ORDER BY created_at DESC"
@@ -2547,14 +2547,33 @@ def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
             "FROM team_members tm JOIN teams t ON t.id = tm.team_id "
             "ORDER BY t.name"
         ).fetchall()
+        # v1.9.86 — aliases per member สำหรับ login_methods detection
+        alias_rows = conn.execute(
+            "SELECT member_id, kind FROM member_aliases"
+        ).fetchall()
     teams_by_member: dict[int, list[dict[str, Any]]] = {}
     for r in tm_rows:
         teams_by_member.setdefault(r["member_id"], []).append(
             {"id": r["team_id"], "name": r["team_name"]}
         )
+    aliases_by_member: dict[int, list[str]] = {}
+    for ar in alias_rows:
+        aliases_by_member.setdefault(ar["member_id"], []).append(ar["kind"])
     # v1.9.82 — strip placeholder phone (email:...) สำหรับ email-signup user
     def _phone_clean(p):
         return None if (p and p.startswith("email:")) else p
+    # v1.9.86 — คำนวณ login methods ที่ member นี้ใช้ได้
+    def _login_methods(r, alias_kinds):
+        methods = []
+        fb = r["firebase_uid"]
+        has_real_firebase = bool(fb and not fb.startswith("email:")) or ("firebase_uid" in alias_kinds)
+        if has_real_firebase:
+            methods.append("phone")
+        if r["email"] and r["has_password"]:
+            methods.append("email_pw")
+        if r["email"] or ("email" in alias_kinds):
+            methods.append("wazzup")
+        return methods
     return {
         "members": [
             {
@@ -2565,6 +2584,9 @@ def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
                 "enabled": bool(r["enabled"]) if r["enabled"] is not None else True,
                 "is_admin": bool(r["is_admin"]) if r["is_admin"] is not None else False,
                 "has_password": bool(r["has_password"]),
+                # v1.9.86 — login methods + alias count
+                "login_methods": _login_methods(r, aliases_by_member.get(r["id"], [])),
+                "alias_count": len(aliases_by_member.get(r["id"], [])),
                 "avatar_data": r["avatar_data"] if "avatar_data" in r.keys() else None,
                 "extension_version": r["extension_version"] if "extension_version" in r.keys() else None,
                 "extension_last_used_at": r["extension_last_used_at"] if "extension_last_used_at" in r.keys() else None,
