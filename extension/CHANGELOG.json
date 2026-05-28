@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.90",
+      "date": "2026-05-28",
+      "title": "Wazzup photo URL: robust resolution + error diagnostic",
+      "summary": "/api/auth/wazzup-photo ใช้ urljoin แทน manual concat → handle ทั้ง absolute URL, relative ที่มี/ไม่มี leading slash + ใส่ resolved URL ใน error message เพื่อ debug ง่ายขึ้น",
+      "changes": [
+        "Backend: เปลี่ยนจาก manual 'if startswith(/) prepend' → urljoin(base, raw) — รองรับทุก format",
+        "Backend: strip BOM (U+FEFF) + whitespace ก่อน resolve",
+        "Backend error messages: ใส่ URL ที่ resolve แล้วลงใน detail เพื่อระบุปัญหาเร็วขึ้น"
+      ]
+    },
+    {
       "version": "1.9.89",
       "date": "2026-05-28",
       "title": "บัญชีของฉัน: เพิ่มตัวเลือกเอารูปจาก Wazzup + preview ก่อนยืนยัน",

@@ -4375,18 +4375,22 @@ def auth_wazzup_photo(payload: WazzupPhotoIn, request: Request) -> dict[str, Any
     if not token:
         raise HTTPException(status_code=401, detail="Wazzup token ว่าง")
     # Validate photo_url — ต้องเป็น URL บน Wazzup host เท่านั้น
-    url = payload.photo_url.strip()
-    if url.startswith("/"):
-        url = WAZZUP_BASE_URL.rstrip("/") + url
+    # v1.9.90 — robust resolution: ใช้ urljoin handle ทั้ง absolute, /relative, relative ที่ไม่มี leading slash
+    raw = (payload.photo_url or "").strip().lstrip("﻿").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="photo_url ว่าง")
+    from urllib.parse import urljoin as _urljoin
+    base = WAZZUP_BASE_URL.rstrip("/") + "/"
+    url = _urljoin(base, raw)
     if not (url.startswith("http://") or url.startswith("https://")):
-        raise HTTPException(status_code=400, detail="photo_url รูปแบบไม่ถูกต้อง")
+        raise HTTPException(status_code=400, detail=f"photo_url รูปแบบไม่ถูกต้อง (raw={raw!r}, resolved={url!r})")
     try:
         pu = _urlparse(url)
         pb = _urlparse(WAZZUP_BASE_URL)
     except Exception:
         raise HTTPException(status_code=400, detail="photo_url parse ไม่ได้")
     if pu.netloc and pb.netloc and pu.netloc.lower() != pb.netloc.lower():
-        raise HTTPException(status_code=400, detail="photo_url ไม่ใช่ Wazzup host — ปฏิเสธ")
+        raise HTTPException(status_code=400, detail=f"photo_url ไม่ใช่ Wazzup host — ปฏิเสธ ({pu.netloc})")
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}", "Accept": "image/*"})
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
@@ -4396,10 +4400,10 @@ def auth_wazzup_photo(payload: WazzupPhotoIn, request: Request) -> dict[str, Any
         if e.code == 401:
             raise HTTPException(status_code=401, detail="Wazzup token หมดอายุ — login ใหม่")
         if e.code == 404:
-            raise HTTPException(status_code=404, detail="Wazzup ไม่มีรูปประจำตัวสำหรับบัญชีนี้")
-        raise HTTPException(status_code=502, detail=f"โหลดรูปจาก Wazzup ไม่สำเร็จ (HTTP {e.code})")
+            raise HTTPException(status_code=404, detail=f"Wazzup ไม่มีรูปประจำตัวสำหรับบัญชีนี้ ({url})")
+        raise HTTPException(status_code=502, detail=f"โหลดรูปจาก Wazzup ไม่สำเร็จ (HTTP {e.code}) URL={url}")
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"เชื่อมต่อ Wazzup ไม่สำเร็จ: {e}")
+        raise HTTPException(status_code=502, detail=f"เชื่อมต่อ Wazzup ไม่สำเร็จ: {e} (URL={url})")
     if not ct.startswith("image/"):
         raise HTTPException(status_code=502, detail=f"Wazzup ส่ง content-type ที่ไม่ใช่รูป: {ct}")
     if len(data) > 8 * 1024 * 1024:
