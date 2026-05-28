@@ -3998,6 +3998,105 @@ class MemberSignupEmailIn(BaseModel):
     display_name: Optional[str] = Field(None, max_length=120)
 
 
+# v1.9.83 — Wazzup SSO (Fareast Fameline identity backend)
+WAZZUP_BASE_URL = os.environ.get("WAZZUP_BASE_URL", "https://api.fareastfamelineddb.com")
+
+
+class WazzupLoginIn(BaseModel):
+    username: str = Field(..., min_length=1, max_length=200)
+    password: str = Field(..., min_length=1, max_length=200)
+
+
+def _wazzup_auth(username: str, password: str) -> dict[str, Any]:
+    """POST /api/User/Authentication → returns Wazzup session dict (raises HTTPException on fail)"""
+    body = _json.dumps({
+        "authenticationName": username,
+        "authenticationPassword": password,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        f"{WAZZUP_BASE_URL}/api/User/Authentication",
+        data=body,
+        method="POST",
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            raise HTTPException(status_code=401, detail="username หรือ password ไม่ถูกต้อง")
+        raise HTTPException(status_code=502, detail=f"Wazzup login failed (HTTP {e.code})")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"เชื่อมต่อ Wazzup ไม่สำเร็จ: {e}")
+    try:
+        data = _json.loads(raw)
+    except Exception:
+        raise HTTPException(status_code=502, detail="Wazzup response ไม่ใช่ JSON")
+    if not data.get("access_token"):
+        raise HTTPException(status_code=401, detail="username หรือ password ไม่ถูกต้อง")
+    return data
+
+
+@app.post("/api/auth/wazzup-login")
+def auth_wazzup_login(payload: WazzupLoginIn, response: Response) -> dict[str, Any]:
+    """v1.9.83 — proxy Wazzup login → upsert FCT member (by email) → set FCT session + return Wazzup token"""
+    waz = _wazzup_auth(payload.username, payload.password)
+    email = (waz.get("email") or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=502, detail="Wazzup ไม่ได้ส่ง email กลับมา — บัญชีนี้ใช้กับระบบนี้ไม่ได้")
+    display_name = (waz.get("nickName") or waz.get("empThaiName") or waz.get("empEngName") or "").strip() or None
+    now = utc_now().isoformat()
+    # upsert member by email
+    placeholder = f"email:{email}"
+    with db_conn() as conn:
+        existing = conn.execute(
+            "SELECT id, phone, firebase_uid, enabled FROM members WHERE LOWER(email) = ?",
+            (email,),
+        ).fetchone()
+        if existing and _is_member_disabled(existing):
+            raise HTTPException(status_code=403, detail="บัญชีนี้ถูกระงับการใช้งาน")
+        if existing:
+            conn.execute(
+                "UPDATE members SET display_name = COALESCE(?, display_name), "
+                "last_login_at = ? WHERE id = ?",
+                (display_name, now, existing["id"]),
+            )
+            member_id = existing["id"]
+            phone = existing["phone"]
+            is_new = False
+        else:
+            cur = conn.execute(
+                "INSERT INTO members(phone, firebase_uid, email, display_name, created_at, last_login_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (placeholder, placeholder, email, display_name, now, now),
+            )
+            member_id = cur.lastrowid
+            phone = placeholder
+            is_new = True
+    token = _set_member_cookie(response, member_id, phone)
+    return {
+        "ok": True,
+        "role": "member",
+        "member_id": member_id,
+        "token": token,
+        "label": display_name or email,
+        "is_new": is_new,
+        "wazzup": {
+            "access_token": waz.get("access_token"),
+            "expiration": waz.get("expiration"),
+            "email": waz.get("email"),
+            "empThaiName": waz.get("empThaiName"),
+            "empEngName": waz.get("empEngName"),
+            "nickName": waz.get("nickName"),
+            "positionName": waz.get("positionName"),
+            "departmentName": waz.get("departmentName"),
+            "profileURL": waz.get("profileURL"),
+            "subdepartmentName": waz.get("subdepartmentName"),
+            "companyId": waz.get("companyId"),
+        },
+    }
+
+
 @app.post("/api/member/signup-email")
 def member_signup_email(payload: MemberSignupEmailIn, response: Response) -> dict[str, Any]:
     """v1.9.82 — สมัครด้วยอีเมล + รหัสผ่าน (ไม่ต้องผ่าน Firebase phone OTP)"""

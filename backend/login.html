@@ -186,6 +186,7 @@
     <div class="tabs">
       <button class="tab active" data-tab="email">อีเมล / Username + รหัสผ่าน</button>
       <button class="tab" data-tab="phone">เบอร์มือถือ + OTP</button>
+      <button class="tab" data-tab="wazzup">🏢 Wazzup SSO</button>
     </div>
 
     <div class="alert err" id="err"></div>
@@ -256,6 +257,28 @@
         </div>
         <button class="primary-btn" id="verifyOtpBtn">ยืนยัน OTP</button>
         <button class="secondary-btn" id="changePhoneBtn" type="button">← เปลี่ยนเบอร์</button>
+      </div>
+    </div>
+
+    <!-- v1.9.83 — Wazzup SSO panel -->
+    <div class="panel" id="panel-wazzup">
+      <div class="info-box" style="margin-bottom:14px">
+        🏢 <strong>Wazzup (Fareast Fameline)</strong> — เข้าด้วย username + password ของบริษัท
+      </div>
+      <form id="wazzupForm">
+        <div class="field">
+          <label for="waz-user">Username</label>
+          <input id="waz-user" type="text" autocomplete="username" placeholder="ชื่อ Wazzup ของคุณ" />
+        </div>
+        <div class="field">
+          <label for="waz-pass">Password</label>
+          <input id="waz-pass" type="password" autocomplete="current-password" />
+        </div>
+        <button type="submit" class="primary-btn" id="wazLoginBtn">🏢 Login ด้วย Wazzup</button>
+      </form>
+      <div class="hint" style="margin-top:12px;font-size:11.5px;color:var(--text-muted);line-height:1.6">
+        ระบบจะสมัครให้อัตโนมัติ (ครั้งแรก) แล้วเข้าระบบเลย<br/>
+        token ของ Wazzup จะถูกเก็บใน <code>sessionStorage</code> เพื่อใช้กับ Wazzup API อื่น ๆ
       </div>
     </div>
 
@@ -508,6 +531,47 @@
         showErr('OTP ไม่ถูกต้อง: ' + (e.message || e.code || 'unknown'));
       } finally {
         $('verifyOtpBtn').disabled = false;
+      }
+    });
+
+    // ============== v1.9.83 — Wazzup SSO ==============
+    const WAZZUP_STORAGE_KEY = 'fct_wazzup_session';
+    $('wazzupForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearMsg();
+      const username = $('waz-user').value.trim();
+      const password = $('waz-pass').value;
+      if (!username || !password) { showErr('กรอก username + password'); return; }
+      $('wazLoginBtn').disabled = true;
+      $('wazLoginBtn').textContent = '⏳ กำลังเชื่อม Wazzup...';
+      try {
+        const res = await fetch('/api/auth/wazzup-login', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error(j.detail || ('HTTP ' + res.status));
+        }
+        const data = await res.json();
+        // เก็บ Wazzup token ใน sessionStorage เพื่อใช้กับ Wazzup API อื่น
+        if (data.wazzup && data.wazzup.access_token) {
+          try {
+            sessionStorage.setItem(WAZZUP_STORAGE_KEY, JSON.stringify(data.wazzup));
+          } catch {}
+        }
+        addProfile({ token: data.token, role: 'member', label: data.label || data.wazzup?.email });
+        showOk(data.is_new
+          ? '✓ สมัครและเข้าระบบสำเร็จ — กำลังพาไป...'
+          : '✓ เข้าระบบสำเร็จ — กำลังพาเข้าระบบหลังบ้าน...');
+        setTimeout(() => location.replace(data.is_new ? '/admin#/account' : '/admin'), 700);
+      } catch (e) {
+        showErr('Wazzup login ผิดพลาด: ' + e.message);
+      } finally {
+        $('wazLoginBtn').disabled = false;
+        $('wazLoginBtn').textContent = '🏢 Login ด้วย Wazzup';
       }
     });
   </script>

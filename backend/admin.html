@@ -945,6 +945,38 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// v1.9.83 — Wazzup SSO helpers (token เก็บใน sessionStorage)
+const WAZZUP_STORAGE_KEY = 'fct_wazzup_session';
+function getWazzupSession() {
+  try { return JSON.parse(sessionStorage.getItem(WAZZUP_STORAGE_KEY) || 'null'); } catch { return null; }
+}
+function getWazzupToken() {
+  const s = getWazzupSession();
+  if (!s || !s.access_token) return null;
+  // ตรวจ expiration
+  if (s.expiration) {
+    const exp = new Date(s.expiration).getTime();
+    if (!isNaN(exp) && exp < Date.now()) return null;   // หมดอายุ
+  }
+  return s.access_token;
+}
+// helper: เรียก Wazzup API ด้วย bearer token (auto-handle 401 → clear + return null)
+async function wazzupFetch(path, opts = {}) {
+  const token = getWazzupToken();
+  if (!token) throw new Error('ยังไม่มี Wazzup token / หมดอายุ — ออกแล้ว login ใหม่');
+  const headers = { ...(opts.headers || {}), 'Authorization': `Bearer ${token}` };
+  const base = opts.baseUrl || 'https://api.fareastfamelineddb.com';
+  const res = await fetch(base + path, { ...opts, headers });
+  if (res.status === 401) {
+    sessionStorage.removeItem(WAZZUP_STORAGE_KEY);
+    throw new Error('Wazzup token หมดอายุ — login ใหม่');
+  }
+  if (!res.ok) {
+    throw new Error(`Wazzup API HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 // v1.9.69 — Tesseract.js (OCR) lazy loader + helper สำหรับอ่านรูปภาพหมายเลข asset
 let _tesseractLoading = null;
 function ensureTesseract() {
@@ -12004,6 +12036,8 @@ function attachSidebarHandlers() {
   // logout this account (ลบ session ฝั่ง server + ลบ profile จาก localStorage)
   $('logout-btn').addEventListener('click', async () => {
     try { await fetch(currentLogoutPath, { method: 'POST', credentials: 'same-origin' }); } catch {}
+    // v1.9.83 — เคลียร์ Wazzup token ด้วย (ถ้ามี)
+    try { sessionStorage.removeItem('fct_wazzup_session'); } catch {}
     // ลบ profile ปัจจุบันจาก localStorage (match ด้วย label+role เพราะไม่มี token ที่ active)
     saveProfiles(getProfiles().filter(p => !(p.label === currentLabel && p.role === currentRole)));
     // ถ้ายังมี profile อื่น → switch ไปอันแรก

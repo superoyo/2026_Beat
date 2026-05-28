@@ -2,6 +2,22 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.83",
+      "date": "2026-05-13",
+      "title": "Wazzup SSO: เข้าระบบด้วย Fareast Fameline + เก็บ token ไว้ใช้ต่อ",
+      "summary": "เพิ่มทางเข้าสู่ระบบใหม่ผ่าน Wazzup (Fareast Fameline identity backend) — กรอก Wazzup username + password → ระบบ FCT auto-create member (ถ้าใหม่) + เก็บ Wazzup token ใน sessionStorage สำหรับเรียก Wazzup API อื่น",
+      "changes": [
+        "Backend: WAZZUP_BASE_URL (env var; default https://api.fareastfamelineddb.com)",
+        "Backend: helper _wazzup_auth(username, password) — POST /api/User/Authentication ผ่าน urllib",
+        "Backend: POST /api/auth/wazzup-login — proxy Wazzup auth → upsert member by email (placeholder phone='email:<email>') → set FCT cookie + คืน Wazzup token+profile",
+        "Frontend login.html: tab 3 '🏢 Wazzup SSO' พร้อมฟอร์ม username + password",
+        "Frontend: เก็บ data.wazzup ใน sessionStorage key 'fct_wazzup_session' (กัน persist ข้าม browser tab/session)",
+        "Frontend admin.html: getWazzupSession() / getWazzupToken() (check expiration) / wazzupFetch(path, opts) helper สำหรับเรียก Wazzup API อื่น",
+        "Logout: clear sessionStorage 'fct_wazzup_session' ด้วย",
+        "Security: ไม่ store password, token ส่งใน Authorization header เท่านั้น, expiration check ก่อนใช้"
+      ]
+    },
+    {
       "version": "1.9.82",
       "date": "2026-05-13",
       "title": "Email signup + FinDoc layout reorder + Hardware-FinDoc M:N link",
