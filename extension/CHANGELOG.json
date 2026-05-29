@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.109",
+      "date": "2026-05-28",
+      "title": "Dashboard: กราฟสมาชิก + คอมพิวเตอร์ จัดเป็น 2 คอลัมน์",
+      "summary": "วางกราฟจำนวนสมาชิก (ซ้าย) + กราฟคอมพิวเตอร์ (ขวา) เป็น 2 คอลัมน์เคียงกัน — ≤860px stack แนวตั้ง",
+      "changes": [
+        "เพิ่ม .stats-row (CSS grid 2 คอลัมน์) ครอบ members-stats-section + pc-stats-section",
+        "responsive: ≤860px → 1 คอลัมน์"
+      ]
+    },
+    {
       "version": "1.9.108",
       "date": "2026-05-28",
       "title": "Dashboard: pie chart จำนวนคอมพิวเตอร์ + filter ผูก/ไม่ผูก ↔ Windows/Mac",

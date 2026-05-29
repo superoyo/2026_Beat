@@ -193,6 +193,10 @@
       letter-spacing: -0.01em;
     }
     .chart-wrap { position: relative; height: 280px; }
+    /* v1.9.109 — 2-column stats row (กราฟสมาชิก ซ้าย + คอมพิวเตอร์ ขวา) */
+    .stats-row { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+    .stats-row > .panel { margin-bottom: 18px; }
+    @media (max-width: 860px) { .stats-row { grid-template-columns: 1fr; gap: 0; } }
     /* v1.9.108 — PC stats filter buttons */
     .pc-filter-btn {
       padding: 6px 14px; font-size: 12.5px; font-weight: 600; font-family: inherit;
@@ -321,6 +325,8 @@
     </div>
 
     <div id="main-view">
+      <!-- v1.9.109 — กราฟสรุป 2 คอลัมน์: สมาชิก (ซ้าย) + คอมพิวเตอร์ (ขวา) -->
+      <div class="stats-row">
       <!-- v1.9.106 — สรุปจำนวนสมาชิก + กราฟลงทะเบียนรายวัน -->
       <section class="panel" id="members-stats-section">
         <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:14px">
@@ -345,6 +351,7 @@
         </div>
         <div class="chart-wrap" style="height:300px"><canvas id="pc-stats-chart"></canvas></div>
       </section>
+      </div>
 
       <!-- Overview view: accounts grid (default) -->
       <section class="panel" id="accounts-section">
