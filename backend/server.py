@@ -2800,6 +2800,9 @@ def admin_delete_member(
 # v1.9.84 — Merge 2 members into 1 (กรณีคน ๆ เดียวกันสมัครไว้ 2 บัญชี)
 class MemberMergeIn(BaseModel):
     source_id: int   # อีกบัญชี — จะถูก merge เข้ามา + ลบทิ้ง
+    # v1.9.94 — admin เลือก field ที่จะเก็บ {field_name: "primary" | "source"}
+    # ถ้าไม่ส่ง → ใช้ default behavior (primary wins ถ้ามีค่า)
+    field_choices: Optional[dict[str, str]] = None
 
 
 def _is_placeholder_phone(v: Optional[str]) -> bool:
@@ -2858,6 +2861,71 @@ def _fetch_member_login_meta(conn: sqlite3.Connection, member_id: int) -> dict[s
         "login_methods": methods,
         "aliases": _aliases_for_display(aliases),
         "alias_count": len(aliases),
+    }
+
+
+# v1.9.94 — preview diff ก่อน merge → admin เห็นความต่าง + เลือก field ที่จะเก็บ
+@app.get("/api/admin/members/{primary_id}/merge-preview")
+def admin_merge_preview(
+    primary_id: int,
+    source_id: int,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    if primary_id == source_id:
+        raise HTTPException(status_code=400, detail="primary และ source เป็นคนเดียวกัน")
+    with db_conn() as conn:
+        prim = conn.execute("SELECT * FROM members WHERE id = ?", (primary_id,)).fetchone()
+        src  = conn.execute("SELECT * FROM members WHERE id = ?", (source_id,)).fetchone()
+    if not prim:
+        raise HTTPException(status_code=404, detail="primary member ไม่พบ")
+    if not src:
+        raise HTTPException(status_code=404, detail="source member ไม่พบ")
+    prim_d = dict(prim)
+    src_d = dict(src)
+    def _clean_phone(v):
+        return None if _is_placeholder_phone(v) else (v or None)
+    def _clean(field, v):
+        if field in ("phone", "firebase_uid"):
+            return _clean_phone(v)
+        return v if v else None
+    # fields ที่ admin เลือกได้
+    field_specs = [
+        {"field": "display_name",      "label": "ชื่อแสดง",        "type": "text"},
+        {"field": "email",             "label": "อีเมล",            "type": "text"},
+        {"field": "phone",             "label": "เบอร์มือถือ",     "type": "text"},
+        {"field": "avatar_data",       "label": "รูปประจำตัว",     "type": "image"},
+        {"field": "shirt_size",        "label": "Shirt Size",       "type": "text"},
+        {"field": "birthdate",         "label": "วันเกิด",          "type": "text"},
+        {"field": "wazzup_profile_url","label": "Wazzup profileURL","type": "text"},
+        {"field": "wazzup_emp_code",   "label": "Wazzup empCode",   "type": "text"},
+    ]
+    fields_out = []
+    for spec in field_specs:
+        f = spec["field"]
+        pv = _clean(f, prim_d.get(f))
+        sv = _clean(f, src_d.get(f))
+        in_conflict = bool(pv) and bool(sv) and pv != sv
+        default_choice = "primary" if pv else ("source" if sv else "primary")
+        fields_out.append({**spec, "primary_value": pv, "source_value": sv,
+                           "in_conflict": in_conflict, "default_choice": default_choice})
+    # summary
+    def _summary(row):
+        return {
+            "id": row["id"],
+            "display_name": row.get("display_name"),
+            "email": row.get("email"),
+            "phone": _clean_phone(row.get("phone")),
+            "avatar_data": row.get("avatar_data"),
+            "is_admin": bool(row.get("is_admin")),
+            "enabled": bool(row.get("enabled")) if row.get("enabled") is not None else True,
+            "has_password": bool(row.get("pw_hash")),
+            "created_at": row.get("created_at"),
+            "last_login_at": row.get("last_login_at"),
+        }
+    return {
+        "primary": _summary(prim_d),
+        "source":  _summary(src_d),
+        "fields": fields_out,
     }
 
 
@@ -2922,25 +2990,44 @@ def admin_merge_members(
         )
         conn.execute("DELETE FROM access_requests WHERE member_id = ?", (source_id,))
 
-        # 6) Build merged fields — primary wins ยกเว้น placeholder (email:...) → ใช้ source ที่เป็นค่าจริงแทน
+        # 6) Build merged fields — v1.9.94: รองรับ field_choices จาก admin
         prim_d = dict(prim)
         src_d = dict(src)
         updates: dict[str, Any] = {}
-        # phone + firebase_uid — placeholder check
+        fc = payload.field_choices or {}
+        def _apply_choice(field, sv_value, default_to_source: bool):
+            """default_to_source: True = ถ้าไม่มี choice + primary empty → source ชนะ (existing logic)"""
+            choice = fc.get(field)
+            if choice == "source":
+                if sv_value:
+                    updates[field] = sv_value
+            elif choice == "primary":
+                pass  # explicit keep primary
+            else:  # no choice → default behavior
+                if default_to_source and sv_value:
+                    updates[field] = sv_value
+        # phone + firebase_uid — placeholder-aware
         for f in ("phone", "firebase_uid"):
             pv = prim_d.get(f)
             sv = src_d.get(f)
-            if _is_placeholder_phone(pv) and sv and not _is_placeholder_phone(sv):
-                updates[f] = sv
-            elif not pv and sv:
-                updates[f] = sv
-        # อื่น ๆ — fill ถ้า primary NULL
+            choice = fc.get(f)
+            if choice == "source":
+                if sv and not _is_placeholder_phone(sv):
+                    updates[f] = sv
+            elif choice == "primary":
+                pass
+            else:
+                if _is_placeholder_phone(pv) and sv and not _is_placeholder_phone(sv):
+                    updates[f] = sv
+                elif not pv and sv:
+                    updates[f] = sv
+        # อื่น ๆ — รองรับ field_choices, default = fill ถ้า primary empty
         for f in ("display_name", "email", "avatar_data", "shirt_size", "birthdate",
-                  "pw_hash", "pw_salt", "extension_version", "extension_last_used_at"):
+                  "pw_hash", "pw_salt", "extension_version", "extension_last_used_at",
+                  "wazzup_profile_url", "wazzup_emp_code"):
             pv = prim_d.get(f)
             sv = src_d.get(f)
-            if not pv and sv:
-                updates[f] = sv
+            _apply_choice(f, sv, default_to_source=(not pv))
         # is_admin: OR (true ถ้าฝั่งใดเป็น admin)
         if int(prim_d.get("is_admin") or 0) == 0 and int(src_d.get("is_admin") or 0) == 1:
             updates["is_admin"] = 1

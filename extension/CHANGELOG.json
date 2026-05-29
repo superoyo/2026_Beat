@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.94",
+      "date": "2026-05-28",
+      "title": "Merge บัญชี: เลือกข้อมูลแต่ละ field ได้ก่อน merge (ป้องกันข้อมูลหาย)",
+      "summary": "Merge modal ใหม่ 2 ขั้น: (1) เลือก source → (2) แสดงข้อมูลทั้ง 2 ฝั่งเทียบกัน + radio ให้ admin เลือกว่าแต่ละ field จะเก็บฝั่งไหน. Field ที่ conflict (ทั้ง 2 ฝั่งมีค่าและต่างกัน) จะมี ⚠ flag — เดิม source ข้อมูลจะหายทับด้วย primary เสมอ",
+      "changes": [
+        "Backend GET /api/admin/members/{id}/merge-preview?source_id=N: return primary/source summary + fields[{label, primary_value, source_value, in_conflict, default_choice}]",
+        "Backend MemberMergeIn: รับ field_choices: dict[field, 'primary'|'source'] (optional — ถ้าไม่ส่ง = default behavior เดิม)",
+        "Backend merge logic: รองรับ field_choices override fields ที่เลือกได้ — display_name, email, phone, firebase_uid, avatar_data, shirt_size, birthdate, pw_hash/salt, extension_version, wazzup_profile_url, wazzup_emp_code",
+        "Frontend showMergeMemberModal: เปลี่ยนเป็น 2-step custom modal — step 1 = pick source, step 2 = side-by-side compare + radio per field + ปุ่ม ← ย้อนกลับ",
+        "Step 2: highlight field ที่ conflict ด้วย ⚠ orange tag, default choice = primary (ถ้ามีค่า) หรือ source (ถ้า primary empty)"
+      ]
+    },
+    {
       "version": "1.9.93",
       "date": "2026-05-28",
       "title": "Admin: ดึงรูป Wazzup ของ member ใดก็ได้ด้วย empCode",
