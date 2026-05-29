@@ -10069,6 +10069,7 @@ async function renderMembersPage() {
     <div class="page-head">
       <h2 class="page-title">👥 Members</h2>
       <span class="card-sub" id="m-count">—</span>
+      <button class="btn" id="m-beacon-all-btn" style="margin-left:auto;font-size:13px;padding:7px 14px;background:rgba(245,158,11,.10);color:#92400e;border-color:rgba(245,158,11,.30)" title="ลองอ่าน check-in ของทุกคนด้วย Wazzup token ของคุณ">📍 Check-in ทุกคน</button>
     </div>
 
     <!-- Recent members bubbles (top, scrollable) -->
@@ -10102,7 +10103,83 @@ async function renderMembersPage() {
       <div class="empty">กำลังโหลด…</div>
     </div>
   `;
+  const beaconAllBtn = $('m-beacon-all-btn');
+  if (beaconAllBtn) beaconAllBtn.addEventListener('click', showBeaconAllModal);
   await loadMembersList();
+}
+
+// v1.9.117 — admin: ลองอ่าน check-in ทุกคน (ใช้ Wazzup token ของ admin)
+async function showBeaconAllModal() {
+  const token = getWazzupToken();
+  if (!token) {
+    alert('ต้อง login ด้วย Wazzup ในเซสชันนี้ก่อน (token จะถูกใช้เรียก Beacon API)\n\nไปที่ /login → Wazzup SSO หรือ บัญชีของฉัน → Link Account → Add Wazzup');
+    return;
+  }
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal modal-wide" style="max-height:88vh;overflow-y:auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px">
+        <h3 style="margin:0;font-size:17px;font-weight:700">📍 Check-in ทุกคน (ทดสอบ)</h3>
+        <button class="btn" id="ba-close" style="font-size:13px;padding:6px 12px">✕ ปิด</button>
+      </div>
+      <div id="ba-summary" style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px">กำลังเรียก Beacon API ของทุกคน…</div>
+      <div id="ba-list"></div>
+    </div>`;
+  document.body.appendChild(bg);
+  bg.querySelector('#ba-close').addEventListener('click', () => bg.remove());
+  bg.addEventListener('click', e => { if (e.target === bg) bg.remove(); });
+
+  const fmtEpoch = ms => { if (ms == null) return '—'; try { return new Date(Number(ms)).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }); } catch { return String(ms); } };
+  const fmtIso = iso => { if (!iso) return '—'; try { return new Date(iso).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }); } catch { return String(iso); } };
+  const statusLabel = {
+    ok: '', forbidden: '<span style="color:#92400e">🔒 ไม่มีสิทธิ์ (403)</span>',
+    notfound: '<span style="color:var(--text-muted)">ไม่พบใน Beacon (404)</span>',
+    unauthorized: '<span style="color:var(--critical)">token หมดอายุ (401)</span>',
+    error: '<span style="color:var(--critical)">error</span>',
+  };
+
+  try {
+    const r = await fetchJson('/api/admin/beacon-all', { method: 'GET', headers: { 'Authorization': `Bearer ${token}` } });
+    const sumParts = Object.entries(r.summary || {}).map(([k, v]) => `${statusLabel[k] ? k : k}: ${v}`);
+    bg.querySelector('#ba-summary').innerHTML =
+      `ทั้งหมด ${r.count} คน · ` + Object.entries(r.summary || {}).map(([k, v]) => `<strong>${k}</strong> ${v}`).join(' · ') +
+      `<br><span style="color:var(--text-muted)">ถ้าเห็น <strong>forbidden</strong> เยอะ = token อ่านได้แค่ตัวเอง (API ไม่อนุญาตอ่านคนอื่น)</span>`;
+    const list = bg.querySelector('#ba-list');
+    if (!r.results || r.results.length === 0) {
+      list.innerHTML = '<div class="empty">ไม่มี member ที่ผูก Wazzup empCode</div>';
+      return;
+    }
+    list.innerHTML = r.results.map(m => {
+      const initial = (m.display_name || m.email || '?').trim().charAt(0).toUpperCase();
+      const avatar = m.avatar_data
+        ? `<img src="${m.avatar_data}" alt="" style="width:36px;height:36px;border-radius:50%;object-fit:cover;flex-shrink:0" />`
+        : `<div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:14px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(initial)}</div>`;
+      let info;
+      if (m.status === 'ok') {
+        const t = m.checkInToday, l = m.checkInLastTime;
+        if (t) {
+          info = `<span style="color:var(--green);font-weight:600">📍 ${escapeHtml(t.locationName || '—')}</span> · ${escapeHtml(t.type || '')} · ${escapeHtml(fmtEpoch(t.timestamp))}`;
+        } else if (l) {
+          info = `<span style="color:var(--text-muted)">ล่าสุด: 📍 ${escapeHtml(l.checkInLocation || '—')} · ${escapeHtml(fmtIso(l.checkInAtThailandTime || l.checkInAt))}</span>`;
+        } else {
+          info = '<span style="color:var(--text-muted)">ยังไม่มี check-in</span>';
+        }
+      } else {
+        info = statusLabel[m.status] || escapeHtml(m.status);
+      }
+      return `
+        <div style="display:flex;align-items:center;gap:11px;padding:9px 10px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px">
+          ${avatar}
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:13.5px">${escapeHtml(m.display_name || m.email || '(ไม่มีชื่อ)')} <span style="font-size:11px;color:var(--text-soft);font-weight:400">· ${escapeHtml(m.emp_code)}</span></div>
+            <div style="font-size:12px;margin-top:2px">${info}</div>
+          </div>
+        </div>`;
+    }).join('');
+  } catch (e) {
+    bg.querySelector('#ba-summary').innerHTML = `<span style="color:var(--critical)">❌ ${escapeHtml(e.message)}</span>`;
+  }
 }
 
 function fmtMemberJoinTimeAdmin(iso) {

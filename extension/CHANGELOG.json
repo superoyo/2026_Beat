@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.117",
+      "date": "2026-05-28",
+      "title": "Members: ปุ่ม 'Check-in ทุกคน' (admin ลองอ่าน Beacon ของทุกคน)",
+      "summary": "เพิ่ม endpoint admin ที่วน empCode ของ member ทุกคน เรียก Beacon API ด้วย Wazzup token ของ admin (parallel) — เพื่อทดสอบว่า token admin อ่าน check-in คนอื่นได้ไหม. ถ้า 403 = อ่านได้แค่ตัวเอง",
+      "changes": [
+        "Backend GET /api/admin/beacon-all: วน members (มี wazzup_emp_code) เรียก Beacon ขนาน (ThreadPool 8) → return ผล + status ต่อคน (ok/forbidden/notfound/...)",
+        "Refactor _beacon_request() helper (shared กับ member endpoint)",
+        "Frontend: ปุ่ม '📍 Check-in ทุกคน' ในหน้า Members → modal แสดงผลทุกคน + summary",
+        "ใช้ Wazzup token ของ admin (sessionStorage) — ไม่มี → แจ้งให้ login Wazzup"
+      ]
+    },
+    {
       "version": "1.9.116",
       "date": "2026-05-28",
       "title": "บัญชีของฉัน: เพิ่มเมนู Check-in (Beacon device location)",

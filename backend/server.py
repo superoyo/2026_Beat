@@ -4913,7 +4913,22 @@ def member_avatar_from_wazzup(
     return {"ok": True, **result}
 
 
-# v1.9.116 — Beacon device: ดึงตำแหน่ง check-in ของ member ที่ login Wazzup (proxy หนี CORS)
+# v1.9.116 — Beacon device: ดึงตำแหน่ง check-in (proxy หนี CORS)
+def _beacon_request(emp_code: str, token: str, timeout: int = 12) -> dict[str, Any]:
+    """เรียก Beacon API → return parsed dict. Raise urllib.error.HTTPError ถ้า non-2xx"""
+    from urllib.parse import quote as _quote
+    url = f"{BEACON_BASE_URL.rstrip('/')}/v1/emp/location/{_quote(emp_code, safe='')}"
+    req = urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json, text/plain, */*",
+        "Origin": BEACON_ORIGIN,
+        "Referer": BEACON_ORIGIN + "/",
+    })
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = _json.loads(resp.read().decode("utf-8", errors="replace"))
+    return data if isinstance(data, dict) else {}
+
+
 @app.get("/api/member/beacon-location")
 def member_beacon_location(
     request: Request,
@@ -4938,17 +4953,8 @@ def member_beacon_location(
         uname = (row["wazzup_emp_code"] if row and row["wazzup_emp_code"] else "").strip()
     if not uname:
         raise HTTPException(status_code=400, detail="ยังไม่มี Wazzup empCode — กรุณา login/ผูก Wazzup ก่อน")
-    from urllib.parse import quote as _quote
-    url = f"{BEACON_BASE_URL.rstrip('/')}/v1/emp/location/{_quote(uname, safe='')}"
-    req = urllib.request.Request(url, headers={
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json, text/plain, */*",
-        "Origin": BEACON_ORIGIN,
-        "Referer": BEACON_ORIGIN + "/",
-    })
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = _json.loads(resp.read().decode("utf-8", errors="replace"))
+        data = _beacon_request(uname, token, timeout=15)
     except urllib.error.HTTPError as e:
         if e.code == 401:
             raise HTTPException(status_code=401, detail="Wazzup token หมดอายุ — login ใหม่")
@@ -4959,14 +4965,63 @@ def member_beacon_location(
         raise HTTPException(status_code=502, detail=f"โหลดข้อมูล Beacon ไม่สำเร็จ (HTTP {e.code})")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"เชื่อมต่อ Beacon ไม่สำเร็จ: {e}")
-    if not isinstance(data, dict):
-        raise HTTPException(status_code=502, detail="Beacon ส่ง response ผิดรูปแบบ")
     return {
         "ok": True,
         "username": uname,
         "checkInToday": data.get("checkInToday"),
         "checkInLastTime": data.get("checkInLastTime"),
     }
+
+
+# v1.9.117 — admin: ลองอ่าน check-in ของ member ทุกคน (ใช้ admin's Wazzup token)
+@app.get("/api/admin/beacon-all")
+def admin_beacon_all(
+    request: Request,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    auth = request.headers.get("Authorization", "")
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="ต้องมี Wazzup Bearer token (admin login Wazzup ก่อน)")
+    token = auth.split(" ", 1)[1].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Wazzup token ว่าง")
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, display_name, email, avatar_data, wazzup_emp_code "
+            "FROM members WHERE wazzup_emp_code IS NOT NULL AND wazzup_emp_code != '' "
+            "ORDER BY display_name COLLATE NOCASE LIMIT 200"
+        ).fetchall()
+    members = [dict(r) for r in rows]
+
+    def _fetch_one(m: dict) -> dict[str, Any]:
+        base = {
+            "member_id": m["id"],
+            "display_name": m["display_name"],
+            "email": m["email"],
+            "avatar_data": m["avatar_data"],
+            "emp_code": m["wazzup_emp_code"],
+        }
+        try:
+            data = _beacon_request(m["wazzup_emp_code"], token, timeout=10)
+            return {**base, "status": "ok",
+                    "checkInToday": data.get("checkInToday"),
+                    "checkInLastTime": data.get("checkInLastTime")}
+        except urllib.error.HTTPError as e:
+            st = {401: "unauthorized", 403: "forbidden", 404: "notfound"}.get(e.code, f"http_{e.code}")
+            return {**base, "status": st}
+        except Exception as e:
+            return {**base, "status": "error", "error": str(e)[:120]}
+
+    from concurrent.futures import ThreadPoolExecutor
+    if members:
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            results = list(ex.map(_fetch_one, members))
+    else:
+        results = []
+    summary = {}
+    for r in results:
+        summary[r["status"]] = summary.get(r["status"], 0) + 1
+    return {"ok": True, "count": len(results), "summary": summary, "results": results}
 
 
 @app.post("/api/member/add-wazzup")
