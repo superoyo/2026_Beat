@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.110",
+      "date": "2026-05-28",
+      "title": "Dashboard: กล่องกราฟ 2 คอลัมน์สูงเท่ากัน",
+      "summary": "ปรับให้กล่องกราฟสมาชิก + คอมพิวเตอร์ สูงเท่ากัน (grid stretch) + chart ยืดเต็มพื้นที่ที่เหลือ ดูเรียบร้อยขึ้น",
+      "changes": [
+        ".stats-row: align-items stretch, panel เป็น flex column, chart-wrap flex:1 (ยืดเต็มความสูง)",
+        "ลบ inline height:300px ของ pc chart-wrap (ให้ flex ทำงาน)"
+      ]
+    },
+    {
       "version": "1.9.109",
       "date": "2026-05-28",
       "title": "Dashboard: กราฟสมาชิก + คอมพิวเตอร์ จัดเป็น 2 คอลัมน์",

@@ -193,9 +193,10 @@
       letter-spacing: -0.01em;
     }
     .chart-wrap { position: relative; height: 280px; }
-    /* v1.9.109 — 2-column stats row (กราฟสมาชิก ซ้าย + คอมพิวเตอร์ ขวา) */
-    .stats-row { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
-    .stats-row > .panel { margin-bottom: 18px; }
+    /* v1.9.109/110 — 2-column stats row, กล่องสูงเท่ากัน + chart ยืดเต็มพื้นที่ */
+    .stats-row { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: stretch; }
+    .stats-row > .panel { margin-bottom: 18px; display: flex; flex-direction: column; }
+    .stats-row > .panel .chart-wrap { flex: 1 1 auto; min-height: 280px; height: auto; }
     @media (max-width: 860px) { .stats-row { grid-template-columns: 1fr; gap: 0; } }
     /* v1.9.108 — PC stats filter buttons */
     .pc-filter-btn {
@@ -349,7 +350,7 @@
           <button type="button" class="pc-filter-btn active" data-pc-filter="assignment">ผูกแล้ว / ยังไม่ผูก</button>
           <button type="button" class="pc-filter-btn" data-pc-filter="os">Windows / Mac</button>
         </div>
-        <div class="chart-wrap" style="height:300px"><canvas id="pc-stats-chart"></canvas></div>
+        <div class="chart-wrap"><canvas id="pc-stats-chart"></canvas></div>
       </section>
       </div>
 
