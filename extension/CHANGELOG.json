@@ -2,6 +2,21 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.99",
+      "date": "2026-05-28",
+      "title": "Sidebar redesign (rail icons) + Wazzup label = empCode (email)",
+      "summary": "(1) Desktop sidebar เปลี่ยนเป็น compact rail (72px) icon-only — hover group → flyout, hover direct-nav → tooltip. (2) Wazzup login method label เปลี่ยนจาก email อย่างเดียว → 'empCode (email)' (Wazzup ใช้รหัสพนักงานเป็น identifier หลัก)",
+      "changes": [
+        "Sidebar CSS @media (min-width:769px): aside 72px, ซ่อน labels/captions/badges, แสดงเฉพาะ icons",
+        "Group flyout: position absolute ทางขวา + bridge (::before) ป้องกัน gap close บน hover",
+        "Tooltip: ::after content=attr(data-label) — pop ขวา on hover (delay 150ms)",
+        "HTML: ห่อ direct-nav <a> ด้วย nav-icon + nav-label spans + data-label",
+        "Profile footer: shrink เหลือแค่ avatar, profile-menu pop ขวา",
+        "Backend _build_login_methods(): รับ wazzup_emp_code → label = 'empCode (email)' ถ้ามี empCode (fallback แสดงแค่ email)",
+        "Backend _fetch_member_login_meta() + admin_list_members: pass wazzup_emp_code ไป helper"
+      ]
+    },
+    {
       "version": "1.9.97",
       "date": "2026-05-28",
       "title": "Hamburger menu: เพิ่มลิงก์ Wazzup (เว็บในเครือ)",

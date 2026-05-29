@@ -199,6 +199,129 @@
       border-left-color: var(--primary);
     }
 
+    /* v1.9.99 — Rail mode: compact icon-only sidebar (Google Ads style) — desktop only */
+    @media (min-width: 769px) {
+      body > aside {
+        width: 72px;
+        padding: 14px 0;
+      }
+      body > aside .brand {
+        padding: 0 10px 10px;
+        margin-bottom: 8px;
+      }
+      body > aside .brand-row { justify-content: center; }
+      body > aside .brand a.logo,
+      body > aside .brand .sub,
+      body > aside .nav-section-label,
+      body > aside .nav-label,
+      body > aside .nav-group-label,
+      body > aside .nav-group-caret,
+      body > aside .profile-info,
+      body > aside .profile-caret,
+      body > aside #nav-group-members-badge,
+      body > aside #nav-req-badge {
+        display: none !important;
+      }
+      body > aside .nav { padding: 0 8px; }
+      body > aside .nav-section + .nav-section {
+        margin-top: 6px;
+        padding-top: 6px;
+        border-top: 1px solid var(--border);
+      }
+      body > aside .nav a,
+      body > aside .nav-group-toggle {
+        justify-content: center;
+        padding: 11px 6px;
+        gap: 0;
+        position: relative;
+      }
+      body > aside .nav-icon,
+      body > aside .nav-group-toggle > span:first-child {
+        font-size: 18px;
+        line-height: 1;
+      }
+      /* Group flyout: position to the right of toggle on hover (with bridge to prevent close) */
+      body > aside .nav-group { position: relative; }
+      body > aside .nav-group .nav-group-children {
+        display: none;
+        position: absolute;
+        left: calc(100% + 6px);
+        top: -4px;
+        min-width: 220px;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 6px !important;
+        z-index: 100;
+        box-shadow: 0 8px 24px rgba(15,23,42,.18);
+        gap: 1px;
+      }
+      /* bridge to fill the 6px gap so cursor can move from toggle to popover without closing */
+      body > aside .nav-group .nav-group-children::before {
+        content: '';
+        position: absolute;
+        left: -10px; top: 0; bottom: 0; width: 12px;
+      }
+      body > aside .nav-group:hover .nav-group-children {
+        display: flex !important;
+      }
+      body > aside .nav-group .nav-group-children a {
+        padding: 8px 12px;
+        font-size: 13px;
+        font-weight: 500;
+        border-left: none;
+        border-radius: 6px;
+        white-space: nowrap;
+      }
+      body > aside .nav-group .nav-group-children a:hover {
+        background: var(--bg-hover);
+      }
+      body > aside .nav-group .nav-group-children a.active {
+        background: var(--primary-soft);
+        color: var(--primary-dark);
+      }
+      /* Tooltip for direct-nav items only (skip group-toggles — they have flyout) */
+      body > aside .nav a[data-label]::after {
+        content: attr(data-label);
+        position: absolute;
+        left: calc(100% + 8px);
+        top: 50%;
+        transform: translateY(-50%);
+        background: var(--text);
+        color: var(--bg-card);
+        font-size: 12px;
+        font-weight: 500;
+        padding: 5px 10px;
+        border-radius: 6px;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity .12s ease .15s;
+        z-index: 110;
+      }
+      body > aside .nav a[data-label]:hover::after { opacity: 1; }
+      /* Sidebar footer: avatar only */
+      body > aside .sidebar-footer { padding: 8px; }
+      body > aside .profile-current {
+        justify-content: center;
+        padding: 6px;
+        gap: 0;
+      }
+      body > aside .profile-avatar {
+        width: 38px; height: 38px;
+        font-size: 14px;
+      }
+      /* Profile menu: pop to the right instead of upward */
+      body > aside .profile-menu {
+        left: calc(100% + 6px) !important;
+        right: auto !important;
+        bottom: 0 !important;
+        top: auto !important;
+        transform: none !important;
+        min-width: 240px;
+      }
+    }
+
     .sidebar-footer {
       padding: 12px;
       border-top: 1px solid var(--border);
@@ -823,15 +946,15 @@
       <div class="sub">Admin Console</div>
     </div>
     <nav class="nav">
-      <!-- ส่วนทั่วไป (เมนูใช้งานประจำ) -->
+      <!-- v1.9.99 — รายการระดับบนใช้ icon-only ใน rail mode: ห่อ emoji + label ด้วย span + data-label สำหรับ tooltip -->
       <div class="nav-section">
-        <a href="#/dashboard" data-route="dashboard">📊 Dashboard</a>
-        <a href="#/platforms" data-route="platforms">🚀 Platforms</a>
-        <a href="#/calendar" data-route="calendar">📅 Calendar</a>
+        <a href="#/dashboard" data-route="dashboard" data-label="Dashboard"><span class="nav-icon">📊</span><span class="nav-label">Dashboard</span></a>
+        <a href="#/platforms" data-route="platforms" data-label="Platforms"><span class="nav-icon">🚀</span><span class="nav-label">Platforms</span></a>
+        <a href="#/calendar" data-route="calendar" data-label="Calendar"><span class="nav-icon">📅</span><span class="nav-label">Calendar</span></a>
         <!-- บัญชีของฉัน group: รวม โปรไฟล์ + My Device + Extension -->
         <div class="nav-group" id="nav-group-account" data-group-routes="account,my-device,extension">
-          <button type="button" class="nav-group-toggle" data-group-toggle="account">
-            <span style="font-size:14px">👤</span>
+          <button type="button" class="nav-group-toggle" data-group-toggle="account" data-label="บัญชีของฉัน">
+            <span class="nav-icon">👤</span>
             <span class="nav-group-label">บัญชีของฉัน</span>
             <span class="nav-group-caret">▼</span>
           </button>
@@ -851,8 +974,8 @@
         </div>
         <!-- Members group: รวม Members + Teams + Access Requests เป็น sub-menu -->
         <div class="nav-group" id="nav-group-members" data-group-routes="members,teams,access-requests">
-          <button type="button" class="nav-group-toggle" data-group-toggle="members">
-            <span style="font-size:14px">👥</span>
+          <button type="button" class="nav-group-toggle" data-group-toggle="members" data-label="Members">
+            <span class="nav-icon">👥</span>
             <span class="nav-group-label">Members</span>
             <span id="nav-group-members-badge" style="display:none;background:var(--critical);color:#fff;font-size:10.5px;padding:1px 7px;border-radius:999px;font-weight:700;margin-right:4px"></span>
             <span class="nav-group-caret">▼</span>
@@ -863,11 +986,11 @@
             <a href="#/access-requests" data-route="access-requests">Access Requests <span id="nav-req-badge" style="display:none;margin-left:6px;background:var(--critical);color:#fff;font-size:10.5px;padding:1px 7px;border-radius:999px;font-weight:700"></span></a>
           </div>
         </div>
-        <a href="#/sites" data-route="sites">🛠 Int. Platforms Config</a>
+        <a href="#/sites" data-route="sites" data-label="Int. Platforms Config"><span class="nav-icon">🛠</span><span class="nav-label">Int. Platforms Config</span></a>
         <!-- Clients Platform group: รวม Websites + Services Config -->
         <div class="nav-group" id="nav-group-clients" data-group-routes="websites,services-config,domains-config">
-          <button type="button" class="nav-group-toggle" data-group-toggle="clients">
-            <span style="font-size:14px">🌐</span>
+          <button type="button" class="nav-group-toggle" data-group-toggle="clients" data-label="Clients Platform">
+            <span class="nav-icon">🌐</span>
             <span class="nav-group-label">Clients Platform</span>
             <span class="nav-group-caret">▼</span>
           </button>
@@ -878,8 +1001,8 @@
         </div>
         <!-- Hardware group: PC / Device / Network -->
         <div class="nav-group" id="nav-group-hardware" data-group-routes="hardware-pc,hardware-pc-unassigned,hardware-device,hardware-network">
-          <button type="button" class="nav-group-toggle" data-group-toggle="hardware">
-            <span style="font-size:14px">🖥️</span>
+          <button type="button" class="nav-group-toggle" data-group-toggle="hardware" data-label="Hardware">
+            <span class="nav-icon">🖥️</span>
             <span class="nav-group-label">Hardware</span>
             <span class="nav-group-caret">▼</span>
           </button>
@@ -891,11 +1014,11 @@
           </div>
         </div>
         <!-- v1.9.76 — Financial Document -->
-        <a href="#/financial-documents" data-route="financial-documents">💰 Financial Document</a>
+        <a href="#/financial-documents" data-route="financial-documents" data-label="Financial Document"><span class="nav-icon">💰</span><span class="nav-label">Financial Document</span></a>
         <!-- Setting group: รวม Logs + API Key -->
         <div class="nav-group" id="nav-group-setting" data-group-routes="logs,security">
-          <button type="button" class="nav-group-toggle" data-group-toggle="setting">
-            <span style="font-size:14px">⚙️</span>
+          <button type="button" class="nav-group-toggle" data-group-toggle="setting" data-label="Setting">
+            <span class="nav-icon">⚙️</span>
             <span class="nav-group-label">Setting</span>
             <span class="nav-group-caret">▼</span>
           </button>

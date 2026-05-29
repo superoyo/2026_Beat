@@ -2571,7 +2571,7 @@ def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
     # v1.9.82 — strip placeholder phone (email:...) สำหรับ email-signup user
     def _phone_clean(p):
         return None if (p and p.startswith("email:")) else p
-    # v1.9.86/87/88 — ใช้ shared helper _build_login_methods + _aliases_for_display
+    # v1.9.86/87/88/98 — ใช้ shared helper _build_login_methods + _aliases_for_display
     def _login_methods(r, aliases):
         return _build_login_methods(
             firebase_uid=r["firebase_uid"],
@@ -2579,6 +2579,7 @@ def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
             email=r["email"],
             has_password=bool(r["has_password"]),
             aliases=aliases,
+            wazzup_emp_code=r["wazzup_emp_code"] if "wazzup_emp_code" in r.keys() else None,
         )
     return {
         "members": [
@@ -2810,7 +2811,8 @@ def _is_placeholder_phone(v: Optional[str]) -> bool:
 
 
 # v1.9.88 — shared helper สำหรับสร้าง login_methods (admin list + member self)
-def _build_login_methods(*, firebase_uid, phone, email, has_password, aliases) -> list[dict[str, str]]:
+# v1.9.98 — wazzup_emp_code: ใช้แสดง empCode เป็น label หลัก, อีเมล์ในวงเล็บ
+def _build_login_methods(*, firebase_uid, phone, email, has_password, aliases, wazzup_emp_code=None) -> list[dict[str, str]]:
     """aliases = list of dicts with 'kind' (and optional 'value' for labels)"""
     kinds = [a["kind"] for a in aliases]
     methods: list[dict[str, str]] = []
@@ -2821,12 +2823,15 @@ def _build_login_methods(*, firebase_uid, phone, email, has_password, aliases) -
     # Email + Password
     if email and has_password:
         methods.append({"kind": "email_pw", "label": email})
-    # Wazzup: มี email (หรือ alias kind=email)
+    # Wazzup: มี email (หรือ alias kind=email) — label = empCode (email) ถ้ามี empCode
     email_alias_vals = [a["value"] for a in aliases if a["kind"] == "email"]
-    if email:
-        methods.append({"kind": "wazzup", "label": email})
-    elif email_alias_vals:
-        methods.append({"kind": "wazzup", "label": email_alias_vals[0]})
+    waz_email = email or (email_alias_vals[0] if email_alias_vals else None)
+    if waz_email:
+        if wazzup_emp_code:
+            label = f"{wazzup_emp_code} ({waz_email})"
+        else:
+            label = waz_email
+        methods.append({"kind": "wazzup", "label": label})
     return methods
 
 
@@ -2840,7 +2845,8 @@ def _aliases_for_display(aliases: list[dict[str, str]]) -> list[dict[str, str]]:
 def _fetch_member_login_meta(conn: sqlite3.Connection, member_id: int) -> dict[str, Any]:
     """Query aliases + return {login_methods, aliases, alias_count} สำหรับ member นี้"""
     row = conn.execute(
-        "SELECT firebase_uid, phone, email, (pw_hash IS NOT NULL) AS has_password "
+        "SELECT firebase_uid, phone, email, (pw_hash IS NOT NULL) AS has_password, "
+        "       wazzup_emp_code "
         "FROM members WHERE id = ?",
         (member_id,),
     ).fetchone()
@@ -2856,6 +2862,7 @@ def _fetch_member_login_meta(conn: sqlite3.Connection, member_id: int) -> dict[s
         email=row["email"],
         has_password=bool(row["has_password"]),
         aliases=aliases,
+        wazzup_emp_code=row["wazzup_emp_code"] if "wazzup_emp_code" in row.keys() else None,
     )
     return {
         "login_methods": methods,
