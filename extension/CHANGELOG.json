@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.108",
+      "date": "2026-05-28",
+      "title": "Dashboard: pie chart จำนวนคอมพิวเตอร์ + filter ผูก/ไม่ผูก ↔ Windows/Mac",
+      "summary": "เพิ่ม section '💻 คอมพิวเตอร์ในระบบ' บน Dashboard — แสดง total + pie chart, สลับ filter ได้ระหว่าง ผูกแล้ว/ยังไม่ผูก กับ Windows/Mac",
+      "changes": [
+        "Backend GET /api/hardware/pc-stats: {total, by_assignment{assigned,unassigned}, by_os{windows,mac,other}}",
+        "OS classification: os LIKE win→Windows, mac/osx→Mac, อื่นๆ→other",
+        "Frontend dashboard.html: pie chart (Chart.js) + ปุ่ม filter toggle 2 แบบ",
+        "tooltip แสดงจำนวน + % ของแต่ละส่วน"
+      ]
+    },
+    {
       "version": "1.9.107",
       "date": "2026-05-28",
       "title": "เปลี่ยนชื่อเมนู Members → Peoples",

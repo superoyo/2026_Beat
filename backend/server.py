@@ -7060,6 +7060,32 @@ def member_accessible_sites(
     }
 
 
+@app.get("/api/hardware/pc-stats")
+def hardware_pc_stats(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
+    """v1.9.108 — สรุปจำนวน PC: total + แบ่งตาม ผูก/ไม่ผูก + แบ่งตาม OS (Windows/Mac/อื่นๆ)"""
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT os, (current_member_id IS NOT NULL) AS assigned "
+            "FROM hardware WHERE hw_type = 'pc'"
+        ).fetchall()
+    total = len(rows)
+    assigned = sum(1 for r in rows if r["assigned"])
+    win = mac = other = 0
+    for r in rows:
+        os_v = (r["os"] or "").lower()
+        if "win" in os_v:
+            win += 1
+        elif "mac" in os_v or "osx" in os_v or "os x" in os_v:
+            mac += 1
+        else:
+            other += 1
+    return {
+        "total": total,
+        "by_assignment": {"assigned": assigned, "unassigned": total - assigned},
+        "by_os": {"windows": win, "mac": mac, "other": other},
+    }
+
+
 @app.get("/api/members/registrations-by-date")
 def members_registrations_by_date(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
     """v1.9.106 — สรุปจำนวนสมาชิกทั้งหมด + จำนวนที่ลงทะเบียนรายวัน (กราฟเส้น dashboard)

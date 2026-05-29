@@ -193,6 +193,14 @@
       letter-spacing: -0.01em;
     }
     .chart-wrap { position: relative; height: 280px; }
+    /* v1.9.108 — PC stats filter buttons */
+    .pc-filter-btn {
+      padding: 6px 14px; font-size: 12.5px; font-weight: 600; font-family: inherit;
+      border: 1px solid var(--border); border-radius: 999px; background: var(--bg-card);
+      color: var(--text-muted); cursor: pointer; transition: all .12s;
+    }
+    .pc-filter-btn:hover { border-color: var(--primary); color: var(--text); }
+    .pc-filter-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
@@ -322,6 +330,20 @@
         </div>
         <div style="font-weight:600;margin-bottom:8px;color:var(--text-muted);font-size:13px;text-transform:uppercase;letter-spacing:.04em">จำนวนที่ลงทะเบียนในแต่ละวัน</div>
         <div class="chart-wrap"><canvas id="members-reg-chart"></canvas></div>
+      </section>
+
+      <!-- v1.9.108 — สรุปจำนวนคอมพิวเตอร์ (pie) + filter ผูก/ไม่ผูก ↔ Windows/Mac -->
+      <section class="panel" id="pc-stats-section">
+        <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+          <h2 style="margin:0">💻 คอมพิวเตอร์ในระบบ</h2>
+          <span id="pc-total" style="font-size:30px;font-weight:800;color:var(--primary);line-height:1">—</span>
+          <span style="font-size:14px;color:var(--text-muted)">เครื่อง</span>
+        </div>
+        <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">
+          <button type="button" class="pc-filter-btn active" data-pc-filter="assignment">ผูกแล้ว / ยังไม่ผูก</button>
+          <button type="button" class="pc-filter-btn" data-pc-filter="os">Windows / Mac</button>
+        </div>
+        <div class="chart-wrap" style="height:300px"><canvas id="pc-stats-chart"></canvas></div>
       </section>
 
       <!-- Overview view: accounts grid (default) -->
@@ -1158,8 +1180,9 @@ async function refresh() {
     renderMain();
     renderSummary(summary);
     renderAccountsGrid(accounts);
-    // โหลด recent members + top platforms + member stats (ทำพร้อมกัน — ไม่ block ถ้า fail)
+    // โหลด recent members + top platforms + member stats + pc stats (ทำพร้อมกัน — ไม่ block ถ้า fail)
     renderMemberStats().catch(() => {});
+    renderPcStats().catch(() => {});
     renderRecentMembers().catch(() => {});
     renderTopPlatforms().catch(() => {});
     // ถ้ากำลังดู account detail อยู่ → ก็ refresh detail ของมันด้วย
@@ -1362,6 +1385,64 @@ async function renderMemberStats() {
     },
   });
 }
+
+// v1.9.108 — pie chart จำนวนคอมพิวเตอร์ + filter ผูก/ไม่ผูก ↔ Windows/Mac
+let pcStatsData = null;
+let pcStatsChart = null;
+let pcFilter = 'assignment';
+async function renderPcStats() {
+  try { pcStatsData = await fetchJson('/api/hardware/pc-stats'); } catch { return; }
+  const totalEl = document.getElementById('pc-total');
+  if (totalEl) totalEl.textContent = fmtInt(pcStatsData.total);
+  drawPcChart();
+}
+function drawPcChart() {
+  if (!pcStatsData) return;
+  const canvas = document.getElementById('pc-stats-chart');
+  if (!canvas) return;
+  let labels, values, colors;
+  if (pcFilter === 'os') {
+    const o = pcStatsData.by_os;
+    labels = ['Windows', 'Mac'];
+    values = [o.windows, o.mac];
+    colors = ['#2563eb', '#7c3aed'];
+    if (o.other > 0) { labels.push('อื่นๆ'); values.push(o.other); colors.push('#cbd5e1'); }
+  } else {
+    const a = pcStatsData.by_assignment;
+    labels = ['ผูกแล้ว', 'ยังไม่ผูก'];
+    values = [a.assigned, a.unassigned];
+    colors = ['#2563eb', '#cbd5e1'];
+  }
+  if (pcStatsChart) { try { pcStatsChart.destroy(); } catch {} }
+  // eslint-disable-next-line no-undef
+  pcStatsChart = new Chart(canvas.getContext('2d'), {
+    type: 'pie',
+    data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: '#fff' }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { font: { size: 13 }, padding: 16 } },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const tot = ctx.dataset.data.reduce((s, v) => s + v, 0) || 1;
+              const pct = Math.round(ctx.parsed / tot * 100);
+              return `${ctx.label}: ${fmtInt(ctx.parsed)} เครื่อง (${pct}%)`;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+// wire filter buttons (ครั้งเดียว)
+document.querySelectorAll('.pc-filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    pcFilter = btn.dataset.pcFilter;
+    document.querySelectorAll('.pc-filter-btn').forEach(b => b.classList.toggle('active', b === btn));
+    drawPcChart();
+  });
+});
 
 // refresh-btn อาจถูกซ่อน (ในโหมด embedded) — เช็คก่อน
 {
