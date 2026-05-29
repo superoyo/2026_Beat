@@ -4440,6 +4440,9 @@ class MemberSignupEmailIn(BaseModel):
 
 # v1.9.83 — Wazzup SSO (Fareast Fameline identity backend)
 WAZZUP_BASE_URL = os.environ.get("WAZZUP_BASE_URL", "https://api.fareastfamelineddb.com")
+# v1.9.116 — Beacon device API (ตำแหน่ง check-in พนักงาน) — host คนละตัวกับ Wazzup auth
+BEACON_BASE_URL = os.environ.get("BEACON_BASE_URL", "https://123d92f01m.execute-api.ap-southeast-1.amazonaws.com/dev")
+BEACON_ORIGIN = os.environ.get("BEACON_ORIGIN", "https://job.fareastfamelineddb.com")
 
 
 class WazzupLoginIn(BaseModel):
@@ -4908,6 +4911,62 @@ def member_avatar_from_wazzup(
     token = auth.split(" ", 1)[1].strip() if auth.lower().startswith("bearer ") else None
     result = _fetch_wazzup_image_as_data_url(row["wazzup_profile_url"], bearer_token=token)
     return {"ok": True, **result}
+
+
+# v1.9.116 — Beacon device: ดึงตำแหน่ง check-in ของ member ที่ login Wazzup (proxy หนี CORS)
+@app.get("/api/member/beacon-location")
+def member_beacon_location(
+    request: Request,
+    username: Optional[str] = None,
+    fct_member_session: Optional[str] = Cookie(default=None),
+) -> dict[str, Any]:
+    sess = _require_member_session(fct_member_session)
+    member_id = sess["member_id"]
+    auth = request.headers.get("Authorization", "")
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="ต้องมี Wazzup Bearer token (login Wazzup ก่อน)")
+    token = auth.split(" ", 1)[1].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Wazzup token ว่าง")
+    # username (empCode) — ใช้จาก query ถ้าส่งมา ไม่งั้นดึงจาก member ที่เก็บไว้
+    uname = (username or "").strip()
+    if not uname:
+        with db_conn() as conn:
+            row = conn.execute(
+                "SELECT wazzup_emp_code FROM members WHERE id = ?", (member_id,)
+            ).fetchone()
+        uname = (row["wazzup_emp_code"] if row and row["wazzup_emp_code"] else "").strip()
+    if not uname:
+        raise HTTPException(status_code=400, detail="ยังไม่มี Wazzup empCode — กรุณา login/ผูก Wazzup ก่อน")
+    from urllib.parse import quote as _quote
+    url = f"{BEACON_BASE_URL.rstrip('/')}/v1/emp/location/{_quote(uname, safe='')}"
+    req = urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json, text/plain, */*",
+        "Origin": BEACON_ORIGIN,
+        "Referer": BEACON_ORIGIN + "/",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = _json.loads(resp.read().decode("utf-8", errors="replace"))
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            raise HTTPException(status_code=401, detail="Wazzup token หมดอายุ — login ใหม่")
+        if e.code == 403:
+            raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์อ่านข้อมูล check-in ของ user นี้")
+        if e.code == 404:
+            raise HTTPException(status_code=404, detail="ไม่พบ username นี้ในระบบ Beacon")
+        raise HTTPException(status_code=502, detail=f"โหลดข้อมูล Beacon ไม่สำเร็จ (HTTP {e.code})")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"เชื่อมต่อ Beacon ไม่สำเร็จ: {e}")
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=502, detail="Beacon ส่ง response ผิดรูปแบบ")
+    return {
+        "ok": True,
+        "username": uname,
+        "checkInToday": data.get("checkInToday"),
+        "checkInLastTime": data.get("checkInLastTime"),
+    }
 
 
 @app.post("/api/member/add-wazzup")

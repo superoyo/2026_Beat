@@ -11445,6 +11445,7 @@ async function renderMemberAccountPage() {
           <button type="button" class="acc-menu-item active" data-acc-tab="personal"><span class="acc-menu-ico">👤</span> Personal Info</button>
           <button type="button" class="acc-menu-item" data-acc-tab="link"><span class="acc-menu-ico">🔗</span> Link Account</button>
           <button type="button" class="acc-menu-item" data-acc-tab="password"><span class="acc-menu-ico">🔑</span> Change Password</button>
+          <button type="button" class="acc-menu-item" data-acc-tab="beacon"><span class="acc-menu-ico">📍</span> Check-in</button>
         </div>
 
         <!-- รายละเอียดขวา -->
@@ -11540,6 +11541,17 @@ async function renderMemberAccountPage() {
               </div>
               <div class="hint" id="m-pw-msg" style="margin-bottom:10px;display:none"></div>
               <button class="btn primary" id="m-save-password">บันทึกรหัสผ่าน</button>
+            </div>
+          </div>
+
+          <!-- ============ Check-in (Beacon) ============ -->
+          <div data-acc-panel="beacon" style="display:none">
+            <div class="card" style="display:block">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+                <h3 style="margin:0;font-size:15px;font-weight:600">📍 ตำแหน่ง Check-in (Beacon)</h3>
+                <button type="button" class="btn" id="m-beacon-refresh" style="font-size:12.5px;padding:6px 12px">🔄 รีเฟรช</button>
+              </div>
+              <div id="m-beacon-body" style="font-size:13.5px;color:var(--text-muted)">กำลังโหลด…</div>
             </div>
           </div>
 
@@ -12056,6 +12068,82 @@ async function renderMemberAccountPage() {
     document.querySelectorAll('[data-acc-tab]').forEach(b => {
       b.classList.toggle('active', b.dataset.accTab === menuActive);
     });
+    if (panel === 'beacon') loadBeacon();
+  }
+
+  // v1.9.116 — Beacon check-in (ใช้ Wazzup token ดึงตำแหน่ง check-in ของตัวเอง)
+  let _beaconLoaded = false;
+  async function loadBeacon(force) {
+    const box = $('m-beacon-body');
+    if (!box) return;
+    if (_beaconLoaded && !force) return;  // โหลดครั้งเดียวจนกด refresh
+    const token = getWazzupToken();
+    if (!token) {
+      box.innerHTML = '<div style="padding:10px 0;color:var(--text-muted)">⚠️ ต้อง login ด้วย <strong>Wazzup</strong> ในเซสชันนี้ก่อน ถึงจะดูข้อมูล check-in ได้ (ไปที่ /login → Wazzup SSO)</div>';
+      return;
+    }
+    box.innerHTML = 'กำลังโหลด…';
+    try {
+      const r = await fetchJson('/api/member/beacon-location', {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      renderBeacon(r);
+      _beaconLoaded = true;
+    } catch (e) {
+      box.innerHTML = `<div style="padding:10px 0;color:var(--critical)">❌ ${escapeHtml(e.message)}</div>`;
+    }
+  }
+  function renderBeacon(r) {
+    const box = $('m-beacon-body');
+    const today = r.checkInToday;
+    const last = r.checkInLastTime;
+    const fmtEpoch = ms => {
+      if (ms == null) return '—';
+      try { return new Date(Number(ms)).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }); } catch { return String(ms); }
+    };
+    const fmtIso = iso => {
+      if (!iso) return '—';
+      try { return new Date(iso).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }); } catch { return String(iso); }
+    };
+    const typePill = t => {
+      if (!t) return '';
+      const enter = String(t).toLowerCase() === 'enter';
+      const bg = enter ? 'rgba(16,185,129,.12)' : 'rgba(245,158,11,.14)';
+      const fg = enter ? 'var(--green)' : '#92400e';
+      const label = enter ? 'เข้า (enter)' : (String(t).toLowerCase() === 'exit' ? 'ออก (exit)' : escapeHtml(t));
+      return `<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;background:${bg};color:${fg}">${label}</span>`;
+    };
+    let html = '';
+    // วันนี้
+    if (today) {
+      html += `
+        <div style="padding:14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);margin-bottom:12px">
+          <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">เช็คอินวันนี้</div>
+          <div style="display:grid;grid-template-columns:120px 1fr;gap:8px 14px;font-size:13.5px">
+            <div style="color:var(--text-muted)">สถานที่</div><div style="font-weight:600">📍 ${escapeHtml(today.locationName || '—')}</div>
+            <div style="color:var(--text-muted)">ทิศทาง</div><div>${typePill(today.type) || '—'}</div>
+            <div style="color:var(--text-muted)">เวลา</div><div>${escapeHtml(fmtEpoch(today.timestamp))}</div>
+            ${today.empName ? `<div style="color:var(--text-muted)">พนักงาน</div><div>${escapeHtml(today.empName)}${today.department ? ' · ' + escapeHtml(today.department) : ''}</div>` : ''}
+          </div>
+        </div>`;
+    } else {
+      html += `<div style="padding:14px;border:1px dashed var(--border);border-radius:10px;color:var(--text-muted);margin-bottom:12px">วันนี้ยังไม่มีการ check-in</div>`;
+    }
+    // ล่าสุด
+    if (last) {
+      html += `
+        <div style="padding:14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-soft)">
+          <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">check-in ล่าสุด</div>
+          <div style="display:grid;grid-template-columns:120px 1fr;gap:8px 14px;font-size:13.5px">
+            <div style="color:var(--text-muted)">สถานที่</div><div style="font-weight:600">📍 ${escapeHtml(last.checkInLocation || '—')}</div>
+            <div style="color:var(--text-muted)">เวลา (ไทย)</div><div>${escapeHtml(fmtIso(last.checkInAtThailandTime || last.checkInAt))}</div>
+          </div>
+        </div>`;
+    } else if (!today) {
+      html = `<div style="padding:14px;color:var(--text-muted)">ยังไม่มีประวัติ check-in</div>`;
+    }
+    box.innerHTML = html;
   }
 
   // Wire avatar buttons + tabs
@@ -12068,6 +12156,8 @@ async function renderMemberAccountPage() {
     if (gotoPhoto) gotoPhoto.addEventListener('click', () => showAccPanel('photo'));
     const photoBack = $('m-photo-back');
     if (photoBack) photoBack.addEventListener('click', () => showAccPanel('personal'));
+    const beaconRefresh = $('m-beacon-refresh');
+    if (beaconRefresh) beaconRefresh.addEventListener('click', () => loadBeacon(true));
 
     const fileInput = $('m-avatar-file-input');
     $('m-avatar-upload-btn').addEventListener('click', () => fileInput.click());

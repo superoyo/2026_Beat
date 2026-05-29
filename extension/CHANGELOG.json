@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.116",
+      "date": "2026-05-28",
+      "title": "บัญชีของฉัน: เพิ่มเมนู Check-in (Beacon device location)",
+      "summary": "เพิ่ม skill beacon-device — ดึงตำแหน่ง check-in ของ user ที่ login Wazzup. เมนู '📍 Check-in' ในบัญชีของฉัน แสดง check-in วันนี้ + ล่าสุด (สถานที่/ทิศทาง enter-exit/เวลา). Proxy ผ่าน backend เพื่อหนี CORS",
+      "changes": [
+        "Backend GET /api/member/beacon-location: proxy เรียก Beacon API (<base>/v1/emp/location/<empCode>) ด้วย Bearer token + Origin/Referer headers",
+        "ใช้ empCode (wazzup_emp_code) เป็น username, จัดการ 401/403/404",
+        "Frontend: เมนู Check-in + panel แสดง checkInToday (full record) + checkInLastTime (เวลาไทย), ปุ่มรีเฟรช",
+        "ต้องมี Wazzup session สด (token ใน sessionStorage) — ไม่มี → แจ้งให้ login Wazzup"
+      ]
+    },
+    {
       "version": "1.9.115",
       "date": "2026-05-28",
       "title": "หน้า Login: สลับฟอร์มไปด้านขวา (hero ซ้าย)",
