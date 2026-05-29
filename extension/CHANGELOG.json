@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.107",
+      "date": "2026-05-28",
+      "title": "เปลี่ยนชื่อเมนู Members → Peoples",
+      "summary": "เปลี่ยนชื่อกลุ่มเมนู Members เป็น Peoples (label + sub-item 'รายชื่อ')",
+      "changes": [
+        "nav-group-label + data-label: Members → Peoples",
+        "sub-item: รายชื่อ Members → รายชื่อ Peoples"
+      ]
+    },
+    {
       "version": "1.9.106",
       "date": "2026-05-28",
       "title": "Dashboard: สรุปจำนวนสมาชิก + กราฟเส้นการลงทะเบียนรายวัน",
