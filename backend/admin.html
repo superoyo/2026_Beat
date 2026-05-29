@@ -199,10 +199,14 @@
       border-left-color: var(--primary);
     }
 
-    /* v1.9.99 — Rail mode: compact icon-only sidebar (Google Ads style) — desktop only */
+    /* SVG nav icons (ใช้ทั้ง rail + mobile) — เส้น stroke สีเทา monochrome */
+    .nav-icon { display: inline-flex; align-items: center; justify-content: center; color: var(--text-muted); }
+    .nav-icon svg { width: 19px; height: 19px; stroke-width: 1.8; }
+
+    /* v1.9.99/101 — Rail mode: icon + label ใต้ icon (Google Ads style) — desktop only */
     @media (min-width: 769px) {
       body > aside {
-        width: 72px;
+        width: 92px;
         padding: 14px 0;
       }
       body > aside .brand {
@@ -213,8 +217,6 @@
       body > aside .brand a.logo,
       body > aside .brand .sub,
       body > aside .nav-section-label,
-      body > aside .nav-label,
-      body > aside .nav-group-label,
       body > aside .nav-group-caret,
       body > aside .profile-info,
       body > aside .profile-caret,
@@ -222,23 +224,53 @@
       body > aside #nav-req-badge {
         display: none !important;
       }
-      body > aside .nav { padding: 0 8px; }
+      body > aside .nav { padding: 0 6px; }
       body > aside .nav-section + .nav-section {
         margin-top: 6px;
         padding-top: 6px;
         border-top: 1px solid var(--border);
       }
+      /* รายการ nav: จัด icon บน + label ล่าง (column) */
       body > aside .nav a,
       body > aside .nav-group-toggle {
+        flex-direction: column;
+        align-items: center;
         justify-content: center;
-        padding: 11px 6px;
-        gap: 0;
+        gap: 5px;
+        padding: 11px 4px;
         position: relative;
+        text-align: center;
       }
-      body > aside .nav-icon,
-      body > aside .nav-group-toggle > span:first-child {
-        font-size: 18px;
-        line-height: 1;
+      /* icon ใหญ่ขึ้น + สีเทา */
+      body > aside .nav-icon { color: var(--text-soft); }
+      body > aside .nav-icon svg { width: 25px; height: 25px; stroke-width: 1.65; }
+      /* label ใต้ icon: เทา เล็ก, wrap ได้ 2 บรรทัด */
+      body > aside .nav-label,
+      body > aside .nav-group-label {
+        display: block !important;
+        font-size: 10px;
+        font-weight: 500;
+        color: var(--text-soft);
+        line-height: 1.25;
+        white-space: normal;
+        word-break: break-word;
+        max-width: 100%;
+        flex: none;
+      }
+      /* hover: เข้มขึ้น */
+      body > aside .nav a:hover .nav-icon,
+      body > aside .nav a:hover .nav-label,
+      body > aside .nav-group-toggle:hover .nav-icon,
+      body > aside .nav-group-toggle:hover .nav-group-label {
+        color: var(--text);
+      }
+      /* active: primary */
+      body > aside .nav a.active { background: var(--primary-soft); }
+      body > aside .nav a.active .nav-icon,
+      body > aside .nav a.active .nav-label,
+      body > aside .nav-group-toggle.has-active .nav-icon,
+      body > aside .nav-group-toggle.has-active .nav-group-label {
+        color: var(--primary-dark);
       }
       /* Group flyout: position to the right of toggle on hover (with bridge to prevent close) */
       body > aside .nav-group { position: relative; }
@@ -255,6 +287,7 @@
         z-index: 100;
         box-shadow: 0 8px 24px rgba(15,23,42,.18);
         gap: 1px;
+        text-align: left;
       }
       /* bridge to fill the 6px gap so cursor can move from toggle to popover without closing */
       body > aside .nav-group .nav-group-children::before {
@@ -267,12 +300,14 @@
         display: flex !important;
       }
       body > aside .nav-group .nav-group-children a {
+        flex-direction: row;
         padding: 8px 12px;
         font-size: 13px;
         font-weight: 500;
         border-left: none;
         border-radius: 6px;
         white-space: nowrap;
+        text-align: left;
       }
       body > aside .nav-group .nav-group-children a:hover {
         background: var(--bg-hover);
@@ -281,26 +316,6 @@
         background: var(--primary-soft);
         color: var(--primary-dark);
       }
-      /* Tooltip for direct-nav items only (skip group-toggles — they have flyout) */
-      body > aside .nav a[data-label]::after {
-        content: attr(data-label);
-        position: absolute;
-        left: calc(100% + 8px);
-        top: 50%;
-        transform: translateY(-50%);
-        background: var(--text);
-        color: var(--bg-card);
-        font-size: 12px;
-        font-weight: 500;
-        padding: 5px 10px;
-        border-radius: 6px;
-        white-space: nowrap;
-        pointer-events: none;
-        opacity: 0;
-        transition: opacity .12s ease .15s;
-        z-index: 110;
-      }
-      body > aside .nav a[data-label]:hover::after { opacity: 1; }
       /* Sidebar footer: avatar only */
       body > aside .sidebar-footer { padding: 8px; }
       body > aside .profile-current {
@@ -949,13 +964,13 @@
     <nav class="nav">
       <!-- v1.9.99 — รายการระดับบนใช้ icon-only ใน rail mode: ห่อ emoji + label ด้วย span + data-label สำหรับ tooltip -->
       <div class="nav-section">
-        <a href="#/dashboard" data-route="dashboard" data-label="Dashboard"><span class="nav-icon">📊</span><span class="nav-label">Dashboard</span></a>
-        <a href="#/platforms" data-route="platforms" data-label="Platforms"><span class="nav-icon">🚀</span><span class="nav-label">Platforms</span></a>
-        <a href="#/calendar" data-route="calendar" data-label="Calendar"><span class="nav-icon">📅</span><span class="nav-label">Calendar</span></a>
+        <a href="#/dashboard" data-route="dashboard" data-label="Dashboard"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></span><span class="nav-label">Dashboard</span></a>
+        <a href="#/platforms" data-route="platforms" data-label="Platforms"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></span><span class="nav-label">Platforms</span></a>
+        <a href="#/calendar" data-route="calendar" data-label="Calendar"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span><span class="nav-label">Calendar</span></a>
         <!-- บัญชีของฉัน group: รวม โปรไฟล์ + My Device + Extension -->
         <div class="nav-group" id="nav-group-account" data-group-routes="account,my-device,extension">
           <button type="button" class="nav-group-toggle" data-group-toggle="account" data-label="บัญชีของฉัน">
-            <span class="nav-icon">👤</span>
+            <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
             <span class="nav-group-label">บัญชีของฉัน</span>
             <span class="nav-group-caret">▼</span>
           </button>
@@ -976,7 +991,7 @@
         <!-- Members group: รวม Members + Teams + Access Requests เป็น sub-menu -->
         <div class="nav-group" id="nav-group-members" data-group-routes="members,teams,access-requests">
           <button type="button" class="nav-group-toggle" data-group-toggle="members" data-label="Members">
-            <span class="nav-icon">👥</span>
+            <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
             <span class="nav-group-label">Members</span>
             <span id="nav-group-members-badge" style="display:none;background:var(--critical);color:#fff;font-size:10.5px;padding:1px 7px;border-radius:999px;font-weight:700;margin-right:4px"></span>
             <span class="nav-group-caret">▼</span>
@@ -987,12 +1002,12 @@
             <a href="#/access-requests" data-route="access-requests">Access Requests <span id="nav-req-badge" style="display:none;margin-left:6px;background:var(--critical);color:#fff;font-size:10.5px;padding:1px 7px;border-radius:999px;font-weight:700"></span></a>
           </div>
         </div>
-        <a href="#/sites" data-route="sites" data-label="Int. Platforms Config"><span class="nav-icon">🛠</span><span class="nav-label">Int. Platforms Config</span></a>
+        <a href="#/sites" data-route="sites" data-label="Int. Platforms Config"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span><span class="nav-label">Int. Config</span></a>
         <!-- Clients Platform group: รวม Websites + Services Config -->
         <div class="nav-group" id="nav-group-clients" data-group-routes="websites,services-config,domains-config">
           <button type="button" class="nav-group-toggle" data-group-toggle="clients" data-label="Clients Platform">
-            <span class="nav-icon">🌐</span>
-            <span class="nav-group-label">Clients Platform</span>
+            <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
+            <span class="nav-group-label">Clients</span>
             <span class="nav-group-caret">▼</span>
           </button>
           <div class="nav-group-children">
@@ -1003,7 +1018,7 @@
         <!-- Hardware group: PC / Device / Network -->
         <div class="nav-group" id="nav-group-hardware" data-group-routes="hardware-pc,hardware-pc-unassigned,hardware-device,hardware-network">
           <button type="button" class="nav-group-toggle" data-group-toggle="hardware" data-label="Hardware">
-            <span class="nav-icon">🖥️</span>
+            <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>
             <span class="nav-group-label">Hardware</span>
             <span class="nav-group-caret">▼</span>
           </button>
@@ -1015,11 +1030,11 @@
           </div>
         </div>
         <!-- v1.9.76 — Financial Document -->
-        <a href="#/financial-documents" data-route="financial-documents" data-label="Financial Document"><span class="nav-icon">💰</span><span class="nav-label">Financial Document</span></a>
+        <a href="#/financial-documents" data-route="financial-documents" data-label="Financial Document"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg></span><span class="nav-label">Finance</span></a>
         <!-- Setting group: รวม Logs + API Key -->
         <div class="nav-group" id="nav-group-setting" data-group-routes="logs,security">
           <button type="button" class="nav-group-toggle" data-group-toggle="setting" data-label="Setting">
-            <span class="nav-icon">⚙️</span>
+            <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
             <span class="nav-group-label">Setting</span>
             <span class="nav-group-caret">▼</span>
           </button>

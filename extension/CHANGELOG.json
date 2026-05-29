@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.101",
+      "date": "2026-05-28",
+      "title": "Rail nav: SVG line icons สีเทา + ชื่อเมนูใต้ icon",
+      "summary": "เปลี่ยน emoji เป็น SVG line icons (monochrome เทา, ใหญ่ขึ้น, ดูเท่ห์) + แสดงชื่อเมนูใต้ icon ทุกอัน (Google Ads style) — เข้าใจได้ทันทีไม่ต้องไล่กด. Rail กว้างขึ้นเป็น 92px",
+      "changes": [
+        "เปลี่ยน emoji ทั้ง 10 รายการ main nav เป็น SVG stroke icons (Feather style, currentColor)",
+        "Rail layout: icon บน + label ล่าง (flex-direction column), label สีเทา 10px wrap 2 บรรทัด",
+        "Icon 25px สีเทา (text-soft) → hover เข้ม → active = primary",
+        "ลบ tooltip (ไม่จำเป็นแล้วเพราะมี label ใต้ icon)",
+        "ย่อ label ยาว: 'Int. Platforms Config'→'Int. Config', 'Clients Platform'→'Clients', 'Financial Document'→'Finance'"
+      ]
+    },
+    {
       "version": "1.9.100",
       "date": "2026-05-28",
       "title": "Fix: เมนู rail ที่มี submenu กดเข้าไม่ได้ (flyout ถูก clip)",
