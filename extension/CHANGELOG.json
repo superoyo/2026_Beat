@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.100",
+      "date": "2026-05-28",
+      "title": "Fix: เมนู rail ที่มี submenu กดเข้าไม่ได้ (flyout ถูก clip)",
+      "summary": "Flyout ของ group menu (Account/Members/Hardware/Clients/Setting) ถูก clip โดย .nav overflow → กดรายการย่อยไม่ได้. แก้: เปลี่ยน flyout เป็น position:fixed ผ่าน JS (หนี overflow) + รองรับ touch/click ด้วย click-to-pin",
+      "changes": [
+        "wireNavGroups(): rail mode → positionFlyout() set flyout เป็น position:fixed ตาม bounding rect ของ toggle (mouseenter)",
+        "Touch/click support: คลิก group icon → toggle .rail-pinned (เปิดค้าง), คลิกนอก/sub-link → ปิด",
+        "CSS: .rail-pinned .nav-group-children { display:flex } เพิ่มจาก :hover"
+      ]
+    },
+    {
       "version": "1.9.99",
       "date": "2026-05-28",
       "title": "Sidebar redesign (rail icons) + Wazzup label = empCode (email)",

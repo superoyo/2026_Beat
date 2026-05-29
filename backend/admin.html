@@ -262,7 +262,8 @@
         position: absolute;
         left: -10px; top: 0; bottom: 0; width: 12px;
       }
-      body > aside .nav-group:hover .nav-group-children {
+      body > aside .nav-group:hover .nav-group-children,
+      body > aside .nav-group.rail-pinned .nav-group-children {
         display: flex !important;
       }
       body > aside .nav-group .nav-group-children a {
@@ -1204,13 +1205,47 @@ function setActive(route) {
   });
 }
 
-// Wire toggle ของ nav-group — collapse/expand เมื่อกด parent
+// Wire toggle ของ nav-group — collapse/expand (mobile) หรือ flyout (rail/desktop)
 function wireNavGroups() {
-  document.querySelectorAll('.nav-group-toggle').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const group = btn.closest('.nav-group');
-      if (group) group.classList.toggle('collapsed');
-    });
+  // v1.9.100 — rail mode (≥769px): flyout เป็น position:fixed เพื่อหนี overflow clipping ของ .nav
+  const isRail = () => window.matchMedia('(min-width: 769px)').matches;
+  const positionFlyout = (group) => {
+    const btn = group.querySelector('.nav-group-toggle');
+    const flyout = group.querySelector('.nav-group-children');
+    if (!btn || !flyout) return;
+    const r = btn.getBoundingClientRect();
+    flyout.style.position = 'fixed';
+    flyout.style.left = (r.right + 6) + 'px';
+    flyout.style.top = (r.top - 4) + 'px';
+  };
+  document.querySelectorAll('.nav-group').forEach(group => {
+    const btn = group.querySelector('.nav-group-toggle');
+    const flyout = group.querySelector('.nav-group-children');
+    if (btn) {
+      btn.addEventListener('click', (e) => {
+        if (isRail()) {
+          // rail mode → toggle pinned (สำหรับ touch / click) + reposition
+          e.stopPropagation();
+          const wasPinned = group.classList.contains('rail-pinned');
+          document.querySelectorAll('.nav-group.rail-pinned').forEach(g => g.classList.remove('rail-pinned'));
+          if (!wasPinned) { positionFlyout(group); group.classList.add('rail-pinned'); }
+        } else {
+          group.classList.toggle('collapsed');
+        }
+      });
+    }
+    if (flyout) {
+      // hover (mouse) → reposition flyout ก่อนแสดง
+      group.addEventListener('mouseenter', () => { if (isRail()) positionFlyout(group); });
+    }
+  });
+  // click นอก nav-group หรือคลิก sub-link → ปิด pinned flyout
+  document.addEventListener('click', (e) => {
+    const insideGroup = e.target.closest('.nav-group');
+    const isSubLink = e.target.closest('.nav-group-children a');
+    if (!insideGroup || isSubLink) {
+      document.querySelectorAll('.nav-group.rail-pinned').forEach(g => g.classList.remove('rail-pinned'));
+    }
   });
 }
 function resetMainPadding() { $('main').classList.remove('no-pad'); }
