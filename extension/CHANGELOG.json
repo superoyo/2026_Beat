@@ -2,6 +2,33 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.104",
+      "date": "2026-05-28",
+      "title": "เมนู: ย้าย Calendar เข้า 'Customer' (เดิม Clients) + เป็น landing",
+      "summary": "เปลี่ยนชื่อกลุ่ม Clients → Customer + ย้าย Calendar จากเมนูหลักเข้าเป็น sub-item แรก (landing). คลิกที่ icon Customer → นำทางไป Calendar อัตโนมัติ + เปิด flyout",
+      "changes": [
+        "เปลี่ยน nav-group-label: Clients → Customer",
+        "ย้าย Calendar (#/calendar) จากเมนูหลัก section บน → sub-item แรกของ Customer",
+        "เพิ่ม data-landing='calendar' บน group toggle → rail click นำทางไป Calendar",
+        "อัปเดต data-group-routes ให้รวม calendar + domains (highlight active)",
+        "wireNavGroups: rail click group ที่มี data-landing → location.hash = landing route"
+      ]
+    },
+    {
+      "version": "1.9.103",
+      "date": "2026-05-28",
+      "title": "บัญชีของฉัน: 2-column layout (เมนูซ้าย + รายละเอียดขวา)",
+      "summary": "หน้า 'บัญชีของฉัน' จัดใหม่เป็น 2 คอลัมน์แบบ Meta/Facebook settings — เมนูซ้าย (Personal Info / Link Account / Change Password), เนื้อหาขวา. Default = Personal Info",
+      "changes": [
+        "Personal Info (default): รูปประจำตัว + ปุ่ม 'เปลี่ยนรูป' → ไปหน้าเปลี่ยนรูป (แสดงตัวเลือกทั้งหมด: อัพโหลด/กล้อง/Wazzup/ลบ), ชื่อแสดง, เบอร์โทร, วันเกิด, ขนาดเสื้อ",
+        "Link Account: ข้อมูลบัญชี (phone/email/pw/created) + login methods cards + Add Account + ปุ่มลบ — ย้ายเรื่อง login ทั้งหมดมาที่นี่",
+        "Change Password: ฟอร์มเปลี่ยนรหัสผ่าน",
+        "email เปลี่ยนเป็น hidden field (จัดการผ่าน Link Account → Add Account แทนการแก้ตรงๆ)",
+        "responsive: ≤700px เมนูเป็นแถวนอน scroll ได้",
+        "avatar sync 2 จุด (Personal Info display + Photo panel preview)"
+      ]
+    },
+    {
       "version": "1.9.102",
       "date": "2026-05-28",
       "title": "จัดเมนู: รวม Int.Config + Financial Document เข้า 'Device & Software'",

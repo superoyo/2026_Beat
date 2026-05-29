@@ -338,6 +338,37 @@
       }
     }
 
+    /* v1.9.103 — บัญชีของฉัน 2-column layout (เมนูซ้าย + รายละเอียดขวา) */
+    .acc-layout { display: flex; gap: 18px; align-items: flex-start; }
+    .acc-menu {
+      width: 230px; flex-shrink: 0;
+      display: flex; flex-direction: column; gap: 4px;
+      position: sticky; top: 16px;
+    }
+    .acc-menu-item {
+      display: flex; align-items: center; gap: 11px;
+      padding: 12px 14px; border-radius: 10px;
+      background: transparent; border: 1px solid transparent; cursor: pointer;
+      font-family: inherit; font-size: 14px; font-weight: 500;
+      color: var(--text-muted); text-align: left; width: 100%;
+      box-sizing: border-box; transition: all .12s;
+    }
+    .acc-menu-item .acc-menu-ico { font-size: 17px; flex-shrink: 0; width: 22px; text-align: center; }
+    .acc-menu-item:hover { background: var(--bg-hover); color: var(--text); }
+    .acc-menu-item.active {
+      background: var(--primary-soft); color: var(--primary-dark);
+      font-weight: 600; border-color: rgba(37,99,235,.20);
+    }
+    .acc-detail { flex: 1; min-width: 0; }
+    @media (max-width: 700px) {
+      .acc-layout { flex-direction: column; }
+      .acc-menu {
+        width: 100%; flex-direction: row; overflow-x: auto;
+        position: static; padding-bottom: 4px;
+      }
+      .acc-menu-item { white-space: nowrap; width: auto; }
+    }
+
     .sidebar-footer {
       padding: 12px;
       border-top: 1px solid var(--border);
@@ -966,7 +997,6 @@
       <div class="nav-section">
         <a href="#/dashboard" data-route="dashboard" data-label="Dashboard"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></span><span class="nav-label">Dashboard</span></a>
         <a href="#/platforms" data-route="platforms" data-label="Platforms"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></span><span class="nav-label">Platforms</span></a>
-        <a href="#/calendar" data-route="calendar" data-label="Calendar"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span><span class="nav-label">Calendar</span></a>
         <!-- บัญชีของฉัน group: รวม โปรไฟล์ + My Device + Extension -->
         <div class="nav-group" id="nav-group-account" data-group-routes="account,my-device,extension">
           <button type="button" class="nav-group-toggle" data-group-toggle="account" data-label="บัญชีของฉัน">
@@ -1002,14 +1032,15 @@
             <a href="#/access-requests" data-route="access-requests">Access Requests <span id="nav-req-badge" style="display:none;margin-left:6px;background:var(--critical);color:#fff;font-size:10.5px;padding:1px 7px;border-radius:999px;font-weight:700"></span></a>
           </div>
         </div>
-        <!-- Clients Platform group: รวม Websites + Services Config -->
-        <div class="nav-group" id="nav-group-clients" data-group-routes="websites,services-config,domains-config">
-          <button type="button" class="nav-group-toggle" data-group-toggle="clients" data-label="Clients Platform">
+        <!-- v1.9.104 — Customer group: Calendar (landing) + Websites + Services Config -->
+        <div class="nav-group" id="nav-group-clients" data-group-routes="calendar,domains,websites,services-config,domains-config">
+          <button type="button" class="nav-group-toggle" data-group-toggle="clients" data-label="Customer" data-landing="calendar">
             <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
-            <span class="nav-group-label">Clients</span>
+            <span class="nav-group-label">Customer</span>
             <span class="nav-group-caret">▼</span>
           </button>
           <div class="nav-group-children">
+            <a href="#/calendar" data-route="calendar">📅 Calendar</a>
             <a href="#/websites" data-route="websites">🔗 Websites</a>
             <a href="#/services-config" data-route="services-config">🛠️ Services Config</a>
           </div>
@@ -1243,6 +1274,9 @@ function wireNavGroups() {
           const wasPinned = group.classList.contains('rail-pinned');
           document.querySelectorAll('.nav-group.rail-pinned').forEach(g => g.classList.remove('rail-pinned'));
           if (!wasPinned) { positionFlyout(group); group.classList.add('rail-pinned'); }
+          // v1.9.104 — ถ้ามี data-landing → นำทางไปหน้า landing ของกลุ่มนี้ด้วย
+          const landing = btn.dataset.landing;
+          if (landing) location.hash = '#/' + landing;
         } else {
           group.classList.toggle('collapsed');
         }
@@ -11317,109 +11351,135 @@ async function renderMemberAccountPage() {
     <div id="member-loading" style="padding:30px;text-align:center;color:var(--text-muted)">กำลังโหลด…</div>
 
     <div id="member-content" style="display:none">
-      <!-- Avatar section -->
-      <div class="card" style="display:block;margin-bottom:14px">
-        <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">รูปประจำตัว</h3>
-        <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
-          <div id="m-avatar-preview" style="width:120px;height:120px;border-radius:50%;border:2px dashed var(--border);background:var(--bg-soft);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0">
-            <span style="color:var(--text-muted);font-size:12px;text-align:center">ยังไม่มี<br/>รูปประจำตัว</span>
-          </div>
-          <div style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:8px">
-            <button type="button" class="btn" id="m-avatar-upload-btn" style="font-size:13px;padding:8px 14px;text-align:left">📷 อัพโหลดรูปจากเครื่อง</button>
-            <button type="button" class="btn" id="m-avatar-camera-btn" style="font-size:13px;padding:8px 14px;text-align:left">📸 ถ่ายจากกล้อง</button>
-            <!-- v1.9.89 — โหลดรูปจาก Wazzup (แสดงเฉพาะถ้ามี Wazzup session) -->
-            <button type="button" class="btn" id="m-avatar-wazzup-btn" style="font-size:13px;padding:8px 14px;text-align:left;display:none">🏢 เอาภาพจาก Wazzup</button>
-            <button type="button" class="btn danger" id="m-avatar-remove-btn" style="font-size:13px;padding:8px 14px;text-align:left;display:none">🗑 ลบรูป</button>
-            <div class="hint" style="font-size:11.5px;color:var(--text-muted);line-height:1.5">
-              รูปจะถูก crop เป็นสี่เหลี่ยมจัตุรัสก่อนบันทึก<br/>
-              แสดงในเมนูซ้ายและในรายการสมาชิก
+      <div class="acc-layout">
+        <!-- เมนูซ้าย -->
+        <div class="acc-menu">
+          <button type="button" class="acc-menu-item active" data-acc-tab="personal"><span class="acc-menu-ico">👤</span> Personal Info</button>
+          <button type="button" class="acc-menu-item" data-acc-tab="link"><span class="acc-menu-ico">🔗</span> Link Account</button>
+          <button type="button" class="acc-menu-item" data-acc-tab="password"><span class="acc-menu-ico">🔑</span> Change Password</button>
+        </div>
+
+        <!-- รายละเอียดขวา -->
+        <div class="acc-detail">
+          <!-- ============ Personal Info (default) ============ -->
+          <div data-acc-panel="personal">
+            <div class="card" style="display:block;margin-bottom:14px">
+              <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+                <div id="m-personal-avatar" style="width:96px;height:96px;border-radius:50%;border:2px solid var(--border);background:var(--bg-soft);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0">
+                  <span style="color:var(--text-muted);font-size:32px">👤</span>
+                </div>
+                <div style="flex:1;min-width:160px">
+                  <div id="m-personal-name-display" style="font-size:17px;font-weight:700;letter-spacing:-0.01em">—</div>
+                  <button type="button" class="btn" id="m-goto-photo" style="margin-top:9px;font-size:13px;padding:7px 14px">📷 เปลี่ยนรูปประจำตัว</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="card" style="display:block">
+              <h3 style="margin:0 0 14px;font-size:15px;font-weight:600">ข้อมูลส่วนตัว</h3>
+              <!-- email เก็บเป็น hidden — แก้ไขผ่าน Link Account (Add Account) -->
+              <input type="hidden" id="m-email" />
+              <div class="field">
+                <label>ชื่อแสดง</label>
+                <input id="m-display_name" type="text" placeholder="เช่น สมชาย ใจดี" maxlength="120" />
+              </div>
+              <div class="field">
+                <label>เบอร์มือถือ</label>
+                <input id="m-phone" type="tel" placeholder="เช่น 0812345678" maxlength="40" />
+                <div class="hint">ใช้รับการแจ้งเตือน (ห้ามว่าง)</div>
+              </div>
+              <div class="field">
+                <label>วันเกิด</label>
+                <input id="m-birthdate" type="date" style="width:auto;min-width:200px" />
+                <div class="hint" id="m-age-hint" style="margin-top:4px">— ยังไม่ได้กรอก</div>
+              </div>
+              <div class="field">
+                <label>ขนาดเสื้อ</label>
+                <div id="m-shirt-size-group" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+                  ${['XS','S','M','L','XL','XXL'].map(sz => `
+                    <button type="button" class="m-shirt-opt" data-size="${sz}"
+                      style="padding:7px 16px;font-size:13px;font-weight:700;font-family:inherit;border:1.5px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text);cursor:pointer;min-width:54px;transition:all .12s">${sz}</button>
+                  `).join('')}
+                  <button type="button" class="m-shirt-opt" data-size="__other__"
+                    style="padding:7px 14px;font-size:13px;font-weight:600;font-family:inherit;border:1.5px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text);cursor:pointer;transition:all .12s">อื่น ๆ ...</button>
+                </div>
+                <div id="m-shirt-other-wrap" style="display:none;margin-top:8px">
+                  <input id="m-shirt-other" type="text" placeholder="ระบุขนาดเสื้อ (เช่น 3XL, FreeSize, ลึก 16)" maxlength="40" />
+                </div>
+                <input type="hidden" id="m-shirt-size" value="" />
+              </div>
+              <div class="hint" id="m-profile-msg" style="margin-bottom:10px;display:none"></div>
+              <button class="btn primary" id="m-save-profile">บันทึกข้อมูล</button>
             </div>
           </div>
-          <input type="file" id="m-avatar-file-input" accept="image/*" style="display:none" />
-        </div>
-      </div>
 
-      <div class="card" style="display:block;margin-bottom:14px">
-        <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">ข้อมูลบัญชี</h3>
-        <div style="display:grid;grid-template-columns:140px 1fr;gap:10px 16px;font-size:13.5px">
-          <div style="color:var(--text-muted)">เบอร์มือถือ</div>
-          <div id="m-info-phone" style="font-weight:500">—</div>
-          <div style="color:var(--text-muted)">อีเมล</div>
-          <div id="m-info-email">—</div>
-          <div style="color:var(--text-muted)">รหัสผ่าน</div>
-          <div id="m-info-pw">—</div>
-          <div style="color:var(--text-muted)">สมัครเมื่อ</div>
-          <div id="m-info-created">—</div>
-        </div>
-        <!-- v1.9.88/95 — login methods cards + Add Account button -->
-        <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
-          <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">🔐 วิธี Login ที่ใช้ได้</div>
-          <div id="m-info-login-cards" style="display:flex;flex-direction:column;gap:6px"></div>
-          <button type="button" id="m-add-account-btn" class="btn" style="margin-top:10px;font-size:13px;padding:8px 14px;color:var(--primary);font-weight:600">+ เพิ่มวิธี Login (Add Account)</button>
-        </div>
-      </div>
-
-      <div class="card" style="display:block;margin-bottom:14px">
-        <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">แก้ไขข้อมูล</h3>
-        <div class="hint" style="margin-bottom:14px;font-size:12.5px;color:var(--text-muted)">
-          ตั้งชื่อแสดง + อีเมล + เบอร์มือถือ + ขนาดเสื้อ
-        </div>
-        <div class="field">
-          <label>ชื่อแสดง</label>
-          <input id="m-display_name" type="text" placeholder="เช่น สมชาย ใจดี" maxlength="120" />
-        </div>
-        <div class="field">
-          <label>อีเมล</label>
-          <input id="m-email" type="email" placeholder="you@example.com" maxlength="200" />
-          <div class="hint">ใช้เป็น username เวลาเข้าระบบด้วยอีเมล + รหัสผ่าน</div>
-        </div>
-        <!-- v1.9.74 — phone editable -->
-        <div class="field">
-          <label>เบอร์มือถือ</label>
-          <input id="m-phone" type="tel" placeholder="เช่น 0812345678" maxlength="40" />
-          <div class="hint">ใช้รับการแจ้งเตือน / เป็น username ทางเลือก (ห้ามว่าง)</div>
-        </div>
-        <!-- v1.9.75 — วันเกิด + คำนวณอายุ -->
-        <div class="field">
-          <label>วันเกิด</label>
-          <input id="m-birthdate" type="date" style="width:auto;min-width:200px" />
-          <div class="hint" id="m-age-hint" style="margin-top:4px">— ยังไม่ได้กรอก</div>
-        </div>
-        <!-- v1.9.74 — shirt size: buttons XS/S/M/L/XL/XXL + อื่น ๆ -->
-        <div class="field">
-          <label>ขนาดเสื้อ</label>
-          <div id="m-shirt-size-group" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
-            ${['XS','S','M','L','XL','XXL'].map(sz => `
-              <button type="button" class="m-shirt-opt" data-size="${sz}"
-                style="padding:7px 16px;font-size:13px;font-weight:700;font-family:inherit;border:1.5px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text);cursor:pointer;min-width:54px;transition:all .12s">${sz}</button>
-            `).join('')}
-            <button type="button" class="m-shirt-opt" data-size="__other__"
-              style="padding:7px 14px;font-size:13px;font-weight:600;font-family:inherit;border:1.5px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text);cursor:pointer;transition:all .12s">อื่น ๆ ...</button>
+          <!-- ============ Link Account ============ -->
+          <div data-acc-panel="link" style="display:none">
+            <div class="card" style="display:block;margin-bottom:14px">
+              <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">ข้อมูลบัญชี</h3>
+              <div style="display:grid;grid-template-columns:140px 1fr;gap:10px 16px;font-size:13.5px">
+                <div style="color:var(--text-muted)">เบอร์มือถือ</div>
+                <div id="m-info-phone" style="font-weight:500">—</div>
+                <div style="color:var(--text-muted)">อีเมล</div>
+                <div id="m-info-email">—</div>
+                <div style="color:var(--text-muted)">รหัสผ่าน</div>
+                <div id="m-info-pw">—</div>
+                <div style="color:var(--text-muted)">สมัครเมื่อ</div>
+                <div id="m-info-created">—</div>
+              </div>
+            </div>
+            <div class="card" style="display:block">
+              <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">🔐 วิธี Login ที่ใช้ได้</div>
+              <div id="m-info-login-cards" style="display:flex;flex-direction:column;gap:6px"></div>
+              <button type="button" id="m-add-account-btn" class="btn" style="margin-top:12px;font-size:13px;padding:9px 16px;color:var(--primary);font-weight:600">+ เพิ่มวิธี Login (Add Account)</button>
+            </div>
           </div>
-          <div id="m-shirt-other-wrap" style="display:none;margin-top:8px">
-            <input id="m-shirt-other" type="text" placeholder="ระบุขนาดเสื้อ (เช่น 3XL, FreeSize, ลึก 16)" maxlength="40" />
-          </div>
-          <input type="hidden" id="m-shirt-size" value="" />
-        </div>
-        <div class="hint" id="m-profile-msg" style="margin-bottom:10px;display:none"></div>
-        <button class="btn primary" id="m-save-profile">บันทึกข้อมูล</button>
-      </div>
 
-      <div class="card" style="display:block">
-        <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">ตั้ง / เปลี่ยนรหัสผ่าน</h3>
-        <div class="hint" style="margin-bottom:14px;font-size:12.5px;color:var(--text-muted)">
-          รหัสผ่านอย่างน้อย 4 ตัว — ใช้คู่กับอีเมลด้านบนเพื่อ login ครั้งถัดไป
+          <!-- ============ Change Password ============ -->
+          <div data-acc-panel="password" style="display:none">
+            <div class="card" style="display:block">
+              <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">เปลี่ยนรหัสผ่าน</h3>
+              <div class="hint" style="margin-bottom:14px;font-size:12.5px;color:var(--text-muted)">
+                รหัสผ่านอย่างน้อย 4 ตัว — ใช้คู่กับอีเมลเพื่อ login ครั้งถัดไป
+              </div>
+              <div class="field">
+                <label>รหัสผ่านใหม่</label>
+                <input id="m-password" type="password" placeholder="อย่างน้อย 4 ตัว" autocomplete="new-password" />
+              </div>
+              <div class="field">
+                <label>ยืนยันรหัสผ่าน</label>
+                <input id="m-confirm" type="password" autocomplete="new-password" />
+              </div>
+              <div class="hint" id="m-pw-msg" style="margin-bottom:10px;display:none"></div>
+              <button class="btn primary" id="m-save-password">บันทึกรหัสผ่าน</button>
+            </div>
+          </div>
+
+          <!-- ============ Change Photo (sub-view จาก Personal Info) ============ -->
+          <div data-acc-panel="photo" style="display:none">
+            <div class="card" style="display:block">
+              <button type="button" class="btn" id="m-photo-back" style="margin-bottom:14px;font-size:13px;padding:7px 14px">← กลับ</button>
+              <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">เปลี่ยนรูปประจำตัว</h3>
+              <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+                <div id="m-avatar-preview" style="width:120px;height:120px;border-radius:50%;border:2px dashed var(--border);background:var(--bg-soft);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0">
+                  <span style="color:var(--text-muted);font-size:12px;text-align:center">ยังไม่มี<br/>รูปประจำตัว</span>
+                </div>
+                <div style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:8px">
+                  <button type="button" class="btn" id="m-avatar-upload-btn" style="font-size:13px;padding:8px 14px;text-align:left">📷 อัพโหลดรูปจากเครื่อง</button>
+                  <button type="button" class="btn" id="m-avatar-camera-btn" style="font-size:13px;padding:8px 14px;text-align:left">📸 ถ่ายจากกล้อง</button>
+                  <button type="button" class="btn" id="m-avatar-wazzup-btn" style="font-size:13px;padding:8px 14px;text-align:left;display:none">🏢 เอาภาพจาก Wazzup</button>
+                  <button type="button" class="btn danger" id="m-avatar-remove-btn" style="font-size:13px;padding:8px 14px;text-align:left;display:none">🗑 ลบรูป</button>
+                  <div class="hint" style="font-size:11.5px;color:var(--text-muted);line-height:1.5">
+                    รูปจะถูก crop เป็นสี่เหลี่ยมจัตุรัสก่อนบันทึก<br/>
+                    แสดงในเมนูซ้ายและในรายการสมาชิก
+                  </div>
+                </div>
+                <input type="file" id="m-avatar-file-input" accept="image/*" style="display:none" />
+              </div>
+            </div>
+          </div>
+
         </div>
-        <div class="field">
-          <label>รหัสผ่านใหม่</label>
-          <input id="m-password" type="password" placeholder="อย่างน้อย 4 ตัว" autocomplete="new-password" />
-        </div>
-        <div class="field">
-          <label>ยืนยันรหัสผ่าน</label>
-          <input id="m-confirm" type="password" autocomplete="new-password" />
-        </div>
-        <div class="hint" id="m-pw-msg" style="margin-bottom:10px;display:none"></div>
-        <button class="btn primary" id="m-save-password">บันทึกรหัสผ่าน</button>
       </div>
     </div>
   `;
@@ -11715,6 +11775,10 @@ async function renderMemberAccountPage() {
     }
     // Avatar preview
     updateMyAvatarPreview(member.avatar_data || '');
+    // v1.9.103 — ชื่อแสดงที่หัวการ์ด Personal Info
+    if ($('m-personal-name-display')) {
+      $('m-personal-name-display').textContent = member.display_name || member.email || member.phone || '—';
+    }
     // v1.9.88/95 — login methods cards (เหมือน Meta) + Add Account button
     renderMyLoginCards();
   }
@@ -11801,17 +11865,25 @@ async function renderMemberAccountPage() {
   function updateMyAvatarPreview(dataUrl) {
     const box = $('m-avatar-preview');
     const removeBtn = $('m-avatar-remove-btn');
-    if (!box) return;
-    if (dataUrl) {
-      box.style.background = 'transparent';
-      box.style.borderStyle = 'solid';
-      box.innerHTML = `<img src="${dataUrl}" alt="avatar" style="width:100%;height:100%;object-fit:cover" />`;
-      if (removeBtn) removeBtn.style.display = '';
-    } else {
-      box.style.background = 'var(--bg-soft)';
-      box.style.borderStyle = 'dashed';
-      box.innerHTML = `<span style="color:var(--text-muted);font-size:12px;text-align:center">ยังไม่มี<br/>รูปประจำตัว</span>`;
-      if (removeBtn) removeBtn.style.display = 'none';
+    if (box) {
+      if (dataUrl) {
+        box.style.background = 'transparent';
+        box.style.borderStyle = 'solid';
+        box.innerHTML = `<img src="${dataUrl}" alt="avatar" style="width:100%;height:100%;object-fit:cover" />`;
+        if (removeBtn) removeBtn.style.display = '';
+      } else {
+        box.style.background = 'var(--bg-soft)';
+        box.style.borderStyle = 'dashed';
+        box.innerHTML = `<span style="color:var(--text-muted);font-size:12px;text-align:center">ยังไม่มี<br/>รูปประจำตัว</span>`;
+        if (removeBtn) removeBtn.style.display = 'none';
+      }
+    }
+    // v1.9.103 — sync avatar ที่หน้า Personal Info ด้วย
+    const pBox = $('m-personal-avatar');
+    if (pBox) {
+      pBox.innerHTML = dataUrl
+        ? `<img src="${dataUrl}" alt="avatar" style="width:100%;height:100%;object-fit:cover" />`
+        : `<span style="color:var(--text-muted);font-size:32px">👤</span>`;
     }
   }
 
@@ -11877,8 +11949,28 @@ async function renderMemberAccountPage() {
     }
   }
 
-  // Wire avatar buttons
+  // v1.9.103 — สลับ panel (Personal Info / Link Account / Change Password / Photo)
+  function showAccPanel(panel) {
+    document.querySelectorAll('[data-acc-panel]').forEach(p => {
+      p.style.display = (p.dataset.accPanel === panel) ? '' : 'none';
+    });
+    const menuActive = (panel === 'photo') ? 'personal' : panel;
+    document.querySelectorAll('[data-acc-tab]').forEach(b => {
+      b.classList.toggle('active', b.dataset.accTab === menuActive);
+    });
+  }
+
+  // Wire avatar buttons + tabs
   setTimeout(() => {
+    // tab menu
+    document.querySelectorAll('[data-acc-tab]').forEach(b => {
+      b.addEventListener('click', () => showAccPanel(b.dataset.accTab));
+    });
+    const gotoPhoto = $('m-goto-photo');
+    if (gotoPhoto) gotoPhoto.addEventListener('click', () => showAccPanel('photo'));
+    const photoBack = $('m-photo-back');
+    if (photoBack) photoBack.addEventListener('click', () => showAccPanel('personal'));
+
     const fileInput = $('m-avatar-file-input');
     $('m-avatar-upload-btn').addEventListener('click', () => fileInput.click());
     fileInput.addEventListener('change', (e) => {
