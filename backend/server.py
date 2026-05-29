@@ -4234,6 +4234,11 @@ def _member_row_to_profile(row: sqlite3.Row) -> dict[str, Any]:
         birthdate = row["birthdate"]
     except (KeyError, IndexError):
         birthdate = None
+    # v1.9.105 — มีรูป Wazzup เก็บไว้ไหม (ให้ frontend แสดงปุ่ม 'เอาภาพจาก Wazzup' แม้ session หมด)
+    try:
+        wpu = row["wazzup_profile_url"]
+    except (KeyError, IndexError):
+        wpu = None
     # v1.9.82 — placeholder phone สำหรับ email-signup user → คืน null ให้ frontend
     raw_phone = row["phone"]
     phone = None if (raw_phone and raw_phone.startswith("email:")) else raw_phone
@@ -4247,6 +4252,7 @@ def _member_row_to_profile(row: sqlite3.Row) -> dict[str, Any]:
         "avatar_data": avatar_data,
         "shirt_size": shirt_size,
         "birthdate": birthdate,
+        "has_wazzup_photo": bool(wpu),
         "created_at": row["created_at"],
         "last_login_at": row["last_login_at"],
     }
@@ -4803,6 +4809,27 @@ def member_add_phone(
             _add_alias(conn, member_id, "phone", new_phone)
             _add_alias(conn, member_id, "firebase_uid", new_uid)
     return {"ok": True, "added": "phone", "phone": new_phone}
+
+
+@app.post("/api/member/avatar-from-wazzup")
+def member_avatar_from_wazzup(
+    request: Request,
+    fct_member_session: Optional[str] = Cookie(default=None),
+) -> dict[str, Any]:
+    """v1.9.105 — member ดึงรูปประจำตัวของตัวเองจาก Wazzup (ใช้ URL ที่เก็บไว้ใน DB — ไม่ต้องมี session สด)"""
+    sess = _require_member_session(fct_member_session)
+    member_id = sess["member_id"]
+    with db_conn() as conn:
+        row = conn.execute(
+            "SELECT wazzup_profile_url FROM members WHERE id = ?", (member_id,)
+        ).fetchone()
+    if not row or not row["wazzup_profile_url"]:
+        raise HTTPException(status_code=400, detail="ยังไม่มีรูป Wazzup เก็บไว้ — กรุณา login ด้วย Wazzup ก่อน")
+    # Bearer token optional (รูปประจำตัว Wazzup เข้าถึงได้สาธารณะ)
+    auth = request.headers.get("Authorization", "")
+    token = auth.split(" ", 1)[1].strip() if auth.lower().startswith("bearer ") else None
+    result = _fetch_wazzup_image_as_data_url(row["wazzup_profile_url"], bearer_token=token)
+    return {"ok": True, **result}
 
 
 @app.post("/api/member/add-wazzup")
@@ -7075,7 +7102,7 @@ def member_me(
     with db_conn() as conn:
         row = conn.execute(
             "SELECT id, phone, email, display_name, pw_hash, is_admin, avatar_data, "
-            "       shirt_size, birthdate, created_at, last_login_at "
+            "       shirt_size, birthdate, wazzup_profile_url, created_at, last_login_at "
             "FROM members WHERE id = ?",
             (sess["member_id"],),
         ).fetchone()

@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.105",
+      "date": "2026-05-28",
+      "title": "Fix: ปุ่ม 'เอาภาพจาก Wazzup' หายในหน้าเปลี่ยนรูป",
+      "summary": "เดิมปุ่มแสดงเฉพาะตอนมี live Wazzup session (sessionStorage) — ถ้า session หมดปุ่มจะหาย. แก้: แสดงปุ่มถ้าเคย login Wazzup (มี wazzup_profile_url ใน DB) ด้วย + ดึงรูปจาก URL ที่เก็บไว้ได้แม้ไม่มี session สด",
+      "changes": [
+        "Backend /api/member/me: เพิ่ม has_wazzup_photo (จาก wazzup_profile_url)",
+        "Backend POST /api/member/avatar-from-wazzup: ดึงรูปตัวเองจาก URL ที่เก็บใน DB (ไม่ต้องมี token)",
+        "Frontend: ปุ่ม Wazzup แสดงถ้า live session OR member.has_wazzup_photo (คุมใน renderInfo)",
+        "Frontend loadAvatarFromWazzup: ใช้ live session ถ้ามี, ไม่งั้น fallback /api/member/avatar-from-wazzup"
+      ]
+    },
+    {
       "version": "1.9.104",
       "date": "2026-05-28",
       "title": "เมนู: ย้าย Calendar เข้า 'Customer' (เดิม Clients) + เป็น landing",

@@ -11779,6 +11779,13 @@ async function renderMemberAccountPage() {
     if ($('m-personal-name-display')) {
       $('m-personal-name-display').textContent = member.display_name || member.email || member.phone || '—';
     }
+    // v1.9.105 — ปุ่ม 'เอาภาพจาก Wazzup' แสดงถ้ามี live session หรือมีรูป Wazzup เก็บไว้ใน DB
+    const wazBtn = $('m-avatar-wazzup-btn');
+    if (wazBtn) {
+      const waz = getWazzupSession();
+      const hasLive = waz && waz.profileURL && getWazzupToken();
+      wazBtn.style.display = (hasLive || member.has_wazzup_photo) ? '' : 'none';
+    }
     // v1.9.88/95 — login methods cards (เหมือน Meta) + Add Account button
     renderMyLoginCards();
   }
@@ -11887,29 +11894,32 @@ async function renderMemberAccountPage() {
     }
   }
 
-  // v1.9.89 — โหลดรูปจาก Wazzup → preview → confirm → saveAvatar
+  // v1.9.89/105 — โหลดรูปจาก Wazzup → preview → confirm → saveAvatar
+  // ใช้ live session ถ้ามี, ไม่งั้น fallback ไป URL ที่เก็บใน DB (/api/member/avatar-from-wazzup)
   async function loadAvatarFromWazzup() {
     const waz = getWazzupSession();
     const token = getWazzupToken();
-    if (!waz || !token) {
-      showSavedToast('❌ ต้อง login ด้วย Wazzup ก่อน', 'error');
-      return;
-    }
-    const photoUrl = waz.profileURL;
-    if (!photoUrl) {
-      showSavedToast('❌ Wazzup ไม่ได้ส่ง URL รูปประจำตัว', 'error');
-      return;
-    }
     const btn = $('m-avatar-wazzup-btn');
     const origLabel = btn ? btn.textContent : '';
     if (btn) { btn.disabled = true; btn.textContent = '⏳ กำลังโหลด...'; }
     try {
-      const r = await fetchJson('/api/auth/wazzup-photo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ photo_url: photoUrl }),
-      });
-      openWazzupPhotoPreview(r.data_url);
+      let dataUrl;
+      if (waz && token && waz.profileURL) {
+        // live Wazzup session → ดึงตรงด้วย token
+        const r = await fetchJson('/api/auth/wazzup-photo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ photo_url: waz.profileURL }),
+        });
+        dataUrl = r.data_url;
+      } else {
+        // ไม่มี session สด → ใช้ URL ที่เก็บไว้ใน DB
+        const r = await fetchJson('/api/member/avatar-from-wazzup', {
+          method: 'POST', body: JSON.stringify({}),
+        });
+        dataUrl = r.data_url;
+      }
+      openWazzupPhotoPreview(dataUrl);
     } catch (e) {
       showSavedToast('❌ ' + e.message, 'error');
     } finally {
@@ -11986,15 +11996,9 @@ async function renderMemberAccountPage() {
       if (!confirm('ลบรูปประจำตัว?')) return;
       saveAvatar('');
     });
-    // v1.9.89 — Wazzup avatar: แสดงปุ่มเฉพาะถ้ามี session + profileURL
+    // v1.9.89/105 — Wazzup avatar: ผูก click ครั้งเดียว (visibility คุมใน renderInfo)
     const wazBtn = $('m-avatar-wazzup-btn');
-    if (wazBtn) {
-      const waz = getWazzupSession();
-      if (waz && waz.profileURL && getWazzupToken()) {
-        wazBtn.style.display = '';
-        wazBtn.addEventListener('click', loadAvatarFromWazzup);
-      }
-    }
+    if (wazBtn) wazBtn.addEventListener('click', loadAvatarFromWazzup);
     // v1.9.95 — Add Account button
     const addBtn = $('m-add-account-btn');
     if (addBtn) {
