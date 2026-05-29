@@ -2,6 +2,21 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.96",
+      "date": "2026-05-28",
+      "title": "บัญชีของฉัน: ลบวิธี login ได้ (พร้อมเช็คต้องเหลือ ≥1)",
+      "summary": "ทุก card วิธี login มีปุ่ม '🗑 ลบ' — ลบ Phone OTP / Email+PW / Wazzup / alias ได้. Backend simulate post-state ก่อนลบ — ถ้าจะเหลือ 0 method (login เข้าระบบไม่ได้) → block อัตโนมัติ",
+      "changes": [
+        "Backend POST /api/member/remove-login-method: รับ {kind, alias_kind?, value?}",
+        "  - kind=phone → clear primary phone+firebase_uid (placeholder) + delete phone/firebase_uid aliases",
+        "  - kind=email_pw → clear pw_hash/pw_salt (email ยังอยู่ — Wazzup ยังใช้ได้)",
+        "  - kind=wazzup → clear wazzup_profile_url + wazzup_emp_code (email ยังอยู่)",
+        "  - kind=alias → delete จาก member_aliases ตาม kind+value",
+        "Validation: simulate ก่อน apply, ใช้ _build_login_methods() เช็คว่าเหลือ ≥1 → block ถ้าไม่",
+        "Frontend renderMyLoginCards: ทุก card (รวม alias) มีปุ่ม '🗑 ลบ' ขวาสุด → confirm → ยิง backend → reload"
+      ]
+    },
+    {
       "version": "1.9.95",
       "date": "2026-05-28",
       "title": "บัญชีของฉัน: Add Account UI (เพิ่มวิธี login ได้)",

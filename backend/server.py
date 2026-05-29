@@ -4853,6 +4853,94 @@ def member_add_wazzup(
     }
 
 
+# v1.9.96 — ลบวิธี login (ต้องมี ≥1 วิธีเหลือเสมอ)
+class RemoveLoginMethodIn(BaseModel):
+    kind: str = Field(..., min_length=1, max_length=20)  # 'phone' | 'email_pw' | 'wazzup' | 'alias'
+    alias_kind: Optional[str] = None    # for kind='alias': 'phone'|'email'|'firebase_uid'
+    value: Optional[str] = None         # for kind='alias': the value to delete
+
+
+@app.post("/api/member/remove-login-method")
+def member_remove_login_method(
+    payload: RemoveLoginMethodIn,
+    fct_member_session: Optional[str] = Cookie(default=None),
+) -> dict[str, Any]:
+    sess = _require_member_session(fct_member_session)
+    member_id = sess["member_id"]
+    kind = payload.kind
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="member ไม่พบ")
+        alias_rows = conn.execute(
+            "SELECT id, kind, value FROM member_aliases WHERE member_id = ?", (member_id,)
+        ).fetchall()
+        aliases_full = [{"id": a["id"], "kind": a["kind"], "value": a["value"]} for a in alias_rows]
+
+        # ---- simulate post-remove state เพื่อเช็คว่าเหลือ ≥1 method ----
+        sim_phone = row["phone"]
+        sim_firebase_uid = row["firebase_uid"]
+        sim_email = row["email"]
+        sim_pw = row["pw_hash"]
+        sim_wazzup_url = row["wazzup_profile_url"] if "wazzup_profile_url" in row.keys() else None
+        sim_aliases = [{"kind": a["kind"], "value": a["value"]} for a in aliases_full]
+
+        if kind == "phone":
+            sim_phone = f"removed:{member_id}:{utc_now().timestamp()}"
+            sim_firebase_uid = sim_phone
+            sim_aliases = [a for a in sim_aliases if a["kind"] not in ("phone", "firebase_uid")]
+        elif kind == "email_pw":
+            sim_pw = None
+        elif kind == "wazzup":
+            sim_wazzup_url = None
+        elif kind == "alias":
+            if not payload.alias_kind or not payload.value:
+                raise HTTPException(status_code=400, detail="ต้องระบุ alias_kind + value")
+            sim_aliases = [a for a in sim_aliases if not (a["kind"] == payload.alias_kind and a["value"] == payload.value)]
+        else:
+            raise HTTPException(status_code=400, detail="kind ไม่ถูกต้อง (phone|email_pw|wazzup|alias)")
+
+        # ทำ wazzup label check ตาม logic เดิม: wazzup method มีถ้า email (own หรือ alias)
+        sim_has_password = bool(sim_pw)
+        sim_methods = _build_login_methods(
+            firebase_uid=sim_firebase_uid,
+            phone=sim_phone,
+            email=sim_email,
+            has_password=sim_has_password,
+            aliases=sim_aliases,
+        )
+        if len(sim_methods) == 0:
+            raise HTTPException(status_code=400, detail="ลบไม่ได้ — ต้องเหลืออย่างน้อย 1 วิธี login (ไม่งั้นเข้าระบบไม่ได้)")
+
+        # ---- apply removal ----
+        if kind == "phone":
+            placeholder = f"removed:{member_id}:{int(utc_now().timestamp())}"
+            conn.execute(
+                "UPDATE members SET phone = ?, firebase_uid = ? WHERE id = ?",
+                (placeholder, placeholder, member_id),
+            )
+            conn.execute(
+                "DELETE FROM member_aliases WHERE member_id = ? AND kind IN ('phone','firebase_uid')",
+                (member_id,),
+            )
+        elif kind == "email_pw":
+            conn.execute(
+                "UPDATE members SET pw_hash = NULL, pw_salt = NULL WHERE id = ?",
+                (member_id,),
+            )
+        elif kind == "wazzup":
+            conn.execute(
+                "UPDATE members SET wazzup_profile_url = NULL, wazzup_emp_code = NULL WHERE id = ?",
+                (member_id,),
+            )
+        elif kind == "alias":
+            conn.execute(
+                "DELETE FROM member_aliases WHERE member_id = ? AND kind = ? AND value = ?",
+                (member_id, payload.alias_kind, payload.value),
+            )
+    return {"ok": True, "removed": kind}
+
+
 @app.patch("/api/member/profile")
 def member_update_profile(
     payload: MemberProfileIn,

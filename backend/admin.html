@@ -11557,14 +11557,19 @@ async function renderMemberAccountPage() {
     const avatar = member.avatar_data
       ? `<img src="${member.avatar_data}" alt="" style="width:38px;height:38px;border-radius:50%;object-fit:cover;border:1px solid var(--border);flex-shrink:0" />`
       : `<div style="width:38px;height:38px;border-radius:50%;background:var(--bg-soft);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px">👤</div>`;
+    // v1.9.96 — ปุ่ม 🗑 (ลบ method) — disabled ถ้าจะเหลือ 0 (เช็คฝั่ง backend ด้วย)
+    const removeBtnHtml = (label, dataAttrs) => {
+      return `<button type="button" class="btn m-rm-method" ${dataAttrs} title="ลบวิธี login นี้: ${escapeHtml(label)}" style="font-size:11.5px;padding:5px 10px;color:var(--critical);background:transparent;border:1px solid var(--border);flex-shrink:0">🗑 ลบ</button>`;
+    };
     const rows = [];
-    if (lm.length === 0) {
+    if (lm.length === 0 && aliases.length === 0) {
       rows.push(`<div style="${rowStyle};font-size:12.5px;color:var(--text-muted);font-style:italic">— ยังไม่มี login method —</div>`);
     }
     for (const item of lm) {
       const mm = methodMap[item.kind];
       if (!mm) continue;
       const badge = `<div style="width:18px;height:18px;border-radius:50%;background:${mm.bg};color:#fff;font-size:11px;display:inline-flex;align-items:center;justify-content:center;position:absolute;bottom:-2px;right:-2px;border:2px solid var(--bg-card)">${mm.icon}</div>`;
+      const dataAttrs = `data-rm-kind="${item.kind}" data-rm-label="${escapeHtml(item.label || '')}"`;
       rows.push(`
         <div style="${rowStyle}">
           <div style="position:relative;flex-shrink:0">${avatar}${badge}</div>
@@ -11572,11 +11577,13 @@ async function renderMemberAccountPage() {
             <div style="font-weight:600;font-size:13.5px">${escapeHtml(item.label || '(no label)')}</div>
             <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">${escapeHtml(mm.title)}</div>
           </div>
+          ${removeBtnHtml(`${mm.title} (${item.label})`, dataAttrs)}
         </div>`);
     }
     for (const a of aliases) {
       const icon = a.kind === 'phone' ? '📱' : (a.kind === 'email' ? '📧' : '🔗');
       const badge = `<div style="width:18px;height:18px;border-radius:50%;background:#7c3aed;color:#fff;font-size:10px;display:inline-flex;align-items:center;justify-content:center;position:absolute;bottom:-2px;right:-2px;border:2px solid var(--bg-card)">🔗</div>`;
+      const dataAttrs = `data-rm-kind="alias" data-rm-alias-kind="${escapeHtml(a.kind)}" data-rm-value="${escapeHtml(a.value)}" data-rm-label="${escapeHtml(a.value)}"`;
       rows.push(`
         <div style="${rowStyle}">
           <div style="position:relative;flex-shrink:0">${avatar}${badge}</div>
@@ -11584,9 +11591,35 @@ async function renderMemberAccountPage() {
             <div style="font-weight:600;font-size:13.5px">${icon} ${escapeHtml(a.value)}</div>
             <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">Alias (จาก merge หรือ add) — ใช้ login ได้</div>
           </div>
+          ${removeBtnHtml(`alias ${a.value}`, dataAttrs)}
         </div>`);
     }
     box.innerHTML = rows.join('');
+    // wire ปุ่มลบ
+    box.querySelectorAll('button.m-rm-method').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const kind = btn.dataset.rmKind;
+        const aliasKind = btn.dataset.rmAliasKind || null;
+        const value = btn.dataset.rmValue || null;
+        const label = btn.dataset.rmLabel || '';
+        if (!confirm(`ลบวิธี login นี้?\n\n${label}\n\nถ้านี่เป็นวิธีสุดท้าย จะเข้าระบบไม่ได้ — backend จะ block อัตโนมัติ`)) return;
+        const orig = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = '⏳';
+        try {
+          await fetchJson('/api/member/remove-login-method', {
+            method: 'POST',
+            body: JSON.stringify({ kind, alias_kind: aliasKind, value }),
+          });
+          showSavedToast('✓ ลบวิธี login แล้ว');
+          await loadMemberMe();
+        } catch (e) {
+          showSavedToast('❌ ' + e.message, 'error');
+          btn.disabled = false;
+          btn.textContent = orig;
+        }
+      });
+    });
   }
 
   function updateMyAvatarPreview(dataUrl) {
