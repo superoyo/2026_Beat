@@ -293,8 +293,9 @@
       from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
 
     const $ = id => document.getElementById(id);
-    const showErr = m => { $('err').textContent = m; $('err').style.display = ''; $('ok').style.display = 'none'; };
-    const showOk = m => { $('ok').textContent = m; $('ok').style.display = ''; $('err').style.display = 'none'; };
+    // v1.9.112 — ต้องใช้ 'block' (ไม่ใช่ '') เพราะ .alert { display:none } ใน CSS จะชนะ inline ที่เป็นค่าว่าง → error เลยไม่โผล่
+    const showErr = m => { $('err').textContent = m; $('err').style.display = 'block'; $('ok').style.display = 'none'; };
+    const showOk = m => { $('ok').textContent = m; $('ok').style.display = 'block'; $('err').style.display = 'none'; };
     const clearMsg = () => { $('err').style.display = $('ok').style.display = 'none'; };
 
     // ===== Multi-profile localStorage helpers =====

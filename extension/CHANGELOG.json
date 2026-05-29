@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.112",
+      "date": "2026-05-28",
+      "title": "Fix: หน้า login error ไม่เคยโผล่ (display bug)",
+      "summary": "showErr/showOk ใช้ style.display='' ซึ่งตกกลับไปใช้ CSS .alert{display:none} → กล่อง error/success ไม่เคยแสดงเลยมาตลอด. แก้เป็น display='block' → error ตอน login ผิด (ไม่พบบัญชี/รหัสผิด/ฯลฯ) โผล่แล้ว",
+      "changes": [
+        "login.html showErr/showOk: style.display '' → 'block' (override CSS .alert{display:none})",
+        "ยืนยันด้วยการทดสอบบน browser จริง — error box สีแดงโผล่ถูกต้อง"
+      ]
+    },
+    {
       "version": "1.9.111",
       "date": "2026-05-28",
       "title": "Login: แสดง error ชัดเจนตามสาเหตุ",
