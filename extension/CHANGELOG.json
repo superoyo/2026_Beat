@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.102",
+      "date": "2026-05-28",
+      "title": "จัดเมนู: รวม Int.Config + Financial Document เข้า 'Device & Software'",
+      "summary": "เปลี่ยนชื่อเมนู Hardware → 'Device & Software' + ย้าย Int. Platforms Config และ Financial Document เข้าไปเป็นรายการย่อยในกลุ่มนี้ (เดิมเป็นเมนูหลักแยก)",
+      "changes": [
+        "เปลี่ยน nav-group-label: Hardware → Device & Software",
+        "ย้าย Int. Platforms Config (#/sites) จากเมนูหลัก → sub-item แรกของ Device & Software",
+        "ย้าย Financial Document (#/financial-documents) จากเมนูหลัก → sub-item สุดท้ายของ Device & Software",
+        "อัปเดต data-group-routes ของกลุ่มให้รวม sites + financial-documents (highlight active ถูกต้อง)"
+      ]
+    },
+    {
       "version": "1.9.101",
       "date": "2026-05-28",
       "title": "Rail nav: SVG line icons สีเทา + ชื่อเมนูใต้ icon",

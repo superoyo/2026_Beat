@@ -1002,7 +1002,6 @@
             <a href="#/access-requests" data-route="access-requests">Access Requests <span id="nav-req-badge" style="display:none;margin-left:6px;background:var(--critical);color:#fff;font-size:10.5px;padding:1px 7px;border-radius:999px;font-weight:700"></span></a>
           </div>
         </div>
-        <a href="#/sites" data-route="sites" data-label="Int. Platforms Config"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span><span class="nav-label">Int. Config</span></a>
         <!-- Clients Platform group: รวม Websites + Services Config -->
         <div class="nav-group" id="nav-group-clients" data-group-routes="websites,services-config,domains-config">
           <button type="button" class="nav-group-toggle" data-group-toggle="clients" data-label="Clients Platform">
@@ -1015,22 +1014,22 @@
             <a href="#/services-config" data-route="services-config">🛠️ Services Config</a>
           </div>
         </div>
-        <!-- Hardware group: PC / Device / Network -->
-        <div class="nav-group" id="nav-group-hardware" data-group-routes="hardware-pc,hardware-pc-unassigned,hardware-device,hardware-network">
-          <button type="button" class="nav-group-toggle" data-group-toggle="hardware" data-label="Hardware">
+        <!-- v1.9.102 — Device & Software group: Int.Config + Hardware (PC/Device/Network) + Financial Document -->
+        <div class="nav-group" id="nav-group-hardware" data-group-routes="sites,hardware-pc,hardware-pc-unassigned,hardware-device,hardware-network,financial-documents">
+          <button type="button" class="nav-group-toggle" data-group-toggle="hardware" data-label="Device & Software">
             <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>
-            <span class="nav-group-label">Hardware</span>
+            <span class="nav-group-label">Device &amp; Software</span>
             <span class="nav-group-caret">▼</span>
           </button>
           <div class="nav-group-children">
+            <a href="#/sites" data-route="sites">🛠 Int. Platforms Config</a>
             <a href="#/hardware-pc" data-route="hardware-pc">💻 Personal Computer</a>
             <a href="#/hardware-pc-unassigned" data-route="hardware-pc-unassigned">📦 คอมส่วนกลาง</a>
             <a href="#/hardware-device" data-route="hardware-device">📱 Device</a>
             <a href="#/hardware-network" data-route="hardware-network">📡 Network</a>
+            <a href="#/financial-documents" data-route="financial-documents">💰 Financial Document</a>
           </div>
         </div>
-        <!-- v1.9.76 — Financial Document -->
-        <a href="#/financial-documents" data-route="financial-documents" data-label="Financial Document"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg></span><span class="nav-label">Finance</span></a>
         <!-- Setting group: รวม Logs + API Key -->
         <div class="nav-group" id="nav-group-setting" data-group-routes="logs,security">
           <button type="button" class="nav-group-toggle" data-group-toggle="setting" data-label="Setting">
