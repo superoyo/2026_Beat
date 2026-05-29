@@ -1841,13 +1841,16 @@ def auth_switch(payload: AuthSwitchIn, response: Response) -> dict[str, Any]:
 
 @app.post("/api/auth/login")
 def auth_login(payload: AuthLoginIn, response: Response) -> dict[str, Any]:
-    """ลอง admin ก่อน ถ้าไม่ผ่าน ค่อยลอง member (treat username เป็น email)"""
+    """ลอง admin ก่อน ถ้าไม่ผ่าน ค่อยลอง member (treat username เป็น email)
+    v1.9.111 — error message แยกตามสาเหตุ: ไม่พบบัญชี / รหัสผิด / ยังไม่ตั้งรหัส / ถูกระงับ"""
+    username = payload.username.strip()
     # 1) ลอง admin
     with db_conn() as conn:
         admin_row = conn.execute(
             "SELECT id, username, pw_hash, pw_salt FROM admin_users WHERE username = ?",
-            (payload.username.strip(),),
+            (username,),
         ).fetchone()
+    admin_found = bool(admin_row)
     if admin_row and verify_password(
         payload.password, admin_row["pw_hash"], admin_row["pw_salt"]
     ):
@@ -1864,36 +1867,56 @@ def auth_login(payload: AuthLoginIn, response: Response) -> dict[str, Any]:
             "label": admin_row["username"],
         }
 
-    # 2) ลอง member (username = email)
-    email = payload.username.strip().lower()
+    # 2) ลอง member (username = email) — เผื่อ alias (บัญชีที่ถูก merge)
+    email = username.lower()
     with db_conn() as conn:
         m_row = conn.execute(
             "SELECT id, phone, email, pw_hash, pw_salt, enabled FROM members WHERE LOWER(email) = ?",
             (email,),
         ).fetchone()
-    if m_row and _is_member_disabled(m_row):
-        raise HTTPException(status_code=403, detail="บัญชีนี้ถูกระงับการใช้งาน")
-    if m_row and m_row["pw_hash"] and verify_password(
-        payload.password, m_row["pw_hash"], m_row["pw_salt"]
-    ):
-        now = utc_now().isoformat()
-        with db_conn() as conn:
-            conn.execute(
-                "UPDATE members SET last_login_at = ? WHERE id = ?", (now, m_row["id"])
-            )
-            full = conn.execute(
-                "SELECT phone, email, display_name FROM members WHERE id = ?", (m_row["id"],)
+        if not m_row:
+            m_row = conn.execute(
+                "SELECT m.id, m.phone, m.email, m.pw_hash, m.pw_salt, m.enabled "
+                "FROM member_aliases a JOIN members m ON m.id = a.member_id "
+                "WHERE a.kind = 'email' AND a.value = ?",
+                (email,),
             ).fetchone()
-        token = _set_member_cookie(response, m_row["id"], m_row["phone"])
-        label = (full["display_name"] or full["email"] or full["phone"]) if full else m_row["phone"]
-        return {
-            "ok": True, "role": "member",
-            "member_id": m_row["id"],
-            "token": token,
-            "label": label,
-        }
 
-    raise HTTPException(status_code=401, detail="username/อีเมล หรือ รหัสผ่าน ไม่ถูกต้อง")
+    # ไม่พบทั้ง admin และ member
+    if not m_row:
+        if admin_found:
+            # username เป็น admin แต่รหัสผ่านผิด
+            raise HTTPException(status_code=401, detail="รหัสผ่านไม่ถูกต้อง")
+        raise HTTPException(status_code=401, detail="ไม่พบบัญชีนี้ในระบบ — ตรวจสอบ username/อีเมลอีกครั้ง")
+
+    # พบ member
+    if _is_member_disabled(m_row):
+        raise HTTPException(status_code=403, detail="บัญชีนี้ถูกระงับการใช้งาน — ติดต่อผู้ดูแลระบบ")
+    if not m_row["pw_hash"]:
+        raise HTTPException(
+            status_code=401,
+            detail="บัญชีนี้ยังไม่ได้ตั้งรหัสผ่าน — เข้าด้วยเบอร์โทร (OTP) หรือ Wazzup ก่อน แล้วไปตั้งรหัสผ่านในหน้าบัญชีของฉัน",
+        )
+    if not verify_password(payload.password, m_row["pw_hash"], m_row["pw_salt"]):
+        raise HTTPException(status_code=401, detail="รหัสผ่านไม่ถูกต้อง")
+
+    # สำเร็จ
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        conn.execute(
+            "UPDATE members SET last_login_at = ? WHERE id = ?", (now, m_row["id"])
+        )
+        full = conn.execute(
+            "SELECT phone, email, display_name FROM members WHERE id = ?", (m_row["id"],)
+        ).fetchone()
+    token = _set_member_cookie(response, m_row["id"], m_row["phone"])
+    label = (full["display_name"] or full["email"] or full["phone"]) if full else m_row["phone"]
+    return {
+        "ok": True, "role": "member",
+        "member_id": m_row["id"],
+        "token": token,
+        "label": label,
+    }
 
 
 @app.post("/api/admin/logout")

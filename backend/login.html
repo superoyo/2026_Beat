@@ -430,7 +430,12 @@
         showOk(`เข้าสู่ระบบสำเร็จ (${data.role}) — กำลังพาไประบบหลังบ้าน…`);
         setTimeout(() => location.replace('/admin'), 600);
       } catch (e) {
-        showErr(e.message);
+        const msg = (e && e.message) || 'เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ';
+        if (/failed to fetch|load failed|networkerror/i.test(msg)) {
+          showErr('❌ เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่');
+        } else {
+          showErr('❌ ' + msg);
+        }
       } finally {
         $('emailLoginBtn').disabled = false;
       }

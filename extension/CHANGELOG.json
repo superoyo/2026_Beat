@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.111",
+      "date": "2026-05-28",
+      "title": "Login: แสดง error ชัดเจนตามสาเหตุ",
+      "summary": "ตอน login ด้วย email/รหัสผ่าน ถ้าไม่สำเร็จ — แยกข้อความตามสาเหตุ: ไม่พบบัญชี / รหัสผ่านผิด / ยังไม่ได้ตั้งรหัสผ่าน / บัญชีถูกระงับ / เชื่อมต่อ server ไม่ได้",
+      "changes": [
+        "Backend /api/auth/login: แยก error — ไม่พบบัญชี, รหัสผ่านไม่ถูกต้อง, ยังไม่ได้ตั้งรหัสผ่าน (ให้ใช้ OTP/Wazzup), ถูกระงับ",
+        "Backend: รองรับ login ผ่าน email alias (บัญชีที่ถูก merge)",
+        "Frontend login.html: network error → 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้' + prefix ❌ ทุก error"
+      ]
+    },
+    {
       "version": "1.9.110",
       "date": "2026-05-28",
       "title": "Dashboard: กล่องกราฟ 2 คอลัมน์สูงเท่ากัน",
