@@ -11175,10 +11175,11 @@ async function renderMemberAccountPage() {
           <div style="color:var(--text-muted)">สมัครเมื่อ</div>
           <div id="m-info-created">—</div>
         </div>
-        <!-- v1.9.88 — login methods chips ของ profile นี้ -->
-        <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border)">
-          <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">🔐 วิธี Login ที่ใช้ได้</div>
-          <div id="m-info-login-chips" style="display:flex;flex-wrap:wrap;gap:5px"></div>
+        <!-- v1.9.88/95 — login methods cards + Add Account button -->
+        <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
+          <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">🔐 วิธี Login ที่ใช้ได้</div>
+          <div id="m-info-login-cards" style="display:flex;flex-direction:column;gap:6px"></div>
+          <button type="button" id="m-add-account-btn" class="btn" style="margin-top:10px;font-size:13px;padding:8px 14px;color:var(--primary);font-weight:600">+ เพิ่มวิธี Login (Add Account)</button>
         </div>
       </div>
 
@@ -11259,6 +11260,217 @@ async function renderMemberAccountPage() {
   let member = null;
   const SHIRT_OPTS = ['XS','S','M','L','XL','XXL'];
 
+  // v1.9.95 — reload member data + re-render (เรียกหลัง add login method)
+  async function loadMemberMe() {
+    try {
+      const r = await fetch('/api/member/me', { credentials: 'same-origin' }).then(r => r.json());
+      if (!r.logged_in) { location.replace('/login'); return; }
+      member = r.member;
+      renderInfo();
+    } catch (e) {
+      showSavedToast('โหลด profile ไม่สำเร็จ: ' + e.message, 'error');
+    }
+  }
+
+  // v1.9.95 — Add Account modal (3 methods: Email+PW / Phone OTP / Wazzup)
+  function openAddAccountModal(onSuccess) {
+    const bg = document.createElement('div');
+    bg.className = 'modal-bg';
+    bg.innerHTML = `
+      <div class="modal" style="max-height:88vh;overflow-y:auto">
+        <h3 id="aa-title" style="margin:0 0 12px;font-size:17px;font-weight:700">+ เพิ่มวิธี Login</h3>
+        <div id="aa-body"></div>
+        <div class="modal-actions" style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+          <button class="btn" id="aa-cancel">ยกเลิก</button>
+          <button class="btn" id="aa-back" style="display:none">← ย้อนกลับ</button>
+          <button class="btn primary" id="aa-submit" style="display:none">บันทึก</button>
+        </div>
+        <div class="hint" id="aa-err" style="color:var(--critical);margin-top:6px;display:none"></div>
+        <div class="hint" id="aa-ok" style="color:var(--green);margin-top:6px;display:none"></div>
+      </div>
+    `;
+    document.body.appendChild(bg);
+    const close = () => bg.remove();
+    const showErr = (m) => { const e = bg.querySelector('#aa-err'); e.textContent = m; e.style.display = ''; bg.querySelector('#aa-ok').style.display = 'none'; };
+    const showOk  = (m) => { const e = bg.querySelector('#aa-ok');  e.textContent = m; e.style.display = ''; bg.querySelector('#aa-err').style.display = 'none'; };
+    const clearMsg = () => { bg.querySelector('#aa-err').style.display = 'none'; bg.querySelector('#aa-ok').style.display = 'none'; };
+    bg.querySelector('#aa-cancel').addEventListener('click', close);
+    bg.addEventListener('click', e => { if (e.target === bg) close(); });
+
+    const titleEl = bg.querySelector('#aa-title');
+    const bodyEl = bg.querySelector('#aa-body');
+    const submitBtn = bg.querySelector('#aa-submit');
+    const backBtn = bg.querySelector('#aa-back');
+
+    let currentSubmit = null;  // function to call on submit click
+
+    const renderPicker = () => {
+      clearMsg();
+      titleEl.textContent = '+ เพิ่มวิธี Login';
+      submitBtn.style.display = 'none';
+      backBtn.style.display = 'none';
+      const opt = (icon, color, title, desc, key) => `
+        <button type="button" data-method="${key}" style="display:flex;gap:12px;align-items:center;padding:14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);cursor:pointer;text-align:left;width:100%;box-sizing:border-box;font-family:inherit;transition:background .12s,border-color .12s">
+          <div style="width:42px;height:42px;border-radius:50%;background:${color};color:#fff;font-size:20px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${icon}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:14px">${title}</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px">${desc}</div>
+          </div>
+          <div style="color:var(--text-muted);font-size:18px;flex-shrink:0">›</div>
+        </button>`;
+      bodyEl.innerHTML = `
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px;line-height:1.55">
+          เพิ่มวิธี login สำหรับ profile นี้ — เมื่อเพิ่มแล้ว ไม่ว่าจะ login เข้ามาด้วยวิธีไหน จะเห็น profile เดียวกันเสมอ
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${opt('🔑', '#10b981', 'Email + Password', 'ตั้ง email + รหัสผ่าน เพื่อ login ครั้งหน้า', 'email_pw')}
+          ${opt('📱', '#2563eb', 'Phone OTP', 'ผูกเบอร์มือถือ — login ด้วย OTP จาก SMS', 'phone')}
+          ${opt('🏢', '#f59e0b', 'Wazzup SSO', 'ผูกบัญชี Wazzup — login ด้วย username + password ของ Wazzup', 'wazzup')}
+        </div>
+      `;
+      bodyEl.querySelectorAll('button[data-method]').forEach(b => {
+        b.addEventListener('mouseenter', () => { b.style.background = 'var(--bg-soft)'; });
+        b.addEventListener('mouseleave', () => { b.style.background = 'var(--bg-card)'; });
+        b.addEventListener('click', () => {
+          const m = b.dataset.method;
+          if (m === 'email_pw') renderEmailPw();
+          else if (m === 'phone') renderPhone();
+          else if (m === 'wazzup') renderWazzup();
+        });
+      });
+    };
+
+    const renderEmailPw = () => {
+      clearMsg();
+      titleEl.textContent = '🔑 เพิ่ม Email + Password';
+      backBtn.style.display = '';
+      submitBtn.style.display = '';
+      submitBtn.textContent = 'บันทึก';
+      bodyEl.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600">
+            อีเมล
+            <input type="email" id="aa-email" autocomplete="email" placeholder="you@example.com" style="padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit" />
+          </label>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600">
+            รหัสผ่าน (อย่างน้อย 4 ตัว)
+            <input type="password" id="aa-pw" autocomplete="new-password" placeholder="••••••" style="padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit" />
+          </label>
+          <div style="font-size:11.5px;color:var(--text-muted);line-height:1.5">
+            หลังบันทึก — คุณจะ login ด้วย email + รหัสผ่านนี้ครั้งหน้าได้
+          </div>
+        </div>
+      `;
+      setTimeout(() => bodyEl.querySelector('#aa-email').focus(), 30);
+      currentSubmit = async () => {
+        const email = (bodyEl.querySelector('#aa-email').value || '').trim();
+        const pw = bodyEl.querySelector('#aa-pw').value || '';
+        if (!email || !pw) { showErr('กรอก email + รหัสผ่าน'); return; }
+        if (pw.length < 4) { showErr('รหัสผ่านอย่างน้อย 4 ตัว'); return; }
+        const r = await fetchJson('/api/member/add-email-password', {
+          method: 'POST', body: JSON.stringify({ email, password: pw }),
+        });
+        showOk(`✓ เพิ่ม email login สำเร็จ (${r.email})`);
+        if (onSuccess) await onSuccess();
+        setTimeout(close, 800);
+      };
+    };
+
+    const renderWazzup = () => {
+      clearMsg();
+      titleEl.textContent = '🏢 เพิ่ม Wazzup SSO';
+      backBtn.style.display = '';
+      submitBtn.style.display = '';
+      submitBtn.textContent = 'เชื่อม Wazzup';
+      bodyEl.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600">
+            Wazzup Username
+            <input type="text" id="aa-waz-user" autocomplete="username" placeholder="username" style="padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit" />
+          </label>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600">
+            Wazzup Password
+            <input type="password" id="aa-waz-pw" autocomplete="current-password" placeholder="••••••" style="padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit" />
+          </label>
+          <div style="font-size:11.5px;color:var(--text-muted);line-height:1.5">
+            ระบบจะใช้ Wazzup login ของคุณดึง email + profile แล้วผูกเข้ากับ profile นี้ — รหัสไม่ถูกเก็บ
+          </div>
+        </div>
+      `;
+      setTimeout(() => bodyEl.querySelector('#aa-waz-user').focus(), 30);
+      currentSubmit = async () => {
+        const u = (bodyEl.querySelector('#aa-waz-user').value || '').trim();
+        const p = bodyEl.querySelector('#aa-waz-pw').value || '';
+        if (!u || !p) { showErr('กรอก username + password'); return; }
+        const r = await fetchJson('/api/member/add-wazzup', {
+          method: 'POST', body: JSON.stringify({ username: u, password: p }),
+        });
+        // เก็บ Wazzup token ใน sessionStorage (ตาม SKILL.md)
+        if (r.wazzup && r.wazzup.access_token) {
+          try { sessionStorage.setItem(WAZZUP_STORAGE_KEY, JSON.stringify(r.wazzup)); } catch {}
+        }
+        showOk(`✓ เชื่อม Wazzup สำเร็จ (${r.email})`);
+        if (onSuccess) await onSuccess();
+        setTimeout(close, 800);
+      };
+    };
+
+    const renderPhone = () => {
+      clearMsg();
+      titleEl.textContent = '📱 เพิ่ม Phone OTP';
+      backBtn.style.display = '';
+      submitBtn.style.display = 'none';
+      bodyEl.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div style="font-size:13px;color:var(--text)">
+            Phone OTP ต้องใช้ Firebase reCAPTCHA — กดปุ่มด้านล่างเปิดหน้าต่างใหม่
+          </div>
+          <div style="padding:10px 12px;background:rgba(37,99,235,.06);border:1px solid rgba(37,99,235,.20);border-radius:8px;font-size:12px;color:var(--text);line-height:1.55">
+            1. หน้าต่างใหม่จะเปิด → กรอกเบอร์มือถือ + รับ OTP<br>
+            2. หลัง verify สำเร็จ → ระบบจะผูกเบอร์เข้ากับ profile นี้ + ปิดหน้าต่างเอง<br>
+            3. กลับมาที่นี่ → กด refresh เพื่อดูเบอร์ที่เพิ่งเพิ่ม
+          </div>
+          <button type="button" id="aa-phone-open" class="btn primary" style="font-size:13.5px;padding:10px 14px">📱 เปิดหน้า verify เบอร์</button>
+        </div>
+      `;
+      bodyEl.querySelector('#aa-phone-open').addEventListener('click', () => {
+        const w = 480, h = 640;
+        const x = Math.max(0, (screen.width - w) / 2);
+        const y = Math.max(0, (screen.height - h) / 2);
+        const popup = window.open('/login?action=add-phone', 'add_phone', `width=${w},height=${h},left=${x},top=${y}`);
+        if (!popup) { showErr('Popup ถูกบล็อก — โปรดอนุญาตและลองใหม่'); return; }
+        // poll: popup ปิดเมื่อไหร่ → reload member
+        const timer = setInterval(async () => {
+          if (popup.closed) {
+            clearInterval(timer);
+            showOk('✓ ปิดหน้าต่างแล้ว — refresh profile...');
+            if (onSuccess) await onSuccess();
+            setTimeout(close, 600);
+          }
+        }, 600);
+      });
+      currentSubmit = null;
+    };
+
+    submitBtn.addEventListener('click', async () => {
+      if (!currentSubmit) return;
+      submitBtn.disabled = true;
+      const orig = submitBtn.textContent;
+      submitBtn.textContent = '⏳ กำลังบันทึก...';
+      try {
+        await currentSubmit();
+      } catch (e) {
+        showErr(e.message);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = orig;
+      }
+    });
+    backBtn.addEventListener('click', () => renderPicker());
+
+    renderPicker();
+  }
+
   // v1.9.75 — คำนวณ "อายุ X ปี Y เดือน" + "(ตรงกับ พ.ศ. YYYY)" จาก birthdate
   function calcAgeText(birthdate) {
     if (!birthdate) return '— ยังไม่ได้กรอก';
@@ -11327,32 +11539,54 @@ async function renderMemberAccountPage() {
     }
     // Avatar preview
     updateMyAvatarPreview(member.avatar_data || '');
-    // v1.9.88 — login methods chips (เหมือนใน admin Members list)
-    renderMyLoginChips();
+    // v1.9.88/95 — login methods cards (เหมือน Meta) + Add Account button
+    renderMyLoginCards();
   }
 
-  function renderMyLoginChips() {
-    const box = $('m-info-login-chips');
+  function renderMyLoginCards() {
+    const box = $('m-info-login-cards');
     if (!box) return;
     const methodMap = {
-      phone:    { icon: '📱', title: 'Phone OTP',        bg: 'rgba(37,99,235,.10)',  fg: 'var(--primary)', bd: 'rgba(37,99,235,.20)' },
-      email_pw: { icon: '🔑', title: 'Email + Password', bg: 'rgba(16,185,129,.10)', fg: 'var(--green)',   bd: 'rgba(16,185,129,.25)' },
-      wazzup:   { icon: '🏢', title: 'Wazzup SSO',       bg: 'rgba(245,158,11,.12)', fg: '#92400e',        bd: 'rgba(245,158,11,.25)' },
+      phone:    { icon: '📱', title: 'Phone OTP',        bg: '#2563eb' },
+      email_pw: { icon: '🔑', title: 'Email + Password', bg: '#10b981' },
+      wazzup:   { icon: '🏢', title: 'Wazzup SSO',       bg: '#f59e0b' },
     };
     const lm = member.login_methods || [];
-    const loginChips = lm.length === 0
-      ? '<span style="font-size:11px;color:var(--text-muted);font-style:italic">— ยังไม่มี login method —</span>'
-      : lm.map(item => {
-          const mm = methodMap[item.kind]; if (!mm) return '';
-          const label = item.label || '(no label)';
-          return `<span title="${escapeHtml(mm.title)}" style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:600;background:${mm.bg};color:${mm.fg};border:1px solid ${mm.bd};white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis">${mm.icon} ${escapeHtml(label)}</span>`;
-        }).join('');
     const aliases = member.aliases || [];
-    const aliasChips = aliases.map(a => {
+    const rowStyle = 'display:flex;align-items:center;gap:11px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card)';
+    const avatar = member.avatar_data
+      ? `<img src="${member.avatar_data}" alt="" style="width:38px;height:38px;border-radius:50%;object-fit:cover;border:1px solid var(--border);flex-shrink:0" />`
+      : `<div style="width:38px;height:38px;border-radius:50%;background:var(--bg-soft);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px">👤</div>`;
+    const rows = [];
+    if (lm.length === 0) {
+      rows.push(`<div style="${rowStyle};font-size:12.5px;color:var(--text-muted);font-style:italic">— ยังไม่มี login method —</div>`);
+    }
+    for (const item of lm) {
+      const mm = methodMap[item.kind];
+      if (!mm) continue;
+      const badge = `<div style="width:18px;height:18px;border-radius:50%;background:${mm.bg};color:#fff;font-size:11px;display:inline-flex;align-items:center;justify-content:center;position:absolute;bottom:-2px;right:-2px;border:2px solid var(--bg-card)">${mm.icon}</div>`;
+      rows.push(`
+        <div style="${rowStyle}">
+          <div style="position:relative;flex-shrink:0">${avatar}${badge}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:13.5px">${escapeHtml(item.label || '(no label)')}</div>
+            <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">${escapeHtml(mm.title)}</div>
+          </div>
+        </div>`);
+    }
+    for (const a of aliases) {
       const icon = a.kind === 'phone' ? '📱' : (a.kind === 'email' ? '📧' : '🔗');
-      return `<span title="alias จาก merge — ใช้ login ได้ → ${escapeHtml(a.kind)}" style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(124,58,237,.10);color:var(--accent);border:1px dashed rgba(124,58,237,.30);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis">🔗 ${icon} ${escapeHtml(a.value)}</span>`;
-    }).join('');
-    box.innerHTML = loginChips + aliasChips;
+      const badge = `<div style="width:18px;height:18px;border-radius:50%;background:#7c3aed;color:#fff;font-size:10px;display:inline-flex;align-items:center;justify-content:center;position:absolute;bottom:-2px;right:-2px;border:2px solid var(--bg-card)">🔗</div>`;
+      rows.push(`
+        <div style="${rowStyle}">
+          <div style="position:relative;flex-shrink:0">${avatar}${badge}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:13.5px">${icon} ${escapeHtml(a.value)}</div>
+            <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">Alias (จาก merge หรือ add) — ใช้ login ได้</div>
+          </div>
+        </div>`);
+    }
+    box.innerHTML = rows.join('');
   }
 
   function updateMyAvatarPreview(dataUrl) {
@@ -11459,6 +11693,14 @@ async function renderMemberAccountPage() {
         wazBtn.style.display = '';
         wazBtn.addEventListener('click', loadAvatarFromWazzup);
       }
+    }
+    // v1.9.95 — Add Account button
+    const addBtn = $('m-add-account-btn');
+    if (addBtn) {
+      addBtn.addEventListener('click', () => openAddAccountModal(() => {
+        // refresh member data หลัง add สำเร็จ
+        loadMemberMe();
+      }));
     }
     // v1.9.74 — wire shirt-size buttons
     document.querySelectorAll('#m-shirt-size-group .m-shirt-opt').forEach(b => {

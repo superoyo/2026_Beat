@@ -501,6 +501,17 @@
 
     $('changePhoneBtn').addEventListener('click', () => { clearMsg(); goStep('step-phone'); });
 
+    // v1.9.95 — รองรับโหมด "add phone to current member" (popup จาก admin "บัญชีของฉัน")
+    const urlParams = new URLSearchParams(location.search);
+    const isAddPhoneMode = urlParams.get('action') === 'add-phone';
+    if (isAddPhoneMode) {
+      goTab('phone');
+      // เปลี่ยน title + ซ่อน tab อื่น
+      const titleEl = $('page-title'); if (titleEl) titleEl.textContent = 'เพิ่มเบอร์โทรเข้ากับ profile';
+      const subEl = $('page-sub'); if (subEl) subEl.textContent = 'กรอกเบอร์ + verify OTP — เบอร์จะถูกผูกเข้ากับ profile ที่ login อยู่';
+      document.querySelectorAll('.tab').forEach(t => { if (t.dataset.tab !== 'phone') t.style.display = 'none'; });
+    }
+
     $('verifyOtpBtn').addEventListener('click', async () => {
       clearMsg();
       const code = $('otp').value.trim();
@@ -510,7 +521,9 @@
       try {
         const result = await confirmationResult.confirm(code);
         const idToken = await result.user.getIdToken();
-        const res = await fetch('/api/member/verify', {
+        // v1.9.95 — ถ้า add-phone mode → call /api/member/add-phone (member session cookie ใช้ได้เพราะ same-origin)
+        const endpoint = isAddPhoneMode ? '/api/member/add-phone' : '/api/member/verify';
+        const res = await fetch(endpoint, {
           method: 'POST', credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id_token: idToken }),
@@ -520,11 +533,15 @@
           throw new Error(j.detail || ('HTTP ' + res.status));
         }
         const data = await res.json();
+        if (isAddPhoneMode) {
+          showOk('✓ เพิ่มเบอร์สำเร็จ — กำลังปิดหน้าต่าง...');
+          setTimeout(() => window.close(), 800);
+          return;
+        }
         addProfile({ token: data.token, role: 'member', label: data.label || data.phone });
         showOk(data.is_new
           ? 'ลงทะเบียนสำเร็จ — กำลังพาไปหน้าโปรไฟล์เพื่อตั้งรหัสผ่าน…'
           : 'เข้าสู่ระบบสำเร็จ — กำลังพาเข้าระบบหลังบ้าน…');
-        // member ใหม่ → หน้า "บัญชีของฉัน" / member เดิม → dashboard ในระบบหลังบ้าน
         setTimeout(() => location.replace(data.is_new ? '/admin#/account' : '/admin'), 800);
       } catch (e) {
         console.error(e);

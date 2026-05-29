@@ -2,6 +2,21 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.95",
+      "date": "2026-05-28",
+      "title": "บัญชีของฉัน: Add Account UI (เพิ่มวิธี login ได้)",
+      "summary": "เปลี่ยน chips → cards layout (สไตล์ Meta) + ปุ่ม '+ เพิ่มวิธี Login' → modal เลือก 3 วิธี: Email+Password / Phone OTP / Wazzup SSO. ไม่ว่า login เข้ามาด้วยวิธีไหน → เห็น profile ชุดเดียวกันทั้งหมด",
+      "changes": [
+        "Backend POST /api/member/add-email-password: เพิ่ม email + pw — ตั้งเป็น primary ถ้า empty, ไม่งั้นเก็บเป็น alias kind=email",
+        "Backend POST /api/member/add-phone: รับ Firebase id_token → verify → ถ้า slot ว่าง set primary, ไม่งั้น add alias kind=phone+firebase_uid",
+        "Backend POST /api/member/add-wazzup: Wazzup login → save email + profileURL + empCode, alias ถ้า email ต่างจากปัจจุบัน",
+        "Backend helper: _check_identity_taken() (กัน duplicate ข้ามบัญชี), _add_alias()",
+        "Frontend: renderMyLoginCards() แทน chips — แต่ละ login method = card พร้อม avatar + badge สี",
+        "Frontend openAddAccountModal(): 3-step picker → form (email+pw, wazzup inline; phone OTP เปิด popup /login?action=add-phone)",
+        "login.html: detect ?action=add-phone → ซ่อน tab อื่น + หลัง verify OTP ยิง /api/member/add-phone (cookie same-origin) + close popup"
+      ]
+    },
+    {
       "version": "1.9.94",
       "date": "2026-05-28",
       "title": "Merge บัญชี: เลือกข้อมูลแต่ละ field ได้ก่อน merge (ป้องกันข้อมูลหาย)",

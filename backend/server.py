@@ -4663,6 +4663,196 @@ def member_login(payload: MemberLoginIn, response: Response) -> dict[str, Any]:
             "token": token, "label": row["email"]}
 
 
+# v1.9.95 — Add login methods (member-side): email+pw, phone OTP, Wazzup → all link to same profile
+class AddEmailPasswordIn(BaseModel):
+    email: str = Field(..., min_length=3, max_length=200)
+    password: str = Field(..., min_length=4, max_length=200)
+
+
+class AddPhoneIn(BaseModel):
+    id_token: str = Field(..., min_length=10, max_length=4000)
+
+
+class AddWazzupIn(BaseModel):
+    username: str = Field(..., min_length=1, max_length=200)
+    password: str = Field(..., min_length=1, max_length=200)
+
+
+def _check_identity_taken(conn, kind: str, value: str, exclude_member_id: int) -> bool:
+    """True ถ้า value นี้ถูกใช้โดย member อื่น (ใน members table หรือ aliases)"""
+    if kind == "email":
+        row = conn.execute(
+            "SELECT id FROM members WHERE LOWER(email) = ? AND id != ?",
+            (value.lower(), exclude_member_id),
+        ).fetchone()
+    elif kind == "phone":
+        row = conn.execute(
+            "SELECT id FROM members WHERE phone = ? AND id != ?",
+            (value, exclude_member_id),
+        ).fetchone()
+    elif kind == "firebase_uid":
+        row = conn.execute(
+            "SELECT id FROM members WHERE firebase_uid = ? AND id != ?",
+            (value, exclude_member_id),
+        ).fetchone()
+    else:
+        return False
+    if row:
+        return True
+    row = conn.execute(
+        "SELECT member_id FROM member_aliases WHERE kind = ? AND value = ? AND member_id != ?",
+        (kind, value.lower() if kind == "email" else value, exclude_member_id),
+    ).fetchone()
+    return bool(row)
+
+
+def _add_alias(conn, member_id: int, kind: str, value: str):
+    """Insert alias — IGNORE ถ้าซ้ำ"""
+    conn.execute(
+        "INSERT OR IGNORE INTO member_aliases(member_id, kind, value, source, created_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (member_id, kind, value, "add-method", utc_now().isoformat()),
+    )
+
+
+@app.post("/api/member/add-email-password")
+def member_add_email_password(
+    payload: AddEmailPasswordIn,
+    fct_member_session: Optional[str] = Cookie(default=None),
+) -> dict[str, Any]:
+    """v1.9.95 — เพิ่มวิธี login ด้วย email + password เข้ากับ member ปัจจุบัน"""
+    sess = _require_member_session(fct_member_session)
+    member_id = sess["member_id"]
+    email = payload.email.strip().lower()
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+        raise HTTPException(status_code=400, detail="รูปแบบอีเมลไม่ถูกต้อง")
+    pw_hash, pw_salt = hash_password(payload.password)
+    with db_conn() as conn:
+        cur_row = conn.execute(
+            "SELECT email, pw_hash FROM members WHERE id = ?", (member_id,)
+        ).fetchone()
+        if not cur_row:
+            raise HTTPException(status_code=404, detail="member ไม่พบ")
+        if _check_identity_taken(conn, "email", email, member_id):
+            raise HTTPException(status_code=409, detail="email นี้ถูกใช้โดย account อื่นแล้ว")
+        cur_email = (cur_row["email"] or "").lower()
+        if cur_email == email and cur_row["pw_hash"]:
+            raise HTTPException(status_code=400, detail="คุณมี email + password นี้อยู่แล้ว")
+        if not cur_row["email"]:
+            conn.execute(
+                "UPDATE members SET email = ?, pw_hash = ?, pw_salt = ? WHERE id = ?",
+                (email, pw_hash, pw_salt, member_id),
+            )
+        else:
+            # มี email อยู่แล้ว → email ใหม่กลายเป็น alias, set pw (ถ้ายังไม่มี)
+            if cur_email != email:
+                _add_alias(conn, member_id, "email", email)
+            if not cur_row["pw_hash"]:
+                conn.execute(
+                    "UPDATE members SET pw_hash = ?, pw_salt = ? WHERE id = ?",
+                    (pw_hash, pw_salt, member_id),
+                )
+    return {"ok": True, "added": "email_pw", "email": email}
+
+
+@app.post("/api/member/add-phone")
+def member_add_phone(
+    payload: AddPhoneIn,
+    fct_member_session: Optional[str] = Cookie(default=None),
+) -> dict[str, Any]:
+    """v1.9.95 — เพิ่มวิธี login ด้วยเบอร์มือถือ (Firebase OTP) เข้ากับ member ปัจจุบัน"""
+    sess = _require_member_session(fct_member_session)
+    member_id = sess["member_id"]
+    try:
+        user = verify_firebase_id_token(payload.id_token)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    new_phone = user["phoneNumber"]
+    new_uid = user["localId"]
+    with db_conn() as conn:
+        cur_row = conn.execute(
+            "SELECT phone, firebase_uid FROM members WHERE id = ?", (member_id,)
+        ).fetchone()
+        if not cur_row:
+            raise HTTPException(status_code=404, detail="member ไม่พบ")
+        if _check_identity_taken(conn, "phone", new_phone, member_id):
+            raise HTTPException(status_code=409, detail="เบอร์นี้ถูกใช้โดย account อื่นแล้ว")
+        if _check_identity_taken(conn, "firebase_uid", new_uid, member_id):
+            raise HTTPException(status_code=409, detail="Firebase UID นี้ถูกใช้โดย account อื่นแล้ว")
+        cur_phone = cur_row["phone"]
+        cur_uid = cur_row["firebase_uid"]
+        if cur_phone == new_phone and cur_uid == new_uid:
+            raise HTTPException(status_code=400, detail="คุณมีเบอร์นี้อยู่แล้ว")
+        if _is_placeholder_phone(cur_phone) or not cur_phone:
+            # phone slot ว่าง → set เป็น primary
+            conn.execute(
+                "UPDATE members SET phone = ?, firebase_uid = ? WHERE id = ?",
+                (new_phone, new_uid, member_id),
+            )
+        else:
+            # มี phone อยู่แล้ว → ใหม่เป็น alias
+            _add_alias(conn, member_id, "phone", new_phone)
+            _add_alias(conn, member_id, "firebase_uid", new_uid)
+    return {"ok": True, "added": "phone", "phone": new_phone}
+
+
+@app.post("/api/member/add-wazzup")
+def member_add_wazzup(
+    payload: AddWazzupIn,
+    fct_member_session: Optional[str] = Cookie(default=None),
+) -> dict[str, Any]:
+    """v1.9.95 — เพิ่มวิธี login ด้วย Wazzup เข้ากับ member ปัจจุบัน"""
+    sess = _require_member_session(fct_member_session)
+    member_id = sess["member_id"]
+    waz = _wazzup_auth(payload.username, payload.password)
+    waz_email = (waz.get("email") or "").strip().lower()
+    if not waz_email:
+        raise HTTPException(status_code=502, detail="Wazzup ไม่ได้ส่ง email กลับมา")
+    waz_profile_url = (waz.get("profileURL") or "").strip() or None
+    waz_emp_code = (waz.get("id") or "").strip() or None
+    if not waz_emp_code and waz_profile_url:
+        m = re.search(r"/upload/profile/([^/_?#]+)_profile\.", waz_profile_url, re.IGNORECASE)
+        if m:
+            waz_emp_code = m.group(1)
+    with db_conn() as conn:
+        cur_row = conn.execute(
+            "SELECT email, wazzup_profile_url, wazzup_emp_code FROM members WHERE id = ?",
+            (member_id,),
+        ).fetchone()
+        if not cur_row:
+            raise HTTPException(status_code=404, detail="member ไม่พบ")
+        if _check_identity_taken(conn, "email", waz_email, member_id):
+            raise HTTPException(status_code=409, detail=f"Wazzup email ({waz_email}) ถูกใช้โดย account อื่นแล้ว")
+        cur_email = (cur_row["email"] or "").lower()
+        updates = {}
+        if not cur_row["email"]:
+            updates["email"] = waz_email
+        elif cur_email != waz_email:
+            _add_alias(conn, member_id, "email", waz_email)
+        if waz_profile_url:
+            updates["wazzup_profile_url"] = waz_profile_url
+        if waz_emp_code:
+            updates["wazzup_emp_code"] = waz_emp_code
+        if updates:
+            set_clause = ", ".join(f"{k} = ?" for k in updates)
+            values = list(updates.values()) + [member_id]
+            conn.execute(f"UPDATE members SET {set_clause} WHERE id = ?", values)
+    return {
+        "ok": True, "added": "wazzup", "email": waz_email,
+        "wazzup": {
+            "access_token": waz.get("access_token"),
+            "expiration": waz.get("expiration"),
+            "email": waz.get("email"),
+            "empThaiName": waz.get("empThaiName"),
+            "empEngName": waz.get("empEngName"),
+            "nickName": waz.get("nickName"),
+            "profileURL": waz.get("profileURL"),
+        },
+    }
+
+
 @app.patch("/api/member/profile")
 def member_update_profile(
     payload: MemberProfileIn,
