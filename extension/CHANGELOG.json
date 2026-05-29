@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.113",
+      "date": "2026-05-28",
+      "title": "Fix: ลบ member แล้ว email/alias ยังค้าง — เพิ่ม wazzup/email ซ้ำไม่ได้",
+      "summary": "db_conn ไม่เปิด PRAGMA foreign_keys → ลบ member ด้วย DELETE ไม่ cascade ลบ member_aliases → email alias ค้างเป็น orphan → block การเพิ่ม Wazzup/email ที่ใช้ค่านั้น. แก้: เคลียร์ orphan + JOIN members ตอนเช็คซ้ำ",
+      "changes": [
+        "_check_identity_taken: JOIN members ในการเช็ค alias → orphan (member ถูกลบ) ไม่ block อีกต่อไป",
+        "admin_delete_member: ลบ member_aliases ของ member นั้นก่อนลบ record",
+        "merge: ย้าย aliases ของ source → primary (UPDATE OR IGNORE) + เคลียร์ที่เหลือ ก่อนลบ source",
+        "init_db: ล้าง orphaned member_aliases ทั้งหมดตอน startup (ปลดล็อก email/phone ที่ค้างอยู่)"
+      ]
+    },
+    {
       "version": "1.9.112",
       "date": "2026-05-28",
       "title": "Fix: หน้า login error ไม่เคยโผล่ (display bug)",

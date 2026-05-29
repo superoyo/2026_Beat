@@ -585,6 +585,15 @@ def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_snapshots_host ON snapshots(host_name)"
         )
 
+        # ---- 3.5 v1.9.113 — ล้าง orphaned member_aliases (member ถูกลบแต่ alias ค้าง
+        # เพราะ FK CASCADE ไม่ทำงาน) เพื่อปลดล็อก email/phone ที่ค้างใช้ซ้ำไม่ได้
+        try:
+            conn.execute(
+                "DELETE FROM member_aliases WHERE member_id NOT IN (SELECT id FROM members)"
+            )
+        except Exception:
+            pass
+
         # ---- 4. seed config defaults
         for key, value in DEFAULT_CONFIG.items():
             conn.execute(
@@ -2812,9 +2821,11 @@ def admin_delete_member(
     member_id: int,
     _sess: dict = Depends(require_admin),
 ) -> dict[str, Any]:
-    """ลบ member ทั้งคน (sessions + record)"""
+    """ลบ member ทั้งคน (sessions + record + aliases)"""
     _invalidate_member_sessions(member_id)
     with db_conn() as conn:
+        # v1.9.113 — เคลียร์ aliases ก่อน (db_conn ไม่เปิด FK → CASCADE ไม่ทำงานเอง)
+        conn.execute("DELETE FROM member_aliases WHERE member_id = ?", (member_id,))
         cur = conn.execute("DELETE FROM members WHERE id = ?", (member_id,))
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="ไม่พบ member")
@@ -3101,6 +3112,12 @@ def admin_merge_members(
 
         # 7) ลบ source ก่อน (ปลด UNIQUE constraint)
         _invalidate_member_sessions(source_id)
+        # v1.9.113 — ย้าย aliases ที่เหลือของ source → primary แล้วเคลียร์ที่เหลือ (กัน orphan)
+        conn.execute(
+            "UPDATE OR IGNORE member_aliases SET member_id = ? WHERE member_id = ?",
+            (primary_id, source_id),
+        )
+        conn.execute("DELETE FROM member_aliases WHERE member_id = ?", (source_id,))
         conn.execute("DELETE FROM members WHERE id = ?", (source_id,))
 
         # 8) Update primary ด้วยค่าที่ merge
@@ -4735,8 +4752,10 @@ def _check_identity_taken(conn, kind: str, value: str, exclude_member_id: int) -
         return False
     if row:
         return True
+    # v1.9.113 — JOIN members เพื่อไม่ให้ orphaned alias (member ถูกลบไปแล้ว) block การใช้ value ซ้ำ
     row = conn.execute(
-        "SELECT member_id FROM member_aliases WHERE kind = ? AND value = ? AND member_id != ?",
+        "SELECT a.member_id FROM member_aliases a JOIN members m ON m.id = a.member_id "
+        "WHERE a.kind = ? AND a.value = ? AND a.member_id != ?",
         (kind, value.lower() if kind == "email" else value, exclude_member_id),
     ).fetchone()
     return bool(row)
