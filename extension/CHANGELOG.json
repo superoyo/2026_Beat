@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.106",
+      "date": "2026-05-28",
+      "title": "Dashboard: สรุปจำนวนสมาชิก + กราฟเส้นการลงทะเบียนรายวัน",
+      "summary": "หน้า Dashboard เพิ่ม section '👥 สมาชิกทั้งหมด' แสดงจำนวนสมาชิกรวม + กราฟเส้น (Chart.js) จำนวนคนที่ลงทะเบียนในแต่ละวัน เรียงตามวันที่",
+      "changes": [
+        "Backend GET /api/members/registrations-by-date: return {total, daily:[{date,count}]} group ตามวันที่ (เวลาไทย +7)",
+        "Frontend dashboard.html: section ใหม่ + renderMemberStats() วาดกราฟเส้นด้วย Chart.js",
+        "เติมช่องวันที่ที่ไม่มีการลงทะเบียน (เส้นต่อเนื่องจากวันแรก→วันสุดท้าย)"
+      ]
+    },
+    {
       "version": "1.9.105",
       "date": "2026-05-28",
       "title": "Fix: ปุ่ม 'เอาภาพจาก Wazzup' หายในหน้าเปลี่ยนรูป",

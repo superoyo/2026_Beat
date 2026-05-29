@@ -7060,6 +7060,21 @@ def member_accessible_sites(
     }
 
 
+@app.get("/api/members/registrations-by-date")
+def members_registrations_by_date(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
+    """v1.9.106 — สรุปจำนวนสมาชิกทั้งหมด + จำนวนที่ลงทะเบียนรายวัน (กราฟเส้น dashboard)
+    date group ตามเวลาไทย (+7 ชม.)"""
+    with db_conn() as conn:
+        total = conn.execute("SELECT COUNT(*) FROM members").fetchone()[0]
+        rows = conn.execute(
+            "SELECT date(created_at, '+7 hours') AS d, COUNT(*) AS n "
+            "FROM members WHERE created_at IS NOT NULL "
+            "GROUP BY d ORDER BY d"
+        ).fetchall()
+    daily = [{"date": r["d"], "count": r["n"]} for r in rows if r["d"]]
+    return {"total": total, "daily": daily}
+
+
 @app.get("/api/members/recent")
 def members_recent(
     limit: int = 20,

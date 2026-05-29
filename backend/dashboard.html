@@ -313,6 +313,17 @@
     </div>
 
     <div id="main-view">
+      <!-- v1.9.106 — สรุปจำนวนสมาชิก + กราฟลงทะเบียนรายวัน -->
+      <section class="panel" id="members-stats-section">
+        <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+          <h2 style="margin:0">👥 สมาชิกทั้งหมด</h2>
+          <span id="members-total" style="font-size:30px;font-weight:800;color:var(--primary);line-height:1">—</span>
+          <span style="font-size:14px;color:var(--text-muted)">คน</span>
+        </div>
+        <div style="font-weight:600;margin-bottom:8px;color:var(--text-muted);font-size:13px;text-transform:uppercase;letter-spacing:.04em">จำนวนที่ลงทะเบียนในแต่ละวัน</div>
+        <div class="chart-wrap"><canvas id="members-reg-chart"></canvas></div>
+      </section>
+
       <!-- Overview view: accounts grid (default) -->
       <section class="panel" id="accounts-section">
         <h2>เครดิตแต่ละบัญชี (จัดกลุ่มตามเว็บ)</h2>
@@ -1147,7 +1158,8 @@ async function refresh() {
     renderMain();
     renderSummary(summary);
     renderAccountsGrid(accounts);
-    // โหลด recent members + top platforms (ทำพร้อมกัน — ไม่ block ถ้า fail)
+    // โหลด recent members + top platforms + member stats (ทำพร้อมกัน — ไม่ block ถ้า fail)
+    renderMemberStats().catch(() => {});
     renderRecentMembers().catch(() => {});
     renderTopPlatforms().catch(() => {});
     // ถ้ากำลังดู account detail อยู่ → ก็ refresh detail ของมันด้วย
@@ -1284,6 +1296,71 @@ function renderAcctSnapshots(data) {
       </tr>
     `;
   }).join('');
+}
+
+// v1.9.106 — กราฟจำนวนสมาชิกที่ลงทะเบียนรายวัน + total
+let membersRegChartInstance = null;
+function _addDays(iso, n) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + n);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+async function renderMemberStats() {
+  let data;
+  try {
+    data = await fetchJson('/api/members/registrations-by-date');
+  } catch { return; }
+  const totalEl = document.getElementById('members-total');
+  if (totalEl) totalEl.textContent = fmtInt(data.total);
+  const daily = (data.daily || []).filter(d => d.date);
+  const canvas = document.getElementById('members-reg-chart');
+  if (!canvas) return;
+  // เติมช่องวันที่ที่ไม่มีการลงทะเบียน (ให้เส้นต่อเนื่อง) จากวันแรก → วันสุดท้าย
+  const labels = [], values = [];
+  if (daily.length > 0) {
+    const countByDate = {};
+    daily.forEach(d => { countByDate[d.date] = d.count; });
+    const last = daily[daily.length - 1].date;
+    let cur = daily[0].date;
+    let guard = 0;
+    while (guard++ < 5000) {
+      labels.push(cur);
+      values.push(countByDate[cur] || 0);
+      if (cur === last) break;
+      cur = _addDays(cur, 1);
+    }
+  }
+  if (membersRegChartInstance) { try { membersRegChartInstance.destroy(); } catch {} }
+  // eslint-disable-next-line no-undef
+  membersRegChartInstance = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'ลงทะเบียน',
+        data: values,
+        borderColor: '#2563eb',
+        backgroundColor: 'rgba(37,99,235,.12)',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.3,
+        pointRadius: labels.length > 60 ? 0 : 2,
+        pointHoverRadius: 5,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { title: items => items[0].label, label: ctx => fmtInt(ctx.parsed.y) + ' คน' } },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 11 }, maxTicksLimit: 12, autoSkip: true } },
+        y: { beginAtZero: true, ticks: { font: { size: 11 }, precision: 0, callback: v => fmtInt(v) } },
+      },
+    },
+  });
 }
 
 // refresh-btn อาจถูกซ่อน (ในโหมด embedded) — เช็คก่อน
