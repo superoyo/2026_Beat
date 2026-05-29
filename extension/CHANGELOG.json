@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.115",
+      "date": "2026-05-28",
+      "title": "หน้า Login: สลับฟอร์มไปด้านขวา (hero ซ้าย)",
+      "summary": "ย้ายฟอร์ม login ไปฝั่งขวา, hero (รูป/gradient + tagline) อยู่ฝั่งซ้าย",
+      "changes": [
+        ".split: flex-direction row-reverse (form ขวา + hero ซ้าย)",
+        ".split-hero: justify-content flex-end + scrim fade จากขวา (tagline ใกล้ฟอร์ม อ่านง่าย)"
+      ]
+    },
+    {
       "version": "1.9.114",
       "date": "2026-05-28",
       "title": "หน้า Login: ดีไซน์ 2-panel (form ซ้าย + hero ขวา) + ตั้ง background ได้",
