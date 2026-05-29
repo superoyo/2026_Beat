@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.114",
+      "date": "2026-05-28",
+      "title": "หน้า Login: ดีไซน์ 2-panel (form ซ้าย + hero ขวา) + ตั้ง background ได้",
+      "summary": "ปรับหน้า login เป็น split layout — ฟอร์ม login (3 แบบเหมือนเดิม) อยู่ซ้าย, ฝั่งขวาเป็น hero (รูป background + tagline). Admin ตั้งภาพ background + tagline ได้ที่ Setting → API Key → หน้า Login (Appearance)",
+      "changes": [
+        "login.html: split layout — .split-form (ซ้าย) + .split-hero (ขวา, gradient + decorative blobs หรือรูปที่ admin ตั้ง), tagline overlay, mobile ≤820px ซ่อน hero",
+        "login.html: fetch /api/login-appearance → set bg image + tagline ตอนโหลด",
+        "Backend GET /api/login-appearance (public) + POST /api/admin/login-appearance (admin) เก็บใน config (login_bg_image, login_tagline)",
+        "admin.html Security page: card 'หน้า Login (Appearance)' — อัพโหลดภาพ (ย่อ max 1600px JPEG) + tagline + preview + ลบ"
+      ]
+    },
+    {
       "version": "1.9.113",
       "date": "2026-05-28",
       "title": "Fix: ลบ member แล้ว email/alias ยังค้าง — เพิ่ม wazzup/email ซ้ำไม่ได้",

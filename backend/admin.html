@@ -2599,6 +2599,29 @@ async function renderSecurityPage() {
         </ol>
       </div>
     </div>
+
+    <!-- v1.9.114 — ตั้งค่าหน้า Login (background + tagline) -->
+    <div class="page-head" style="margin-top:28px"><h2 class="page-title">🎨 หน้า Login (Appearance)</h2></div>
+    <div class="card" style="display:block">
+      <div class="card-sub" style="margin-bottom:14px">ตั้งภาพพื้นหลัง (ฝั่งขวา) + ข้อความ tagline ของหน้า login — ภาพจะถูกย่อก่อนบันทึก</div>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start">
+        <div id="la-preview" style="width:260px;height:160px;border-radius:12px;border:2px dashed var(--border);background:var(--bg-soft);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;background-size:cover;background-position:center">
+          <span style="color:var(--text-muted);font-size:12px;text-align:center">ยังไม่มีภาพ<br/>(ใช้ gradient default)</span>
+        </div>
+        <div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:10px">
+          <button type="button" class="btn" id="la-upload-btn" style="font-size:13px;padding:8px 14px;text-align:left">📷 อัพโหลดภาพพื้นหลัง</button>
+          <button type="button" class="btn danger" id="la-remove-btn" style="font-size:13px;padding:8px 14px;text-align:left;display:none">🗑 ลบภาพ (ใช้ gradient)</button>
+          <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;margin-top:4px">
+            Tagline (ข้อความฝั่งขวา)
+            <input type="text" id="la-tagline" maxlength="120" placeholder="เช่น AI Solution Hub for Marketing" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit" />
+            <span style="font-size:11px;color:var(--text-muted)">ขึ้นบรรทัดใหม่: พิมพ์ \\n หรือเว้นไว้ใช้ค่า default</span>
+          </label>
+          <div class="hint" id="la-msg" style="display:none;margin-top:2px"></div>
+          <button class="btn primary" id="la-save-btn" style="font-size:13px;padding:9px 16px;align-self:flex-start">บันทึกการตั้งค่าหน้า Login</button>
+        </div>
+        <input type="file" id="la-file-input" accept="image/*" style="display:none" />
+      </div>
+    </div>
   `;
 
   let key = '…';
@@ -2624,6 +2647,71 @@ async function renderSecurityPage() {
     key = r.api_key;
     $('api-key-value').textContent = key;
     alert('สร้าง key ใหม่แล้ว — กรุณาคัดลอกไปวางใน extension options');
+  });
+
+  // v1.9.114 — Login appearance (background + tagline)
+  let laBgImage = null;  // current/new base64 (null = ไม่เปลี่ยน, '' = ลบ)
+  const laSetPreview = (dataUrl) => {
+    const box = $('la-preview');
+    const rm = $('la-remove-btn');
+    if (dataUrl) {
+      box.style.backgroundImage = `url("${dataUrl}")`;
+      box.style.borderStyle = 'solid';
+      box.innerHTML = '';
+      if (rm) rm.style.display = '';
+    } else {
+      box.style.backgroundImage = '';
+      box.style.borderStyle = 'dashed';
+      box.innerHTML = '<span style="color:var(--text-muted);font-size:12px;text-align:center">ยังไม่มีภาพ<br/>(ใช้ gradient default)</span>';
+      if (rm) rm.style.display = 'none';
+    }
+  };
+  // โหลดค่าปัจจุบัน
+  try {
+    const a = await fetchJson('/api/login-appearance');
+    if (a.bg_image) { laSetPreview(a.bg_image); }
+    if (a.tagline && $('la-tagline')) $('la-tagline').value = a.tagline;
+  } catch {}
+  // upload + compress (max 1600px, JPEG ~0.82)
+  const laFile = $('la-file-input');
+  $('la-upload-btn').addEventListener('click', () => laFile.click());
+  laFile.addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1600;
+        let w = img.width, h = img.height;
+        if (w > MAX || h > MAX) { const s = MAX / Math.max(w, h); w = Math.round(w * s); h = Math.round(h * s); }
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        const ctx = c.getContext('2d');
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, w, h);
+        laBgImage = c.toDataURL('image/jpeg', 0.82);
+        laSetPreview(laBgImage);
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(f);
+    laFile.value = '';
+  });
+  $('la-remove-btn').addEventListener('click', () => { laBgImage = ''; laSetPreview(''); });
+  $('la-save-btn').addEventListener('click', async () => {
+    const body = {};
+    if (laBgImage !== null) body.bg_image = laBgImage;  // '' = ลบ, base64 = ภาพใหม่
+    const tag = ($('la-tagline').value || '').replace(/\\n/g, '\n');
+    body.tagline = tag;
+    const btn = $('la-save-btn'); btn.disabled = true;
+    try {
+      await fetchJson('/api/admin/login-appearance', { method: 'POST', body: JSON.stringify(body) });
+      const m = $('la-msg'); m.textContent = '✓ บันทึกแล้ว — รีเฟรชหน้า login เพื่อดูผล'; m.style.display = ''; m.style.color = 'var(--green)';
+      laBgImage = null;  // reset (saved)
+    } catch (e) {
+      const m = $('la-msg'); m.textContent = '❌ ' + e.message; m.style.display = ''; m.style.color = 'var(--critical)';
+    } finally { btn.disabled = false; }
   });
 }
 

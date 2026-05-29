@@ -1527,6 +1527,42 @@ def get_config_endpoint(_auth: str = Depends(require_any_auth)) -> dict[str, Any
     }
 
 
+# v1.9.114 — Login page appearance (background image + tagline) — เก็บใน config
+class LoginAppearanceIn(BaseModel):
+    bg_image: Optional[str] = Field(None, max_length=6_000_000)  # base64 data URL หรือ '' เพื่อลบ
+    tagline: Optional[str] = Field(None, max_length=300)
+
+
+@app.get("/api/login-appearance")
+def get_login_appearance() -> dict[str, Any]:
+    """Public — login page อ่าน background + tagline (ไม่ต้อง auth เพราะใช้ก่อน login)"""
+    cfg = get_config()
+    return {
+        "bg_image": cfg.get("login_bg_image") or None,
+        "tagline": cfg.get("login_tagline") or None,
+    }
+
+
+@app.post("/api/admin/login-appearance")
+def set_login_appearance(
+    payload: LoginAppearanceIn,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """admin — ตั้งค่า background image + tagline ของหน้า login"""
+    updates: dict[str, str] = {}
+    if payload.bg_image is not None:
+        bg = payload.bg_image.strip()
+        if bg and not bg.startswith("data:image/"):
+            raise HTTPException(status_code=400, detail="bg_image ต้องเป็น data URL (data:image/...)")
+        updates["login_bg_image"] = bg  # '' = ลบ
+    if payload.tagline is not None:
+        updates["login_tagline"] = payload.tagline.strip()
+    if updates:
+        set_config(updates)
+    cfg = get_config()
+    return {"ok": True, "bg_image": cfg.get("login_bg_image") or None, "tagline": cfg.get("login_tagline") or None}
+
+
 @app.patch("/api/config")
 def patch_config(
     patch: ConfigPatch,
