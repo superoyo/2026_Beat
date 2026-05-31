@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.135",
+      "date": "2026-06-01",
+      "title": "Skill Marketplace: ช่อง Search กลางบน + จัดการหมวดหมู่ได้",
+      "summary": "เพิ่ม hero header 'Skill Marketplace' + ช่อง Search ตรงกลางด้านบน (ค้นชื่อ/คำอธิบาย/tags) + หมวดหมู่ย้ายไปเก็บใน DB (admin เพิ่ม/แก้ไข/ลบ ผ่านปุ่ม ⚙️ จัดการหมวดหมู่)",
+      "changes": [
+        "Backend: table skill_categories (seed 9 หมวด default) + CRUD endpoints (admin) + GET list",
+        "Frontend: hero + centered search box (debounced filter), หมวดหมู่โหลดจาก API",
+        "ปุ่ม '⚙️ จัดการหมวดหมู่' (admin): modal เพิ่ม/แก้ไอคอน-ชื่อ/ลบ หมวดหมู่",
+        "upload/edit dropdown หมวดหมู่ใช้รายการจาก DB"
+      ]
+    },
+    {
       "version": "1.9.134",
       "date": "2026-06-01",
       "title": "Skill: เลือกผู้อัพโหลด + เจ้าของ ได้ (ดึงรายชื่อจากระบบ)",

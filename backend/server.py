@@ -256,6 +256,15 @@ def init_db() -> None:
                 created_at      TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_skill_examples_skill ON skill_examples(skill_id);
+            -- v1.9.135: หมวดหมู่ skill (เพิ่ม/แก้ไขได้)
+            CREATE TABLE IF NOT EXISTS skill_categories (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                key        TEXT NOT NULL UNIQUE,
+                icon       TEXT,
+                label      TEXT NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS team_sites (
                 team_id     INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
                 site_id     INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
@@ -638,6 +647,24 @@ def init_db() -> None:
             conn.execute(
                 "INSERT OR IGNORE INTO config(key, value) VALUES (?, ?)",
                 (key, value),
+            )
+
+        # ---- 4.5 v1.9.135 — seed default skill categories (insert-or-ignore)
+        _now = utc_now().isoformat()
+        for i, (k, ic, lb) in enumerate([
+            ("development", "💻", "Development"),
+            ("devops", "🚀", "DevOps & Infrastructure"),
+            ("security", "🔒", "Security"),
+            ("design", "🎨", "Design & Creative"),
+            ("documents", "📄", "Documents"),
+            ("communication", "💬", "Communication"),
+            ("marketing", "📣", "Marketing"),
+            ("integration", "🔌", "Integration"),
+            ("other", "📦", "Other"),
+        ]):
+            conn.execute(
+                "INSERT OR IGNORE INTO skill_categories(key, icon, label, sort_order, created_at) VALUES (?,?,?,?,?)",
+                (k, ic, lb, i, _now),
             )
 
         # ---- emergency reset (ถ้า user ตั้ง env เอง)
@@ -7799,6 +7826,77 @@ def skill_member_options(_auth: dict = Depends(require_admin_or_member)) -> dict
             "name": r["display_name"] or r["email"] or (None if (ph and str(ph).startswith("email:")) else ph) or f"member#{r['id']}",
         })
     return {"members": out}
+
+
+# v1.9.135 — Skill categories (เพิ่ม/แก้ไขได้ — เฉพาะ admin)
+class SkillCategoryIn(BaseModel):
+    key: Optional[str] = Field(None, max_length=50)
+    icon: Optional[str] = Field(None, max_length=16)
+    label: str = Field(..., min_length=1, max_length=80)
+    sort_order: Optional[int] = None
+
+
+def _require_skill_admin(conn, sess) -> None:
+    _mid, _name, is_admin = _skill_actor(conn, sess)
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="เฉพาะ admin จัดการหมวดหมู่ได้")
+
+
+@app.get("/api/skill-categories")
+def list_skill_categories(_auth: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, key, icon, label, sort_order FROM skill_categories ORDER BY sort_order, label COLLATE NOCASE"
+        ).fetchall()
+    return {"categories": [dict(r) for r in rows]}
+
+
+@app.post("/api/skill-categories")
+def create_skill_category(payload: SkillCategoryIn, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    label = payload.label.strip()
+    key = (payload.key or "").strip().lower()
+    if not key:
+        key = re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-") or "cat"
+    if not re.fullmatch(r"[a-z0-9_-]+", key):
+        raise HTTPException(status_code=400, detail="key ต้องเป็น a-z 0-9 _ - เท่านั้น")
+    with db_conn() as conn:
+        _require_skill_admin(conn, sess)
+        if conn.execute("SELECT 1 FROM skill_categories WHERE key = ?", (key,)).fetchone():
+            raise HTTPException(status_code=409, detail=f"key '{key}' มีอยู่แล้ว")
+        mx = conn.execute("SELECT COALESCE(MAX(sort_order), 0) AS m FROM skill_categories").fetchone()["m"]
+        conn.execute(
+            "INSERT INTO skill_categories(key, icon, label, sort_order, created_at) VALUES (?,?,?,?,?)",
+            (key, (payload.icon or "📦").strip(), label, (payload.sort_order if payload.sort_order is not None else mx + 1), utc_now().isoformat()),
+        )
+    return {"ok": True, "key": key}
+
+
+@app.patch("/api/skill-categories/{cat_id}")
+def update_skill_category(cat_id: int, payload: SkillCategoryIn, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    with db_conn() as conn:
+        _require_skill_admin(conn, sess)
+        if not conn.execute("SELECT 1 FROM skill_categories WHERE id = ?", (cat_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="ไม่พบหมวดหมู่")
+        updates = {"label": payload.label.strip()}
+        if payload.icon is not None:
+            updates["icon"] = payload.icon.strip() or "📦"
+        if payload.sort_order is not None:
+            updates["sort_order"] = payload.sort_order
+        sc = ", ".join(f"{k} = ?" for k in updates)
+        conn.execute(f"UPDATE skill_categories SET {sc} WHERE id = ?", list(updates.values()) + [cat_id])
+    return {"ok": True}
+
+
+@app.delete("/api/skill-categories/{cat_id}")
+def delete_skill_category(cat_id: int, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    with db_conn() as conn:
+        _require_skill_admin(conn, sess)
+        row = conn.execute("SELECT key FROM skill_categories WHERE id = ?", (cat_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="ไม่พบหมวดหมู่")
+        n = conn.execute("SELECT COUNT(*) AS n FROM skills WHERE category = ?", (row["key"],)).fetchone()["n"]
+        conn.execute("DELETE FROM skill_categories WHERE id = ?", (cat_id,))
+    return {"ok": True, "affected_skills": n}
 
 
 @app.delete("/api/skills/{skill_id}")

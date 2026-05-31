@@ -10158,14 +10158,23 @@ const SKILL_CATEGORIES = [
   { key: 'other', icon: '📦', label: 'Other' },
 ];
 let _skillCat = '__all__';
-function _skillCatLabel(k) { const c = SKILL_CATEGORIES.find(x => x.key === k); return c ? c.icon + ' ' + c.label : k; }
+let _skillSearch = '';
+let _skillCats = null;     // v1.9.135 — โหลดจาก API (fallback SKILL_CATEGORIES)
+function _cats() { return (_skillCats && _skillCats.length) ? _skillCats : SKILL_CATEGORIES; }
+function _skillCatLabel(k) { const c = _cats().find(x => x.key === k); return c ? c.icon + ' ' + c.label : k; }
+async function _loadSkillCats(force) {
+  if (_skillCats && !force) return _skillCats;
+  try { const r = await fetchJson('/api/skill-categories'); _skillCats = (r.categories || []).map(c => ({ id: c.id, key: c.key, icon: c.icon || '📦', label: c.label })); }
+  catch { _skillCats = null; }
+  return _skillCats;
+}
 
 async function renderSkillMarketplace() {
   const root = $('skill-mp-root');
   if (!root) return;
   root.innerHTML = '<div class="empty">กำลังโหลด…</div>';
   let data;
-  try { data = await fetchJson('/api/skills'); }
+  try { await _loadSkillCats(); data = await fetchJson('/api/skills'); }
   catch (e) { root.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`; return; }
   const counts = data.category_counts || {};
   const chip = (key, icon, label, n) => {
@@ -10173,12 +10182,15 @@ async function renderSkillMarketplace() {
     return `<button type="button" class="skill-cat" data-cat="${key}" style="flex-shrink:0;padding:8px 14px;border-radius:10px;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;white-space:nowrap;border:1px solid ${active ? 'var(--primary)' : 'var(--border)'};background:${active ? 'var(--primary)' : 'var(--bg-card)'};color:${active ? '#fff' : 'var(--text)'}">${icon} ${escapeHtml(label)}${n != null ? ` <span style="opacity:.7">${n}</span>` : ''}</button>`;
   };
   let chips = chip('__all__', '🗂', 'ทั้งหมด', data.total);
-  SKILL_CATEGORIES.forEach(c => { chips += chip(c.key, c.icon, c.label, counts[c.key] || 0); });
-  const all = data.skills || [];
-  const filtered = _skillCat === '__all__' ? all : all.filter(s => s.category === _skillCat);
-  const cards = filtered.length === 0
-    ? '<div class="empty" style="padding:30px;text-align:center;color:var(--text-muted)">— ยังไม่มี skill ในหมวดนี้ —</div>'
-    : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">` + filtered.map(s => `
+  _cats().forEach(c => { chips += chip(c.key, c.icon, c.label, counts[c.key] || 0); });
+  const isAdmin = currentRole === 'admin';
+  const q = _skillSearch.trim().toLowerCase();
+  let all = data.skills || [];
+  if (_skillCat !== '__all__') all = all.filter(s => s.category === _skillCat);
+  if (q) all = all.filter(s => (s.name || '').toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q) || (s.tags || '').toLowerCase().includes(q));
+  const cards = all.length === 0
+    ? '<div class="empty" style="padding:30px;text-align:center;color:var(--text-muted)">— ไม่พบ skill —</div>'
+    : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">` + all.map(s => `
         <div class="card skill-card" data-skill-id="${s.id}" style="display:flex;flex-direction:column;gap:9px;padding:18px;cursor:pointer">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
             <span style="font-size:11px;color:var(--text-muted)">${_skillCatLabel(s.category)}</span>
@@ -10190,15 +10202,86 @@ async function renderSkillMarketplace() {
           <div style="font-size:11px;color:var(--text-soft);border-top:1px solid var(--border);padding-top:8px">โดย ${escapeHtml(s.owner_name || s.uploader_name || '—')}${s.example_count ? ` · ${s.example_count} examples` : ''}</div>
         </div>`).join('') + `</div>`;
   root.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
-      <div><div style="font-size:18px;font-weight:800">🛒 Skill Marketplace</div><div style="font-size:12.5px;color:var(--text-muted)">${data.total} skills · ทุกคนอัพโหลดได้</div></div>
-      <button type="button" class="btn primary" id="skill-upload-btn" style="font-size:13px;padding:9px 16px">+ อัพโหลด Skill</button>
+    <div style="text-align:center;padding:18px 0 22px">
+      <div style="font-size:28px;font-weight:800;letter-spacing:-0.02em">🛒 Skill Marketplace</div>
+      <div style="font-size:13.5px;color:var(--text-muted);margin-top:6px">ค้นหา skill เพื่อเสริมความสามารถให้ AI agent · ทุกคนอัพโหลดได้</div>
+      <div style="position:relative;max-width:560px;margin:18px auto 0">
+        <span style="position:absolute;left:16px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:16px">🔍</span>
+        <input id="skill-search" type="text" value="${escapeHtml(_skillSearch)}" placeholder="Search Skills..." autocomplete="off"
+               style="width:100%;padding:13px 16px 13px 44px;font-size:15px;border:1px solid var(--border);border-radius:999px;background:var(--bg-card);color:var(--text);box-shadow:var(--shadow-sm)" />
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+      <div style="font-size:12.5px;color:var(--text-muted)">${data.total} skills</div>
+      <div style="display:flex;gap:8px">
+        ${isAdmin ? '<button type="button" class="btn" id="skill-cat-manage" style="font-size:13px;padding:9px 14px">⚙️ จัดการหมวดหมู่</button>' : ''}
+        <button type="button" class="btn primary" id="skill-upload-btn" style="font-size:13px;padding:9px 16px">+ อัพโหลด Skill</button>
+      </div>
     </div>
     <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:12px;margin-bottom:6px">${chips}</div>
     <div id="skill-grid">${cards}</div>`;
+  const si = $('skill-search');
+  let _t;
+  si.addEventListener('input', (e) => { clearTimeout(_t); const v = e.target.value; _t = setTimeout(() => { _skillSearch = v; renderSkillMarketplace().then(() => { const el = $('skill-search'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }); }, 280); });
   root.querySelectorAll('.skill-cat').forEach(b => b.addEventListener('click', () => { _skillCat = b.dataset.cat; renderSkillMarketplace(); }));
   root.querySelectorAll('.skill-card').forEach(c => c.addEventListener('click', () => showSkillDetail(parseInt(c.dataset.skillId, 10))));
   $('skill-upload-btn').addEventListener('click', openSkillUploadModal);
+  if (isAdmin) $('skill-cat-manage').addEventListener('click', openSkillCategoryManager);
+}
+
+// v1.9.135 — จัดการหมวดหมู่ (admin)
+async function openSkillCategoryManager() {
+  await _loadSkillCats(true);
+  const renderRows = () => (_cats()).map(c => `
+    <div class="sk-cat-row" data-cat-id="${c.id || ''}" data-cat-key="${escapeHtml(c.key)}" style="display:flex;gap:8px;align-items:center;padding:8px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px">
+      <input class="sk-cat-icon" value="${escapeHtml(c.icon)}" maxlength="4" style="width:44px;text-align:center;padding:7px;border:1px solid var(--border);border-radius:6px;font-size:15px" />
+      <input class="sk-cat-label" value="${escapeHtml(c.label)}" style="flex:1;padding:7px 9px;border:1px solid var(--border);border-radius:6px;font-family:inherit" />
+      <span style="font-size:11px;color:var(--text-soft);font-family:ui-monospace,Menlo,monospace;min-width:80px">${escapeHtml(c.key)}</span>
+      <button type="button" class="btn" data-cat-save style="font-size:11.5px;padding:5px 9px">💾</button>
+      <button type="button" class="btn danger" data-cat-del style="font-size:11.5px;padding:5px 9px">🗑</button>
+    </div>`).join('');
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal modal-wide" style="max-height:86vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <h3 style="margin:0;font-size:17px;font-weight:700">⚙️ จัดการหมวดหมู่ Skill</h3>
+        <button class="btn" id="skc-close" style="font-size:13px;padding:6px 12px">✕ ปิด</button>
+      </div>
+      <div id="skc-list">${renderRows()}</div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+        <input id="skc-new-icon" value="📦" maxlength="4" style="width:44px;text-align:center;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:15px" />
+        <input id="skc-new-label" placeholder="ชื่อหมวดหมู่ใหม่" style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-family:inherit" />
+        <button type="button" class="btn primary" id="skc-add" style="font-size:13px;padding:8px 14px">+ เพิ่ม</button>
+      </div>
+      <div class="hint" id="skc-msg" style="margin-top:8px;display:none"></div>
+    </div>`;
+  document.body.appendChild(bg);
+  const close = () => { bg.remove(); renderSkillMarketplace(); };
+  bg.querySelector('#skc-close').addEventListener('click', close);
+  bg.addEventListener('click', e => { if (e.target === bg) close(); });
+  const msg = (t, err) => { const m = bg.querySelector('#skc-msg'); m.textContent = t; m.style.display = ''; m.style.color = err ? 'var(--critical)' : 'var(--green)'; };
+  const reload = async () => { await _loadSkillCats(true); bg.querySelector('#skc-list').innerHTML = renderRows(); wireRows(); };
+  function wireRows() {
+    bg.querySelectorAll('.sk-cat-row').forEach(row => {
+      row.querySelector('[data-cat-save]').addEventListener('click', async () => {
+        try { await fetchJson(`/api/skill-categories/${row.dataset.catId}`, { method: 'PATCH', body: JSON.stringify({ icon: row.querySelector('.sk-cat-icon').value, label: row.querySelector('.sk-cat-label').value.trim() }) }); msg('✓ บันทึกแล้ว'); }
+        catch (e) { msg('❌ ' + e.message, true); }
+      });
+      row.querySelector('[data-cat-del]').addEventListener('click', async () => {
+        if (!confirm(`ลบหมวดหมู่ "${row.dataset.catKey}"? (skill ในหมวดนี้จะไม่ถูกลบ แต่จะไม่มีหมวด)`)) return;
+        try { await fetchJson(`/api/skill-categories/${row.dataset.catId}`, { method: 'DELETE' }); await reload(); }
+        catch (e) { msg('❌ ' + e.message, true); }
+      });
+    });
+  }
+  wireRows();
+  bg.querySelector('#skc-add').addEventListener('click', async () => {
+    const label = bg.querySelector('#skc-new-label').value.trim();
+    if (!label) { msg('กรอกชื่อหมวดหมู่', true); return; }
+    try { await fetchJson('/api/skill-categories', { method: 'POST', body: JSON.stringify({ icon: bg.querySelector('#skc-new-icon').value, label }) }); bg.querySelector('#skc-new-label').value = ''; await reload(); msg('✓ เพิ่มแล้ว'); }
+    catch (e) { msg('❌ ' + e.message, true); }
+  });
 }
 
 async function showSkillDetail(skillId) {
@@ -10381,7 +10464,7 @@ function _memberSelectOpts(opts, selId, emptyLabel) {
     opts.map(m => `<option value="${m.id}" ${selId === m.id ? 'selected' : ''}>${escapeHtml(m.name)}</option>`).join('');
 }
 function _skillFormBody(s, memberOpts) {
-  const catOpts = SKILL_CATEGORIES.map(c => `<option value="${c.key}" ${s && s.category === c.key ? 'selected' : ''}>${c.icon} ${c.label}</option>`).join('');
+  const catOpts = _cats().map(c => `<option value="${c.key}" ${s && s.category === c.key ? 'selected' : ''}>${c.icon} ${c.label}</option>`).join('');
   const selStyle = 'padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit';
   return `
     <div style="display:flex;flex-direction:column;gap:12px">
@@ -10400,7 +10483,7 @@ function _skillFormBody(s, memberOpts) {
     </div>`;
 }
 async function openSkillUploadModal() {
-  const memberOpts = await _loadSkillMemberOpts();
+  await _loadSkillCats(); const memberOpts = await _loadSkillMemberOpts();
   const up = { data: null, name: null, mime: null, content: null };
   showModal({
     title: '+ อัพโหลด Skill', size: 'wide', body: _skillFormBody(null, memberOpts),
@@ -10443,7 +10526,7 @@ async function openSkillUploadModal() {
   }, 30);
 }
 async function openSkillEditModal(s) {
-  const memberOpts = await _loadSkillMemberOpts();
+  await _loadSkillCats(); const memberOpts = await _loadSkillMemberOpts();
   showModal({
     title: `✏️ แก้ไข — ${s.name}`, size: 'wide', body: _skillFormBody(s, memberOpts),
     onSubmit: async () => {
