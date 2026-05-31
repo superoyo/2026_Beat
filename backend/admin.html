@@ -2776,34 +2776,89 @@ async function renderPlatformsPage() {
       <h2 class="page-title">🚀 Platforms</h2>
       <span class="card-sub" id="p-count">—</span>
     </div>
-    <div id="p-hint" class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px"></div>
-
-    <div style="display:grid;grid-template-columns:1fr auto auto;gap:10px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
-      <div style="position:relative">
-        <input id="p-search" type="text" placeholder="🔍 ค้นหา platform (ชื่อ หรือ URL)" autocomplete="off"
-               style="width:100%;padding:10px 14px;font-size:14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-input);color:var(--text)" />
-        <span id="p-search-clear" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--text-muted);display:none;padding:4px 8px;border-radius:6px">×</span>
+    <div class="acc-layout">
+      <!-- เมนูซ้าย -->
+      <div class="acc-menu">
+        <button type="button" class="acc-menu-item active" data-plat-tab="platform"><span class="acc-menu-ico">🚀</span> Platform</button>
+        <button type="button" class="acc-menu-item" data-plat-tab="skill"><span class="acc-menu-ico">🛒</span> Skill Marketplace</button>
       </div>
-      <select id="p-sort" style="padding:10px 14px;font-size:13.5px;border:1px solid var(--border);border-radius:10px;background:var(--bg-input);color:var(--text);min-width:180px;cursor:pointer">
-        <option value="mine">🔥 ที่ฉันใช้บ่อย</option>
-        <option value="global">🌐 ใช้บ่อยในระบบ</option>
-        <option value="az">🔤 A → Z</option>
-      </select>
-      <select id="p-spotlight" style="padding:10px 14px;font-size:13.5px;border:1px solid var(--border);border-radius:10px;background:var(--bg-input);color:var(--text);min-width:200px;cursor:pointer">
-        <option value="">🔦 Spotlight: — ไม่เลือก —</option>
-      </select>
-    </div>
-    <div id="p-spotlight-legend" style="display:none;margin-bottom:14px;padding:10px 14px;background:var(--bg-soft);border-radius:10px;font-size:12px;color:var(--text-muted);line-height:1.7">
-      <strong style="color:var(--text)" id="p-spotlight-team-name"></strong> ใช้:
-      <span style="display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;background:rgba(16,185,129,.15);color:#15803d;font-weight:600;margin:0 4px">💚 ทีมใช้ + คุณใช้ได้</span>
-      <span style="display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;background:rgba(245,158,11,.15);color:#92400e;font-weight:600;margin:0 4px">💛 ทีมใช้ แต่คุณยังไม่มีสิทธิ์</span>
-      <span style="color:var(--text-soft);margin-left:8px">• ที่เหลือ = ทีมไม่ได้ใช้</span>
-    </div>
+      <!-- เนื้อหาขวา -->
+      <div class="acc-detail">
+        <!-- ============ Platform ============ -->
+        <div data-plat-panel="platform">
+          <div id="p-hint" class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px"></div>
 
-    <div id="p-list">
-      <div class="empty">กำลังโหลด…</div>
+          <div style="display:grid;grid-template-columns:1fr auto auto;gap:10px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+            <div style="position:relative">
+              <input id="p-search" type="text" placeholder="🔍 ค้นหา platform (ชื่อ หรือ URL)" autocomplete="off"
+                     style="width:100%;padding:10px 14px;font-size:14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-input);color:var(--text)" />
+              <span id="p-search-clear" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--text-muted);display:none;padding:4px 8px;border-radius:6px">×</span>
+            </div>
+            <select id="p-sort" style="padding:10px 14px;font-size:13.5px;border:1px solid var(--border);border-radius:10px;background:var(--bg-input);color:var(--text);min-width:180px;cursor:pointer">
+              <option value="mine">🔥 ที่ฉันใช้บ่อย</option>
+              <option value="global">🌐 ใช้บ่อยในระบบ</option>
+              <option value="az">🔤 A → Z</option>
+            </select>
+            <select id="p-spotlight" style="padding:10px 14px;font-size:13.5px;border:1px solid var(--border);border-radius:10px;background:var(--bg-input);color:var(--text);min-width:200px;cursor:pointer">
+              <option value="">🔦 Spotlight: — ไม่เลือก —</option>
+            </select>
+          </div>
+          <div id="p-spotlight-legend" style="display:none;margin-bottom:14px;padding:10px 14px;background:var(--bg-soft);border-radius:10px;font-size:12px;color:var(--text-muted);line-height:1.7">
+            <strong style="color:var(--text)" id="p-spotlight-team-name"></strong> ใช้:
+            <span style="display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;background:rgba(16,185,129,.15);color:#15803d;font-weight:600;margin:0 4px">💚 ทีมใช้ + คุณใช้ได้</span>
+            <span style="display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;background:rgba(245,158,11,.15);color:#92400e;font-weight:600;margin:0 4px">💛 ทีมใช้ แต่คุณยังไม่มีสิทธิ์</span>
+            <span style="color:var(--text-soft);margin-left:8px">• ที่เหลือ = ทีมไม่ได้ใช้</span>
+          </div>
+
+          <div id="p-list">
+            <div class="empty">กำลังโหลด…</div>
+          </div>
+        </div>
+
+        <!-- ============ Skill Marketplace ============ -->
+        <div data-plat-panel="skill" style="display:none">
+          <div class="card" style="display:block;margin-bottom:14px">
+            <h3 style="margin:0 0 6px;font-size:16px;font-weight:700">🛒 Skill Marketplace</h3>
+            <div class="hint" style="font-size:13px;color:var(--text-muted);line-height:1.6">
+              รวม Skill / ความสามารถที่เชื่อมต่อกับระบบภายนอกได้ — เปิดใช้งานเพิ่มได้เรื่อยๆ
+            </div>
+          </div>
+          <div id="p-skill-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px"></div>
+        </div>
+      </div>
     </div>
   `;
+
+  // v1.9.120 — submenu Platform / Skill Marketplace (เหมือนหน้า Profile)
+  function showPlatPanel(panel) {
+    document.querySelectorAll('[data-plat-panel]').forEach(p => { p.style.display = (p.dataset.platPanel === panel) ? '' : 'none'; });
+    document.querySelectorAll('[data-plat-tab]').forEach(b => b.classList.toggle('active', b.dataset.platTab === panel));
+  }
+  document.querySelectorAll('[data-plat-tab]').forEach(b => b.addEventListener('click', () => showPlatPanel(b.dataset.platTab)));
+  // Skill Marketplace cards
+  (function renderSkillMarketplace() {
+    const box = $('p-skill-list');
+    if (!box) return;
+    const skills = [
+      { icon: '🏢', name: 'Wazzup SSO', desc: 'Login ด้วยบัญชี Wazzup (Fareast Fameline) + ดึง profile/รูป', status: 'connected', accent: '#f59e0b' },
+      { icon: '📍', name: 'Beacon Check-in', desc: 'อ่านตำแหน่ง check-in ของพนักงานจาก Beacon device', status: 'connected', accent: '#2563eb' },
+      { icon: '📱', name: 'Firebase Phone OTP', desc: 'ยืนยันตัวตนด้วยเบอร์มือถือ + OTP', status: 'connected', accent: '#10b981' },
+      { icon: '➕', name: 'เพิ่ม Skill อื่นๆ', desc: 'เชื่อมต่อบริการภายนอกเพิ่มเติม — เร็วๆ นี้', status: 'soon', accent: '#94a3b8' },
+    ];
+    const badge = (st) => st === 'connected'
+      ? '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(16,185,129,.12);color:var(--green)">✓ เชื่อมแล้ว</span>'
+      : '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;background:var(--bg-soft);color:var(--text-muted)">เร็วๆ นี้</span>';
+    box.innerHTML = skills.map(s => `
+      <div class="card" style="display:flex;flex-direction:column;gap:8px;padding:16px;${s.status === 'soon' ? 'opacity:.7' : ''}">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:42px;height:42px;border-radius:10px;background:${s.accent}1f;color:${s.accent};font-size:20px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${s.icon}</div>
+          <div style="flex:1;min-width:0;font-weight:700;font-size:14px">${escapeHtml(s.name)}</div>
+        </div>
+        <div style="font-size:12.5px;color:var(--text-muted);line-height:1.5;flex:1">${escapeHtml(s.desc)}</div>
+        <div>${badge(s.status)}</div>
+      </div>
+    `).join('');
+  })();
 
   let data;
   try {

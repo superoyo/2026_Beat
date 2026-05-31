@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.120",
+      "date": "2026-05-28",
+      "title": "หน้า Platforms: เพิ่มเมนูย่อย (Platform + Skill Marketplace)",
+      "summary": "จัดหน้า Platforms เป็น 2-column แบบ Profile — เมนูซ้าย: Platform (เนื้อหาเดิม) + Skill Marketplace (ใหม่). Skill Marketplace แสดง skill ที่เชื่อมต่อ (Wazzup SSO / Beacon Check-in / Firebase OTP)",
+      "changes": [
+        "renderPlatformsPage: wrap ใน .acc-layout (เมนูซ้าย + เนื้อหาขวา) ใช้ CSS เดียวกับ Profile",
+        "เมนูย่อย Platform — เนื้อหา platforms เดิม (search/sort/spotlight/list)",
+        "เมนูย่อย Skill Marketplace — การ์ด skill ที่เชื่อมต่อได้ + สถานะ"
+      ]
+    },
+    {
       "version": "1.9.119",
       "date": "2026-05-28",
       "title": "Fix: drawer hamburger ถูก clip (header มี backdrop-filter)",
