@@ -7799,6 +7799,86 @@ def download_skill(skill_id: int, _auth: dict = Depends(require_admin_or_member)
             "file_data": "data:text/markdown;base64," + _b.b64encode(content.encode("utf-8")).decode("ascii")}
 
 
+# v1.9.133 — Skill examples (prompt + ผลลัพธ์เป็นไฟล์)
+class SkillExampleIn(BaseModel):
+    prompt: Optional[str] = Field(None, max_length=20000)
+    result_filename: Optional[str] = Field(None, max_length=300)
+    result_mime: Optional[str] = Field(None, max_length=120)
+    result_data: Optional[str] = Field(None, max_length=12_000_000)
+
+
+@app.get("/api/skills/{skill_id}/examples")
+def list_skill_examples(skill_id: int, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    with db_conn() as conn:
+        skill = conn.execute("SELECT owner_member_id FROM skills WHERE id = ?", (skill_id,)).fetchone()
+        if not skill:
+            raise HTTPException(status_code=404, detail="ไม่พบ skill")
+        rows = conn.execute(
+            "SELECT id, prompt, result_filename, result_mime, creator_member_id, creator_name, created_at, "
+            "(result_data IS NOT NULL) AS has_result FROM skill_examples WHERE skill_id = ? ORDER BY created_at ASC",
+            (skill_id,),
+        ).fetchall()
+        actor_mid, _n, is_admin = _skill_actor(conn, sess)
+    out = []
+    for r in rows:
+        can_del = is_admin or (actor_mid is not None and (r["creator_member_id"] == actor_mid or skill["owner_member_id"] == actor_mid))
+        mime = r["result_mime"] or ""
+        out.append({
+            "id": r["id"], "prompt": r["prompt"],
+            "result_filename": r["result_filename"], "result_mime": r["result_mime"],
+            "creator_name": r["creator_name"], "created_at": r["created_at"],
+            "has_result": bool(r["has_result"]), "is_image": mime.startswith("image/"),
+            "can_delete": can_del,
+        })
+    return {"examples": out}
+
+
+@app.post("/api/skills/{skill_id}/examples")
+def create_skill_example(skill_id: int, payload: SkillExampleIn, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    if not (payload.prompt and payload.prompt.strip()) and not payload.result_data:
+        raise HTTPException(status_code=400, detail="ต้องมี prompt หรือไฟล์ผลลัพธ์อย่างน้อยอย่างใดอย่างหนึ่ง")
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        if not conn.execute("SELECT 1 FROM skills WHERE id = ?", (skill_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="ไม่พบ skill")
+        actor_mid, actor_name, _ = _skill_actor(conn, sess)
+        cur = conn.execute(
+            "INSERT INTO skill_examples(skill_id, prompt, result_filename, result_mime, result_data, "
+            " creator_member_id, creator_name, created_at) VALUES (?,?,?,?,?,?,?,?)",
+            (skill_id, (payload.prompt or "").strip() or None, payload.result_filename,
+             payload.result_mime, payload.result_data, actor_mid, actor_name, now),
+        )
+    return {"ok": True, "id": cur.lastrowid}
+
+
+@app.delete("/api/skills/{skill_id}/examples/{ex_id}")
+def delete_skill_example(skill_id: int, ex_id: int, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    with db_conn() as conn:
+        ex = conn.execute("SELECT creator_member_id FROM skill_examples WHERE id = ? AND skill_id = ?", (ex_id, skill_id)).fetchone()
+        if not ex:
+            raise HTTPException(status_code=404, detail="ไม่พบ example")
+        skill = conn.execute("SELECT owner_member_id FROM skills WHERE id = ?", (skill_id,)).fetchone()
+        actor_mid, _n, is_admin = _skill_actor(conn, sess)
+        ok = is_admin or (actor_mid is not None and (ex["creator_member_id"] == actor_mid or (skill and skill["owner_member_id"] == actor_mid)))
+        if not ok:
+            raise HTTPException(status_code=403, detail="คุณไม่มีสิทธิ์ลบ example นี้")
+        conn.execute("DELETE FROM skill_examples WHERE id = ?", (ex_id,))
+    return {"ok": True}
+
+
+@app.get("/api/skills/{skill_id}/examples/{ex_id}/result")
+def skill_example_result(skill_id: int, ex_id: int, _auth: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    with db_conn() as conn:
+        r = conn.execute(
+            "SELECT result_filename, result_mime, result_data FROM skill_examples WHERE id = ? AND skill_id = ?",
+            (ex_id, skill_id),
+        ).fetchone()
+    if not r or not r["result_data"]:
+        raise HTTPException(status_code=404, detail="ไม่มีไฟล์ผลลัพธ์")
+    return {"file_name": r["result_filename"] or "result", "mime": r["result_mime"] or "application/octet-stream",
+            "file_data": r["result_data"]}
+
+
 # ===========================================================================
 # Member pages (HTML)
 # ===========================================================================

@@ -10227,11 +10227,24 @@ async function showSkillDetail(skillId) {
         <span>📤 อัพโหลดโดย: ${escapeHtml(s.uploader_name || '—')}</span>
         <span>⬇ ${s.download_count} downloads</span>
       </div>
-      <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">เนื้อหา (SKILL.md)</div>
-      <pre style="white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.6;background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:14px;max-height:500px;overflow-y:auto;margin:0">${escapeHtml(s.content || '(ไม่มีเนื้อหา)')}</pre>
+      <div style="display:flex;gap:20px;border-bottom:1px solid var(--border);margin-bottom:14px">
+        <button class="sk-tab active" data-sk-pane="detail" style="padding:8px 4px;border:none;background:transparent;border-bottom:2px solid var(--primary);cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;color:var(--primary)">รายละเอียด</button>
+        <button class="sk-tab" data-sk-pane="example" style="padding:8px 4px;border:none;background:transparent;border-bottom:2px solid transparent;cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;color:var(--text-muted)">Example</button>
+      </div>
+      <div data-sk-pane-body="detail">
+        <pre style="white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.6;background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:14px;max-height:500px;overflow-y:auto;margin:0">${escapeHtml(s.content || '(ไม่มีเนื้อหา)')}</pre>
+      </div>
+      <div data-sk-pane-body="example" style="display:none"></div>
     </div>`;
   $('skill-back').addEventListener('click', () => renderSkillMarketplace());
   $('skill-dl-btn').addEventListener('click', () => downloadSkill(skillId));
+  let _exLoaded = false;
+  root.querySelectorAll('.sk-tab').forEach(t => t.addEventListener('click', () => {
+    const pane = t.dataset.skPane;
+    root.querySelectorAll('.sk-tab').forEach(x => { const on = x === t; x.style.color = on ? 'var(--primary)' : 'var(--text-muted)'; x.style.borderBottomColor = on ? 'var(--primary)' : 'transparent'; });
+    root.querySelectorAll('[data-sk-pane-body]').forEach(pb => pb.style.display = pb.dataset.skPaneBody === pane ? '' : 'none');
+    if (pane === 'example' && !_exLoaded) { _exLoaded = true; loadSkillExamples(skillId); }
+  }));
   if (s.can_edit) {
     $('skill-edit-btn').addEventListener('click', () => openSkillEditModal(s));
     $('skill-del-btn').addEventListener('click', async () => {
@@ -10251,6 +10264,100 @@ async function downloadSkill(skillId) {
     document.body.appendChild(a); a.click(); a.remove();
     showSavedToast('⬇ ดาวน์โหลดแล้ว');
   } catch (e) { showSavedToast('❌ ' + e.message, 'error'); }
+}
+
+async function loadSkillExamples(skillId) {
+  const box = document.querySelector('[data-sk-pane-body="example"]');
+  if (!box) return;
+  box.innerHTML = '<div class="empty">กำลังโหลด…</div>';
+  let r;
+  try { r = await fetchJson(`/api/skills/${skillId}/examples`); }
+  catch (e) { box.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`; return; }
+  const exs = r.examples || [];
+  const addBtn = `<button type="button" class="btn primary" id="ex-add-btn" style="font-size:13px;padding:8px 14px;margin-bottom:14px">+ เพิ่ม Example</button>`;
+  const list = exs.length === 0
+    ? '<div class="empty" style="padding:24px;text-align:center;color:var(--text-muted)">— ยังไม่มี example — ใครๆ ก็เพิ่มได้</div>'
+    : exs.map(ex => {
+        const resultCol = !ex.has_result
+          ? '<div style="color:var(--text-muted);font-size:12.5px;font-style:italic">— ไม่มีไฟล์ผลลัพธ์ —</div>'
+          : ex.is_image
+            ? `<img data-ex-img="${ex.id}" alt="result" style="max-width:100%;max-height:240px;border-radius:8px;border:1px solid var(--border);cursor:zoom-in;display:block" title="คลิกเพื่อดูเต็ม" />`
+            : `<button type="button" class="btn" data-ex-dl="${ex.id}" style="font-size:12.5px;padding:7px 12px">⬇ ${escapeHtml(ex.result_filename || 'download')}</button>`;
+        const delBtn = ex.can_delete ? `<button type="button" class="btn danger" data-ex-del="${ex.id}" style="font-size:11px;padding:3px 8px">🗑</button>` : '';
+        return `
+          <div style="border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px">
+              <span style="font-size:11.5px;color:var(--text-soft)">โดย <strong style="color:var(--text)">${escapeHtml(ex.creator_name || '—')}</strong></span>
+              ${delBtn}
+            </div>
+            <div class="sk-ex-cols" style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+              <div>
+                <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Prompt</div>
+                <div style="white-space:pre-wrap;font-size:13px;line-height:1.5;background:var(--bg-soft);border-radius:8px;padding:11px">${escapeHtml(ex.prompt || '—')}</div>
+              </div>
+              <div>
+                <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">ผลลัพธ์</div>
+                ${resultCol}
+              </div>
+            </div>
+          </div>`;
+      }).join('');
+  box.innerHTML = addBtn + list;
+  box.querySelectorAll('img[data-ex-img]').forEach(async img => {
+    try {
+      const res = await fetchJson(`/api/skills/${skillId}/examples/${img.dataset.exImg}/result`);
+      const src = res.file_data.startsWith('data:') ? res.file_data : `data:${res.mime};base64,${res.file_data}`;
+      img.src = src;
+      img.addEventListener('click', () => window.open(src, '_blank'));
+    } catch {}
+  });
+  box.querySelectorAll('[data-ex-dl]').forEach(b => b.addEventListener('click', () => downloadExampleResult(skillId, b.dataset.exDl)));
+  box.querySelectorAll('[data-ex-del]').forEach(b => b.addEventListener('click', async () => {
+    if (!confirm('ลบ example นี้?')) return;
+    try { await fetchJson(`/api/skills/${skillId}/examples/${b.dataset.exDel}`, { method: 'DELETE' }); loadSkillExamples(skillId); }
+    catch (e) { showSavedToast('❌ ' + e.message, 'error'); }
+  }));
+  $('ex-add-btn').addEventListener('click', () => openSkillExampleModal(skillId));
+}
+async function downloadExampleResult(skillId, exId) {
+  try {
+    const r = await fetchJson(`/api/skills/${skillId}/examples/${exId}/result`);
+    const href = r.file_data.startsWith('data:') ? r.file_data : `data:${r.mime};base64,${r.file_data}`;
+    const a = document.createElement('a'); a.href = href; a.download = r.file_name || 'result';
+    document.body.appendChild(a); a.click(); a.remove();
+  } catch (e) { showSavedToast('❌ ' + e.message, 'error'); }
+}
+function openSkillExampleModal(skillId) {
+  const up = { data: null, name: null, mime: null };
+  showModal({
+    title: '+ เพิ่ม Example', size: 'wide',
+    body: `
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">Prompt (ข้อความ)
+          <textarea id="ex-prompt" rows="4" placeholder="ใส่ prompt ที่ใช้..." style="padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;resize:vertical"></textarea></label>
+        <label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">ผลลัพธ์ (อัพโหลดไฟล์อะไรก็ได้ — รูป/เอกสาร/ฯลฯ)
+          <label class="btn" style="cursor:pointer;text-align:center;padding:9px">📎 เลือกไฟล์ผลลัพธ์<input type="file" id="ex-file" style="display:none" /></label></label>
+        <div id="ex-file-name" style="font-size:12px;color:var(--text-muted)"></div>
+      </div>`,
+    onSubmit: async () => {
+      const prompt = $('ex-prompt').value.trim();
+      if (!prompt && !up.data) throw new Error('ใส่ prompt หรืออัพโหลดผลลัพธ์อย่างน้อยอย่างใดอย่างหนึ่ง');
+      await fetchJson(`/api/skills/${skillId}/examples`, { method: 'POST', body: JSON.stringify({
+        prompt, result_filename: up.name, result_mime: up.mime, result_data: up.data,
+      })});
+      showSavedToast('✓ เพิ่ม example แล้ว');
+      loadSkillExamples(skillId);
+    },
+  });
+  setTimeout(() => {
+    const fi = $('ex-file'); if (!fi) return;
+    fi.addEventListener('change', (e) => {
+      const f = e.target.files[0]; if (!f) return;
+      up.name = f.name; up.mime = f.type || 'application/octet-stream';
+      $('ex-file-name').textContent = '📄 ' + f.name;
+      const rd = new FileReader(); rd.onload = (ev) => { up.data = ev.target.result; }; rd.readAsDataURL(f);
+    });
+  }, 30);
 }
 
 function _parseSkillFrontmatter(text) {

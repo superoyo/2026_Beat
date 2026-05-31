@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.133",
+      "date": "2026-06-01",
+      "title": "Skill Marketplace Phase 2: tab Example (prompt / ผลลัพธ์)",
+      "summary": "ในหน้า detail ของ skill เพิ่ม tab 'Example' — แต่ละตัวอย่าง 2 คอลัมน์ (ซ้าย=prompt ข้อความ, ขวา=ผลลัพธ์เป็นไฟล์). ถ้าเป็นรูป preview ได้ (คลิกดูเต็ม), ไฟล์อื่น download ได้. ใครๆ ก็เพิ่ม example ได้ + แสดงชื่อผู้สร้าง",
+      "changes": [
+        "Backend: endpoints list/create/delete examples + GET result (เช็คสิทธิ์ลบ = ผู้สร้าง/เจ้าของ skill/admin)",
+        "Frontend: tab รายละเอียด/Example, การ์ด example 2 คอลัมน์, preview รูป / download ไฟล์, modal เพิ่ม example (prompt + อัพโหลดไฟล์)"
+      ]
+    },
+    {
       "version": "1.9.132",
       "date": "2026-06-01",
       "title": "Skill Marketplace (Phase 1): browse / upload / detail / download",
