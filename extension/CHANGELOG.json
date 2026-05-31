@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.130",
+      "date": "2026-05-28",
+      "title": "Team panel: เพิ่ม tab การใช้งาน (platform) + Check-in",
+      "summary": "panel รายละเอียดคนที่ supervise เพิ่ม 2 tab: 'การใช้งาน' (platform usage 30 วัน) + 'Check-in' (Beacon ของคนนั้น ใช้ Wazzup token ผู้ดูแล) — lazy-load ตอนกด tab",
+      "changes": [
+        "Backend GET /api/member/supervised/{id}/stats: platform usage (เช็คสิทธิ์ supervise)",
+        "Backend GET /api/member/supervised/{id}/beacon: check-in ของคนนั้น (Wazzup token + empCode)",
+        "Helper _assert_supervises() แชร์การเช็คสิทธิ์",
+        "Frontend: 2 tab ใหม่ใน panel + lazy-load (โหลดเมื่อกด)"
+      ]
+    },
+    {
       "version": "1.9.129",
       "date": "2026-05-28",
       "title": "Team: คลิกคน → panel ขวา แสดง Profile / Device",

@@ -10240,12 +10240,43 @@ async function openSupervisedMemberPanel(memberId, memberName) {
   const body = wrap.querySelector('.sup-panel-body');
   try {
     const data = await fetchJson(`/api/member/supervised/${memberId}`);
-    renderSupPanel(body, data);
+    renderSupPanel(body, data, memberId);
   } catch (e) {
     body.innerHTML = `<div class="empty" style="padding:24px;color:var(--critical)">❌ ${escapeHtml(e.message)}</div>`;
   }
 }
-function renderSupPanel(body, data) {
+function _supFmtDate(iso) { if (!iso) return '—'; try { return new Date(iso).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }); } catch { return String(iso); } }
+function _supFmtEpoch(ms) { if (ms == null) return '—'; try { return new Date(Number(ms)).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }); } catch { return String(ms); } }
+async function loadSupUsage(body, memberId) {
+  const box = body.querySelector('[data-sup-pane-body="usage"]');
+  box.innerHTML = '<div style="padding:14px;color:var(--text-muted)">กำลังโหลด…</div>';
+  try {
+    const r = await fetchJson(`/api/member/supervised/${memberId}/stats?days=30`);
+    if (!r.platforms || r.platforms.length === 0) { box.innerHTML = '<div class="empty" style="padding:20px;color:var(--text-muted)">— ไม่มีการใช้งานใน 30 วันล่าสุด —</div>'; return; }
+    box.innerHTML = `<div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px">รวม <strong>${r.total_clicks}</strong> ครั้ง · 30 วันล่าสุด</div>` +
+      r.platforms.map(p => `
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px">
+          <div style="min-width:0"><div style="font-weight:600;font-size:13px">${escapeHtml(p.site_name)}</div><div style="font-size:11px;color:var(--text-muted)">ล่าสุด ${escapeHtml(_supFmtDate(p.last_used_at))}</div></div>
+          <div style="font-weight:700;color:var(--primary);font-size:15px;flex-shrink:0">${p.click_count}</div>
+        </div>`).join('');
+  } catch (e) { box.innerHTML = `<div class="empty" style="padding:20px;color:var(--critical)">❌ ${escapeHtml(e.message)}</div>`; }
+}
+async function loadSupCheckin(body, memberId) {
+  const box = body.querySelector('[data-sup-pane-body="checkin"]');
+  const token = getWazzupToken();
+  if (!token) { box.innerHTML = '<div class="empty" style="padding:20px;color:var(--text-muted)">⚠️ ต้อง login ด้วย <strong>Wazzup</strong> ในเซสชันนี้ก่อน</div>'; return; }
+  box.innerHTML = '<div style="padding:14px;color:var(--text-muted)">กำลังโหลด…</div>';
+  try {
+    const r = await fetchJson(`/api/member/supervised/${memberId}/beacon`, { headers: { 'Authorization': `Bearer ${token}` } });
+    const t = r.checkInToday, l = r.checkInLastTime;
+    const row = (label, val) => `<div style="padding:11px;border:1px solid var(--border);border-radius:9px;margin-bottom:8px"><div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">${label}</div><div style="font-size:13.5px">${val}</div></div>`;
+    let html = '';
+    html += row('เช็คอินวันนี้', t ? `📍 ${escapeHtml(t.locationName || '—')} · ${escapeHtml(t.type || '')} · ${escapeHtml(_supFmtEpoch(t.timestamp))}` : '<span style="color:var(--text-muted)">ยังไม่ check-in</span>');
+    if (l) html += row('ล่าสุด', `📍 ${escapeHtml(l.checkInLocation || '—')} · ${escapeHtml(_supFmtDate(l.checkInAtThailandTime || l.checkInAt))}`);
+    box.innerHTML = html;
+  } catch (e) { box.innerHTML = `<div class="empty" style="padding:20px;color:var(--critical)">❌ ${escapeHtml(e.message)}</div>`; }
+}
+function renderSupPanel(body, data, memberId) {
   const p = data.profile;
   const devs = data.devices || [];
   const initial = (p.display_name || p.email || '?').trim().charAt(0).toUpperCase();
@@ -10279,16 +10310,24 @@ function renderSupPanel(body, data) {
       ${photo}
       <div style="font-size:19px;font-weight:700;margin-top:10px">${escapeHtml(p.display_name || '(ไม่ได้ตั้งชื่อ)')}</div>
     </div>
-    <div style="display:flex;gap:20px;border-bottom:1px solid var(--border);margin-bottom:16px">
+    <div style="display:flex;gap:18px;border-bottom:1px solid var(--border);margin-bottom:16px;overflow-x:auto">
       <button class="sup-tab active" data-sup-pane="profile">Profile</button>
       <button class="sup-tab" data-sup-pane="device">Device <span style="opacity:.7">(${devs.length})</span></button>
+      <button class="sup-tab" data-sup-pane="usage">การใช้งาน</button>
+      <button class="sup-tab" data-sup-pane="checkin">Check-in</button>
     </div>
     <div data-sup-pane-body="profile">${profileHtml}</div>
     <div data-sup-pane-body="device" style="display:none">${deviceHtml}</div>
+    <div data-sup-pane-body="usage" style="display:none"></div>
+    <div data-sup-pane-body="checkin" style="display:none"></div>
   `;
+  const loaded = {};
   body.querySelectorAll('.sup-tab').forEach(t => t.addEventListener('click', () => {
+    const pane = t.dataset.supPane;
     body.querySelectorAll('.sup-tab').forEach(x => x.classList.toggle('active', x === t));
-    body.querySelectorAll('[data-sup-pane-body]').forEach(pb => pb.style.display = pb.dataset.supPaneBody === t.dataset.supPane ? '' : 'none');
+    body.querySelectorAll('[data-sup-pane-body]').forEach(pb => pb.style.display = pb.dataset.supPaneBody === pane ? '' : 'none');
+    if (pane === 'usage' && !loaded.usage) { loaded.usage = true; loadSupUsage(body, memberId); }
+    if (pane === 'checkin' && !loaded.checkin) { loaded.checkin = true; loadSupCheckin(body, memberId); }
   }));
 }
 

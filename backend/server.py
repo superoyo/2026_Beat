@@ -7513,6 +7513,92 @@ def member_supervised_detail(
     }
 
 
+def _assert_supervises(conn, supervisor_id: int, target_id: int) -> None:
+    """raise 403 ถ้า supervisor_id ไม่ได้ดูแลทีมที่ target_id อยู่"""
+    sup_teams = {r["team_id"] for r in conn.execute(
+        "SELECT team_id FROM member_supervised_teams WHERE member_id = ?", (supervisor_id,)
+    ).fetchall()}
+    if not sup_teams:
+        raise HTTPException(status_code=403, detail="คุณไม่ได้ดูแลทีมใด")
+    target_teams = {r["team_id"] for r in conn.execute(
+        "SELECT team_id FROM team_members WHERE member_id = ?", (target_id,)
+    ).fetchall()}
+    if not (sup_teams & target_teams):
+        raise HTTPException(status_code=403, detail="คนนี้ไม่ได้อยู่ในทีมที่คุณดูแล")
+
+
+# v1.9.130 — Supervise: platform usage stats ของคนที่ดูแล
+@app.get("/api/member/supervised/{target_id}/stats")
+def member_supervised_stats(
+    target_id: int,
+    days: int = 30,
+    fct_member_session: Optional[str] = Cookie(default=None),
+) -> dict[str, Any]:
+    sess = _require_member_session(fct_member_session)
+    days = max(1, min(365, days))
+    cutoff = (utc_now() - timedelta(days=days)).isoformat()
+    with db_conn() as conn:
+        _assert_supervises(conn, sess["member_id"], target_id)
+        rows = conn.execute(
+            """
+            SELECT COALESCE(s.name, ul.site_name) AS site_name, s.url_pattern,
+                   COUNT(ul.id) AS click_count, MAX(ul.timestamp) AS last_used_at
+            FROM usage_logs ul LEFT JOIN sites s ON s.id = ul.site_id
+            WHERE ul.member_id = ? AND ul.timestamp >= ?
+            GROUP BY ul.site_id ORDER BY click_count DESC
+            """,
+            (target_id, cutoff),
+        ).fetchall()
+        total = conn.execute(
+            "SELECT COUNT(*) AS n FROM usage_logs WHERE member_id = ? AND timestamp >= ?",
+            (target_id, cutoff),
+        ).fetchone()
+    return {
+        "days": days,
+        "total_clicks": total["n"] if total else 0,
+        "platforms": [
+            {"site_name": r["site_name"] or "(ลบแล้ว)", "url_pattern": r["url_pattern"],
+             "click_count": r["click_count"], "last_used_at": r["last_used_at"]}
+            for r in rows
+        ],
+    }
+
+
+# v1.9.130 — Supervise: beacon check-in ของคนที่ดูแล (ใช้ Wazzup token ของผู้ดูแล)
+@app.get("/api/member/supervised/{target_id}/beacon")
+def member_supervised_beacon(
+    target_id: int,
+    request: Request,
+    fct_member_session: Optional[str] = Cookie(default=None),
+) -> dict[str, Any]:
+    sess = _require_member_session(fct_member_session)
+    auth = request.headers.get("Authorization", "")
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="ต้องมี Wazzup Bearer token (login Wazzup ก่อน)")
+    token = auth.split(" ", 1)[1].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Wazzup token ว่าง")
+    with db_conn() as conn:
+        _assert_supervises(conn, sess["member_id"], target_id)
+        row = conn.execute("SELECT wazzup_emp_code FROM members WHERE id = ?", (target_id,)).fetchone()
+    emp = (row["wazzup_emp_code"] if row and row["wazzup_emp_code"] else "").strip()
+    if not emp:
+        raise HTTPException(status_code=400, detail="คนนี้ยังไม่มี Wazzup empCode")
+    try:
+        data = _beacon_request(emp, token, timeout=12)
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            raise HTTPException(status_code=401, detail="Wazzup token หมดอายุ — login ใหม่")
+        if e.code == 403:
+            raise HTTPException(status_code=403, detail="token ของคุณไม่มีสิทธิ์อ่าน check-in ของคนนี้")
+        if e.code == 404:
+            raise HTTPException(status_code=404, detail="ไม่พบใน Beacon")
+        raise HTTPException(status_code=502, detail=f"โหลด Beacon ไม่สำเร็จ (HTTP {e.code})")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"เชื่อมต่อ Beacon ไม่สำเร็จ: {e}")
+    return {"ok": True, "checkInToday": data.get("checkInToday"), "checkInLastTime": data.get("checkInLastTime")}
+
+
 # ===========================================================================
 # Member pages (HTML)
 # ===========================================================================
