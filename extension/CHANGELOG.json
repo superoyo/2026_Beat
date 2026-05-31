@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.129",
+      "date": "2026-05-28",
+      "title": "Team: คลิกคน → panel ขวา แสดง Profile / Device",
+      "summary": "ใน tab Team กดที่รูปคน → เปิด slide-out panel ด้านขวา (สไตล์ M365) แสดงข้อมูล Profile (เบอร์/อีเมล/วันเกิด/ขนาดเสื้อ/ทีม/login ล่าสุด) + Device (อุปกรณ์ที่ผูก) แบ่งเป็น tab",
+      "changes": [
+        "Backend GET /api/member/supervised/{target_id}: profile + devices (เช็คสิทธิ์ว่า target อยู่ในทีมที่ผู้ขอ supervise — ไม่งั้น 403)",
+        "Frontend: การ์ดคนใน Team คลิกได้ → openSupervisedMemberPanel (right slide-out + tabs Profile/Device)",
+        "เปิดได้หลายทาง: คลิก backdrop / ✕ / Escape เพื่อปิด"
+      ]
+    },
+    {
       "version": "1.9.128",
       "date": "2026-05-28",
       "title": "Team grid: ซ่อนอีเมล แสดงเบอร์โทรแทน (ถ้ามี)",

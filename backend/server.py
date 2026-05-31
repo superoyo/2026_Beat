@@ -7459,6 +7459,60 @@ def member_supervised(fct_member_session: Optional[str] = Cookie(default=None)) 
     }
 
 
+# v1.9.129 — Supervise: รายละเอียด member ที่ดูแล (Profile + Device) — เช็คสิทธิ์ว่าอยู่ในทีมที่ supervise
+@app.get("/api/member/supervised/{target_id}")
+def member_supervised_detail(
+    target_id: int,
+    fct_member_session: Optional[str] = Cookie(default=None),
+) -> dict[str, Any]:
+    sess = _require_member_session(fct_member_session)
+    member_id = sess["member_id"]
+    with db_conn() as conn:
+        sup_teams = {r["team_id"] for r in conn.execute(
+            "SELECT team_id FROM member_supervised_teams WHERE member_id = ?", (member_id,)
+        ).fetchall()}
+        if not sup_teams:
+            raise HTTPException(status_code=403, detail="คุณไม่ได้ดูแลทีมใด")
+        target_teams_rows = conn.execute(
+            "SELECT tm.team_id, t.name FROM team_members tm JOIN teams t ON t.id = tm.team_id "
+            "WHERE tm.member_id = ?", (target_id,),
+        ).fetchall()
+        target_team_ids = {r["team_id"] for r in target_teams_rows}
+        if not (sup_teams & target_team_ids):
+            raise HTTPException(status_code=403, detail="คนนี้ไม่ได้อยู่ในทีมที่คุณดูแล")
+        row = conn.execute(
+            "SELECT id, phone, email, display_name, avatar_data, shirt_size, birthdate, "
+            "       wazzup_emp_code, created_at, last_login_at "
+            "FROM members WHERE id = ?", (target_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="ไม่พบ member")
+        hw_rows = conn.execute(
+            "SELECT id, hw_type, name, os, cpu, ram, storage, device_subtype, capacity, "
+            "       model, serial_number, asset_number, photo_data "
+            "FROM hardware WHERE current_member_id = ? "
+            "ORDER BY hw_type ASC, name COLLATE NOCASE ASC", (target_id,),
+        ).fetchall()
+    ph = row["phone"]
+    # เฉพาะทีมที่ผู้ขอ supervise ได้ (ไม่เปิดเผยทีมอื่น)
+    visible_teams = [{"id": r["team_id"], "name": r["name"]} for r in target_teams_rows if r["team_id"] in sup_teams]
+    return {
+        "profile": {
+            "id": row["id"],
+            "display_name": row["display_name"],
+            "phone": None if (ph and str(ph).startswith("email:")) else ph,
+            "email": row["email"],
+            "avatar_data": row["avatar_data"],
+            "shirt_size": row["shirt_size"],
+            "birthdate": row["birthdate"],
+            "created_at": row["created_at"],
+            "last_login_at": row["last_login_at"],
+            "teams": visible_teams,
+        },
+        "devices": [dict(r) for r in hw_rows],
+    }
+
+
 # ===========================================================================
 # Member pages (HTML)
 # ===========================================================================

@@ -387,6 +387,25 @@
       font-weight: 600; border-color: rgba(37,99,235,.20);
     }
     .acc-detail { flex: 1; min-width: 0; }
+
+    /* v1.9.129 — Supervised member detail: right slide-out panel (M365 style) */
+    .sup-panel-wrap { position: fixed; inset: 0; z-index: 1100; }
+    .sup-panel-backdrop { position: absolute; inset: 0; background: rgba(15,23,42,.32); opacity: 0; transition: opacity .24s; }
+    .sup-panel-wrap.is-open .sup-panel-backdrop { opacity: 1; }
+    .sup-panel {
+      position: absolute; top: 0; right: 0; bottom: 0;
+      width: 480px; max-width: 94vw;
+      background: var(--bg-card); box-shadow: -8px 0 30px rgba(15,23,42,.2);
+      transform: translateX(100%); transition: transform .26s cubic-bezier(.4,0,.2,1);
+      display: flex; flex-direction: column; overflow-y: auto;
+    }
+    .sup-panel-wrap.is-open .sup-panel { transform: translateX(0); }
+    .sup-panel-head { display: flex; justify-content: flex-end; padding: 12px 16px 0; }
+    .sup-panel-close { width: 36px; height: 36px; border-radius: 8px; border: none; background: transparent; cursor: pointer; font-size: 17px; color: var(--text-muted); }
+    .sup-panel-close:hover { background: var(--bg-soft); color: var(--text); }
+    .sup-panel-body { padding: 0 24px 28px; }
+    .sup-tab { padding: 8px 4px; border: none; background: transparent; border-bottom: 2px solid transparent; cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 600; color: var(--text-muted); }
+    .sup-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
     @media (max-width: 700px) {
       .acc-layout { flex-direction: column; }
       .acc-menu {
@@ -10201,6 +10220,78 @@ async function renderSupervisePage() {
   `).join('');
 }
 
+// v1.9.129 — คลิกคนใน Team → เปิด panel ขวา แสดง Profile + Device (M365 style)
+async function openSupervisedMemberPanel(memberId, memberName) {
+  document.querySelectorAll('.sup-panel-wrap').forEach(e => e.remove());
+  const wrap = document.createElement('div');
+  wrap.className = 'sup-panel-wrap';
+  wrap.innerHTML = `
+    <div class="sup-panel-backdrop"></div>
+    <div class="sup-panel">
+      <div class="sup-panel-head"><button class="sup-panel-close" title="ปิด">✕</button></div>
+      <div class="sup-panel-body"><div class="empty" style="padding:24px">กำลังโหลด…</div></div>
+    </div>`;
+  document.body.appendChild(wrap);
+  requestAnimationFrame(() => wrap.classList.add('is-open'));
+  const close = () => { wrap.classList.remove('is-open'); setTimeout(() => wrap.remove(), 260); };
+  wrap.querySelector('.sup-panel-backdrop').addEventListener('click', close);
+  wrap.querySelector('.sup-panel-close').addEventListener('click', close);
+  document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); } });
+  const body = wrap.querySelector('.sup-panel-body');
+  try {
+    const data = await fetchJson(`/api/member/supervised/${memberId}`);
+    renderSupPanel(body, data);
+  } catch (e) {
+    body.innerHTML = `<div class="empty" style="padding:24px;color:var(--critical)">❌ ${escapeHtml(e.message)}</div>`;
+  }
+}
+function renderSupPanel(body, data) {
+  const p = data.profile;
+  const devs = data.devices || [];
+  const initial = (p.display_name || p.email || '?').trim().charAt(0).toUpperCase();
+  const photo = p.avatar_data
+    ? `<img src="${p.avatar_data}" style="width:96px;height:96px;border-radius:50%;object-fit:cover;border:2px solid var(--border)" />`
+    : `<div style="width:96px;height:96px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:36px;display:inline-flex;align-items:center;justify-content:center">${escapeHtml(initial)}</div>`;
+  const fmtDate = iso => iso ? new Date(iso).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+  const teamChips = (p.teams || []).map(t => `<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:500;background:rgba(37,99,235,.10);color:var(--primary);border:1px solid rgba(37,99,235,.20)">${escapeHtml(t.name)}</span>`).join('') || '<span style="color:var(--text-muted)">—</span>';
+  const HW_LABEL = { pc: '💻 คอมพิวเตอร์', device: '📱 อุปกรณ์', network: '📡 เครือข่าย' };
+  const profileHtml = `
+    <div style="display:grid;grid-template-columns:130px 1fr;gap:11px 14px;font-size:13.5px">
+      <div style="color:var(--text-muted)">เบอร์มือถือ</div><div>${p.phone ? '📞 ' + escapeHtml(p.phone) : '—'}</div>
+      <div style="color:var(--text-muted)">อีเมล</div><div style="word-break:break-all">${p.email ? escapeHtml(p.email) : '—'}</div>
+      <div style="color:var(--text-muted)">วันเกิด</div><div>${p.birthdate ? escapeHtml(p.birthdate) : '—'}</div>
+      <div style="color:var(--text-muted)">ขนาดเสื้อ</div><div>${p.shirt_size ? escapeHtml(p.shirt_size) : '—'}</div>
+      <div style="color:var(--text-muted)">เข้าระบบล่าสุด</div><div>${escapeHtml(fmtDate(p.last_login_at))}</div>
+      <div style="color:var(--text-muted)">ทีม</div><div style="display:flex;flex-wrap:wrap;gap:4px">${teamChips}</div>
+    </div>`;
+  const deviceHtml = devs.length === 0
+    ? '<div class="empty" style="padding:20px;color:var(--text-muted)">— ไม่มีอุปกรณ์ที่ผูกไว้ —</div>'
+    : devs.map(d => `
+      <div style="display:flex;gap:12px;align-items:center;padding:11px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px">
+        ${d.photo_data ? `<img src="${d.photo_data}" style="width:48px;height:48px;border-radius:8px;object-fit:cover;flex-shrink:0" />` : `<div style="width:48px;height:48px;border-radius:8px;background:var(--bg-soft);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">${(HW_LABEL[d.hw_type] || '🖥️').split(' ')[0]}</div>`}
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:13.5px">${escapeHtml(d.name)}</div>
+          <div style="font-size:11.5px;color:var(--text-muted)">${escapeHtml(HW_LABEL[d.hw_type] || d.hw_type)}${d.os ? ' · ' + escapeHtml(d.os) : ''}${d.model ? ' · ' + escapeHtml(d.model) : ''}</div>
+        </div>
+      </div>`).join('');
+  body.innerHTML = `
+    <div style="text-align:center;margin-bottom:18px">
+      ${photo}
+      <div style="font-size:19px;font-weight:700;margin-top:10px">${escapeHtml(p.display_name || '(ไม่ได้ตั้งชื่อ)')}</div>
+    </div>
+    <div style="display:flex;gap:20px;border-bottom:1px solid var(--border);margin-bottom:16px">
+      <button class="sup-tab active" data-sup-pane="profile">Profile</button>
+      <button class="sup-tab" data-sup-pane="device">Device <span style="opacity:.7">(${devs.length})</span></button>
+    </div>
+    <div data-sup-pane-body="profile">${profileHtml}</div>
+    <div data-sup-pane-body="device" style="display:none">${deviceHtml}</div>
+  `;
+  body.querySelectorAll('.sup-tab').forEach(t => t.addEventListener('click', () => {
+    body.querySelectorAll('.sup-tab').forEach(x => x.classList.toggle('active', x === t));
+    body.querySelectorAll('[data-sup-pane-body]').forEach(pb => pb.style.display = pb.dataset.supPaneBody === t.dataset.supPane ? '' : 'none');
+  }));
+}
+
 // v1.9.123 — Peoples: หน้าเดียวมีเมนูย่อย 2-column (รายชื่อ Members / Teams / Access Requests) แบบ Profile
 async function renderPeoplesPage(activeTab, teamId) {
   activeTab = activeTab || 'members';
@@ -12484,12 +12575,17 @@ async function renderMemberAccountPage() {
           ? `<img src="${m.avatar_data}" alt="" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;display:block" />`
           : `<div style="width:100%;aspect-ratio:1;border-radius:12px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:38px;display:flex;align-items:center;justify-content:center">${escapeHtml(initial)}</div>`;
         return `
-          <div style="display:flex;flex-direction:column;gap:7px">
+          <div class="sup-member-card" data-sup-member="${m.id}" data-sup-name="${escapeHtml(m.display_name || m.email || '')}" style="display:flex;flex-direction:column;gap:7px;cursor:pointer;border-radius:12px;padding:4px;margin:-4px;transition:background .12s" title="ดูข้อมูล Profile / Device">
             ${photo}
             <div style="font-weight:600;font-size:13.5px;line-height:1.3">${escapeHtml(m.display_name || '(ไม่ได้ตั้งชื่อ)')}</div>
             <div style="font-size:11.5px;color:var(--text-muted);margin-top:-4px">${m.phone ? '📞 ' + escapeHtml(m.phone) : ''}</div>
           </div>`;
       }).join('') + `</div>`;
+    grid.querySelectorAll('.sup-member-card').forEach(c => {
+      c.addEventListener('mouseenter', () => c.style.background = 'var(--bg-soft)');
+      c.addEventListener('mouseleave', () => c.style.background = 'transparent');
+      c.addEventListener('click', () => openSupervisedMemberPanel(parseInt(c.dataset.supMember, 10), c.dataset.supName));
+    });
   }
 
   // v1.9.116 — Beacon check-in (ใช้ Wazzup token ดึงตำแหน่ง check-in ของตัวเอง)
