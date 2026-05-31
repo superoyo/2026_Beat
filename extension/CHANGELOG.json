@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.132",
+      "date": "2026-06-01",
+      "title": "Skill Marketplace (Phase 1): browse / upload / detail / download",
+      "summary": "ทำ Skill Marketplace จริง — หมวดหมู่ + grid skill, อัพโหลด skill (สร้างหน้าทันที, ดึงชื่อ/คำอธิบายจาก SKILL.md frontmatter), หน้า detail (เนื้อหา + ปุ่ม download + เจ้าของ/ผู้อัพโหลด), แก้ไข/ลบ (เจ้าของ+admin). Phase 2: tab Example",
+      "changes": [
+        "Backend: table skills + skill_examples, endpoints list/get/create/update/delete/download",
+        "สิทธิ์: ทุกคนสร้างได้, แก้/ลบเฉพาะเจ้าของ (owner_member_id) หรือ admin",
+        "owner default = ผู้อัพโหลด (เปลี่ยนได้ผ่าน owner_member_id)",
+        "Frontend: หมวดหมู่ chips + skill grid + upload modal (อ่าน frontmatter อัตโนมัติ) + detail view + download"
+      ]
+    },
+    {
       "version": "1.9.131",
       "date": "2026-06-01",
       "title": "Team grid: ลบ header + grid scroll ภายใน (เมนูซ้ายไม่เลื่อนตาม)",

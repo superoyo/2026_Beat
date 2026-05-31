@@ -224,6 +224,38 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 PRIMARY KEY (member_id, team_id)
             );
+            -- v1.9.132: Skill Marketplace
+            CREATE TABLE IF NOT EXISTS skills (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                name           TEXT NOT NULL,
+                description    TEXT,
+                category       TEXT NOT NULL DEFAULT 'development',
+                content        TEXT,                -- SKILL.md content (markdown)
+                tags           TEXT,                -- comma-separated
+                file_name      TEXT,                -- ไฟล์ skill ต้นฉบับ (สำหรับ download)
+                file_data      TEXT,                -- base64
+                file_mime      TEXT,
+                owner_member_id    INTEGER REFERENCES members(id) ON DELETE SET NULL,
+                owner_name         TEXT,
+                uploader_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+                uploader_name      TEXT,
+                download_count INTEGER NOT NULL DEFAULT 0,
+                created_at     TEXT NOT NULL,
+                updated_at     TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_skills_category ON skills(category);
+            CREATE TABLE IF NOT EXISTS skill_examples (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                skill_id        INTEGER NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+                prompt          TEXT,
+                result_filename TEXT,
+                result_mime     TEXT,
+                result_data     TEXT,               -- base64
+                creator_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+                creator_name    TEXT,
+                created_at      TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_skill_examples_skill ON skill_examples(skill_id);
             CREATE TABLE IF NOT EXISTS team_sites (
                 team_id     INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
                 site_id     INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
@@ -7597,6 +7629,174 @@ def member_supervised_beacon(
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"เชื่อมต่อ Beacon ไม่สำเร็จ: {e}")
     return {"ok": True, "checkInToday": data.get("checkInToday"), "checkInLastTime": data.get("checkInLastTime")}
+
+
+# ===========================================================================
+# v1.9.132 — Skill Marketplace
+# ===========================================================================
+class SkillIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    description: Optional[str] = Field(None, max_length=4000)
+    category: str = Field("development", max_length=50)
+    content: Optional[str] = Field(None, max_length=400_000)
+    tags: Optional[str] = Field(None, max_length=500)
+    file_name: Optional[str] = Field(None, max_length=300)
+    file_data: Optional[str] = Field(None, max_length=12_000_000)
+    file_mime: Optional[str] = Field(None, max_length=120)
+    owner_member_id: Optional[int] = None
+
+
+class SkillPatch(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    description: Optional[str] = Field(None, max_length=4000)
+    category: Optional[str] = Field(None, max_length=50)
+    content: Optional[str] = Field(None, max_length=400_000)
+    tags: Optional[str] = Field(None, max_length=500)
+    owner_member_id: Optional[int] = None   # เปลี่ยนเจ้าของ
+
+
+def _skill_actor(conn, sess) -> tuple:
+    """return (member_id|None, name, is_admin)"""
+    if sess.get("role") == "admin":
+        return (None, "Admin", True)
+    mid = sess.get("member_id")
+    row = conn.execute(
+        "SELECT display_name, email, phone, is_admin FROM members WHERE id = ?", (mid,)
+    ).fetchone()
+    if not row:
+        return (mid, f"member#{mid}", False)
+    name = row["display_name"] or row["email"] or (None if (row["phone"] and str(row["phone"]).startswith("email:")) else row["phone"]) or f"member#{mid}"
+    return (mid, name, bool(row["is_admin"]))
+
+
+def _skill_can_edit(skill_row, actor_mid, is_admin) -> bool:
+    if is_admin:
+        return True
+    return actor_mid is not None and skill_row["owner_member_id"] == actor_mid
+
+
+@app.get("/api/skills")
+def list_skills(category: Optional[str] = None, _auth: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    where, params = "", []
+    if category:
+        where = "WHERE category = ?"
+        params.append(category)
+    with db_conn() as conn:
+        rows = conn.execute(
+            f"SELECT id, name, description, category, tags, owner_name, uploader_name, "
+            f"       download_count, (file_data IS NOT NULL) AS has_file, "
+            f"       (SELECT COUNT(*) FROM skill_examples e WHERE e.skill_id = skills.id) AS example_count, "
+            f"       created_at, updated_at "
+            f"FROM skills {where} ORDER BY created_at DESC",
+            params,
+        ).fetchall()
+        cat_counts = {r["category"]: r["n"] for r in conn.execute(
+            "SELECT category, COUNT(*) AS n FROM skills GROUP BY category"
+        ).fetchall()}
+        total = conn.execute("SELECT COUNT(*) AS n FROM skills").fetchone()["n"]
+    return {
+        "skills": [{**dict(r), "has_file": bool(r["has_file"])} for r in rows],
+        "category_counts": cat_counts,
+        "total": total,
+    }
+
+
+@app.get("/api/skills/{skill_id}")
+def get_skill(skill_id: int, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM skills WHERE id = ?", (skill_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="ไม่พบ skill")
+        actor_mid, _name, is_admin = _skill_actor(conn, sess)
+    d = dict(row)
+    d.pop("file_data", None)   # ไม่ส่ง base64 ใหญ่ใน detail (โหลดผ่าน /download)
+    d["has_file"] = bool(row["file_data"])
+    d["can_edit"] = _skill_can_edit(row, actor_mid, is_admin)
+    return d
+
+
+@app.post("/api/skills")
+def create_skill(payload: SkillIn, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        actor_mid, actor_name, _is_admin = _skill_actor(conn, sess)
+        # owner default = uploader; ถ้าระบุ owner_member_id ใช้ตามนั้น
+        owner_mid = payload.owner_member_id if payload.owner_member_id is not None else actor_mid
+        owner_name = actor_name
+        if payload.owner_member_id is not None:
+            orow = conn.execute("SELECT display_name, email, phone FROM members WHERE id = ?", (payload.owner_member_id,)).fetchone()
+            if orow:
+                owner_name = orow["display_name"] or orow["email"] or orow["phone"] or f"member#{payload.owner_member_id}"
+        cur = conn.execute(
+            "INSERT INTO skills(name, description, category, content, tags, file_name, file_data, file_mime, "
+            " owner_member_id, owner_name, uploader_member_id, uploader_name, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (payload.name.strip(), (payload.description or "").strip() or None, payload.category,
+             payload.content, (payload.tags or "").strip() or None,
+             payload.file_name, payload.file_data, payload.file_mime,
+             owner_mid, owner_name, actor_mid, actor_name, now, now),
+        )
+    return {"ok": True, "id": cur.lastrowid}
+
+
+@app.patch("/api/skills/{skill_id}")
+def update_skill(skill_id: int, payload: SkillPatch, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM skills WHERE id = ?", (skill_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="ไม่พบ skill")
+        actor_mid, _name, is_admin = _skill_actor(conn, sess)
+        if not _skill_can_edit(row, actor_mid, is_admin):
+            raise HTTPException(status_code=403, detail="คุณไม่มีสิทธิ์แก้ skill นี้ (เฉพาะเจ้าของ/admin)")
+        updates: dict[str, Any] = {}
+        for f in ("name", "description", "category", "content", "tags"):
+            v = getattr(payload, f)
+            if v is not None:
+                updates[f] = v.strip() if isinstance(v, str) and f in ("name", "description", "tags") else v
+        if payload.owner_member_id is not None:
+            orow = conn.execute("SELECT display_name, email, phone FROM members WHERE id = ?", (payload.owner_member_id,)).fetchone()
+            if not orow:
+                raise HTTPException(status_code=400, detail="owner_member_id ไม่พบ")
+            updates["owner_member_id"] = payload.owner_member_id
+            updates["owner_name"] = orow["display_name"] or orow["email"] or orow["phone"] or f"member#{payload.owner_member_id}"
+        if updates:
+            updates["updated_at"] = utc_now().isoformat()
+            sc = ", ".join(f"{k} = ?" for k in updates)
+            conn.execute(f"UPDATE skills SET {sc} WHERE id = ?", list(updates.values()) + [skill_id])
+    return {"ok": True}
+
+
+@app.delete("/api/skills/{skill_id}")
+def delete_skill(skill_id: int, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM skills WHERE id = ?", (skill_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="ไม่พบ skill")
+        actor_mid, _name, is_admin = _skill_actor(conn, sess)
+        if not _skill_can_edit(row, actor_mid, is_admin):
+            raise HTTPException(status_code=403, detail="คุณไม่มีสิทธิ์ลบ skill นี้")
+        conn.execute("DELETE FROM skill_examples WHERE skill_id = ?", (skill_id,))
+        conn.execute("DELETE FROM skills WHERE id = ?", (skill_id,))
+    return {"ok": True}
+
+
+@app.get("/api/skills/{skill_id}/download")
+def download_skill(skill_id: int, _auth: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    with db_conn() as conn:
+        row = conn.execute(
+            "SELECT name, file_name, file_data, file_mime, content FROM skills WHERE id = ?", (skill_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="ไม่พบ skill")
+        conn.execute("UPDATE skills SET download_count = download_count + 1 WHERE id = ?", (skill_id,))
+    if row["file_data"]:
+        return {"file_name": row["file_name"] or f"{row['name']}.txt", "file_data": row["file_data"],
+                "mime": row["file_mime"] or "application/octet-stream"}
+    # ไม่มีไฟล์แนบ → ดาวน์โหลด content เป็น SKILL.md
+    import base64 as _b
+    content = row["content"] or ""
+    return {"file_name": "SKILL.md", "mime": "text/markdown",
+            "file_data": "data:text/markdown;base64," + _b.b64encode(content.encode("utf-8")).decode("ascii")}
 
 
 # ===========================================================================

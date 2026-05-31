@@ -2797,48 +2797,20 @@ async function renderPlatformsPage() {
 
         <!-- ============ Skill Marketplace ============ -->
         <div data-plat-panel="skill" style="display:none">
-          <div class="card" style="display:block;margin-bottom:14px">
-            <h3 style="margin:0 0 6px;font-size:16px;font-weight:700">🛒 Skill Marketplace</h3>
-            <div class="hint" style="font-size:13px;color:var(--text-muted);line-height:1.6">
-              รวม Skill / ความสามารถที่เชื่อมต่อกับระบบภายนอกได้ — เปิดใช้งานเพิ่มได้เรื่อยๆ
-            </div>
-          </div>
-          <div id="p-skill-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px"></div>
+          <div id="skill-mp-root"><div class="empty">กำลังโหลด…</div></div>
         </div>
       </div>
     </div>
   `;
 
-  // v1.9.120 — submenu Platform / Skill Marketplace (เหมือนหน้า Profile)
+  // v1.9.120/132 — submenu Platform / Skill Marketplace (lazy-load marketplace)
+  let _skillMpLoaded = false;
   function showPlatPanel(panel) {
     document.querySelectorAll('[data-plat-panel]').forEach(p => { p.style.display = (p.dataset.platPanel === panel) ? '' : 'none'; });
     document.querySelectorAll('[data-plat-tab]').forEach(b => b.classList.toggle('active', b.dataset.platTab === panel));
+    if (panel === 'skill' && !_skillMpLoaded) { _skillMpLoaded = true; renderSkillMarketplace(); }
   }
   document.querySelectorAll('[data-plat-tab]').forEach(b => b.addEventListener('click', () => showPlatPanel(b.dataset.platTab)));
-  // Skill Marketplace cards
-  (function renderSkillMarketplace() {
-    const box = $('p-skill-list');
-    if (!box) return;
-    const skills = [
-      { icon: '🏢', name: 'Wazzup SSO', desc: 'Login ด้วยบัญชี Wazzup (Fareast Fameline) + ดึง profile/รูป', status: 'connected', accent: '#f59e0b' },
-      { icon: '📍', name: 'Beacon Check-in', desc: 'อ่านตำแหน่ง check-in ของพนักงานจาก Beacon device', status: 'connected', accent: '#2563eb' },
-      { icon: '📱', name: 'Firebase Phone OTP', desc: 'ยืนยันตัวตนด้วยเบอร์มือถือ + OTP', status: 'connected', accent: '#10b981' },
-      { icon: '➕', name: 'เพิ่ม Skill อื่นๆ', desc: 'เชื่อมต่อบริการภายนอกเพิ่มเติม — เร็วๆ นี้', status: 'soon', accent: '#94a3b8' },
-    ];
-    const badge = (st) => st === 'connected'
-      ? '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(16,185,129,.12);color:var(--green)">✓ เชื่อมแล้ว</span>'
-      : '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;background:var(--bg-soft);color:var(--text-muted)">เร็วๆ นี้</span>';
-    box.innerHTML = skills.map(s => `
-      <div class="card" style="display:flex;flex-direction:column;gap:8px;padding:16px;${s.status === 'soon' ? 'opacity:.7' : ''}">
-        <div style="display:flex;align-items:center;gap:10px">
-          <div style="width:42px;height:42px;border-radius:10px;background:${s.accent}1f;color:${s.accent};font-size:20px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${s.icon}</div>
-          <div style="flex:1;min-width:0;font-weight:700;font-size:14px">${escapeHtml(s.name)}</div>
-        </div>
-        <div style="font-size:12.5px;color:var(--text-muted);line-height:1.5;flex:1">${escapeHtml(s.desc)}</div>
-        <div>${badge(s.status)}</div>
-      </div>
-    `).join('');
-  })();
 
   let data;
   try {
@@ -10171,6 +10143,192 @@ function renderSettingPage(active, arg) {
     { route: 'logs',     ico: '📜', label: 'Logs',    render: () => renderLogsPage() },
     { route: 'security', ico: '🔑', label: 'API Key', render: () => renderSecurityPage() },
   ]});
+}
+
+// ============== v1.9.132 — Skill Marketplace ==============
+const SKILL_CATEGORIES = [
+  { key: 'development', icon: '💻', label: 'Development' },
+  { key: 'devops', icon: '🚀', label: 'DevOps & Infrastructure' },
+  { key: 'security', icon: '🔒', label: 'Security' },
+  { key: 'design', icon: '🎨', label: 'Design & Creative' },
+  { key: 'documents', icon: '📄', label: 'Documents' },
+  { key: 'communication', icon: '💬', label: 'Communication' },
+  { key: 'marketing', icon: '📣', label: 'Marketing' },
+  { key: 'integration', icon: '🔌', label: 'Integration' },
+  { key: 'other', icon: '📦', label: 'Other' },
+];
+let _skillCat = '__all__';
+function _skillCatLabel(k) { const c = SKILL_CATEGORIES.find(x => x.key === k); return c ? c.icon + ' ' + c.label : k; }
+
+async function renderSkillMarketplace() {
+  const root = $('skill-mp-root');
+  if (!root) return;
+  root.innerHTML = '<div class="empty">กำลังโหลด…</div>';
+  let data;
+  try { data = await fetchJson('/api/skills'); }
+  catch (e) { root.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`; return; }
+  const counts = data.category_counts || {};
+  const chip = (key, icon, label, n) => {
+    const active = key === _skillCat;
+    return `<button type="button" class="skill-cat" data-cat="${key}" style="flex-shrink:0;padding:8px 14px;border-radius:10px;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;white-space:nowrap;border:1px solid ${active ? 'var(--primary)' : 'var(--border)'};background:${active ? 'var(--primary)' : 'var(--bg-card)'};color:${active ? '#fff' : 'var(--text)'}">${icon} ${escapeHtml(label)}${n != null ? ` <span style="opacity:.7">${n}</span>` : ''}</button>`;
+  };
+  let chips = chip('__all__', '🗂', 'ทั้งหมด', data.total);
+  SKILL_CATEGORIES.forEach(c => { chips += chip(c.key, c.icon, c.label, counts[c.key] || 0); });
+  const all = data.skills || [];
+  const filtered = _skillCat === '__all__' ? all : all.filter(s => s.category === _skillCat);
+  const cards = filtered.length === 0
+    ? '<div class="empty" style="padding:30px;text-align:center;color:var(--text-muted)">— ยังไม่มี skill ในหมวดนี้ —</div>'
+    : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">` + filtered.map(s => `
+        <div class="card skill-card" data-skill-id="${s.id}" style="display:flex;flex-direction:column;gap:9px;padding:18px;cursor:pointer">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <span style="font-size:11px;color:var(--text-muted)">${_skillCatLabel(s.category)}</span>
+            <span style="font-size:11.5px;color:var(--text-soft)">⬇ ${s.download_count}</span>
+          </div>
+          <div style="font-weight:700;font-size:15px;line-height:1.3">${escapeHtml(s.name)}</div>
+          <div style="font-size:12.5px;color:var(--text-muted);line-height:1.5;flex:1;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escapeHtml(s.description || '')}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px">${(s.tags || '').split(',').filter(Boolean).slice(0, 3).map(t => `<span style="font-size:10.5px;padding:1px 7px;border-radius:999px;background:var(--bg-soft);color:var(--text-muted)">${escapeHtml(t.trim())}</span>`).join('')}</div>
+          <div style="font-size:11px;color:var(--text-soft);border-top:1px solid var(--border);padding-top:8px">โดย ${escapeHtml(s.owner_name || s.uploader_name || '—')}${s.example_count ? ` · ${s.example_count} examples` : ''}</div>
+        </div>`).join('') + `</div>`;
+  root.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+      <div><div style="font-size:18px;font-weight:800">🛒 Skill Marketplace</div><div style="font-size:12.5px;color:var(--text-muted)">${data.total} skills · ทุกคนอัพโหลดได้</div></div>
+      <button type="button" class="btn primary" id="skill-upload-btn" style="font-size:13px;padding:9px 16px">+ อัพโหลด Skill</button>
+    </div>
+    <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:12px;margin-bottom:6px">${chips}</div>
+    <div id="skill-grid">${cards}</div>`;
+  root.querySelectorAll('.skill-cat').forEach(b => b.addEventListener('click', () => { _skillCat = b.dataset.cat; renderSkillMarketplace(); }));
+  root.querySelectorAll('.skill-card').forEach(c => c.addEventListener('click', () => showSkillDetail(parseInt(c.dataset.skillId, 10))));
+  $('skill-upload-btn').addEventListener('click', openSkillUploadModal);
+}
+
+async function showSkillDetail(skillId) {
+  const root = $('skill-mp-root');
+  root.innerHTML = '<div class="empty">กำลังโหลด…</div>';
+  let s;
+  try { s = await fetchJson(`/api/skills/${skillId}`); }
+  catch (e) { root.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`; return; }
+  const editBtns = s.can_edit ? `
+    <button type="button" class="btn" id="skill-edit-btn" style="font-size:12.5px;padding:7px 12px">✏️ แก้ไข</button>
+    <button type="button" class="btn danger" id="skill-del-btn" style="font-size:12.5px;padding:7px 12px">🗑 ลบ</button>` : '';
+  root.innerHTML = `
+    <button type="button" class="btn" id="skill-back" style="font-size:13px;padding:7px 14px;margin-bottom:14px">← กลับ Marketplace</button>
+    <div class="card" style="display:block">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:8px">
+        <div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">${_skillCatLabel(s.category)}</div>
+          <h2 style="margin:0;font-size:22px;font-weight:800">${escapeHtml(s.name)}</h2>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">${editBtns}<button type="button" class="btn primary" id="skill-dl-btn" style="font-size:13px;padding:8px 16px">⬇ Download Skill</button></div>
+      </div>
+      <div style="font-size:13.5px;color:var(--text-muted);line-height:1.6;margin-bottom:12px">${escapeHtml(s.description || '')}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">${(s.tags || '').split(',').filter(Boolean).map(t => `<span style="font-size:11px;padding:2px 9px;border-radius:999px;background:var(--bg-soft);color:var(--text-muted)">${escapeHtml(t.trim())}</span>`).join('')}</div>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--text-soft);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:10px 0;margin-bottom:16px">
+        <span>👤 เจ้าของ: <strong style="color:var(--text)">${escapeHtml(s.owner_name || '—')}</strong></span>
+        <span>📤 อัพโหลดโดย: ${escapeHtml(s.uploader_name || '—')}</span>
+        <span>⬇ ${s.download_count} downloads</span>
+      </div>
+      <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">เนื้อหา (SKILL.md)</div>
+      <pre style="white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.6;background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:14px;max-height:500px;overflow-y:auto;margin:0">${escapeHtml(s.content || '(ไม่มีเนื้อหา)')}</pre>
+    </div>`;
+  $('skill-back').addEventListener('click', () => renderSkillMarketplace());
+  $('skill-dl-btn').addEventListener('click', () => downloadSkill(skillId));
+  if (s.can_edit) {
+    $('skill-edit-btn').addEventListener('click', () => openSkillEditModal(s));
+    $('skill-del-btn').addEventListener('click', async () => {
+      if (!confirm(`ลบ skill "${s.name}"?`)) return;
+      try { await fetchJson(`/api/skills/${skillId}`, { method: 'DELETE' }); showSavedToast('✓ ลบแล้ว'); renderSkillMarketplace(); }
+      catch (e) { showSavedToast('❌ ' + e.message, 'error'); }
+    });
+  }
+}
+
+async function downloadSkill(skillId) {
+  try {
+    const r = await fetchJson(`/api/skills/${skillId}/download`);
+    const href = r.file_data.startsWith('data:') ? r.file_data : `data:${r.mime || 'application/octet-stream'};base64,${r.file_data}`;
+    const a = document.createElement('a');
+    a.href = href; a.download = r.file_name || 'skill';
+    document.body.appendChild(a); a.click(); a.remove();
+    showSavedToast('⬇ ดาวน์โหลดแล้ว');
+  } catch (e) { showSavedToast('❌ ' + e.message, 'error'); }
+}
+
+function _parseSkillFrontmatter(text) {
+  const m = /^---\s*\n([\s\S]*?)\n---/.exec(text || '');
+  const out = {};
+  if (m) m[1].split('\n').forEach(line => {
+    const mm = /^(\w+)\s*:\s*(.+)$/.exec(line.trim());
+    if (mm) out[mm[1]] = mm[2].replace(/^["']|["']$/g, '').trim();
+  });
+  return out;
+}
+function _skillFormBody(s) {
+  const catOpts = SKILL_CATEGORIES.map(c => `<option value="${c.key}" ${s && s.category === c.key ? 'selected' : ''}>${c.icon} ${c.label}</option>`).join('');
+  return `
+    <div style="display:flex;flex-direction:column;gap:12px">
+      ${s ? '' : `<div class="hint" style="font-size:12.5px;color:var(--text-muted)">อัพโหลดไฟล์ SKILL.md (หรือไฟล์อื่น) — ถ้าเป็น .md ระบบจะดึงชื่อ/คำอธิบายจาก frontmatter ให้</div>
+      <label class="btn" style="cursor:pointer;text-align:center;padding:10px">📎 เลือกไฟล์ Skill<input type="file" id="sk-file" style="display:none" /></label>
+      <div id="sk-file-name" style="font-size:12px;color:var(--text-muted)"></div>`}
+      <label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">ชื่อ Skill <input id="sk-name" value="${s ? escapeHtml(s.name) : ''}" style="padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit" /></label>
+      <label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">คำอธิบาย <textarea id="sk-desc" rows="2" style="padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;resize:vertical">${s ? escapeHtml(s.description || '') : ''}</textarea></label>
+      <label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">หมวดหมู่ <select id="sk-cat" style="padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit">${catOpts}</select></label>
+      <label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">Tags (คั่นด้วย ,) <input id="sk-tags" value="${s ? escapeHtml(s.tags || '') : ''}" placeholder="เช่น development, ui" style="padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit" /></label>
+      ${s ? `<label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">เนื้อหา SKILL.md <textarea id="sk-content" rows="8" style="padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-family:ui-monospace,Menlo,monospace;font-size:12px;resize:vertical">${escapeHtml(s.content || '')}</textarea></label>` : ''}
+    </div>`;
+}
+function openSkillUploadModal() {
+  const up = { data: null, name: null, mime: null, content: null };
+  showModal({
+    title: '+ อัพโหลด Skill', size: 'wide', body: _skillFormBody(null),
+    onSubmit: async () => {
+      const name = $('sk-name').value.trim();
+      if (!name) throw new Error('กรอกชื่อ skill');
+      await fetchJson('/api/skills', { method: 'POST', body: JSON.stringify({
+        name, description: $('sk-desc').value.trim(), category: $('sk-cat').value,
+        tags: $('sk-tags').value.trim(), content: up.content,
+        file_name: up.name, file_data: up.data, file_mime: up.mime,
+      })});
+      showSavedToast('✓ สร้าง skill แล้ว');
+      _skillCat = '__all__'; renderSkillMarketplace();
+    },
+  });
+  setTimeout(() => {
+    const fi = $('sk-file');
+    if (!fi) return;
+    fi.addEventListener('change', (e) => {
+      const f = e.target.files[0]; if (!f) return;
+      up.name = f.name; up.mime = f.type || 'application/octet-stream';
+      $('sk-file-name').textContent = '📄 ' + f.name;
+      const rd = new FileReader();
+      rd.onload = (ev) => { up.data = ev.target.result; };
+      rd.readAsDataURL(f);
+      if (/\.(md|markdown|txt)$/i.test(f.name) || (f.type || '').startsWith('text')) {
+        const rd2 = new FileReader();
+        rd2.onload = (e2) => {
+          up.content = e2.target.result;
+          const fm = _parseSkillFrontmatter(up.content);
+          if (fm.name && !$('sk-name').value) $('sk-name').value = fm.name;
+          if (fm.description && !$('sk-desc').value) $('sk-desc').value = fm.description;
+        };
+        rd2.readAsText(f);
+      }
+    });
+  }, 30);
+}
+function openSkillEditModal(s) {
+  showModal({
+    title: `✏️ แก้ไข — ${s.name}`, size: 'wide', body: _skillFormBody(s),
+    onSubmit: async () => {
+      const name = $('sk-name').value.trim();
+      if (!name) throw new Error('กรอกชื่อ skill');
+      await fetchJson(`/api/skills/${s.id}`, { method: 'PATCH', body: JSON.stringify({
+        name, description: $('sk-desc').value.trim(), category: $('sk-cat').value,
+        tags: $('sk-tags').value.trim(), content: $('sk-content') ? $('sk-content').value : undefined,
+      })});
+      showSavedToast('✓ บันทึกแล้ว');
+      showSkillDetail(s.id);
+    },
+  });
 }
 
 // v1.9.126 — Supervise (member-facing): ดูข้อมูลทีมที่ตัวเอง supervise
