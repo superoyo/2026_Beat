@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.119",
+      "date": "2026-05-28",
+      "title": "Fix: drawer hamburger ถูก clip (header มี backdrop-filter)",
+      "summary": "header/navbar มี backdrop-filter → สร้าง containing block ให้ position:fixed → drawer ยึดกับ header (สูงแค่ ~62px) แทน viewport. แก้: ย้าย drawer+backdrop ไป document.body ด้วย JS (escape containing block) → drawer เต็มความสูงถูกต้อง",
+      "changes": [
+        "JS ทั้ง 3 ไฟล์: document.body.appendChild(menu/backdrop) ตอน init",
+        "ทดสอบบน browser จริง — drawer slide เต็มความสูง + backdrop ถูกต้อง"
+      ]
+    },
+    {
       "version": "1.9.118",
       "date": "2026-05-28",
       "title": "Hamburger menu: เปลี่ยนเป็น drawer slide จากซ้าย (Google Cloud style)",

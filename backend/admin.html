@@ -13116,6 +13116,9 @@ function showModal({ title, body, onSubmit, size }) {
   const btn = $('hamburgerBtn'); const menu = $('brandMenu');
   const backdrop = $('brandBackdrop'); const closeBtn = $('brandDrawerClose');
   if (!btn || !menu) return;
+  // v1.9.119 — ย้าย drawer ออกนอก ancestor ที่มี backdrop-filter/transform (กัน fixed ถูก clip)
+  if (backdrop) document.body.appendChild(backdrop);
+  document.body.appendChild(menu);
   const open = () => { menu.classList.add('is-open'); if (backdrop) backdrop.classList.add('is-open'); };
   const close = () => { menu.classList.remove('is-open'); if (backdrop) backdrop.classList.remove('is-open'); };
   btn.addEventListener('click', (e) => {
