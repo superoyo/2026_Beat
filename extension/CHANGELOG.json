@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.127",
+      "date": "2026-05-28",
+      "title": "บัญชีของฉัน: tab Team — รูป+ชื่อคนที่ supervise แบ่งตามทีม",
+      "summary": "เพิ่ม tab 'Team' ในหน้าโปรไฟล์ (เฉพาะคนที่ดูแลทีม) — แสดงรูป+ชื่อสมาชิกที่ supervise ได้แบบ photo grid (สไตล์ Facebook Friends) + horizontal sub-tabs (ทั้งหมด + แต่ละทีม)",
+      "changes": [
+        "เพิ่ม tab Team ใน acc-menu (โผล่เฉพาะ member.supervised_count>0)",
+        "Panel: horizontal team tabs (ทั้งหมด=dedup ทุกทีม + แต่ละทีม) + photo grid (avatar/initial + ชื่อ + email)",
+        "ใช้ /api/member/supervised (เดิม), โหลดครั้งเดียวเมื่อเปิด tab"
+      ]
+    },
+    {
       "version": "1.9.126",
       "date": "2026-05-28",
       "title": "Supervise enforcement: member เห็นข้อมูลทีมที่ตัวเองดูแล",
