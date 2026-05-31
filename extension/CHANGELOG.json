@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.123",
+      "date": "2026-05-28",
+      "title": "Peoples: เมนูย่อย 2-column (รายชื่อ Members / Teams / Access Requests) แบบ Profile",
+      "summary": "เปลี่ยน Peoples จาก sidebar flyout group → หน้าเดียวมีเมนูย่อยซ้าย (รายชื่อ Members / Teams / Access Requests) เหมือนหน้า Profile. sidebar Peoples เป็น direct link",
+      "changes": [
+        "renderMembersPage/renderTeamsPage/renderAccessRequestsPage: รับ mount param (default $('peoples-detail')||$('main'))",
+        "renderPeoplesPage(activeTab, teamId): shell 2-column + render tab ลง #peoples-detail",
+        "routes members/teams/access-requests → renderPeoplesPage (deep-link + badge ยังทำงาน)",
+        "setActive: รองรับ data-route-extra (Peoples link active สำหรับ teams/access-requests)",
+        "sidebar Peoples: group → direct link + badge (nav-peoples-badge)"
+      ]
+    },
+    {
       "version": "1.9.122",
       "date": "2026-05-28",
       "title": "ย้าย Extension เข้าเป็นเมนูย่อยในโปรไฟล์ + 'บัญชีของฉัน' เป็น direct link",

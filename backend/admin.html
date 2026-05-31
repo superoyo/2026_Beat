@@ -1041,20 +1041,12 @@
           <span class="icon">⚙️</span>
           <span>ภาพรวมระบบ</span>
         </div>
-        <!-- Members group: รวม Members + Teams + Access Requests เป็น sub-menu -->
-        <div class="nav-group" id="nav-group-members" data-group-routes="members,teams,access-requests">
-          <button type="button" class="nav-group-toggle" data-group-toggle="members" data-label="Peoples">
-            <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
-            <span class="nav-group-label">Peoples</span>
-            <span id="nav-group-members-badge" style="display:none;background:var(--critical);color:#fff;font-size:10.5px;padding:1px 7px;border-radius:999px;font-weight:700;margin-right:4px"></span>
-            <span class="nav-group-caret">▼</span>
-          </button>
-          <div class="nav-group-children">
-            <a href="#/members" data-route="members">รายชื่อ Peoples</a>
-            <a href="#/teams" data-route="teams">Teams</a>
-            <a href="#/access-requests" data-route="access-requests">Access Requests <span id="nav-req-badge" style="display:none;margin-left:6px;background:var(--critical);color:#fff;font-size:10.5px;padding:1px 7px;border-radius:999px;font-weight:700"></span></a>
-          </div>
-        </div>
+        <!-- v1.9.123 — Peoples: direct link (รายชื่อ Members / Teams / Access Requests อยู่ในเมนูย่อยของหน้านี้แล้ว) -->
+        <a href="#/members" data-route="members" data-route-extra="teams,access-requests" data-label="Peoples" style="position:relative">
+          <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+          <span class="nav-label">Peoples</span>
+          <span id="nav-peoples-badge" style="display:none;background:var(--critical);color:#fff;font-size:10px;padding:0 6px;border-radius:999px;font-weight:700;position:absolute;top:6px;right:6px;line-height:16px"></span>
+        </a>
         <!-- v1.9.104 — Customer group: Calendar (landing) + Websites + Services Config -->
         <div class="nav-group" id="nav-group-clients" data-group-routes="calendar,domains,websites,services-config,domains-config">
           <button type="button" class="nav-group-toggle" data-group-toggle="clients" data-label="Customer" data-landing="calendar">
@@ -1249,9 +1241,9 @@ const routes = {
   'services-config':  renderServicesConfigPage,
   'websites':         renderWebsitesPage,
   'sites':            renderSitesList,
-  'members':          renderMembersPage,
-  'teams':            renderTeamsPage,
-  'access-requests':  renderAccessRequestsPage,
+  'members':          () => renderPeoplesPage('members'),
+  'teams':            () => renderPeoplesPage('teams'),
+  'access-requests':  () => renderPeoplesPage('access-requests'),
   'logs':             renderLogsPage,
   'extension':        renderExtensionPage,
   'security':         renderSecurityPage,
@@ -1260,7 +1252,9 @@ const routes = {
 
 function setActive(route) {
   document.querySelectorAll('.nav a[data-route]').forEach(a => {
-    a.classList.toggle('active', a.dataset.route === route);
+    // v1.9.123 — data-route-extra: route เพิ่มที่ทำให้ link นี้ active ด้วย (เช่น Peoples → teams/access-requests)
+    const extra = (a.dataset.routeExtra || '').split(',');
+    a.classList.toggle('active', a.dataset.route === route || extra.includes(route));
   });
   // อัพเดท collapsible nav-group: ถ้า child route active → expand + highlight parent
   document.querySelectorAll('.nav-group').forEach(group => {
@@ -1344,7 +1338,7 @@ async function navigate() {
   } else if (route === 'teams' && parts[1]) {
     // Teams page now uses tabs — pass team_id เพื่อ select tab
     setActive('teams');
-    await renderTeamsPage(parseInt(parts[1], 10));
+    await renderPeoplesPage('teams', parseInt(parts[1], 10));
   } else if (routes[route]) {
     setActive(route);
     await routes[route]();
@@ -3131,13 +3125,14 @@ function applyPlatformFilter() {
 
 // ============== Teams ==============
 
-async function renderTeamsPage(selectedTeamId) {
+async function renderTeamsPage(selectedTeamId, mount) {
+  mount = mount || $('peoples-detail') || $('main');  // v1.9.123 — render ลง container อื่นได้ (Peoples tab)
   // Fetch all teams
   let data;
   try {
     data = await fetchJson('/api/admin/teams');
   } catch (e) {
-    $('main').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+    mount.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
     return;
   }
   const teams = data.teams || [];
@@ -3151,7 +3146,7 @@ async function renderTeamsPage(selectedTeamId) {
   }
 
   // Render 2-column layout: left = team list, right = team detail
-  $('main').innerHTML = `
+  mount.innerHTML = `
     <div class="page-head">
       <h2 class="page-title">👨‍👩‍👧 Teams</h2>
       <button class="btn primary" id="add-team-btn">+ สร้าง Team ใหม่</button>
@@ -4316,8 +4311,9 @@ async function showEditTeamModal(team, teamId) {
 // ============== Access Requests (admin) ==============
 let _arCurrentTab = 'pending';
 
-async function renderAccessRequestsPage() {
-  $('main').innerHTML = `
+async function renderAccessRequestsPage(mount) {
+  mount = mount || $('peoples-detail') || $('main');  // v1.9.123 — render ลง container อื่นได้ (Peoples tab)
+  mount.innerHTML = `
     <div class="page-head">
       <h2 class="page-title">🔔 Access Requests</h2>
       <span class="card-sub" id="ar-count">—</span>
@@ -4500,8 +4496,8 @@ async function refreshAccessRequestBadge() {
         el.style.display = 'none';
       }
     };
-    setBadge($('nav-req-badge'));               // sub-item (Access Requests)
-    setBadge($('nav-group-members-badge'));     // parent group — visible เมื่อ collapsed ก็ยังเห็น
+    setBadge($('nav-peoples-badge'));           // v1.9.123 — sidebar Peoples link
+    setBadge($('peoples-req-badge'));           // in-page Access Requests submenu item (ถ้าอยู่ในหน้า Peoples)
   } catch {}
 }
 
@@ -10142,8 +10138,34 @@ async function loadLogsList() {
   `;
 }
 
-async function renderMembersPage() {
+// v1.9.123 — Peoples: หน้าเดียวมีเมนูย่อย 2-column (รายชื่อ Members / Teams / Access Requests) แบบ Profile
+async function renderPeoplesPage(activeTab, teamId) {
+  activeTab = activeTab || 'members';
+  const item = (tab, ico, label, extra) => `
+    <a href="#/${tab}" class="acc-menu-item${activeTab === tab ? ' active' : ''}" style="text-decoration:none">
+      <span class="acc-menu-ico">${ico}</span> ${label}${extra || ''}
+    </a>`;
   $('main').innerHTML = `
+    <div class="page-head"><h2 class="page-title">👥 Peoples</h2></div>
+    <div class="acc-layout">
+      <div class="acc-menu">
+        ${item('members', '👥', 'รายชื่อ Members')}
+        ${item('teams', '👨‍👩‍👧', 'Teams')}
+        ${item('access-requests', '📨', 'Access Requests', ' <span id="peoples-req-badge" style="display:none;margin-left:auto;background:var(--critical);color:#fff;font-size:10.5px;padding:1px 7px;border-radius:999px;font-weight:700"></span>')}
+      </div>
+      <div class="acc-detail"><div id="peoples-detail"><div class="empty">กำลังโหลด…</div></div></div>
+    </div>
+  `;
+  const mount = $('peoples-detail');
+  if (activeTab === 'teams') await renderTeamsPage(teamId || null, mount);
+  else if (activeTab === 'access-requests') await renderAccessRequestsPage(mount);
+  else await renderMembersPage(mount);
+  if (typeof refreshAccessRequestBadge === 'function') refreshAccessRequestBadge();
+}
+
+async function renderMembersPage(mount) {
+  mount = mount || $('peoples-detail') || $('main');  // v1.9.123 — render ลง container อื่นได้ (Peoples tab)
+  mount.innerHTML = `
     <div class="page-head">
       <h2 class="page-title">👥 Members</h2>
       <span class="card-sub" id="m-count">—</span>
