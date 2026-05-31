@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.131",
+      "date": "2026-06-01",
+      "title": "Team grid: ลบ header + grid scroll ภายใน (เมนูซ้ายไม่เลื่อนตาม)",
+      "summary": "ลบ header card ของ tab Team (ได้พื้นที่มากขึ้น) + ทำให้ photo grid scroll ภายในตัวเอง (max-height) → เมนูซ้าย + tabs ทีม อยู่นิ่งไม่เลื่อนตามเวลาเลื่อนดูรูป",
+      "changes": [
+        "ลบ header '👨‍👩‍👧 ทีมที่ฉันดูแล' card",
+        "#m-team-grid: overflow-y auto + max-height calc(100vh-170px) → scroll ภายใน, menu/tabs คงที่"
+      ]
+    },
+    {
       "version": "1.9.130",
       "date": "2026-05-28",
       "title": "Team panel: เพิ่ม tab การใช้งาน (platform) + Check-in",
