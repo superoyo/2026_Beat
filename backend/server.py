@@ -217,6 +217,13 @@ def init_db() -> None:
                 added_at   TEXT NOT NULL,
                 PRIMARY KEY (team_id, member_id)
             );
+            -- v1.9.125: member supervise teams (ดูข้อมูลทีมที่ดูแลได้ — ไม่ใช่สมาชิกทีม)
+            CREATE TABLE IF NOT EXISTS member_supervised_teams (
+                member_id  INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+                team_id    INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (member_id, team_id)
+            );
             CREATE TABLE IF NOT EXISTS team_sites (
                 team_id     INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
                 site_id     INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
@@ -2777,6 +2784,55 @@ def admin_set_member_teams(
                 (team_id, member_id),
             )
     return {"ok": True, "added": len(to_add), "removed": len(to_remove)}
+
+
+# v1.9.125 — Supervise: ทีมที่ member นี้ดูแล/ดูข้อมูลได้ (ไม่ใช่สมาชิกทีม)
+@app.get("/api/admin/members/{member_id}/supervised-teams")
+def admin_get_supervised_teams(member_id: int, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    with db_conn() as conn:
+        if not conn.execute("SELECT 1 FROM members WHERE id = ?", (member_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="member not found")
+        rows = conn.execute(
+            "SELECT team_id FROM member_supervised_teams WHERE member_id = ?", (member_id,)
+        ).fetchall()
+    return {"team_ids": [r["team_id"] for r in rows]}
+
+
+@app.put("/api/admin/members/{member_id}/supervised-teams")
+def admin_set_supervised_teams(
+    member_id: int,
+    payload: MemberTeamsPatch,
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """ตั้งทีมที่ member นี้ supervise (replace all)"""
+    with db_conn() as conn:
+        if not conn.execute("SELECT 1 FROM members WHERE id = ?", (member_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="member not found")
+        current = {r["team_id"] for r in conn.execute(
+            "SELECT team_id FROM member_supervised_teams WHERE member_id = ?", (member_id,)
+        ).fetchall()}
+        target = set(int(t) for t in payload.team_ids)
+        if target:
+            valid = {r["id"] for r in conn.execute(
+                f"SELECT id FROM teams WHERE id IN ({','.join('?' * len(target))})",
+                tuple(target),
+            ).fetchall()}
+            if valid != target:
+                raise HTTPException(status_code=400, detail=f"team not found: {sorted(target - valid)}")
+        to_add = target - current
+        to_remove = current - target
+        now = utc_now().isoformat()
+        for team_id in to_add:
+            conn.execute(
+                "INSERT OR IGNORE INTO member_supervised_teams(member_id, team_id, created_at) VALUES (?, ?, ?)",
+                (member_id, team_id, now),
+            )
+        for team_id in to_remove:
+            conn.execute(
+                "DELETE FROM member_supervised_teams WHERE member_id = ? AND team_id = ?",
+                (member_id, team_id),
+            )
+    return {"ok": True, "added": len(to_add), "removed": len(to_remove), "team_ids": sorted(target)}
 
 
 @app.get("/api/admin/members/{member_id}")

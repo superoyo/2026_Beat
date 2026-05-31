@@ -10560,8 +10560,12 @@ function renderMembersTable(members) {
     const teamsCell = `
       <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-start">
         <div style="display:flex;flex-wrap:wrap;gap:4px;line-height:1.4">${teamChips}</div>
-        <button class="btn" data-act="edit-teams" data-id="${m.id}" data-name="${safeName}"
-                style="font-size:11px;padding:3px 9px;color:var(--text-muted)" title="แก้ไขทีม">✏️ แก้ไขทีม</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn" data-act="edit-teams" data-id="${m.id}" data-name="${safeName}"
+                  style="font-size:11px;padding:3px 9px;color:var(--text-muted)" title="แก้ไขทีมที่สังกัด">✏️ แก้ไขทีม</button>
+          <button class="btn" data-act="supervise" data-id="${m.id}" data-name="${safeName}"
+                  style="font-size:11px;padding:3px 9px;color:var(--accent);background:rgba(124,58,237,.08);border-color:rgba(124,58,237,.25)" title="เลือกทีมที่คนนี้ดูข้อมูลได้ (supervise)">🔭 Supervise</button>
+        </div>
       </div>
     `;
 
@@ -11107,9 +11111,78 @@ function showEditMemberTeamsModal(memberId, memberName) {
   }, 0);
 }
 
+// v1.9.125 — Supervise: เลือกทีมที่ member นี้ดูข้อมูลได้ (multi-select ทุกทีม)
+async function showSuperviseModal(memberId, memberName) {
+  let supervisedIds = new Set();
+  try {
+    const r = await fetchJson(`/api/admin/members/${memberId}/supervised-teams`);
+    supervisedIds = new Set(r.team_ids || []);
+  } catch (e) {
+    showSavedToast('โหลด supervise ไม่สำเร็จ: ' + e.message, 'error');
+    return;
+  }
+  showModal({
+    title: `🔭 Supervise — ${memberName}`,
+    size: 'wide',
+    body: `
+      <div class="hint" style="margin-bottom:12px;color:var(--text-muted);font-size:12.5px;line-height:1.6">
+        เลือกทีมที่ <strong>${escapeHtml(memberName)}</strong> สามารถ<strong>ดูข้อมูลได้ (supervise)</strong> — เลือกได้หลายทีม โดยไม่ต้องเป็นสมาชิกทีมนั้น
+      </div>
+      ${_teamsCache.length === 0
+        ? '<div class="empty">ยังไม่มี team ในระบบ</div>'
+        : `<div style="display:flex;flex-direction:column;gap:5px;max-height:440px;overflow-y:auto;padding:2px">
+            ${(() => {
+              const tree = buildTeamTree(_teamsCache);
+              const flat = flattenTeamTreeDFS(tree);
+              return flat.map(({ team: t, depth, hasChildren }) => {
+                const isChecked = supervisedIds.has(t.id);
+                const indentPx = 10 + depth * 18;
+                const branchIcon = hasChildren ? '📂' : (depth > 0 ? '└─' : '');
+                return `
+                  <label style="display:flex;align-items:center;gap:10px;padding:9px 12px 9px ${indentPx}px;border:1px solid var(--border);border-left:${depth > 0 ? '3px solid rgba(124,58,237,.25)' : '1px solid var(--border)'};border-radius:8px;cursor:pointer;background:${isChecked ? 'rgba(124,58,237,.10)' : 'var(--bg-card)'};transition:all .12s">
+                    <input type="checkbox" name="m-sup-team" value="${t.id}" ${isChecked ? 'checked' : ''} style="margin:0">
+                    <div style="flex:1;min-width:0">
+                      <div style="font-weight:600;font-size:13.5px;display:flex;align-items:center;gap:6px">
+                        ${branchIcon ? `<span style="color:var(--text-soft);font-size:11.5px">${branchIcon}</span>` : ''}
+                        <span>${escapeHtml(t.name)}</span>
+                      </div>
+                      <div style="font-size:11.5px;color:var(--text-muted)">
+                        ${t.member_count} member · ${t.site_count} site${t.description ? ' · ' + escapeHtml(t.description) : ''}
+                      </div>
+                    </div>
+                  </label>
+                `;
+              }).join('');
+            })()}
+          </div>`
+      }
+    `,
+    onSubmit: async () => {
+      const checked = Array.from(document.querySelectorAll('input[name="m-sup-team"]:checked')).map(cb => parseInt(cb.value, 10));
+      await fetchJson(`/api/admin/members/${memberId}/supervised-teams`, {
+        method: 'PUT', body: JSON.stringify({ team_ids: checked }),
+      });
+      showSavedToast(`✓ ตั้งทีมที่ supervise แล้ว (${checked.length} ทีม)`);
+    },
+  });
+  setTimeout(() => {
+    document.querySelectorAll('input[name="m-sup-team"]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const lbl = cb.closest('label');
+        if (lbl) lbl.style.background = cb.checked ? 'rgba(124,58,237,.10)' : 'var(--bg-card)';
+      });
+    });
+  }, 0);
+}
+
 async function handleMemberAction(btn) {
   const id = btn.dataset.id;
   const act = btn.dataset.act;
+
+  if (act === 'supervise') {
+    showSuperviseModal(parseInt(id, 10), btn.dataset.name);
+    return;
+  }
 
   if (act === 'edit-teams') {
     const name = btn.dataset.name;

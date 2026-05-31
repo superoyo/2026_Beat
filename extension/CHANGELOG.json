@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.125",
+      "date": "2026-05-28",
+      "title": "Peoples: ปุ่ม Supervise — เลือกทีมที่ member ดูข้อมูลได้ (หลายทีม)",
+      "summary": "เพิ่มปุ่ม '🔭 Supervise' ข้างปุ่มแก้ไขทีมในรายชื่อ member — กดแล้วเลือกทีม (โครงสร้างแบบ tree เหมือนทีม) ได้หลายทีม เพื่อให้ member นั้นดูข้อมูลทีมที่เลือกได้ (supervise) โดยไม่ต้องเป็นสมาชิก",
+      "changes": [
+        "Backend table member_supervised_teams (member_id, team_id)",
+        "Backend GET/PUT /api/admin/members/{id}/supervised-teams",
+        "Frontend: ปุ่ม Supervise (data-act=supervise) + showSuperviseModal (team tree multi-select, pre-check ทีมที่เลือกไว้)"
+      ]
+    },
+    {
       "version": "1.9.124",
       "date": "2026-05-28",
       "title": "Customer / Device & Software / Setting: เมนูย่อย 2-column แบบ Profile",
