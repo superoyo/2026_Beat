@@ -7400,7 +7400,63 @@ def member_me(
         member_profile = _member_row_to_profile(row)
         # v1.9.88 — แนบ login_methods + aliases เพื่อแสดง chips ใน 'บัญชีของฉัน'
         member_profile.update(_fetch_member_login_meta(conn, row["id"]))
+        # v1.9.126 — จำนวนทีมที่ supervise (ใช้แสดง/ซ่อนเมนู Supervise)
+        sup = conn.execute(
+            "SELECT COUNT(*) AS n FROM member_supervised_teams WHERE member_id = ?",
+            (row["id"],),
+        ).fetchone()
+        member_profile["supervised_count"] = sup["n"] if sup else 0
     return {"logged_in": True, "member": member_profile}
+
+
+# v1.9.126 — Supervise (member-facing): ข้อมูลทีมที่ member นี้ดูแล
+@app.get("/api/member/supervised")
+def member_supervised(fct_member_session: Optional[str] = Cookie(default=None)) -> dict[str, Any]:
+    sess = _require_member_session(fct_member_session)
+    member_id = sess["member_id"]
+    with db_conn() as conn:
+        team_ids = [r["team_id"] for r in conn.execute(
+            "SELECT team_id FROM member_supervised_teams WHERE member_id = ?", (member_id,)
+        ).fetchall()]
+        if not team_ids:
+            return {"teams": []}
+        pl = ",".join("?" * len(team_ids))
+        teams = conn.execute(
+            f"SELECT id, name, description FROM teams WHERE id IN ({pl}) ORDER BY name COLLATE NOCASE",
+            team_ids,
+        ).fetchall()
+        mem_rows = conn.execute(
+            f"SELECT tm.team_id, m.id, m.display_name, m.email, m.phone, m.avatar_data "
+            f"FROM team_members tm JOIN members m ON m.id = tm.member_id "
+            f"WHERE tm.team_id IN ({pl}) ORDER BY m.display_name COLLATE NOCASE",
+            team_ids,
+        ).fetchall()
+        site_rows = conn.execute(
+            f"SELECT ts.team_id, s.id, s.name, s.url_pattern, s.logo_data "
+            f"FROM team_sites ts JOIN sites s ON s.id = ts.site_id "
+            f"WHERE ts.team_id IN ({pl}) ORDER BY s.name COLLATE NOCASE",
+            team_ids,
+        ).fetchall()
+    mem_by_team: dict[int, list] = {}
+    for r in mem_rows:
+        ph = r["phone"]
+        mem_by_team.setdefault(r["team_id"], []).append({
+            "id": r["id"], "display_name": r["display_name"], "email": r["email"],
+            "phone": None if (ph and str(ph).startswith("email:")) else ph,
+            "avatar_data": r["avatar_data"],
+        })
+    site_by_team: dict[int, list] = {}
+    for r in site_rows:
+        site_by_team.setdefault(r["team_id"], []).append({
+            "id": r["id"], "name": r["name"], "url_pattern": r["url_pattern"], "logo_data": r["logo_data"],
+        })
+    return {
+        "teams": [
+            {"id": t["id"], "name": t["name"], "description": t["description"],
+             "members": mem_by_team.get(t["id"], []), "sites": site_by_team.get(t["id"], [])}
+            for t in teams
+        ]
+    }
 
 
 # ===========================================================================

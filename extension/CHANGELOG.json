@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.126",
+      "date": "2026-05-28",
+      "title": "Supervise enforcement: member เห็นข้อมูลทีมที่ตัวเองดูแล",
+      "summary": "ต่อยอดจาก v1.9.125 — member ที่ถูกตั้งให้ supervise ทีม จะมีเมนู '🔭 Supervise' โผล่ในเมนูซ้าย → เข้าไปเห็นทีมที่ดูแล + สมาชิก + แพลตฟอร์มที่ทีมใช้",
+      "changes": [
+        "Backend GET /api/member/supervised: คืนทีมที่ดูแล + members + sites",
+        "Backend /api/member/me: เพิ่ม supervised_count",
+        "Frontend: เมนู Supervise (โผล่เฉพาะ member ที่ supervised_count>0) + renderSupervisePage แสดงทีม/สมาชิก/แพลตฟอร์ม"
+      ]
+    },
+    {
       "version": "1.9.125",
       "date": "2026-05-28",
       "title": "Peoples: ปุ่ม Supervise — เลือกทีมที่ member ดูข้อมูลได้ (หลายทีม)",
