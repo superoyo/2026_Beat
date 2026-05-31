@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.121",
+      "date": "2026-05-28",
+      "title": "ย้าย My Device เข้าเป็นเมนูย่อยในโปรไฟล์",
+      "summary": "ย้าย My Device จาก sidebar (ใต้ บัญชีของฉัน) → เป็น tab ในหน้าโปรไฟล์ (เคียงข้าง Personal Info / Link Account / Change Password / Check-in)",
+      "changes": [
+        "เพิ่ม tab 'My Device' + panel ใน renderMemberAccountPage (โหลด loadMyDevice เมื่อเปิด tab)",
+        "ลบ My Device ออกจาก sidebar nav group 'บัญชีของฉัน' (เหลือ โปรไฟล์ + Extension)",
+        "route #/my-device ยังใช้ได้ (standalone) เพื่อ backward compat"
+      ]
+    },
+    {
       "version": "1.9.120",
       "date": "2026-05-28",
       "title": "หน้า Platforms: เพิ่มเมนูย่อย (Platform + Skill Marketplace)",

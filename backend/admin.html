@@ -1040,7 +1040,6 @@
           </button>
           <div class="nav-group-children">
             <a href="#/account" data-route="account">👤 โปรไฟล์</a>
-            <a href="#/my-device" data-route="my-device">🖥️ My Device</a>
             <a href="#/extension" data-route="extension">🧩 Extension</a>
           </div>
         </div>
@@ -11611,6 +11610,7 @@ async function renderMemberAccountPage() {
           <button type="button" class="acc-menu-item active" data-acc-tab="personal"><span class="acc-menu-ico">👤</span> Personal Info</button>
           <button type="button" class="acc-menu-item" data-acc-tab="link"><span class="acc-menu-ico">🔗</span> Link Account</button>
           <button type="button" class="acc-menu-item" data-acc-tab="password"><span class="acc-menu-ico">🔑</span> Change Password</button>
+          <button type="button" class="acc-menu-item" data-acc-tab="device"><span class="acc-menu-ico">🖥️</span> My Device</button>
           <button type="button" class="acc-menu-item" data-acc-tab="beacon"><span class="acc-menu-ico">📍</span> Check-in</button>
         </div>
 
@@ -11708,6 +11708,17 @@ async function renderMemberAccountPage() {
               <div class="hint" id="m-pw-msg" style="margin-bottom:10px;display:none"></div>
               <button class="btn primary" id="m-save-password">บันทึกรหัสผ่าน</button>
             </div>
+          </div>
+
+          <!-- ============ My Device ============ -->
+          <div data-acc-panel="device" style="display:none">
+            <div class="card" style="display:block;margin-bottom:14px">
+              <h3 style="margin:0 0 6px;font-size:15px;font-weight:600">🖥️ My Device</h3>
+              <div class="hint" style="font-size:12.5px;color:var(--text-muted);line-height:1.6">
+                อุปกรณ์ทั้งหมดที่ผูกกับคุณ — แก้ไขข้อมูลไม่ได้ แต่<strong>อัพโหลดรูปอุปกรณ์</strong>เองได้
+              </div>
+            </div>
+            <div id="md-list"><div class="empty">กำลังโหลด…</div></div>
           </div>
 
           <!-- ============ Check-in (Beacon) ============ -->
@@ -12235,7 +12246,9 @@ async function renderMemberAccountPage() {
       b.classList.toggle('active', b.dataset.accTab === menuActive);
     });
     if (panel === 'beacon') loadBeacon();
+    if (panel === 'device' && !_myDeviceLoaded) { _myDeviceLoaded = true; loadMyDevice(); }
   }
+  let _myDeviceLoaded = false;
 
   // v1.9.116 — Beacon check-in (ใช้ Wazzup token ดึงตำแหน่ง check-in ของตัวเอง)
   let _beaconLoaded = false;
