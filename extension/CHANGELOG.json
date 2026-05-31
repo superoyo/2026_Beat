@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.136",
+      "date": "2026-06-01",
+      "title": "Skill: เมนูซ้ายอยู่นิ่งตอนเลื่อน + เปลี่ยนชื่อเมนู Supervise → My Team",
+      "summary": "หน้า Skill: ทำให้ grid การ์ดเลื่อนภายในตัวเอง เมนูคอลัมน์ที่สอง (ซ้าย) จะอยู่นิ่งไม่ไหลตาม + เปลี่ยนชื่อเมนู Supervise เป็น My Team (ทั้ง nav และหัวข้อหน้า)",
+      "changes": [
+        "Skill grid: overflow-y:auto + max-height:calc(100vh - 320px) ให้การ์ดเลื่อนภายใน เมนู acc-menu ซ้ายอยู่นิ่ง",
+        "เมนู nav Supervise → My Team (data-label + nav-label)",
+        "หัวข้อหน้า '🔭 Supervise' → '🔭 My Team'"
+      ]
+    },
+    {
       "version": "1.9.135",
       "date": "2026-06-01",
       "title": "Skill Marketplace: ช่อง Search กลางบน + จัดการหมวดหมู่ได้",

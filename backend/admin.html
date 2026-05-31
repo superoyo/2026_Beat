@@ -1053,7 +1053,7 @@
         <!-- v1.9.122 — บัญชีของฉัน: direct link (โปรไฟล์/My Device/Extension/Check-in อยู่ในเมนูย่อยของหน้านี้แล้ว) -->
         <a href="#/account" data-route="account" data-label="บัญชีของฉัน"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><span class="nav-label">บัญชีของฉัน</span></a>
         <!-- v1.9.126 — Supervise: แสดงเฉพาะ member ที่ดูแลทีม (toggle ตอน load) -->
-        <a href="#/supervise" id="nav-supervise" data-route="supervise" data-label="Supervise" style="display:none"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></span><span class="nav-label">Supervise</span></a>
+        <a href="#/supervise" id="nav-supervise" data-route="supervise" data-label="My Team" style="display:none"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></span><span class="nav-label">My Team</span></a>
       </div>
 
       <!-- ภาพรวมระบบ (admin-only — ซ่อนทั้ง section สำหรับ member) -->
@@ -10219,7 +10219,7 @@ async function renderSkillMarketplace() {
       </div>
     </div>
     <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:12px;margin-bottom:6px">${chips}</div>
-    <div id="skill-grid">${cards}</div>`;
+    <div id="skill-grid" style="overflow-y:auto;max-height:calc(100vh - 320px);padding-right:4px">${cards}</div>`;
   const si = $('skill-search');
   let _t;
   si.addEventListener('input', (e) => { clearTimeout(_t); const v = e.target.value; _t = setTimeout(() => { _skillSearch = v; renderSkillMarketplace().then(() => { const el = $('skill-search'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }); }, 280); });
@@ -10548,7 +10548,7 @@ async function openSkillEditModal(s) {
 // v1.9.126 — Supervise (member-facing): ดูข้อมูลทีมที่ตัวเอง supervise
 async function renderSupervisePage() {
   $('main').innerHTML = `
-    <div class="page-head"><h2 class="page-title">🔭 Supervise</h2></div>
+    <div class="page-head"><h2 class="page-title">🔭 My Team</h2></div>
     <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px">ทีมที่คุณได้รับมอบหมายให้ดูแล — ดูสมาชิก + แพลตฟอร์มที่ทีมใช้</div>
     <div id="sup-list"><div class="empty">กำลังโหลด…</div></div>
   `;
