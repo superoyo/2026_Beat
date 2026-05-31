@@ -7815,8 +7815,11 @@ def update_skill(skill_id: int, payload: SkillPatch, sess: dict = Depends(requir
 def skill_member_options(_auth: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
     with db_conn() as conn:
         rows = conn.execute(
-            "SELECT id, display_name, email, phone FROM members WHERE COALESCE(enabled, 1) = 1 "
-            "ORDER BY display_name COLLATE NOCASE"
+            "SELECT m.id, m.display_name, m.email, m.phone, m.avatar_data, "
+            "  (SELECT t.name FROM team_members tm JOIN teams t ON t.id = tm.team_id "
+            "   WHERE tm.member_id = m.id ORDER BY t.name COLLATE NOCASE LIMIT 1) AS team_name "
+            "FROM members m WHERE COALESCE(m.enabled, 1) = 1 "
+            "ORDER BY m.display_name COLLATE NOCASE"
         ).fetchall()
     out = []
     for r in rows:
@@ -7824,6 +7827,8 @@ def skill_member_options(_auth: dict = Depends(require_admin_or_member)) -> dict
         out.append({
             "id": r["id"],
             "name": r["display_name"] or r["email"] or (None if (ph and str(ph).startswith("email:")) else ph) or f"member#{r['id']}",
+            "team": r["team_name"],          # ทีม/แผนกที่สังกัด (ตัวแรก)
+            "avatar": r["avatar_data"],      # รูปประจำตัว (data URL) — อาจเป็น None
         })
     return {"members": out}
 

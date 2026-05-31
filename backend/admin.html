@@ -626,6 +626,9 @@
       display: flex; justify-content: flex-end; gap: 8px;
       margin-top: 18px;
     }
+    /* v1.9.137 — searchable member picker (รูป+ชื่อ+ทีม) */
+    .mpick-trigger:hover { border-color: var(--accent); }
+    .mpick-item:hover { background: rgba(124,58,237,.08); }
     /* Two-column layout for fields (used in wide modals) */
     .field-grid-2 {
       display: grid;
@@ -10459,9 +10462,65 @@ async function _loadSkillMemberOpts() {
   catch { _skillMemberOpts = []; }
   return _skillMemberOpts;
 }
-function _memberSelectOpts(opts, selId, emptyLabel) {
-  return `<option value="">${emptyLabel}</option>` +
-    opts.map(m => `<option value="${m.id}" ${selId === m.id ? 'selected' : ''}>${escapeHtml(m.name)}</option>`).join('');
+// v1.9.137 — searchable member picker (รูปเล็ก + ชื่อ + ทีม/แผนก) แทน native <select>
+function _mpickAvatar(m, size) {
+  if (m && m.avatar) return `<img src="${m.avatar}" alt="" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;flex-shrink:0" />`;
+  const ini = escapeHtml((((m && m.name) || '?').trim().slice(0, 1) || '?').toUpperCase());
+  return `<span style="width:${size}px;height:${size}px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-size:${Math.round(size * 0.42)}px;font-weight:700;flex-shrink:0">${ini}</span>`;
+}
+function _mpickFace(m, size) {
+  const sub = m && m.team ? `<span style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(m.team)}</span>` : '';
+  return `${_mpickAvatar(m, size)}<span style="display:flex;flex-direction:column;min-width:0;line-height:1.25"><span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(m.name)}</span>${sub}</span>`;
+}
+function _memberPickerHtml(pid, selId, emptyLabel) {
+  return `
+    <div class="mpick" data-mpick="${pid}" style="position:relative">
+      <input type="hidden" id="${pid}" value="${selId != null ? selId : ''}" />
+      <button type="button" class="mpick-trigger" id="${pid}-trg" style="width:100%;display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);cursor:pointer;text-align:left;min-height:42px;font-family:inherit">
+        <span class="mpick-face" style="display:flex;align-items:center;gap:8px;min-width:0;flex:1"><span style="color:var(--text-muted);font-size:13px">${escapeHtml(emptyLabel)}</span></span>
+        <span style="color:var(--text-muted);font-size:11px">▾</span>
+      </button>
+      <div class="mpick-panel" id="${pid}-pnl" style="display:none;margin-top:6px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);box-shadow:0 8px 24px rgba(15,23,42,.12);overflow:hidden">
+        <div style="padding:8px;border-bottom:1px solid var(--border)"><input type="text" class="mpick-search" id="${pid}-srch" placeholder="🔍 ค้นหาชื่อ / ทีม..." style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:7px;font-family:inherit;font-size:13px;box-sizing:border-box" /></div>
+        <div class="mpick-list" id="${pid}-lst" style="max-height:240px;overflow-y:auto;padding:5px"></div>
+      </div>
+    </div>`;
+}
+function _initMemberPicker(pid, opts, emptyLabel) {
+  const root = document.querySelector(`[data-mpick="${pid}"]`);
+  if (!root) return;
+  const hidden = document.getElementById(pid);
+  const trg = document.getElementById(pid + '-trg');
+  const pnl = document.getElementById(pid + '-pnl');
+  const srch = document.getElementById(pid + '-srch');
+  const lst = document.getElementById(pid + '-lst');
+  const face = trg.querySelector('.mpick-face');
+  const byId = {};
+  opts.forEach(m => { byId[String(m.id)] = m; });
+  function paintFace() {
+    const m = byId[String(hidden.value)];
+    face.innerHTML = m ? _mpickFace(m, 24) : `<span style="color:var(--text-muted);font-size:13px">${escapeHtml(emptyLabel)}</span>`;
+  }
+  function rowHtml(m) {
+    const sub = m.team ? `<span style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(m.team)}</span>` : '';
+    return `<div class="mpick-item" data-id="${m.id}" style="display:flex;align-items:center;gap:9px;padding:6px 9px;cursor:pointer;border-radius:7px">${_mpickAvatar(m, 30)}<span style="display:flex;flex-direction:column;min-width:0;line-height:1.3"><span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(m.name)}</span>${sub}</span></div>`;
+  }
+  function renderList(q) {
+    q = (q || '').toLowerCase().trim();
+    const filtered = opts.filter(m => !q || (m.name || '').toLowerCase().includes(q) || (m.team || '').toLowerCase().includes(q));
+    const head = `<div class="mpick-item" data-id="" style="padding:8px 9px;cursor:pointer;border-radius:7px;font-size:12.5px;color:var(--text-muted)">${escapeHtml(emptyLabel)}</div>`;
+    lst.innerHTML = head + (filtered.length ? filtered.map(rowHtml).join('') : `<div style="padding:12px;text-align:center;color:var(--text-muted);font-size:12.5px">ไม่พบรายชื่อ</div>`);
+    lst.querySelectorAll('.mpick-item').forEach(it => it.addEventListener('click', () => { hidden.value = it.dataset.id; paintFace(); close(); }));
+  }
+  function open() { pnl.style.display = 'block'; srch.value = ''; renderList(''); setTimeout(() => srch.focus(), 10); }
+  function close() { pnl.style.display = 'none'; }
+  trg.addEventListener('click', () => { pnl.style.display === 'block' ? close() : open(); });
+  srch.addEventListener('input', e => renderList(e.target.value));
+  srch.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); const first = lst.querySelector('.mpick-item[data-id]:not([data-id=""])'); if (first) first.click(); }
+    else if (e.key === 'Escape') { e.preventDefault(); close(); }
+  });
+  paintFace();
 }
 function _skillFormBody(s, memberOpts) {
   const catOpts = _cats().map(c => `<option value="${c.key}" ${s && s.category === c.key ? 'selected' : ''}>${c.icon} ${c.label}</option>`).join('');
@@ -10476,8 +10535,8 @@ function _skillFormBody(s, memberOpts) {
       <label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">หมวดหมู่ <select id="sk-cat" style="${selStyle}">${catOpts}</select></label>
       <label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">Tags (คั่นด้วย ,) <input id="sk-tags" value="${s ? escapeHtml(s.tags || '') : ''}" placeholder="เช่น development, ui" style="${selStyle}" /></label>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">📤 ผู้อัพโหลด <select id="sk-uploader" style="${selStyle}">${_memberSelectOpts(memberOpts, s ? s.uploader_member_id : null, '— ตัวฉัน (อัตโนมัติ) —')}</select></label>
-        <label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">👤 เจ้าของ <select id="sk-owner" style="${selStyle}">${_memberSelectOpts(memberOpts, s ? s.owner_member_id : null, '— ตามผู้อัพโหลด —')}</select></label>
+        <div style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">📤 ผู้อัพโหลด ${_memberPickerHtml('sk-uploader', s ? s.uploader_member_id : null, '— ตัวฉัน (อัตโนมัติ) —')}</div>
+        <div style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">👤 เจ้าของ ${_memberPickerHtml('sk-owner', s ? s.owner_member_id : null, '— ตามผู้อัพโหลด —')}</div>
       </div>
       ${s ? `<label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">เนื้อหา SKILL.md <textarea id="sk-content" rows="8" style="${selStyle};font-family:ui-monospace,Menlo,monospace;font-size:12px;resize:vertical">${escapeHtml(s.content || '')}</textarea></label>` : ''}
     </div>`;
@@ -10503,6 +10562,8 @@ async function openSkillUploadModal() {
     },
   });
   setTimeout(() => {
+    _initMemberPicker('sk-uploader', memberOpts, '— ตัวฉัน (อัตโนมัติ) —');
+    _initMemberPicker('sk-owner', memberOpts, '— ตามผู้อัพโหลด —');
     const fi = $('sk-file');
     if (!fi) return;
     fi.addEventListener('change', (e) => {
@@ -10543,6 +10604,10 @@ async function openSkillEditModal(s) {
       showSkillDetail(s.id);
     },
   });
+  setTimeout(() => {
+    _initMemberPicker('sk-uploader', memberOpts, '— ตัวฉัน (อัตโนมัติ) —');
+    _initMemberPicker('sk-owner', memberOpts, '— ตามผู้อัพโหลด —');
+  }, 30);
 }
 
 // v1.9.126 — Supervise (member-facing): ดูข้อมูลทีมที่ตัวเอง supervise

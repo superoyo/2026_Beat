@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.137",
+      "date": "2026-06-01",
+      "title": "Skill: ช่องเลือกผู้อัพโหลด/เจ้าของ เป็น dropdown ค้นหาได้ + รูป + ทีม",
+      "summary": "ตอนสร้าง/แก้ไข skill ช่อง 'ผู้อัพโหลด' และ 'เจ้าของ' เปลี่ยนจาก select ธรรมดาเป็น dropdown ที่พิมพ์ค้นหาชื่อได้ แสดงรูป profile เล็ก ๆ ด้านหน้า + ชื่อ + ทีม/แผนกที่สังกัด ประหยัดพื้นที่และหาง่ายขึ้น",
+      "changes": [
+        "Backend /api/skill-member-options: เพิ่ม avatar (รูป) + team (ทีมที่สังกัด ตัวแรก)",
+        "Frontend: member picker ค้นหาได้ (inline-expand เลี่ยง modal clip) แสดงรูป 30px + ชื่อ + ทีม",
+        "พิมพ์ค้นชื่อหรือทีม / Enter เลือกตัวแรก / Esc ปิด, ไม่มีรูปจะแสดงวงกลมอักษรย่อ"
+      ]
+    },
+    {
       "version": "1.9.136",
       "date": "2026-06-01",
       "title": "Skill: เมนูซ้ายอยู่นิ่งตอนเลื่อน + เปลี่ยนชื่อเมนู Supervise → My Team",
