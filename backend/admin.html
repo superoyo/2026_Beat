@@ -1048,46 +1048,21 @@
           <span id="nav-peoples-badge" style="display:none;background:var(--critical);color:#fff;font-size:10px;padding:0 6px;border-radius:999px;font-weight:700;position:absolute;top:6px;right:6px;line-height:16px"></span>
         </a>
         <!-- v1.9.104 — Customer group: Calendar (landing) + Websites + Services Config -->
-        <div class="nav-group" id="nav-group-clients" data-group-routes="calendar,domains,websites,services-config,domains-config">
-          <button type="button" class="nav-group-toggle" data-group-toggle="clients" data-label="Customer" data-landing="calendar">
-            <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
-            <span class="nav-group-label">Customer</span>
-            <span class="nav-group-caret">▼</span>
-          </button>
-          <div class="nav-group-children">
-            <a href="#/calendar" data-route="calendar">📅 Calendar</a>
-            <a href="#/websites" data-route="websites">🔗 Websites</a>
-            <a href="#/services-config" data-route="services-config">🛠️ Services Config</a>
-          </div>
-        </div>
-        <!-- v1.9.102 — Device & Software group: Int.Config + Hardware (PC/Device/Network) + Financial Document -->
-        <div class="nav-group" id="nav-group-hardware" data-group-routes="sites,hardware-pc,hardware-pc-unassigned,hardware-device,hardware-network,financial-documents">
-          <button type="button" class="nav-group-toggle" data-group-toggle="hardware" data-label="Device & Software">
-            <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>
-            <span class="nav-group-label">Device &amp; Software</span>
-            <span class="nav-group-caret">▼</span>
-          </button>
-          <div class="nav-group-children">
-            <a href="#/sites" data-route="sites">🛠 Int. Platforms Config</a>
-            <a href="#/hardware-pc" data-route="hardware-pc">💻 Personal Computer</a>
-            <a href="#/hardware-pc-unassigned" data-route="hardware-pc-unassigned">📦 คอมส่วนกลาง</a>
-            <a href="#/hardware-device" data-route="hardware-device">📱 Device</a>
-            <a href="#/hardware-network" data-route="hardware-network">📡 Network</a>
-            <a href="#/financial-documents" data-route="financial-documents">💰 Financial Document</a>
-          </div>
-        </div>
-        <!-- Setting group: รวม Logs + API Key -->
-        <div class="nav-group" id="nav-group-setting" data-group-routes="logs,security">
-          <button type="button" class="nav-group-toggle" data-group-toggle="setting" data-label="Setting">
-            <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
-            <span class="nav-group-label">Setting</span>
-            <span class="nav-group-caret">▼</span>
-          </button>
-          <div class="nav-group-children">
-            <a href="#/logs" data-route="logs">📜 Logs</a>
-            <a href="#/security" data-route="security">🔑 API Key</a>
-          </div>
-        </div>
+        <!-- v1.9.124 — Customer: direct link (Calendar/Websites/Services Config อยู่ในเมนูย่อยของหน้านี้) -->
+        <a href="#/calendar" data-route="calendar" data-route-extra="domains,websites,services-config" data-label="Customer">
+          <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
+          <span class="nav-label">Customer</span>
+        </a>
+        <!-- v1.9.124 — Device & Software: direct link -->
+        <a href="#/sites" data-route="sites" data-route-extra="hardware-pc,hardware-pc-unassigned,hardware-device,hardware-network,financial-documents" data-label="Device & Software">
+          <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>
+          <span class="nav-label">Device &amp; Software</span>
+        </a>
+        <!-- v1.9.124 — Setting: direct link -->
+        <a href="#/logs" data-route="logs" data-route-extra="security" data-label="Setting">
+          <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+          <span class="nav-label">Setting</span>
+        </a>
       </div>
     </nav>
     <div class="sidebar-footer">
@@ -1229,24 +1204,24 @@ const HIDE_FROM_MEMBER_NAV = new Set(['security', 'members', 'sites', 'logs', 't
 const routes = {
   'dashboard':        renderDashboardEmbed,
   'platforms':        renderPlatformsPage,
-  'calendar':         renderDomainsPage,    // primary route (Domain Names → Calendar)
-  'domains':          renderDomainsPage,    // legacy alias
-  'hardware-pc':      () => renderHardwarePage('pc'),
-  'hardware-pc-unassigned': renderHardwareUnassignedPcsPage,
-  'hardware-device':  () => renderHardwarePage('device'),
-  'hardware-network': () => renderHardwarePage('network'),
-  'financial-documents': renderFinancialDocumentsPage,
+  'calendar':         () => renderCustomerPage('calendar'),   // Customer submenu
+  'domains':          () => renderCustomerPage('calendar'),   // legacy alias
+  'websites':         () => renderCustomerPage('websites'),
+  'services-config':  () => renderCustomerPage('services-config'),
+  'sites':            () => renderDeviceSoftwarePage('sites'),
+  'hardware-pc':      () => renderDeviceSoftwarePage('hardware-pc'),
+  'hardware-pc-unassigned': () => renderDeviceSoftwarePage('hardware-pc-unassigned'),
+  'hardware-device':  () => renderDeviceSoftwarePage('hardware-device'),
+  'hardware-network': () => renderDeviceSoftwarePage('hardware-network'),
+  'financial-documents': () => renderDeviceSoftwarePage('financial-documents'),
+  'logs':             () => renderSettingPage('logs'),
+  'security':         () => renderSettingPage('security'),
   'my-device':        renderMyDevicePage,
   'domains-config':   renderDomainsConfigPage,
-  'services-config':  renderServicesConfigPage,
-  'websites':         renderWebsitesPage,
-  'sites':            renderSitesList,
   'members':          () => renderPeoplesPage('members'),
   'teams':            () => renderPeoplesPage('teams'),
   'access-requests':  () => renderPeoplesPage('access-requests'),
-  'logs':             renderLogsPage,
   'extension':        renderExtensionPage,
-  'security':         renderSecurityPage,
   'account':          renderAccountPage,
 };
 
@@ -1334,7 +1309,7 @@ async function navigate() {
   resetMainPadding();
   if (route === 'sites' && parts[1]) {
     setActive('sites');
-    await renderSiteDetail(parseInt(parts[1], 10));
+    await renderDeviceSoftwarePage('sites', parseInt(parts[1], 10));
   } else if (route === 'teams' && parts[1]) {
     // Teams page now uses tabs — pass team_id เพื่อ select tab
     setActive('teams');
@@ -1363,7 +1338,7 @@ function renderDashboardEmbed() {
 
 // ---------- pages ----------
 async function renderSitesList() {
-  $('main').innerHTML = `
+  _subMain().innerHTML = `
     <div class="page-head">
       <h2 class="page-title">🌐 Websites</h2>
       <button class="btn primary" id="add-site-btn">+ เพิ่มเว็บใหม่</button>
@@ -1851,7 +1826,7 @@ function showAddSiteModal() {
 let _currentSite = null;
 
 async function renderSiteDetail(siteId) {
-  $('main').innerHTML = `
+  _subMain().innerHTML = `
     <div class="crumb"><a href="#/sites">← Websites</a></div>
 
     <!-- Inline-editable site header (Notion style) -->
@@ -2590,7 +2565,7 @@ function showAddCredModal(siteId) {
 }
 
 async function renderSecurityPage() {
-  $('main').innerHTML = `
+  _subMain().innerHTML = `
     <div class="page-head">
       <h2 class="page-title">🔑 Extension API Key</h2>
       <button class="btn danger" id="regen-btn">Regenerate Key</button>
@@ -4524,7 +4499,7 @@ async function renderDomainsPage() {
 
   // reset selection on page enter
   _calSelectedDay = null;
-  $('main').innerHTML = `
+  _subMain().innerHTML = `
     <div class="page-head">
       <h2 class="page-title">📅 Calendar</h2>
       <span class="card-sub" id="d-count">—</span>
@@ -6632,7 +6607,7 @@ let _scActiveTab = 'domain';
 
 async function renderServicesConfigPage() {
   const tab = SERVICE_TYPES.find(t => t.id === _scActiveTab) || SERVICE_TYPES[0];
-  $('main').innerHTML = `
+  _subMain().innerHTML = `
     <div class="page-head">
       <h2 class="page-title">🛠️ Services Config</h2>
       <button class="btn primary" id="sc-add-btn">${escapeHtml(tab.addLabel)}</button>
@@ -6902,7 +6877,7 @@ let _wsSearch = '';
 let _wsFilter = { registrar: '', hosting: '', ssl: '', others: '' };
 
 async function renderWebsitesPage() {
-  $('main').innerHTML = `
+  _subMain().innerHTML = `
     <div class="page-head">
       <h2 class="page-title">🔗 Websites</h2>
       <span class="card-sub" id="ws-count">—</span>
@@ -7368,7 +7343,7 @@ let _hwUnassignedCache = [];
 let _hwUnassignedSearch = '';
 
 async function renderHardwareUnassignedPcsPage() {
-  $('main').innerHTML = `
+  _subMain().innerHTML = `
     <div class="page-head">
       <h2 class="page-title">📦 คอมส่วนกลาง (Personal Computer ที่ไม่มี owner)</h2>
       <span id="hu-count" class="card-sub">—</span>
@@ -7643,7 +7618,7 @@ async function renderFinancialDocumentsPage() {
 async function renderFinDocListPage() {
   _findocViewMode = 'list';
   _findocCurrentId = null;
-  $('main').innerHTML = `
+  _subMain().innerHTML = `
     <style id="fd-style">
       .fd-grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); }
       .fd-card { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:10px; cursor:pointer; transition:border-color .12s, box-shadow .12s; display:flex; flex-direction:column; gap:8px; }
@@ -7721,7 +7696,7 @@ function renderFinDocList() {
 async function renderFinDocDetailPage(docId) {
   _findocViewMode = 'detail';
   _findocCurrentId = docId;
-  $('main').innerHTML = `
+  _subMain().innerHTML = `
     <style id="fd-style">
       .fd-pages { display:grid; gap:10px; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); }
       .fd-page-card { background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:6px; position:relative; }
@@ -8116,7 +8091,7 @@ async function renderHardwarePage(type) {
   _hwLinkFilter = '';
   const tab = HW_TYPES.find(t => t.id === _hwActiveType) || HW_TYPES[0];
   const isPc = _hwActiveType === 'pc';
-  $('main').innerHTML = `
+  _subMain().innerHTML = `
     <div class="page-head">
       <h2 class="page-title">${tab.icon} ${escapeHtml(tab.label)}</h2>
       <button class="btn primary" id="hw-add-btn">+ เพิ่ม ${escapeHtml(tab.label)}</button>
@@ -10050,7 +10025,7 @@ async function showHardwareHistoryModal(hwId, hwName) {
 
 
 async function renderLogsPage() {
-  $('main').innerHTML = `
+  _subMain().innerHTML = `
     <div class="page-head">
       <h2 class="page-title">📜 Logs</h2>
       <div style="display:flex;gap:8px;align-items:center">
@@ -10136,6 +10111,44 @@ async function loadLogsList() {
       </table>
     </div>
   `;
+}
+
+// v1.9.124 — generic submenu page (2-column) สำหรับ Customer / Device & Software / Setting
+// child render functions ใช้ _subMain() (= #sub-detail ถ้ามี, ไม่งั้น #main) เป็น target
+function _subMain() { return document.getElementById('sub-detail') || $('main'); }
+async function renderSubmenuPage(cfg) {
+  const link = (it) => `<a href="#/${it.route}" class="acc-menu-item${it.route === cfg.active ? ' active' : ''}" style="text-decoration:none"><span class="acc-menu-ico">${it.ico}</span> ${it.label}</a>`;
+  $('main').innerHTML = `
+    <div class="page-head"><h2 class="page-title">${cfg.title}</h2></div>
+    <div class="acc-layout">
+      <div class="acc-menu">${cfg.items.map(link).join('')}</div>
+      <div class="acc-detail"><div id="sub-detail"><div class="empty">กำลังโหลด…</div></div></div>
+    </div>`;
+  const active = cfg.items.find(it => it.route === cfg.active) || cfg.items[0];
+  if (active && active.render) await active.render(cfg.arg);
+}
+function renderCustomerPage(active, arg) {
+  return renderSubmenuPage({ title: '🌐 Customer', active: active || 'calendar', arg, items: [
+    { route: 'calendar',        ico: '📅',  label: 'Calendar',        render: () => renderDomainsPage() },
+    { route: 'websites',        ico: '🔗',  label: 'Websites',        render: () => renderWebsitesPage() },
+    { route: 'services-config', ico: '🛠️', label: 'Services Config',  render: () => renderServicesConfigPage() },
+  ]});
+}
+function renderDeviceSoftwarePage(active, arg) {
+  return renderSubmenuPage({ title: '🖥️ Device & Software', active: active || 'sites', arg, items: [
+    { route: 'sites',                  ico: '🛠',  label: 'Int. Platforms Config', render: (a) => a ? renderSiteDetail(a) : renderSitesList() },
+    { route: 'hardware-pc',            ico: '💻',  label: 'Personal Computer',     render: () => renderHardwarePage('pc') },
+    { route: 'hardware-pc-unassigned', ico: '📦',  label: 'คอมส่วนกลาง',           render: () => renderHardwareUnassignedPcsPage() },
+    { route: 'hardware-device',        ico: '📱',  label: 'Device',                render: () => renderHardwarePage('device') },
+    { route: 'hardware-network',       ico: '📡',  label: 'Network',               render: () => renderHardwarePage('network') },
+    { route: 'financial-documents',    ico: '💰',  label: 'Financial Document',    render: () => renderFinancialDocumentsPage() },
+  ]});
+}
+function renderSettingPage(active, arg) {
+  return renderSubmenuPage({ title: '⚙️ Setting', active: active || 'logs', arg, items: [
+    { route: 'logs',     ico: '📜', label: 'Logs',    render: () => renderLogsPage() },
+    { route: 'security', ico: '🔑', label: 'API Key', render: () => renderSecurityPage() },
+  ]});
 }
 
 // v1.9.123 — Peoples: หน้าเดียวมีเมนูย่อย 2-column (รายชื่อ Members / Teams / Access Requests) แบบ Profile

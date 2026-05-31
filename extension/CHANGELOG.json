@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.124",
+      "date": "2026-05-28",
+      "title": "Customer / Device & Software / Setting: เมนูย่อย 2-column แบบ Profile",
+      "summary": "เปลี่ยน 3 กลุ่ม sidebar (Customer / Device & Software / Setting) จาก flyout group → direct link + หน้าเดียวมีเมนูย่อยซ้าย (เหมือน Profile/Peoples). ตอนนี้ sidebar เป็น direct link ทั้งหมด ไม่มี flyout group แล้ว",
+      "changes": [
+        "เพิ่ม generic renderSubmenuPage(cfg) + helper _subMain() (target = #sub-detail ถ้ามี, ไม่งั้น #main)",
+        "wrappers: renderCustomerPage (Calendar/Websites/Services Config), renderDeviceSoftwarePage (Int.Config/PC/คอมส่วนกลาง/Device/Network/Financial Doc), renderSettingPage (Logs/API Key)",
+        "11 child functions render ลง _subMain() → คงอยู่ในเมนูย่อย (รวม site detail + financial doc list/detail swap)",
+        "routes → wrappers, navigate #/sites/<id> → Device&Software submenu, setActive รองรับ data-route-extra",
+        "sidebar: 3 groups → direct links (ตอนนี้ทุกเมนูเป็น direct link)"
+      ]
+    },
+    {
       "version": "1.9.123",
       "date": "2026-05-28",
       "title": "Peoples: เมนูย่อย 2-column (รายชื่อ Members / Teams / Access Requests) แบบ Profile",
