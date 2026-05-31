@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.118",
+      "date": "2026-05-28",
+      "title": "Hamburger menu: เปลี่ยนเป็น drawer slide จากซ้าย (Google Cloud style)",
+      "summary": "เมนู hamburger (เว็บในเครือ) เปลี่ยนจาก popup dropdown → drawer เต็มความสูงที่ slide ออกมาจากด้านซ้าย + backdrop มืด, ปิดด้วยปุ่ม ✕ / คลิก backdrop / Escape / คลิกลิงก์",
+      "changes": [
+        "ทั้ง admin.html / dashboard.html / landing.html",
+        ".brand-menu: position fixed left drawer 320px + transform translateX + transition",
+        "เพิ่ม backdrop (.brand-drawer-backdrop) + drawer header (title + ปุ่มปิด)",
+        "JS: toggle .is-open class แทน hidden attribute, ปิดได้หลายทาง"
+      ]
+    },
+    {
       "version": "1.9.117",
       "date": "2026-05-28",
       "title": "Members: ปุ่ม 'Check-in ทุกคน' (admin ลองอ่าน Beacon ของทุกคน)",

@@ -86,18 +86,45 @@
       background: var(--bg-soft); color: var(--primary);
       border-color: var(--border-strong);
     }
+    /* v1.9.118 — hamburger → left slide-in drawer (Google Cloud style) */
     .brand-menu {
-      position: absolute;
-      top: calc(100% + 10px);
-      left: 0;
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      width: 320px; max-width: 86vw;
       background: #fff;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      box-shadow: 0 12px 40px rgba(15, 23, 42, .15);
-      min-width: 280px;
-      padding: 6px;
-      z-index: 200;
+      border: none; border-right: 1px solid var(--border);
+      border-radius: 0;
+      box-shadow: 6px 0 28px rgba(15, 23, 42, .18);
+      padding: 0;
+      z-index: 1000;
+      transform: translateX(-100%);
+      transition: transform .26s cubic-bezier(.4, 0, .2, 1);
+      display: flex; flex-direction: column;
+      overflow-y: auto;
     }
+    .brand-menu.is-open { transform: translateX(0); }
+    .brand-drawer-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(15, 23, 42, .42);
+      z-index: 999;
+      opacity: 0; pointer-events: none;
+      transition: opacity .25s;
+    }
+    .brand-drawer-backdrop.is-open { opacity: 1; pointer-events: auto; }
+    .brand-drawer-head {
+      display: flex; align-items: center; gap: 12px;
+      padding: 16px 18px; border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; background: #fff; z-index: 1;
+    }
+    .brand-drawer-head .title { font-size: 17px; font-weight: 700; flex: 1; letter-spacing: -0.01em; }
+    .brand-drawer-head .title strong { color: var(--primary); }
+    .brand-drawer-close {
+      width: 34px; height: 34px; border-radius: 8px; border: none; background: transparent;
+      cursor: pointer; color: var(--text-muted); font-size: 18px; line-height: 1;
+      display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .brand-drawer-close:hover { background: var(--bg-soft); color: var(--text); }
+    .brand-menu-body { padding: 10px; }
     .brand-menu-head {
       font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
       color: var(--text-muted); font-weight: 600;
@@ -973,20 +1000,27 @@
             <line x1="3" y1="18" x2="21" y2="18"/>
           </svg>
         </button>
-        <div class="brand-menu" id="brandMenu" hidden>
-          <div class="brand-menu-head">เว็บในเครือ</div>
-          <a href="https://2026beat-production.up.railway.app" class="brand-menu-item" target="_top" data-host="2026beat-production.up.railway.app">
-            <span class="name">FEFL<strong>Beat</strong></span>
-            <span class="desc">AI Solution Hub for Marketing</span>
-          </a>
-          <a href="https://web-production-8eb90.up.railway.app" class="brand-menu-item" target="_top" data-host="web-production-8eb90.up.railway.app">
-            <span class="name">Prompt<strong>Gallery</strong></span>
-            <span class="desc">AI Image Prompt Knowledge Base</span>
-          </a>
-          <a href="https://wazzup.fareastfamelineddb.com/" class="brand-menu-item" target="_blank" rel="noopener" data-host="wazzup.fareastfamelineddb.com">
-            <span class="name"><strong>Wazzup</strong></span>
-            <span class="desc">Fareast Fameline HR Portal</span>
-          </a>
+        <div class="brand-drawer-backdrop" id="brandBackdrop"></div>
+        <div class="brand-menu" id="brandMenu">
+          <div class="brand-drawer-head">
+            <span class="title">FEFL<strong>Beat</strong></span>
+            <button type="button" class="brand-drawer-close" id="brandDrawerClose" aria-label="ปิด">✕</button>
+          </div>
+          <div class="brand-menu-body">
+            <div class="brand-menu-head">เว็บในเครือ</div>
+            <a href="https://2026beat-production.up.railway.app" class="brand-menu-item" target="_top" data-host="2026beat-production.up.railway.app">
+              <span class="name">FEFL<strong>Beat</strong></span>
+              <span class="desc">AI Solution Hub for Marketing</span>
+            </a>
+            <a href="https://web-production-8eb90.up.railway.app" class="brand-menu-item" target="_top" data-host="web-production-8eb90.up.railway.app">
+              <span class="name">Prompt<strong>Gallery</strong></span>
+              <span class="desc">AI Image Prompt Knowledge Base</span>
+            </a>
+            <a href="https://wazzup.fareastfamelineddb.com/" class="brand-menu-item" target="_blank" rel="noopener" data-host="wazzup.fareastfamelineddb.com">
+              <span class="name"><strong>Wazzup</strong></span>
+              <span class="desc">Fareast Fameline HR Portal</span>
+            </a>
+          </div>
         </div>
         <a href="/" class="logo">FEFL<strong>Beat</strong></a>
       </div>
@@ -13077,16 +13111,22 @@ function showModal({ title, body, onSubmit, size }) {
 }
 
 // ---------- bootstrap ----------
-// Hamburger / sister-sites menu
+// v1.9.118 — Hamburger → left slide-in drawer (Google Cloud style)
 (() => {
   const btn = $('hamburgerBtn'); const menu = $('brandMenu');
+  const backdrop = $('brandBackdrop'); const closeBtn = $('brandDrawerClose');
   if (!btn || !menu) return;
+  const open = () => { menu.classList.add('is-open'); if (backdrop) backdrop.classList.add('is-open'); };
+  const close = () => { menu.classList.remove('is-open'); if (backdrop) backdrop.classList.remove('is-open'); };
   btn.addEventListener('click', (e) => {
-    e.stopPropagation(); menu.hidden = !menu.hidden;
+    e.stopPropagation();
+    menu.classList.contains('is-open') ? close() : open();
   });
-  document.addEventListener('click', (e) => {
-    if (!menu.hidden && !menu.contains(e.target) && !btn.contains(e.target)) menu.hidden = true;
-  });
+  if (backdrop) backdrop.addEventListener('click', close);
+  if (closeBtn) closeBtn.addEventListener('click', close);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  // ปิด drawer เมื่อคลิกลิงก์ในเมนู
+  menu.querySelectorAll('.brand-menu-item').forEach(a => a.addEventListener('click', close));
   document.querySelectorAll('.brand-menu-item[data-host]').forEach(a => {
     if (a.dataset.host === location.hostname) a.classList.add('current');
   });
