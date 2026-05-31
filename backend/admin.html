@@ -1031,18 +1031,8 @@
       <div class="nav-section">
         <a href="#/dashboard" data-route="dashboard" data-label="Dashboard"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></span><span class="nav-label">Dashboard</span></a>
         <a href="#/platforms" data-route="platforms" data-label="Platforms"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></span><span class="nav-label">Platforms</span></a>
-        <!-- บัญชีของฉัน group: รวม โปรไฟล์ + My Device + Extension -->
-        <div class="nav-group" id="nav-group-account" data-group-routes="account,my-device,extension">
-          <button type="button" class="nav-group-toggle" data-group-toggle="account" data-label="บัญชีของฉัน">
-            <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
-            <span class="nav-group-label">บัญชีของฉัน</span>
-            <span class="nav-group-caret">▼</span>
-          </button>
-          <div class="nav-group-children">
-            <a href="#/account" data-route="account">👤 โปรไฟล์</a>
-            <a href="#/extension" data-route="extension">🧩 Extension</a>
-          </div>
-        </div>
+        <!-- v1.9.122 — บัญชีของฉัน: direct link (โปรไฟล์/My Device/Extension/Check-in อยู่ในเมนูย่อยของหน้านี้แล้ว) -->
+        <a href="#/account" data-route="account" data-label="บัญชีของฉัน"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><span class="nav-label">บัญชีของฉัน</span></a>
       </div>
 
       <!-- ภาพรวมระบบ (admin-only — ซ่อนทั้ง section สำหรับ member) -->
@@ -11611,6 +11601,7 @@ async function renderMemberAccountPage() {
           <button type="button" class="acc-menu-item" data-acc-tab="link"><span class="acc-menu-ico">🔗</span> Link Account</button>
           <button type="button" class="acc-menu-item" data-acc-tab="password"><span class="acc-menu-ico">🔑</span> Change Password</button>
           <button type="button" class="acc-menu-item" data-acc-tab="device"><span class="acc-menu-ico">🖥️</span> My Device</button>
+          <button type="button" class="acc-menu-item" data-acc-tab="extension"><span class="acc-menu-ico">🧩</span> Extension</button>
           <button type="button" class="acc-menu-item" data-acc-tab="beacon"><span class="acc-menu-ico">📍</span> Check-in</button>
         </div>
 
@@ -11708,6 +11699,11 @@ async function renderMemberAccountPage() {
               <div class="hint" id="m-pw-msg" style="margin-bottom:10px;display:none"></div>
               <button class="btn primary" id="m-save-password">บันทึกรหัสผ่าน</button>
             </div>
+          </div>
+
+          <!-- ============ Extension ============ -->
+          <div data-acc-panel="extension" style="display:none">
+            <div id="ext-embed"><div class="empty">กำลังโหลด…</div></div>
           </div>
 
           <!-- ============ My Device ============ -->
@@ -12247,8 +12243,16 @@ async function renderMemberAccountPage() {
     });
     if (panel === 'beacon') loadBeacon();
     if (panel === 'device' && !_myDeviceLoaded) { _myDeviceLoaded = true; loadMyDevice(); }
+    // v1.9.122 — Extension tab: render ลง #ext-embed + จัดการ polling
+    if (panel === 'extension') {
+      if (!_extLoaded) { _extLoaded = true; renderExtensionPage($('ext-embed')); }
+      else if (typeof startExtStatusPolling === 'function') startExtStatusPolling();
+    } else if (typeof stopExtStatusPolling === 'function') {
+      stopExtStatusPolling();
+    }
   }
   let _myDeviceLoaded = false;
+  let _extLoaded = false;
 
   // v1.9.116 — Beacon check-in (ใช้ Wazzup token ดึงตำแหน่ง check-in ของตัวเอง)
   let _beaconLoaded = false;
@@ -12797,7 +12801,8 @@ function renderVersionCard(cl) {
   `;
 }
 
-async function renderExtensionPage() {
+async function renderExtensionPage(mount) {
+  mount = mount || $('main');   // v1.9.122 — render ลง container อื่นได้ (ใช้ใน Profile tab)
   const backendUrl = location.origin;
 
   // ดึง API Key (ทั้ง admin + member)
@@ -12814,7 +12819,7 @@ async function renderExtensionPage() {
     changelog = await fetchJson('/api/admin/extension/changelog');
   } catch {}
 
-  $('main').innerHTML = `
+  mount.innerHTML = `
     <div class="page-head">
       <h2 class="page-title">🧩 Extension</h2>
       <button class="btn" id="ext-refresh" style="font-size:12px;padding:6px 12px">🔄 รีเฟรช status</button>

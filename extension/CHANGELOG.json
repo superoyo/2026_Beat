@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.122",
+      "date": "2026-05-28",
+      "title": "ย้าย Extension เข้าเป็นเมนูย่อยในโปรไฟล์ + 'บัญชีของฉัน' เป็น direct link",
+      "summary": "ย้าย Extension จาก sidebar → tab ในหน้าโปรไฟล์ (เคียงข้าง My Device). 'บัญชีของฉัน' ใน sidebar เปลี่ยนจาก group เป็น direct link เดียว (เนื้อหาย่อยทั้งหมดอยู่ในหน้าโปรไฟล์แล้ว)",
+      "changes": [
+        "renderExtensionPage(mount): รับ container param → render ลง #ext-embed ใน Profile tab ได้",
+        "เพิ่ม tab 'Extension' + panel ใน Profile (render ครั้งเดียว + จัดการ start/stop polling ตามการสลับ tab)",
+        "sidebar: 'บัญชีของฉัน' group → direct link (ลบ child My Device + Extension ออก)",
+        "route #/extension + #/my-device ยังใช้ได้ standalone (backward compat)"
+      ]
+    },
+    {
       "version": "1.9.121",
       "date": "2026-05-28",
       "title": "ย้าย My Device เข้าเป็นเมนูย่อยในโปรไฟล์",
