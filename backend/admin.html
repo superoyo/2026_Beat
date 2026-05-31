@@ -10369,31 +10369,51 @@ function _parseSkillFrontmatter(text) {
   });
   return out;
 }
-function _skillFormBody(s) {
+let _skillMemberOpts = null;
+async function _loadSkillMemberOpts() {
+  if (_skillMemberOpts) return _skillMemberOpts;
+  try { const r = await fetchJson('/api/skill-member-options'); _skillMemberOpts = r.members || []; }
+  catch { _skillMemberOpts = []; }
+  return _skillMemberOpts;
+}
+function _memberSelectOpts(opts, selId, emptyLabel) {
+  return `<option value="">${emptyLabel}</option>` +
+    opts.map(m => `<option value="${m.id}" ${selId === m.id ? 'selected' : ''}>${escapeHtml(m.name)}</option>`).join('');
+}
+function _skillFormBody(s, memberOpts) {
   const catOpts = SKILL_CATEGORIES.map(c => `<option value="${c.key}" ${s && s.category === c.key ? 'selected' : ''}>${c.icon} ${c.label}</option>`).join('');
+  const selStyle = 'padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit';
   return `
     <div style="display:flex;flex-direction:column;gap:12px">
       ${s ? '' : `<div class="hint" style="font-size:12.5px;color:var(--text-muted)">อัพโหลดไฟล์ SKILL.md (หรือไฟล์อื่น) — ถ้าเป็น .md ระบบจะดึงชื่อ/คำอธิบายจาก frontmatter ให้</div>
       <label class="btn" style="cursor:pointer;text-align:center;padding:10px">📎 เลือกไฟล์ Skill<input type="file" id="sk-file" style="display:none" /></label>
       <div id="sk-file-name" style="font-size:12px;color:var(--text-muted)"></div>`}
-      <label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">ชื่อ Skill <input id="sk-name" value="${s ? escapeHtml(s.name) : ''}" style="padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit" /></label>
-      <label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">คำอธิบาย <textarea id="sk-desc" rows="2" style="padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;resize:vertical">${s ? escapeHtml(s.description || '') : ''}</textarea></label>
-      <label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">หมวดหมู่ <select id="sk-cat" style="padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit">${catOpts}</select></label>
-      <label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">Tags (คั่นด้วย ,) <input id="sk-tags" value="${s ? escapeHtml(s.tags || '') : ''}" placeholder="เช่น development, ui" style="padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit" /></label>
-      ${s ? `<label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">เนื้อหา SKILL.md <textarea id="sk-content" rows="8" style="padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-family:ui-monospace,Menlo,monospace;font-size:12px;resize:vertical">${escapeHtml(s.content || '')}</textarea></label>` : ''}
+      <label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">ชื่อ Skill <input id="sk-name" value="${s ? escapeHtml(s.name) : ''}" style="${selStyle}" /></label>
+      <label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">คำอธิบาย <textarea id="sk-desc" rows="2" style="${selStyle};resize:vertical">${s ? escapeHtml(s.description || '') : ''}</textarea></label>
+      <label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">หมวดหมู่ <select id="sk-cat" style="${selStyle}">${catOpts}</select></label>
+      <label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">Tags (คั่นด้วย ,) <input id="sk-tags" value="${s ? escapeHtml(s.tags || '') : ''}" placeholder="เช่น development, ui" style="${selStyle}" /></label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">📤 ผู้อัพโหลด <select id="sk-uploader" style="${selStyle}">${_memberSelectOpts(memberOpts, s ? s.uploader_member_id : null, '— ตัวฉัน (อัตโนมัติ) —')}</select></label>
+        <label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">👤 เจ้าของ <select id="sk-owner" style="${selStyle}">${_memberSelectOpts(memberOpts, s ? s.owner_member_id : null, '— ตามผู้อัพโหลด —')}</select></label>
+      </div>
+      ${s ? `<label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">เนื้อหา SKILL.md <textarea id="sk-content" rows="8" style="${selStyle};font-family:ui-monospace,Menlo,monospace;font-size:12px;resize:vertical">${escapeHtml(s.content || '')}</textarea></label>` : ''}
     </div>`;
 }
-function openSkillUploadModal() {
+async function openSkillUploadModal() {
+  const memberOpts = await _loadSkillMemberOpts();
   const up = { data: null, name: null, mime: null, content: null };
   showModal({
-    title: '+ อัพโหลด Skill', size: 'wide', body: _skillFormBody(null),
+    title: '+ อัพโหลด Skill', size: 'wide', body: _skillFormBody(null, memberOpts),
     onSubmit: async () => {
       const name = $('sk-name').value.trim();
       if (!name) throw new Error('กรอกชื่อ skill');
+      const upId = $('sk-uploader').value, ownId = $('sk-owner').value;
       await fetchJson('/api/skills', { method: 'POST', body: JSON.stringify({
         name, description: $('sk-desc').value.trim(), category: $('sk-cat').value,
         tags: $('sk-tags').value.trim(), content: up.content,
         file_name: up.name, file_data: up.data, file_mime: up.mime,
+        uploader_member_id: upId ? parseInt(upId, 10) : null,
+        owner_member_id: ownId ? parseInt(ownId, 10) : null,
       })});
       showSavedToast('✓ สร้าง skill แล้ว');
       _skillCat = '__all__'; renderSkillMarketplace();
@@ -10422,15 +10442,19 @@ function openSkillUploadModal() {
     });
   }, 30);
 }
-function openSkillEditModal(s) {
+async function openSkillEditModal(s) {
+  const memberOpts = await _loadSkillMemberOpts();
   showModal({
-    title: `✏️ แก้ไข — ${s.name}`, size: 'wide', body: _skillFormBody(s),
+    title: `✏️ แก้ไข — ${s.name}`, size: 'wide', body: _skillFormBody(s, memberOpts),
     onSubmit: async () => {
       const name = $('sk-name').value.trim();
       if (!name) throw new Error('กรอกชื่อ skill');
+      const upId = $('sk-uploader').value, ownId = $('sk-owner').value;
       await fetchJson(`/api/skills/${s.id}`, { method: 'PATCH', body: JSON.stringify({
         name, description: $('sk-desc').value.trim(), category: $('sk-cat').value,
         tags: $('sk-tags').value.trim(), content: $('sk-content') ? $('sk-content').value : undefined,
+        uploader_member_id: upId ? parseInt(upId, 10) : undefined,
+        owner_member_id: ownId ? parseInt(ownId, 10) : undefined,
       })});
       showSavedToast('✓ บันทึกแล้ว');
       showSkillDetail(s.id);

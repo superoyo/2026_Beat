@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.134",
+      "date": "2026-06-01",
+      "title": "Skill: เลือกผู้อัพโหลด + เจ้าของ ได้ (ดึงรายชื่อจากระบบ)",
+      "summary": "ตอนอัพโหลด/แก้ไข skill เพิ่ม dropdown เลือก 📤 ผู้อัพโหลด + 👤 เจ้าของ จากรายชื่อ member ในระบบ (default = ตัวเอง / ตามผู้อัพโหลด)",
+      "changes": [
+        "Backend GET /api/skill-member-options: รายชื่อ member (logged-in เรียกได้)",
+        "Backend SkillIn/SkillPatch: เพิ่ม uploader_member_id (+ owner_member_id เดิม), resolve ชื่อ snapshot",
+        "Frontend upload/edit modal: dropdown ผู้อัพโหลด + เจ้าของ"
+      ]
+    },
+    {
       "version": "1.9.133",
       "date": "2026-06-01",
       "title": "Skill Marketplace Phase 2: tab Example (prompt / ผลลัพธ์)",

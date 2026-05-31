@@ -7644,6 +7644,7 @@ class SkillIn(BaseModel):
     file_data: Optional[str] = Field(None, max_length=12_000_000)
     file_mime: Optional[str] = Field(None, max_length=120)
     owner_member_id: Optional[int] = None
+    uploader_member_id: Optional[int] = None   # v1.9.134 — เลือกผู้อัพโหลดได้
 
 
 class SkillPatch(BaseModel):
@@ -7652,7 +7653,18 @@ class SkillPatch(BaseModel):
     category: Optional[str] = Field(None, max_length=50)
     content: Optional[str] = Field(None, max_length=400_000)
     tags: Optional[str] = Field(None, max_length=500)
-    owner_member_id: Optional[int] = None   # เปลี่ยนเจ้าของ
+    owner_member_id: Optional[int] = None      # เปลี่ยนเจ้าของ
+    uploader_member_id: Optional[int] = None   # v1.9.134 — เปลี่ยนผู้อัพโหลด
+
+
+def _member_name_of(conn, mid: Optional[int]) -> Optional[str]:
+    if mid is None:
+        return None
+    r = conn.execute("SELECT display_name, email, phone FROM members WHERE id = ?", (mid,)).fetchone()
+    if not r:
+        return None
+    ph = r["phone"]
+    return r["display_name"] or r["email"] or (None if (ph and str(ph).startswith("email:")) else ph) or f"member#{mid}"
 
 
 def _skill_actor(conn, sess) -> tuple:
@@ -7720,13 +7732,11 @@ def create_skill(payload: SkillIn, sess: dict = Depends(require_admin_or_member)
     now = utc_now().isoformat()
     with db_conn() as conn:
         actor_mid, actor_name, _is_admin = _skill_actor(conn, sess)
-        # owner default = uploader; ถ้าระบุ owner_member_id ใช้ตามนั้น
-        owner_mid = payload.owner_member_id if payload.owner_member_id is not None else actor_mid
-        owner_name = actor_name
-        if payload.owner_member_id is not None:
-            orow = conn.execute("SELECT display_name, email, phone FROM members WHERE id = ?", (payload.owner_member_id,)).fetchone()
-            if orow:
-                owner_name = orow["display_name"] or orow["email"] or orow["phone"] or f"member#{payload.owner_member_id}"
+        # v1.9.134 — uploader/owner เลือกได้ (default = ผู้ทำรายการ)
+        uploader_mid = payload.uploader_member_id if payload.uploader_member_id is not None else actor_mid
+        uploader_name = _member_name_of(conn, payload.uploader_member_id) if payload.uploader_member_id is not None else actor_name
+        owner_mid = payload.owner_member_id if payload.owner_member_id is not None else uploader_mid
+        owner_name = _member_name_of(conn, payload.owner_member_id) if payload.owner_member_id is not None else uploader_name
         cur = conn.execute(
             "INSERT INTO skills(name, description, category, content, tags, file_name, file_data, file_mime, "
             " owner_member_id, owner_name, uploader_member_id, uploader_name, created_at, updated_at) "
@@ -7734,7 +7744,7 @@ def create_skill(payload: SkillIn, sess: dict = Depends(require_admin_or_member)
             (payload.name.strip(), (payload.description or "").strip() or None, payload.category,
              payload.content, (payload.tags or "").strip() or None,
              payload.file_name, payload.file_data, payload.file_mime,
-             owner_mid, owner_name, actor_mid, actor_name, now, now),
+             owner_mid, owner_name, uploader_mid, uploader_name, now, now),
         )
     return {"ok": True, "id": cur.lastrowid}
 
@@ -7754,16 +7764,41 @@ def update_skill(skill_id: int, payload: SkillPatch, sess: dict = Depends(requir
             if v is not None:
                 updates[f] = v.strip() if isinstance(v, str) and f in ("name", "description", "tags") else v
         if payload.owner_member_id is not None:
-            orow = conn.execute("SELECT display_name, email, phone FROM members WHERE id = ?", (payload.owner_member_id,)).fetchone()
-            if not orow:
+            oname = _member_name_of(conn, payload.owner_member_id)
+            if oname is None:
                 raise HTTPException(status_code=400, detail="owner_member_id ไม่พบ")
             updates["owner_member_id"] = payload.owner_member_id
-            updates["owner_name"] = orow["display_name"] or orow["email"] or orow["phone"] or f"member#{payload.owner_member_id}"
+            updates["owner_name"] = oname
+        if payload.uploader_member_id is not None:
+            uname = _member_name_of(conn, payload.uploader_member_id)
+            if uname is None:
+                raise HTTPException(status_code=400, detail="uploader_member_id ไม่พบ")
+            updates["uploader_member_id"] = payload.uploader_member_id
+            updates["uploader_name"] = uname
         if updates:
             updates["updated_at"] = utc_now().isoformat()
             sc = ", ".join(f"{k} = ?" for k in updates)
             conn.execute(f"UPDATE skills SET {sc} WHERE id = ?", list(updates.values()) + [skill_id])
     return {"ok": True}
+
+
+# v1.9.134 — รายชื่อ member สำหรับ picker (owner/uploader) — logged-in ทุกคนเรียกได้
+# path แยกจาก /api/skills/{id} เพื่อเลี่ยง route conflict
+@app.get("/api/skill-member-options")
+def skill_member_options(_auth: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, display_name, email, phone FROM members WHERE COALESCE(enabled, 1) = 1 "
+            "ORDER BY display_name COLLATE NOCASE"
+        ).fetchall()
+    out = []
+    for r in rows:
+        ph = r["phone"]
+        out.append({
+            "id": r["id"],
+            "name": r["display_name"] or r["email"] or (None if (ph and str(ph).startswith("email:")) else ph) or f"member#{r['id']}",
+        })
+    return {"members": out}
 
 
 @app.delete("/api/skills/{skill_id}")
