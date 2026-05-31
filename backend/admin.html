@@ -12487,7 +12487,7 @@ async function renderMemberAccountPage() {
           <div style="display:flex;flex-direction:column;gap:7px">
             ${photo}
             <div style="font-weight:600;font-size:13.5px;line-height:1.3">${escapeHtml(m.display_name || '(ไม่ได้ตั้งชื่อ)')}</div>
-            <div style="font-size:11.5px;color:var(--text-muted);margin-top:-4px">${escapeHtml(m.email || m.phone || '')}</div>
+            <div style="font-size:11.5px;color:var(--text-muted);margin-top:-4px">${m.phone ? '📞 ' + escapeHtml(m.phone) : ''}</div>
           </div>`;
       }).join('') + `</div>`;
   }

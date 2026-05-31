@@ -2,6 +2,15 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.128",
+      "date": "2026-05-28",
+      "title": "Team grid: ซ่อนอีเมล แสดงเบอร์โทรแทน (ถ้ามี)",
+      "summary": "ใน tab Team (บัญชีของฉัน) เปลี่ยนจากแสดงอีเมล → แสดงเบอร์โทร (📞) ถ้าสมาชิกกรอกไว้ (ไม่กรอก = ไม่แสดง)",
+      "changes": [
+        "renderTeamSupGrid: m.email → m.phone (มี prefix 📞), ว่าง = ไม่แสดง"
+      ]
+    },
+    {
       "version": "1.9.127",
       "date": "2026-05-28",
       "title": "บัญชีของฉัน: tab Team — รูป+ชื่อคนที่ supervise แบ่งตามทีม",
