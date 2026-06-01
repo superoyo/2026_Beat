@@ -4555,6 +4555,9 @@ class MemberSignupEmailIn(BaseModel):
 
 # v1.9.83 — Wazzup SSO (Fareast Fameline identity backend)
 WAZZUP_BASE_URL = os.environ.get("WAZZUP_BASE_URL", "https://api.fareastfamelineddb.com")
+# v1.9.141 — รูปประจำตัวจาก Wazzup อาจอยู่คนละ subdomain (เช่น datafirst.fareastfamelineddb.com)
+# → อนุญาตทุก subdomain ของ suffix นี้ (กัน SSRF แต่ยอมรับ host ในเครือ)
+WAZZUP_PHOTO_HOST_SUFFIX = os.environ.get("WAZZUP_PHOTO_HOST_SUFFIX", "fareastfamelineddb.com")
 # v1.9.116 — Beacon device API (ตำแหน่ง check-in พนักงาน) — host คนละตัวกับ Wazzup auth
 BEACON_BASE_URL = os.environ.get("BEACON_BASE_URL", "https://123d92f01m.execute-api.ap-southeast-1.amazonaws.com/dev")
 BEACON_ORIGIN = os.environ.get("BEACON_ORIGIN", "https://job.fareastfamelineddb.com")
@@ -4689,10 +4692,12 @@ def _fetch_wazzup_image_as_data_url(raw_url: str, bearer_token: str | None = Non
         raise HTTPException(status_code=400, detail=f"photo_url รูปแบบไม่ถูกต้อง (raw={raw!r}, resolved={resolved!r})")
     try:
         sp = _urlsplit(resolved)
-        pb = _urlparse(WAZZUP_BASE_URL)
     except Exception:
         raise HTTPException(status_code=400, detail="photo_url parse ไม่ได้")
-    if sp.netloc and pb.netloc and sp.netloc.lower() != pb.netloc.lower():
+    # v1.9.141 — อนุญาตทุก subdomain ของ fareastfamelineddb.com (Wazzup ย้าย host รูปเป็น datafirst.fareastfamelineddb.com)
+    host_only = (sp.netloc or "").lower().split("@")[-1].split(":")[0]
+    suffix = WAZZUP_PHOTO_HOST_SUFFIX.lower().lstrip(".")
+    if sp.netloc and not (host_only == suffix or host_only.endswith("." + suffix)):
         raise HTTPException(status_code=400, detail=f"photo_url ไม่ใช่ Wazzup host — ปฏิเสธ ({sp.netloc})")
     safe_path = _quote(sp.path, safe="/%")
     safe_query = _quote(sp.query, safe="=&%")

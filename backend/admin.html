@@ -1216,9 +1216,18 @@ async function fetchJson(path, opts = {}) {
   }
   if (!res.ok) {
     const j = await res.json().catch(() => ({}));
-    throw new Error(j.detail || ('HTTP ' + res.status));
+    throw new Error(_extractErrDetail(j) || ('HTTP ' + res.status));
   }
   return res.json();
+}
+// v1.9.141 — แปลง detail ของ FastAPI ให้เป็นข้อความเสมอ (กัน "[object Object]" จาก 422 Pydantic ที่ detail เป็น list)
+function _extractErrDetail(j) {
+  if (!j) return '';
+  const d = j.detail !== undefined ? j.detail : j;
+  if (typeof d === 'string') return d;
+  if (Array.isArray(d)) return d.map(x => (x && (x.msg || x.detail)) ? (x.msg || x.detail) : (typeof x === 'string' ? x : JSON.stringify(x))).join(', ');
+  if (d && typeof d === 'object') return d.msg || d.detail || d.message || JSON.stringify(d);
+  return d != null ? String(d) : '';
 }
 
 // admin-only routes — member ห้ามเข้า (bounce ไป default)

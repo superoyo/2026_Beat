@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.141",
+      "date": "2026-06-01",
+      "title": "แก้ error เปลี่ยนรูปจาก Wazzup (host ใหม่ datafirst.*) + กัน [object Object]",
+      "summary": "Wazzup ย้าย host รูปประจำตัวเป็น datafirst.fareastfamelineddb.com ทำให้ระบบปฏิเสธ ('photo_url ไม่ใช่ Wazzup host') — แก้ให้ยอมรับทุก subdomain ของ fareastfamelineddb.com + แก้ข้อความ error ที่ขึ้น '[object Object]' ให้แสดงข้อความจริง",
+      "changes": [
+        "Backend: host check ดึงรูป Wazzup เปลี่ยนจาก match เป๊ะ → ยอมรับ *.fareastfamelineddb.com (กัน SSRF แต่รับ host ในเครือ) ผ่าน WAZZUP_PHOTO_HOST_SUFFIX",
+        "Frontend: fetchJson แปลง detail ที่เป็น list/object (422 Pydantic) เป็นข้อความอ่านได้ ไม่ขึ้น [object Object] อีก",
+        "ครอบคลุมทั้งดึงรูปตัวเอง (live session) และ fallback จาก URL ที่เก็บใน DB"
+      ]
+    },
+    {
       "version": "1.9.140",
       "date": "2026-06-01",
       "title": "Peoples > Members: ลดปุ่มในแถว เหลือที่ใช้บ่อย + เมนู ⋮ เพิ่มเติม",
