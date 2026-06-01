@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.145",
+      "date": "2026-06-01",
+      "title": "AI Project: header ยุบตอน scroll — search box ค้างบน เห็นการ์ดมากขึ้น",
+      "summary": "ปรับหน้า AI Project ให้ title (hero) เลื่อนหายไปตอน scroll ลง และช่อง Search เป็น sticky ค้างไว้ด้านบน ทำให้เหลือพื้นที่แสดงเว็บได้มากขึ้น (เมนูคอลัมน์ซ้ายยังอยู่นิ่ง)",
+      "changes": [
+        "hero (🤖 AI Project + คำโปรย) อยู่ในพื้นที่ scroll → เลื่อนหายเมื่อ scroll ลง",
+        "search bar + ปุ่มเพิ่มเว็บ เป็น position:sticky top:0 ค้างบนเสมอ",
+        "เอา internal-scroll ออกจาก grid มาไว้ที่ container เดียว, chips+count เลื่อนตามปกติ"
+      ]
+    },
+    {
       "version": "1.9.144",
       "date": "2026-06-01",
       "title": "AI Project: ผู้สร้างเลือก 'ไม่ระบุ' ได้",
