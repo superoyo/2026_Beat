@@ -7724,6 +7724,7 @@ def list_skills(category: Optional[str] = None, _auth: dict = Depends(require_ad
         rows = conn.execute(
             f"SELECT id, name, description, category, tags, owner_name, uploader_name, "
             f"       download_count, (file_data IS NOT NULL) AS has_file, "
+            f"       (SELECT avatar_data FROM members WHERE id = COALESCE(skills.owner_member_id, skills.uploader_member_id)) AS owner_avatar, "
             f"       (SELECT COUNT(*) FROM skill_examples e WHERE e.skill_id = skills.id) AS example_count, "
             f"       created_at, updated_at "
             f"FROM skills {where} ORDER BY created_at DESC",

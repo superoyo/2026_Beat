@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.138",
+      "date": "2026-06-01",
+      "title": "Skill: การ์ดในหน้ารวม skill แสดงรูป + ชื่อ เจ้าของ",
+      "summary": "การ์ด skill ในหน้า Skill Marketplace แสดงรูป profile เจ้าของ (วงกลม 22px) คู่กับชื่อ ที่แถบล่างของการ์ด (ถ้าไม่มีเจ้าของใช้ผู้อัพโหลด, ไม่มีรูปแสดงวงกลมอักษรย่อ)",
+      "changes": [
+        "Backend /api/skills: เพิ่ม owner_avatar (COALESCE เจ้าของ→ผู้อัพโหลด)",
+        "Frontend: footer การ์ดแสดงรูปกลม + ชื่อเจ้าของ แทนข้อความ 'โดย ...' อย่างเดียว"
+      ]
+    },
+    {
       "version": "1.9.137",
       "date": "2026-06-01",
       "title": "Skill: ช่องเลือกผู้อัพโหลด/เจ้าของ เป็น dropdown ค้นหาได้ + รูป + ทีม",

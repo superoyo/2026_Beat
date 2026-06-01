@@ -10202,7 +10202,10 @@ async function renderSkillMarketplace() {
           <div style="font-weight:700;font-size:15px;line-height:1.3">${escapeHtml(s.name)}</div>
           <div style="font-size:12.5px;color:var(--text-muted);line-height:1.5;flex:1;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escapeHtml(s.description || '')}</div>
           <div style="display:flex;flex-wrap:wrap;gap:4px">${(s.tags || '').split(',').filter(Boolean).slice(0, 3).map(t => `<span style="font-size:10.5px;padding:1px 7px;border-radius:999px;background:var(--bg-soft);color:var(--text-muted)">${escapeHtml(t.trim())}</span>`).join('')}</div>
-          <div style="font-size:11px;color:var(--text-soft);border-top:1px solid var(--border);padding-top:8px">โดย ${escapeHtml(s.owner_name || s.uploader_name || '—')}${s.example_count ? ` · ${s.example_count} examples` : ''}</div>
+          <div style="display:flex;align-items:center;gap:7px;border-top:1px solid var(--border);padding-top:8px">
+            ${_mpickAvatar({ name: s.owner_name || s.uploader_name, avatar: s.owner_avatar }, 22)}
+            <span style="font-size:11.5px;color:var(--text-soft);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(s.owner_name || s.uploader_name || '—')}${s.example_count ? ` · ${s.example_count} ex` : ''}</span>
+          </div>
         </div>`).join('') + `</div>`;
   root.innerHTML = `
     <div style="text-align:center;padding:18px 0 22px">
