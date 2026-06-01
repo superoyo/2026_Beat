@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.144",
+      "date": "2026-06-01",
+      "title": "AI Project: ผู้สร้างเลือก 'ไม่ระบุ' ได้",
+      "summary": "ในฟอร์มเพิ่ม/แก้ไข AI Project เพิ่ม checkbox 'ไม่ระบุผู้สร้าง' — เลือกแล้วจะไม่บันทึกผู้สร้าง (แสดงเป็น 'ไม่ระบุ') ยังคง default เป็นตัวฉันอัตโนมัติเหมือนเดิมถ้าไม่ติ๊ก",
+      "changes": [
+        "Backend: เพิ่ม creator_unspecified ใน create/patch /api/ai-projects → ตั้ง creator เป็น NULL",
+        "Frontend: checkbox 'ไม่ระบุผู้สร้าง' ใต้ picker (ติ๊กแล้วปิด picker), pre-check ตอน edit ถ้าผู้สร้างถูกตั้งไม่ระบุ",
+        "หน้า detail แสดง 'ไม่ระบุ' เมื่อผู้สร้าง/เจ้าของ ว่าง"
+      ]
+    },
+    {
       "version": "1.9.143",
       "date": "2026-06-01",
       "title": "เพิ่มเมนู AI Project ใน Platform (gallery เว็บ AI) — โครงคล้าย Skill Marketplace",

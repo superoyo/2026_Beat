@@ -10813,8 +10813,8 @@ async function showAiProjectDetail(id) {
         <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">${(p.tags || '').split(',').filter(Boolean).map(t => `<span style="font-size:11px;padding:2px 9px;border-radius:999px;background:var(--bg-soft);color:var(--text-muted)">${escapeHtml(t.trim())}</span>`).join('')}</div>
         ${safeUrl ? `<div style="font-size:12.5px;color:var(--text-soft);margin-bottom:12px;word-break:break-all">🔗 <a href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--primary)">${escapeHtml(p.url)}</a></div>` : ''}
         <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--text-soft);border-top:1px solid var(--border);padding-top:12px">
-          <span>👤 เจ้าของ: <strong style="color:var(--text)">${escapeHtml(p.owner_name || '—')}</strong></span>
-          <span>🛠️ ผู้สร้าง: ${escapeHtml(p.creator_name || '—')}</span>
+          <span>👤 เจ้าของ: <strong style="color:var(--text)">${escapeHtml(p.owner_name || 'ไม่ระบุ')}</strong></span>
+          <span>🛠️ ผู้สร้าง: ${escapeHtml(p.creator_name || 'ไม่ระบุ')}</span>
           ${p.started_month ? `<span>📅 เริ่มสร้าง: <strong style="color:var(--text)">${_aiprojMonthLabel(p.started_month)}</strong></span>` : ''}
         </div>
       </div>
@@ -10861,13 +10861,16 @@ async function openAiProjectModal(proj) {
         </div>
         <label style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">Tags (คั่นด้วย ,) <input id="aiproj-tags" value="${proj ? escapeHtml(proj.tags || '') : ''}" placeholder="เช่น chatbot, image, internal" style="${inS}" /></label>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-          <div style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">🛠️ ผู้สร้าง ${_memberPickerHtml('aiproj-creator', proj ? proj.creator_member_id : null, '— ตัวฉัน (อัตโนมัติ) —')}</div>
+          <div style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">🛠️ ผู้สร้าง ${_memberPickerHtml('aiproj-creator', proj ? proj.creator_member_id : null, '— ตัวฉัน (อัตโนมัติ) —')}
+            <label style="font-size:11.5px;color:var(--text-muted);display:flex;align-items:center;gap:6px;margin-top:2px;cursor:pointer;font-weight:400"><input type="checkbox" id="aiproj-creator-none" style="margin:0" /> ไม่ระบุผู้สร้าง</label>
+          </div>
           <div style="font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:4px">👤 เจ้าของ ${_memberPickerHtml('aiproj-owner', proj ? proj.owner_member_id : null, '— ตามผู้สร้าง —')}</div>
         </div>
       </div>`,
     onSubmit: async () => {
       const title = $('aiproj-title').value.trim();
       if (!title) throw new Error('กรอกชื่อโปรเจกต์');
+      const crNone = !!($('aiproj-creator-none') && $('aiproj-creator-none').checked);
       const crId = $('aiproj-creator').value, ownId = $('aiproj-owner').value;
       const payload = {
         title,
@@ -10876,9 +10879,12 @@ async function openAiProjectModal(proj) {
         department: $('aiproj-dept').value,
         tags: $('aiproj-tags').value.trim(),
         started_month: $('aiproj-month').value || null,
-        creator_member_id: crId ? parseInt(crId, 10) : (proj ? undefined : null),
         owner_member_id: ownId ? parseInt(ownId, 10) : (proj ? undefined : null),
       };
+      // v1.9.144 — ผู้สร้าง: ไม่ระบุ / เลือกคน / default(ตัวฉัน)
+      if (crNone) { payload.creator_unspecified = true; payload.creator_member_id = null; }
+      else if (crId) { payload.creator_member_id = parseInt(crId, 10); }
+      else { payload.creator_member_id = (proj ? undefined : null); }
       if (st.imageChanged || !proj) payload.image_data = st.image || null;
       if (proj) {
         await fetchJson(`/api/ai-projects/${proj.id}`, { method: 'PATCH', body: JSON.stringify(payload) });
@@ -10894,6 +10900,15 @@ async function openAiProjectModal(proj) {
   setTimeout(() => {
     _initMemberPicker('aiproj-creator', memberOpts, '— ตัวฉัน (อัตโนมัติ) —');
     _initMemberPicker('aiproj-owner', memberOpts, '— ตามผู้สร้าง —');
+    // v1.9.144 — checkbox "ไม่ระบุผู้สร้าง" — toggle ปิด picker เมื่อเลือกไม่ระบุ
+    const crNoneCb = document.getElementById('aiproj-creator-none');
+    const crPick = document.querySelector('[data-mpick="aiproj-creator"]');
+    const _syncCrNone = () => { if (crPick) { crPick.style.opacity = crNoneCb.checked ? '0.45' : ''; crPick.style.pointerEvents = crNoneCb.checked ? 'none' : ''; } };
+    if (crNoneCb) {
+      if (proj && proj.creator_member_id == null && !proj.creator_name) crNoneCb.checked = true;   // edit: ผู้สร้างถูกตั้งเป็นไม่ระบุไว้
+      crNoneCb.addEventListener('change', _syncCrNone);
+      _syncCrNone();
+    }
     const fi = document.getElementById('aiproj-img-file');
     if (fi) fi.addEventListener('change', (e) => {
       const f = e.target.files[0]; if (!f) return;

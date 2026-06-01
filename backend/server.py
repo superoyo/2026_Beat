@@ -8054,6 +8054,7 @@ class AiProjectIn(BaseModel):
     started_month: Optional[str] = Field(None, max_length=7)   # 'YYYY-MM'
     owner_member_id: Optional[int] = None
     creator_member_id: Optional[int] = None
+    creator_unspecified: Optional[bool] = None   # v1.9.144 — ผู้สร้าง = ไม่ระบุ
 
 
 class AiProjectPatch(BaseModel):
@@ -8066,6 +8067,7 @@ class AiProjectPatch(BaseModel):
     started_month: Optional[str] = Field(None, max_length=7)
     owner_member_id: Optional[int] = None
     creator_member_id: Optional[int] = None
+    creator_unspecified: Optional[bool] = None   # v1.9.144 — ตั้งผู้สร้าง = ไม่ระบุ
 
 
 def _aiproj_can_edit(row, actor_mid, is_admin) -> bool:
@@ -8110,10 +8112,19 @@ def create_ai_project(payload: AiProjectIn, sess: dict = Depends(require_admin_o
     now = utc_now().isoformat()
     with db_conn() as conn:
         actor_mid, actor_name, _is_admin = _skill_actor(conn, sess)
-        creator_mid = payload.creator_member_id if payload.creator_member_id is not None else actor_mid
-        creator_name = _member_name_of(conn, payload.creator_member_id) if payload.creator_member_id is not None else actor_name
-        owner_mid = payload.owner_member_id if payload.owner_member_id is not None else creator_mid
-        owner_name = _member_name_of(conn, payload.owner_member_id) if payload.owner_member_id is not None else creator_name
+        # v1.9.144 — creator เลือก "ไม่ระบุ" ได้
+        if payload.creator_unspecified:
+            creator_mid, creator_name = None, None
+        elif payload.creator_member_id is not None:
+            creator_mid = payload.creator_member_id
+            creator_name = _member_name_of(conn, payload.creator_member_id)
+        else:
+            creator_mid, creator_name = actor_mid, actor_name
+        if payload.owner_member_id is not None:
+            owner_mid = payload.owner_member_id
+            owner_name = _member_name_of(conn, payload.owner_member_id)
+        else:
+            owner_mid, owner_name = creator_mid, creator_name
         cur = conn.execute(
             "INSERT INTO ai_projects(title, url, description, department, tags, image_data, started_month, "
             " owner_member_id, owner_name, creator_member_id, creator_name, created_at, updated_at) "
@@ -8146,7 +8157,10 @@ def update_ai_project(proj_id: int, payload: AiProjectPatch, sess: dict = Depend
                 raise HTTPException(status_code=400, detail="owner_member_id ไม่พบ")
             updates["owner_member_id"] = payload.owner_member_id
             updates["owner_name"] = oname
-        if payload.creator_member_id is not None:
+        if payload.creator_unspecified:
+            updates["creator_member_id"] = None
+            updates["creator_name"] = None
+        elif payload.creator_member_id is not None:
             cname = _member_name_of(conn, payload.creator_member_id)
             if cname is None:
                 raise HTTPException(status_code=400, detail="creator_member_id ไม่พบ")
