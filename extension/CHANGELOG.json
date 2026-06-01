@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.146",
+      "date": "2026-06-01",
+      "title": "Skill Marketplace: header ยุบตอน scroll (เหมือน AI Project) + เอา count บนหัว Platforms ออก",
+      "summary": "ทำ Skill Marketplace ให้ title เลื่อนหายตอน scroll และ search box ค้างบน เหมือนหน้า AI Project + เอาข้อความ 'X เข้าถึงได้ · Y ต้องขอ' มุมขวาบนหน้า Platforms ออก",
+      "changes": [
+        "Skill: hero เลื่อนหาย, search bar + ปุ่ม อัพโหลด/จัดการหมวดหมู่ sticky ค้างบน, รวม scroll ที่ container เดียว",
+        "เอา span '11 เข้าถึงได้ · 10 ต้องขอ' (p-count) ออกจากหัวหน้า Platforms"
+      ]
+    },
+    {
       "version": "1.9.145",
       "date": "2026-06-01",
       "title": "AI Project: header ยุบตอน scroll — search box ค้างบน เห็นการ์ดมากขึ้น",
