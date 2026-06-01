@@ -3097,6 +3097,9 @@ function applyPlatformFilter() {
 
 // ============== Teams ==============
 
+// v1.9.139 — เก็บ team ที่ถูกยุบกิ่ง (collapse) — persist ข้าม re-render
+let _teamCollapsed = new Set();
+
 async function renderTeamsPage(selectedTeamId, mount) {
   mount = mount || $('peoples-detail') || $('main');  // v1.9.123 — render ลง container อื่นได้ (Peoples tab)
   // Fetch all teams
@@ -3108,6 +3111,27 @@ async function renderTeamsPage(selectedTeamId, mount) {
     return;
   }
   const teams = data.teams || [];
+  // v1.9.139 — map team → parent (สำหรับ logic ยุบ/ขยายกิ่ง)
+  const _teamParentOf = new Map(teams.map(t => [t.id, t.parent_team_id]));
+  // ตัด collapsed id ที่ไม่ใช่ parent แล้ว (กันค้าง)
+  { const valid = new Set(teams.filter(t => teams.some(c => c.parent_team_id === t.id)).map(t => t.id));
+    _teamCollapsed.forEach(id => { if (!valid.has(id)) _teamCollapsed.delete(id); }); }
+  // ซ่อน/แสดงแถวตามสถานะ collapse ของบรรพบุรุษ + อัปเดตไอคอน +/−
+  function applyTeamCollapse() {
+    document.querySelectorAll('.teams-row-wrap').forEach(row => {
+      const id = parseInt(row.dataset.teamId, 10);
+      let hidden = false, pid = _teamParentOf.get(id), seen = new Set();
+      while (pid != null && !seen.has(pid)) {
+        seen.add(pid);
+        if (_teamCollapsed.has(pid)) { hidden = true; break; }
+        pid = _teamParentOf.get(pid);
+      }
+      row.style.display = hidden ? 'none' : '';
+    });
+    document.querySelectorAll('.teams-toggle').forEach(btn => {
+      btn.textContent = _teamCollapsed.has(parseInt(btn.dataset.teamId, 10)) ? '+' : '−';
+    });
+  }
 
   // กำหนด tab default — ถ้ามี ID ใน URL ใช้, ไม่งั้นเลือกทีมแรก
   if (selectedTeamId && !teams.find(t => t.id === selectedTeamId)) {
@@ -3152,7 +3176,9 @@ async function renderTeamsPage(selectedTeamId, mount) {
                   const path = getTeamFullPath(t, byId);
                   const searchKey = (path + ' ' + (t.description || '')).toLowerCase();
                   const indentPx = 12 + depth * 14;
-                  const branchIcon = hasChildren ? '📂' : (depth > 0 ? '└' : '');
+                  const toggleSlot = hasChildren
+                    ? `<span class="teams-toggle" data-team-id="${t.id}" role="button" aria-label="ยุบ/ขยายกิ่ง" title="ยุบ/ขยายกิ่ง" style="display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border:1px solid var(--border);border-radius:5px;font-size:13px;line-height:1;font-weight:700;color:var(--text-muted);cursor:pointer;flex-shrink:0;user-select:none;background:var(--bg-card)">−</span>`
+                    : `<span style="display:inline-block;width:17px;flex-shrink:0"></span>`;
                   return `
                     <div class="teams-row-wrap" data-team-id="${t.id}" data-search="${escapeHtml(searchKey)}" data-depth="${depth}" draggable="true"
                          style="display:flex;align-items:stretch;gap:2px;margin-bottom:3px;border-radius:8px;transition:opacity .12s">
@@ -3169,10 +3195,11 @@ async function renderTeamsPage(selectedTeamId, mount) {
                                      cursor:pointer;font-family:inherit;
                                      transition:all .12s;
                                      min-width:0">
-                        <div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:8px">
-                          <span style="font-weight:${isActive ? '700' : '600'};font-size:13.5px;color:${isActive ? 'var(--primary)' : 'var(--text)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${branchIcon ? `<span style="color:var(--text-soft);margin-right:4px;font-size:11px">${branchIcon}</span>` : ''}${escapeHtml(t.name)}</span>
+                        <div style="display:flex;align-items:center;width:100%;gap:6px">
+                          ${toggleSlot}
+                          <span style="font-weight:${isActive ? '700' : '600'};font-size:13.5px;color:${isActive ? 'var(--primary)' : 'var(--text)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">${escapeHtml(t.name)}</span>
                         </div>
-                        <div style="font-size:11px;color:var(--text-muted);font-weight:500;display:flex;gap:8px">
+                        <div style="font-size:11px;color:var(--text-muted);font-weight:500;display:flex;gap:8px;margin-left:23px">
                           <span>👤 ${t.member_count}</span>
                           <span>🌐 ${t.site_count}</span>
                         </div>
@@ -3216,26 +3243,45 @@ async function renderTeamsPage(selectedTeamId, mount) {
     });
   });
 
+  // v1.9.139 — Wire ปุ่ม +/− ยุบ/ขยายกิ่ง (stopPropagation ไม่ให้เด้งเลือกทีม)
+  document.querySelectorAll('.teams-toggle').forEach(tg => {
+    tg.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const id = parseInt(tg.dataset.teamId, 10);
+      if (_teamCollapsed.has(id)) _teamCollapsed.delete(id); else _teamCollapsed.add(id);
+      applyTeamCollapse();
+    });
+  });
+
   // === Search filter ===
   const searchInput = $('teams-search');
   if (searchInput) {
     searchInput.addEventListener('input', () => {
       const q = searchInput.value.toLowerCase().trim();
+      if (!q) {
+        // ไม่ค้นหา → คืนค่าการมองเห็นตามสถานะยุบ/ขยายกิ่ง
+        applyTeamCollapse();
+        const noRes0 = $('teams-no-results'); if (noRes0) noRes0.style.display = 'none';
+        const lbl0 = $('teams-count-label'); if (lbl0) lbl0.textContent = `${teams.length} ทีม`;
+        return;
+      }
       let shown = 0;
       document.querySelectorAll('.teams-row-wrap').forEach(row => {
         const key = row.dataset.search || '';
-        const match = !q || key.includes(q);
-        row.style.display = match ? '' : 'none';
+        const match = key.includes(q);
+        row.style.display = match ? '' : 'none';   // ค้นหา → แสดงทุก match (ข้าม collapse)
         if (match) shown++;
       });
       const noRes = $('teams-no-results');
-      if (noRes) noRes.style.display = (q && shown === 0) ? '' : 'none';
+      if (noRes) noRes.style.display = (shown === 0) ? '' : 'none';
       const lbl = $('teams-count-label');
-      if (lbl) {
-        lbl.textContent = q ? `${shown} / ${teams.length} ทีม` : `${teams.length} ทีม`;
-      }
+      if (lbl) lbl.textContent = `${shown} / ${teams.length} ทีม`;
     });
   }
+
+  // v1.9.139 — ใช้สถานะ collapse เริ่มต้น (กรณี persist จากก่อนหน้า)
+  applyTeamCollapse();
 
   // === Drag-to-reorder ===
   const listEl = $('teams-list');
