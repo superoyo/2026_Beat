@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.143",
+      "date": "2026-06-01",
+      "title": "เพิ่มเมนู AI Project ใน Platform (gallery เว็บ AI) — โครงคล้าย Skill Marketplace",
+      "summary": "เมนูใหม่ 'AI Project' ในหน้า Platforms: มี Search, filter ตามแผนก, ปุ่มเพิ่มเว็บ — ใส่ URL/Title/Description + แนบรูป (crop 16:9 ให้การ์ดขนาดเท่ากัน) + เลือกผู้สร้าง/เจ้าของ + เลือกเดือนที่เริ่มสร้าง (แสดงตัวเล็กใต้การ์ด) + ใส่ Tags ได้",
+      "changes": [
+        "Backend: table ai_projects + endpoints GET/POST/PATCH/DELETE /api/ai-projects + GET /api/team-options (สิทธิ์แก้/ลบ = เจ้าของหรือ admin)",
+        "Frontend: gallery การ์ด 16:9, hero+search, filter chips ตามแผนก, modal เพิ่ม/แก้ไข (รูป crop 16:9, member picker ผู้สร้าง/เจ้าของ, month picker), หน้า detail + ปุ่มเปิดเว็บไซต์",
+        "การ์ดแสดงเดือนเริ่มสร้างเป็นตัวเล็กด้านล่าง (พ.ศ.), grid scroll ภายในให้เมนูซ้ายอยู่นิ่ง"
+      ]
+    },
+    {
       "version": "1.9.142",
       "date": "2026-06-01",
       "title": "แก้ error 'String should have at most 700000 characters' ตอนเซฟรูป Wazzup",

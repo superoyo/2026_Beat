@@ -265,6 +265,24 @@ def init_db() -> None:
                 sort_order INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL
             );
+            -- v1.9.143: AI Project (gallery เว็บ AI ในองค์กร)
+            CREATE TABLE IF NOT EXISTS ai_projects (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                title          TEXT NOT NULL,
+                url            TEXT,
+                description    TEXT,
+                department     TEXT,                -- แผนก (ชื่อทีม) สำหรับ filter
+                tags           TEXT,                -- comma-separated
+                image_data     TEXT,                -- base64 data URL (crop 16:9)
+                started_month  TEXT,                -- 'YYYY-MM' เดือนที่เริ่มสร้าง
+                owner_member_id   INTEGER REFERENCES members(id) ON DELETE SET NULL,
+                owner_name        TEXT,
+                creator_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+                creator_name      TEXT,
+                created_at     TEXT NOT NULL,
+                updated_at     TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_ai_projects_dept ON ai_projects(department);
             CREATE TABLE IF NOT EXISTS team_sites (
                 team_id     INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
                 site_id     INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
@@ -8021,6 +8039,145 @@ def skill_example_result(skill_id: int, ex_id: int, _auth: dict = Depends(requir
         raise HTTPException(status_code=404, detail="ไม่มีไฟล์ผลลัพธ์")
     return {"file_name": r["result_filename"] or "result", "mime": r["result_mime"] or "application/octet-stream",
             "file_data": r["result_data"]}
+
+
+# ===========================================================================
+# v1.9.143 — AI Project (gallery เว็บ AI — โครงคล้าย Skill Marketplace)
+# ===========================================================================
+class AiProjectIn(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    url: Optional[str] = Field(None, max_length=1000)
+    description: Optional[str] = Field(None, max_length=4000)
+    department: Optional[str] = Field(None, max_length=120)
+    tags: Optional[str] = Field(None, max_length=500)
+    image_data: Optional[str] = Field(None, max_length=3_000_000)
+    started_month: Optional[str] = Field(None, max_length=7)   # 'YYYY-MM'
+    owner_member_id: Optional[int] = None
+    creator_member_id: Optional[int] = None
+
+
+class AiProjectPatch(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=200)
+    url: Optional[str] = Field(None, max_length=1000)
+    description: Optional[str] = Field(None, max_length=4000)
+    department: Optional[str] = Field(None, max_length=120)
+    tags: Optional[str] = Field(None, max_length=500)
+    image_data: Optional[str] = Field(None, max_length=3_000_000)
+    started_month: Optional[str] = Field(None, max_length=7)
+    owner_member_id: Optional[int] = None
+    creator_member_id: Optional[int] = None
+
+
+def _aiproj_can_edit(row, actor_mid, is_admin) -> bool:
+    if is_admin:
+        return True
+    return actor_mid is not None and row["owner_member_id"] == actor_mid
+
+
+@app.get("/api/ai-projects")
+def list_ai_projects(_auth: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, title, url, description, department, tags, image_data, started_month, "
+            "  owner_name, creator_name, "
+            "  (SELECT avatar_data FROM members WHERE id = COALESCE(ai_projects.owner_member_id, ai_projects.creator_member_id)) AS owner_avatar, "
+            "  created_at, updated_at "
+            "FROM ai_projects ORDER BY COALESCE(started_month,'') DESC, created_at DESC"
+        ).fetchall()
+        dept_counts: dict[str, int] = {}
+        for r in conn.execute(
+            "SELECT COALESCE(NULLIF(TRIM(department),''),'(ไม่ระบุแผนก)') AS d, COUNT(*) AS n FROM ai_projects GROUP BY d"
+        ).fetchall():
+            dept_counts[r["d"]] = r["n"]
+        total = conn.execute("SELECT COUNT(*) AS n FROM ai_projects").fetchone()["n"]
+    return {"projects": [dict(r) for r in rows], "department_counts": dept_counts, "total": total}
+
+
+@app.get("/api/ai-projects/{proj_id}")
+def get_ai_project(proj_id: int, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM ai_projects WHERE id = ?", (proj_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="ไม่พบ AI Project")
+        actor_mid, _n, is_admin = _skill_actor(conn, sess)
+    d = dict(row)
+    d["can_edit"] = _aiproj_can_edit(row, actor_mid, is_admin)
+    return d
+
+
+@app.post("/api/ai-projects")
+def create_ai_project(payload: AiProjectIn, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        actor_mid, actor_name, _is_admin = _skill_actor(conn, sess)
+        creator_mid = payload.creator_member_id if payload.creator_member_id is not None else actor_mid
+        creator_name = _member_name_of(conn, payload.creator_member_id) if payload.creator_member_id is not None else actor_name
+        owner_mid = payload.owner_member_id if payload.owner_member_id is not None else creator_mid
+        owner_name = _member_name_of(conn, payload.owner_member_id) if payload.owner_member_id is not None else creator_name
+        cur = conn.execute(
+            "INSERT INTO ai_projects(title, url, description, department, tags, image_data, started_month, "
+            " owner_member_id, owner_name, creator_member_id, creator_name, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (payload.title.strip(), (payload.url or "").strip() or None, (payload.description or "").strip() or None,
+             (payload.department or "").strip() or None, (payload.tags or "").strip() or None,
+             payload.image_data, (payload.started_month or "").strip() or None,
+             owner_mid, owner_name, creator_mid, creator_name, now, now),
+        )
+    return {"ok": True, "id": cur.lastrowid}
+
+
+@app.patch("/api/ai-projects/{proj_id}")
+def update_ai_project(proj_id: int, payload: AiProjectPatch, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM ai_projects WHERE id = ?", (proj_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="ไม่พบ AI Project")
+        actor_mid, _n, is_admin = _skill_actor(conn, sess)
+        if not _aiproj_can_edit(row, actor_mid, is_admin):
+            raise HTTPException(status_code=403, detail="คุณไม่มีสิทธิ์แก้ไข AI Project นี้ (เฉพาะเจ้าของ/admin)")
+        updates: dict[str, Any] = {}
+        for f in ("title", "url", "description", "department", "tags", "image_data", "started_month"):
+            v = getattr(payload, f)
+            if v is not None:
+                updates[f] = (v.strip() or None) if (isinstance(v, str) and f != "image_data") else v
+        if payload.owner_member_id is not None:
+            oname = _member_name_of(conn, payload.owner_member_id)
+            if oname is None:
+                raise HTTPException(status_code=400, detail="owner_member_id ไม่พบ")
+            updates["owner_member_id"] = payload.owner_member_id
+            updates["owner_name"] = oname
+        if payload.creator_member_id is not None:
+            cname = _member_name_of(conn, payload.creator_member_id)
+            if cname is None:
+                raise HTTPException(status_code=400, detail="creator_member_id ไม่พบ")
+            updates["creator_member_id"] = payload.creator_member_id
+            updates["creator_name"] = cname
+        if updates:
+            updates["updated_at"] = utc_now().isoformat()
+            sc = ", ".join(f"{k} = ?" for k in updates)
+            conn.execute(f"UPDATE ai_projects SET {sc} WHERE id = ?", list(updates.values()) + [proj_id])
+    return {"ok": True}
+
+
+@app.delete("/api/ai-projects/{proj_id}")
+def delete_ai_project(proj_id: int, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM ai_projects WHERE id = ?", (proj_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="ไม่พบ AI Project")
+        actor_mid, _n, is_admin = _skill_actor(conn, sess)
+        if not _aiproj_can_edit(row, actor_mid, is_admin):
+            raise HTTPException(status_code=403, detail="คุณไม่มีสิทธิ์ลบ AI Project นี้")
+        conn.execute("DELETE FROM ai_projects WHERE id = ?", (proj_id,))
+    return {"ok": True}
+
+
+# v1.9.143 — รายชื่อทีม (แผนก) สำหรับ dropdown — logged-in ทุกคนเรียกได้
+@app.get("/api/team-options")
+def team_options(_auth: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    with db_conn() as conn:
+        rows = conn.execute("SELECT id, name FROM teams ORDER BY name COLLATE NOCASE").fetchall()
+    return {"teams": [dict(r) for r in rows]}
 
 
 # ===========================================================================
