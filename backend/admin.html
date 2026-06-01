@@ -1655,6 +1655,27 @@ function openCropModal(srcDataUrl, onSave, options) {
   });
 }
 
+// v1.9.142 — ย่อรูป (center-square crop) เป็น data URL ขนาดเล็ก กันรูปใหญ่เกิน max_length ตอนเซฟ avatar
+function _squareDownscaleDataUrl(dataUrl, size = 256, type = 'image/jpeg', quality = 0.9) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const s = Math.min(img.naturalWidth, img.naturalHeight) || 1;
+        const sx = (img.naturalWidth - s) / 2, sy = (img.naturalHeight - s) / 2;
+        const canvas = document.createElement('canvas');
+        canvas.width = size; canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, sx, sy, s, s, 0, 0, size, size);
+        resolve(canvas.toDataURL(type, quality));
+      } catch (e) { reject(e); }
+    };
+    img.onerror = () => reject(new Error('โหลดรูปไม่สำเร็จ'));
+    img.src = dataUrl;
+  });
+}
+
 // === Logo search modal — fetch suggestions and let user pick ===
 // === Camera modal — ถ่ายรูปจากกล้อง → crop modal ===
 function openCameraModal(onSave, cropOpts) {
@@ -12238,9 +12259,11 @@ function showAdminWazzupEmpCodeModal(memberId, memberName, empPrefill) {
       const img = document.getElementById('m-waz-img');
       const dataUrl = img && img.src && img.src.startsWith('data:') ? img.src : '';
       if (!dataUrl) throw new Error('กด "ดึงรูป + Preview" ก่อน แล้วจึงบันทึก');
+      // v1.9.142 — ย่อรูปก่อนเซฟ กัน base64 ใหญ่เกิน (เหมือน flow อัพโหลด)
+      const small = await _squareDownscaleDataUrl(dataUrl, 256).catch(() => dataUrl);
       await fetchJson(`/api/admin/members/${memberId}/avatar`, {
         method: 'PATCH',
-        body: JSON.stringify({ avatar_data: dataUrl }),
+        body: JSON.stringify({ avatar_data: small }),
       });
       showSavedToast('✓ เปลี่ยนรูปแล้ว');
       await loadMembersList();
@@ -13036,29 +13059,13 @@ async function renderMemberAccountPage() {
         });
         dataUrl = r.data_url;
       }
-      openWazzupPhotoPreview(dataUrl);
+      // v1.9.142 — ส่งเข้า crop modal (256×256) เหมือนอัพโหลดจากเครื่อง — กันรูป Wazzup ใหญ่เกิน max_length
+      openCropModal(dataUrl, saveAvatar, { title: '✂️ Crop รูปจาก Wazzup (สี่เหลี่ยมจัตุรัส)' });
     } catch (e) {
       showSavedToast('❌ ' + e.message, 'error');
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = origLabel; }
     }
-  }
-
-  function openWazzupPhotoPreview(dataUrl) {
-    showModal({
-      title: '🏢 รูปจาก Wazzup',
-      size: undefined,
-      body: `
-        <div style="text-align:center">
-          <img src="${dataUrl}" alt="wazzup avatar" style="width:200px;height:200px;border-radius:50%;object-fit:cover;border:2px solid var(--border);background:var(--bg-soft)" />
-          <div style="margin-top:14px;font-size:13px;color:var(--text)">นี่คือรูปจาก Wazzup ของคุณ</div>
-          <div style="margin-top:4px;font-size:12px;color:var(--text-muted)">กด "บันทึก" เพื่อใช้รูปนี้เป็นรูปประจำตัว</div>
-        </div>
-      `,
-      onSubmit: async () => {
-        await saveAvatar(dataUrl);
-      },
-    });
   }
 
   // Save callback — PATCH /api/member/profile with avatar_data, then update preview + reload member

@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.142",
+      "date": "2026-06-01",
+      "title": "แก้ error 'String should have at most 700000 characters' ตอนเซฟรูป Wazzup",
+      "summary": "รูปจาก Wazzup ถูกเซฟแบบดิบ (ไม่ย่อ) ทำให้ base64 ใหญ่เกิน max_length ของ avatar_data — แก้ให้ย่อ/crop ก่อนเซฟ: ฝั่ง member ส่งเข้า crop modal (256×256) เหมือนอัพโหลดจากเครื่อง, ฝั่ง admin ย่อเป็น 256px ก่อน PATCH",
+      "changes": [
+        "Member: รูป Wazzup เข้า openCropModal (256×256) ให้เลือกตำแหน่ง crop + ได้ไฟล์เล็ก",
+        "Admin: เพิ่ม _squareDownscaleDataUrl() ย่อรูปเป็น 256px JPEG ก่อนเซฟ (กัน DB bloat + payload ใหญ่ในรายชื่อ)",
+        "ลบ openWazzupPhotoPreview (preview เดิมที่เซฟดิบ) ออก"
+      ]
+    },
+    {
       "version": "1.9.141",
       "date": "2026-06-01",
       "title": "แก้ error เปลี่ยนรูปจาก Wazzup (host ใหม่ datafirst.*) + กัน [object Object]",
