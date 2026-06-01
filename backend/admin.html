@@ -629,6 +629,9 @@
     /* v1.9.137 — searchable member picker (รูป+ชื่อ+ทีม) */
     .mpick-trigger:hover { border-color: var(--accent); }
     .mpick-item:hover { background: rgba(124,58,237,.08); }
+    /* v1.9.140 — member actions overflow menu (⋮ เพิ่มเติม) */
+    .m-menu-item:hover { background: var(--bg-soft); }
+    .m-kebab:hover { background: var(--bg-hover); }
     /* Two-column layout for fields (used in wide modals) */
     .field-grid-2 {
       display: grid;
@@ -11229,8 +11232,6 @@ function renderMembersTable(members) {
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn" data-act="edit-teams" data-id="${m.id}" data-name="${safeName}"
                   style="font-size:11px;padding:3px 9px;color:var(--text-muted)" title="แก้ไขทีมที่สังกัด">✏️ แก้ไขทีม</button>
-          <button class="btn" data-act="supervise" data-id="${m.id}" data-name="${safeName}"
-                  style="font-size:11px;padding:3px 9px;color:var(--accent);background:rgba(124,58,237,.08);border-color:rgba(124,58,237,.25)" title="เลือกทีมที่คนนี้ดูข้อมูลได้ (supervise)">🔭 Supervise</button>
         </div>
       </div>
     `;
@@ -11269,27 +11270,29 @@ function renderMembersTable(members) {
       `;
     }
 
-    // === Actions cell (vertical button group) ===
-    const adminBtn = currentIsSuper ? `
-      <button class="btn ${m.is_admin ? 'danger' : ''}" data-act="role" data-id="${m.id}" data-current="${m.is_admin ? 1 : 0}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px" title="${m.is_admin ? 'ถอด admin' : 'แต่งตั้ง admin'}">${m.is_admin ? '↓ Demote' : '↑ Make Admin'}</button>
-    ` : '';
-    // v1.9.92/93 — ปุ่มดึงรูป Wazzup (เห็นทุก member — admin ป้อน empCode ถ้ายังไม่มีเก็บไว้)
+    // === Actions cell — v1.9.140: คงปุ่มหลัก 3 ปุ่ม + เมนู ⋮ เพิ่มเติม (ที่เหลือ) ===
     const wazTitle = m.has_wazzup_photo
       ? 'ดึงรูป profile จาก Wazzup'
       : (m.wazzup_emp_code ? `ดึงรูปจาก empCode: ${m.wazzup_emp_code}` : 'ป้อน empCode → ดึงรูปจาก Wazzup');
-    const wazzupAvatarBtn = `
-      <button class="btn" data-act="wazzup-avatar" data-id="${m.id}" data-name="${safeName}" data-emp="${escapeHtml(m.wazzup_emp_code || '')}" style="font-size:11.5px;padding:5px 10px;background:rgba(245,158,11,.10);color:#92400e;border-color:rgba(245,158,11,.30)" title="${wazTitle}">🏢 รูปจาก Wazzup</button>
-    `;
+    const mItem = 'display:flex;align-items:center;gap:9px;width:100%;padding:9px 12px;border:none;background:none;text-align:left;font-size:13px;cursor:pointer;border-radius:7px;color:var(--text);font-family:inherit';
+    // ปุ่มที่ย้ายเข้าเมนู (ซ่อนไว้ใน source — clone ตอนเปิดเมนู)
+    const overflowSrc = `
+      <div class="m-overflow" data-id="${m.id}" style="display:none">
+        ${currentIsSuper ? `<button class="m-menu-item" data-act="role" data-id="${m.id}" data-current="${m.is_admin ? 1 : 0}" data-name="${safeName}" style="${mItem}${m.is_admin ? ';color:var(--critical)' : ''}">${m.is_admin ? '↓ ถอดสิทธิ์ Admin' : '↑ แต่งตั้งเป็น Admin'}</button>` : ''}
+        <button class="m-menu-item" data-act="supervise" data-id="${m.id}" data-name="${safeName}" style="${mItem}">🔭 Supervise (เลือกทีมที่ดูแล)</button>
+        <button class="m-menu-item" data-act="hardware" data-id="${m.id}" data-name="${safeName}" style="${mItem}">🖥️ Hardware ที่ดูแล</button>
+        <button class="m-menu-item" data-act="merge" data-id="${m.id}" data-name="${safeName}" style="${mItem}">🧬 Merge บัญชี</button>
+        <button class="m-menu-item" data-act="wazzup-avatar" data-id="${m.id}" data-name="${safeName}" data-emp="${escapeHtml(m.wazzup_emp_code || '')}" title="${wazTitle}" style="${mItem}">🏢 ดึงรูปจาก Wazzup</button>
+        <div style="height:1px;background:var(--border);margin:5px 8px"></div>
+        <button class="m-menu-item" data-act="delete" data-id="${m.id}" data-name="${safeName}" style="${mItem};color:var(--critical)">🗑 ลบสมาชิก</button>
+      </div>`;
     const actionsCell = `
       <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">
-        ${adminBtn}
         <button class="btn" data-act="sites" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px" title="ดูและแก้สิทธิ์เข้าถึง site">🌐 Site Access</button>
-        <button class="btn" data-act="hardware" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px" title="Hardware ที่ดูแลอยู่">🖥️ Hardware</button>
-        <button class="btn" data-act="merge" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px;background:rgba(124,58,237,.10);color:var(--accent);border-color:rgba(124,58,237,.30)" title="รวมกับอีกบัญชี (คนเดียวกัน)">🧬 Merge</button>
-        ${wazzupAvatarBtn}
         <button class="btn" data-act="reset" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px">🔑 Reset PW</button>
         <button class="btn ${m.enabled ? 'danger' : ''}" data-act="toggle" data-id="${m.id}" data-enabled="${m.enabled ? 1 : 0}" style="font-size:11.5px;padding:5px 10px">${m.enabled ? '⛔ Disable' : '✓ Enable'}</button>
-        <button class="btn danger" data-act="delete" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px">🗑 ลบ</button>
+        <button class="btn m-kebab" data-id="${m.id}" style="font-size:11.5px;padding:5px 12px;color:var(--text-muted)" title="ตัวเลือกเพิ่มเติม">⋮ เพิ่มเติม</button>
+        ${overflowSrc}
       </div>
     `;
 
@@ -11307,6 +11310,53 @@ function renderMembersTable(members) {
   tbody.querySelectorAll('button[data-act]').forEach(btn => {
     btn.addEventListener('click', () => handleMemberAction(btn));
   });
+  // v1.9.140 — ปุ่ม ⋮ เพิ่มเติม → เปิดเมนู overflow
+  tbody.querySelectorAll('.m-kebab').forEach(k => {
+    k.addEventListener('click', (e) => { e.stopPropagation(); openMemberMenu(k); });
+  });
+}
+
+// v1.9.140 — เมนู overflow ของ member (⋮ เพิ่มเติม) — render ลง body กัน table clip
+let _memberMenu = null;
+function closeMemberMenu() {
+  if (!_memberMenu) return;
+  _memberMenu.menu.remove();
+  _memberMenu.backdrop.remove();
+  window.removeEventListener('scroll', _memberMenu.onDismiss, true);
+  window.removeEventListener('resize', _memberMenu.onDismiss);
+  document.removeEventListener('keydown', _memberMenu.onKey);
+  _memberMenu = null;
+}
+function openMemberMenu(kebab) {
+  closeMemberMenu();
+  const src = document.querySelector(`.m-overflow[data-id="${kebab.dataset.id}"]`);
+  if (!src) return;
+  const backdrop = document.createElement('div');
+  backdrop.style.cssText = 'position:fixed;inset:0;z-index:1400';
+  backdrop.addEventListener('click', closeMemberMenu);
+  document.body.appendChild(backdrop);
+  const menu = document.createElement('div');
+  menu.className = 'm-act-menu';
+  menu.style.cssText = 'position:fixed;z-index:1401;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,.18);padding:6px;min-width:210px;max-height:80vh;overflow-y:auto';
+  src.querySelectorAll('button[data-act]').forEach(b => {
+    const c = b.cloneNode(true);
+    c.addEventListener('click', (e) => { e.stopPropagation(); handleMemberAction(c); closeMemberMenu(); });
+    menu.appendChild(c);
+  });
+  document.body.appendChild(menu);
+  // วางใต้ปุ่ม ชิดขวา; ถ้าล้นล่างให้พลิกขึ้น
+  const r = kebab.getBoundingClientRect();
+  let left = Math.max(8, r.right - menu.offsetWidth);
+  let top = r.bottom + 6;
+  if (top + menu.offsetHeight > window.innerHeight - 8) top = Math.max(8, r.top - menu.offsetHeight - 6);
+  menu.style.left = left + 'px';
+  menu.style.top = top + 'px';
+  const onDismiss = () => closeMemberMenu();
+  const onKey = (e) => { if (e.key === 'Escape') closeMemberMenu(); };
+  window.addEventListener('scroll', onDismiss, true);
+  window.addEventListener('resize', onDismiss);
+  document.addEventListener('keydown', onKey);
+  _memberMenu = { menu, backdrop, onDismiss, onKey };
 }
 
 // === Modal: member usage stats (platform clicks) ===

@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.140",
+      "date": "2026-06-01",
+      "title": "Peoples > Members: ลดปุ่มในแถว เหลือที่ใช้บ่อย + เมนู ⋮ เพิ่มเติม",
+      "summary": "คอลัมน์การกระทำของรายชื่อ Members จากเดิม 8 ปุ่มเรียงตั้ง เหลือปุ่มหลัก 3 ปุ่ม (🌐 Site Access · 🔑 Reset PW · ⛔ Disable/Enable) ที่เหลือย้ายเข้าเมนู ⋮ เพิ่มเติม (กดแล้วเด้งออกมา) — รวม Supervise ที่ย้ายมาจากคอลัมน์ทีมด้วย",
+      "changes": [
+        "ปุ่มหลัก: Site Access, Reset PW, Disable/Enable + ปุ่ม ⋮ เพิ่มเติม",
+        "เมนู ⋮: Make Admin/Demote (super), Supervise, Hardware, Merge, ดึงรูป Wazzup, ลบสมาชิก",
+        "เมนู render ลง body (กัน table clip) วางใต้ปุ่ม พลิกขึ้นถ้าล้นจอ ปิดด้วยคลิกนอก/scroll/Esc",
+        "คอลัมน์ทีมเหลือแค่ ✏️ แก้ไขทีม (ย้าย 🔭 Supervise เข้าเมนู)"
+      ]
+    },
+    {
       "version": "1.9.139",
       "date": "2026-06-01",
       "title": "Teams: ปุ่ม +/− ยุบ/ขยายกิ่งทีมใน tree ด้านซ้าย",
