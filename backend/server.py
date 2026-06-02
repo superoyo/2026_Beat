@@ -8829,7 +8829,7 @@ def ads_audience(days: int = 7, _sess: dict = Depends(_require_module("ads"))) -
     errs: dict[str, str] = {}
 
     def _fetch(field):
-        return _windsor_get(f"campaign,{field},spend,impressions,clicks,reach,currency", date_from, date_to, 60, "facebook")
+        return _windsor_get(f"campaign,{field},spend,impressions,clicks,reach,currency,actions_video_view", date_from, date_to, 60, "facebook")
 
     with _cf.ThreadPoolExecutor(max_workers=3) as ex:
         futs = {k: ex.submit(_fetch, f) for k, f in dims.items()}
@@ -8860,15 +8860,17 @@ def ads_audience(days: int = 7, _sess: dict = Depends(_require_module("ads"))) -
     def _norm_plain(v):
         return (str(v or "").strip()) or "(ไม่ระบุ)"
 
-    def _metrics(spend: float, impr: float, clk: float, reach: float) -> dict[str, Any]:
+    def _metrics(spend: float, impr: float, clk: float, reach: float, views: float = 0.0) -> dict[str, Any]:
         return {
             "spend": round(spend, 2),
             "impressions": int(round(impr)),
             "clicks": int(round(clk)),
             "reach": int(round(reach)),
+            "views": int(round(views)),
             "ctr": round(clk / impr * 100, 2) if impr else None,
             "cpc": round(spend / clk, 2) if clk else None,
             "cpm": round(spend / impr * 1000, 2) if impr else None,
+            "cpv": round(spend / views, 4) if views else None,
             "frequency": round(impr / reach, 2) if reach else None,
         }
 
@@ -8883,16 +8885,19 @@ def ads_audience(days: int = 7, _sess: dict = Depends(_require_module("ads"))) -
             camp = (str(r.get("campaign") or "").strip()) or "(ไม่ระบุแคมเปญ)"
             cur = (str(r.get("currency") or "").strip()) or "—"
             sp, im, ck, rc = _f(r.get("spend")), _f(r.get("impressions")), _f(r.get("clicks")), _f(r.get("reach"))
-            g = groups.setdefault(key, {"label": key, "campaigns": {}, "by_cur": {}, "impressions": 0.0, "clicks": 0.0, "reach": 0.0})
+            vw = _f(r.get("actions_video_view"))
+            g = groups.setdefault(key, {"label": key, "campaigns": {}, "by_cur": {}, "impressions": 0.0, "clicks": 0.0, "reach": 0.0, "views": 0.0})
             g["by_cur"][cur] = g["by_cur"].get(cur, 0.0) + sp
             g["impressions"] += im
             g["clicks"] += ck
             g["reach"] += rc
-            c = g["campaigns"].setdefault(camp, {"campaign": camp, "currency": cur, "spend": 0.0, "impressions": 0.0, "clicks": 0.0, "reach": 0.0})
+            g["views"] += vw
+            c = g["campaigns"].setdefault(camp, {"campaign": camp, "currency": cur, "spend": 0.0, "impressions": 0.0, "clicks": 0.0, "reach": 0.0, "views": 0.0})
             c["spend"] += sp
             c["impressions"] += im
             c["clicks"] += ck
             c["reach"] += rc
+            c["views"] += vw
         if order == "age":
             keys = sorted(groups, key=lambda k: (_AGE_ORDER.get(k, 90), k))
         else:
@@ -8910,14 +8915,14 @@ def ads_audience(days: int = 7, _sess: dict = Depends(_require_module("ads"))) -
             g = groups[key]
             camps = sorted(
                 ({"campaign": c["campaign"], "currency": c["currency"],
-                  **_metrics(c["spend"], c["impressions"], c["clicks"], c["reach"])}
+                  **_metrics(c["spend"], c["impressions"], c["clicks"], c["reach"], c["views"])}
                  for c in g["campaigns"].values()),
                 key=lambda x: x["spend"], reverse=True,
             )
             out_rows.append({
                 "label": key,
                 "total_by_cur": {k: round(v, 2) for k, v in g["by_cur"].items()},
-                **_metrics(sum(g["by_cur"].values()), g["impressions"], g["clicks"], g["reach"]),
+                **_metrics(sum(g["by_cur"].values()), g["impressions"], g["clicks"], g["reach"], g["views"]),
                 "campaigns": camps,
             })
         return {

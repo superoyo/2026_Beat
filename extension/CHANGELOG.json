@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.183",
+      "date": "2026-06-02",
+      "title": "Audience Report: เพิ่มคอลัมน์ CPV ทุกตาราง",
+      "summary": "เพิ่มคอลัมน์ CPV (Cost Per View = spend ÷ video views) ในทั้ง 3 ตาราง (Demographic/Placement/Region) sort ได้ + อยู่ใน CSV",
+      "changes": [
+        "Backend /api/ads-audience: ดึง actions_video_view → views + cpv ใน metrics",
+        "Frontend: คอลัมน์ CPV (ทศนิยม 2-4 ตำแหน่ง), sort ได้, รวมใน CSV (Views + CPV)",
+        "CPV ระดับกลุ่มแสดงเมื่อสกุลเงินเดียว, แคมเปญที่ไม่มี video view = —"
+      ]
+    },
+    {
       "version": "1.9.182",
       "date": "2026-06-02",
       "title": "Audience Report: คลิกหัวคอลัมน์เพื่อจัดเรียง (sort)",
