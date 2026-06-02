@@ -407,6 +407,8 @@
       display: flex; flex-direction: column; overflow-y: auto;
     }
     .sup-panel-wrap.is-open .sup-panel { transform: translateX(0); }
+    .sup-panel.sup-panel-left { right: auto; left: 0; box-shadow: 8px 0 30px rgba(15,23,42,.2); transform: translateX(-100%); }
+    .sup-panel-wrap.is-open .sup-panel.sup-panel-left { transform: translateX(0); }
     .sup-panel-head { display: flex; justify-content: flex-end; padding: 12px 16px 0; }
     .sup-panel-close { width: 36px; height: 36px; border-radius: 8px; border: none; background: transparent; cursor: pointer; font-size: 17px; color: var(--text-muted); }
     .sup-panel-close:hover { background: var(--bg-soft); color: var(--text); }
@@ -1653,6 +1655,8 @@ function renderAudienceCards() {
       renderAudienceCards();
     });
   });
+  const db = $('aud-dist-btn');
+  if (db) db.onclick = openDemoDistPanel;
 }
 function _audTableHtml(table, c, q) {
   if (!table) return '';
@@ -1724,7 +1728,10 @@ function _audTableHtml(table, c, q) {
     <div class="card" style="display:block;margin-bottom:16px;padding:0;overflow:hidden">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:13px 16px;background:var(--bg-soft);border-bottom:1px solid var(--border)">
         <div style="font-size:15px;font-weight:700">${c.icon} ${escapeHtml(c.title)} <span style="font-size:12px;color:var(--text-muted);font-weight:500">· ${grpRows.length} รายการ</span></div>
-        <div style="font-size:15px;font-weight:800;color:var(--primary)">${_adsTotalTxt(gByCur)}</div>
+        <div style="display:flex;align-items:center;gap:10px">
+          ${c.key === 'age' ? `<button class="btn" id="aud-dist-btn" style="font-size:12px;padding:6px 12px" title="ดูการกระจายตัวของ CPM/CPV/CPE">📊 การกระจาย</button>` : ''}
+          <div style="font-size:15px;font-weight:800;color:var(--primary)">${_adsTotalTxt(gByCur)}</div>
+        </div>
       </div>
       <div style="overflow-x:auto">
         <table class="ads-table">${thead}<tbody>${rowsHtml}${totRow}</tbody></table>
@@ -1753,6 +1760,93 @@ function exportAudienceCsv() {
   a.href = url; a.download = `ads-audience_${_audData.date_from}_${_audData.date_to}.csv`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+// v1.9.185 — กราฟ histogram + เส้นโค้งปกติ (ระฆัง) + สถิติ min/max/mean/median/mode
+function _distChart(values, fmt) {
+  const vals = (values || []).filter(v => v != null && isFinite(v));
+  if (vals.length < 3) return `<div class="empty" style="padding:18px;font-size:12px;text-align:center">— ข้อมูลไม่พอสำหรับกราฟ (${vals.length} จุด) —</div>`;
+  const a = vals.slice().sort((x, y) => x - y), n = a.length;
+  const min = a[0], max = a[n - 1], range = (max - min) || 1;
+  const mean = vals.reduce((s, v) => s + v, 0) / n;
+  const median = n % 2 ? a[(n - 1) >> 1] : (a[n / 2 - 1] + a[n / 2]) / 2;
+  const std = Math.sqrt(vals.reduce((s, v) => s + (v - mean) * (v - mean), 0) / n);
+  const NB = Math.min(22, Math.max(8, Math.round(Math.sqrt(n))));
+  const bw = range / NB;
+  const bins = new Array(NB).fill(0);
+  vals.forEach(v => { let i = Math.floor((v - min) / range * NB); if (i >= NB) i = NB - 1; if (i < 0) i = 0; bins[i]++; });
+  const maxCount = Math.max(...bins) || 1;
+  const modeBin = bins.indexOf(Math.max(...bins));
+  const mode = min + (modeBin + 0.5) * bw;
+  const W = 330, H = 152, padL = 8, padR = 8, padT = 12, padB = 22;
+  const innerW = W - padL - padR, innerH = H - padT - padB;
+  const X = v => padL + (v - min) / range * innerW;
+  const barW = innerW / NB;
+  const bars = bins.map((cnt, i) => {
+    const bh = (cnt / maxCount) * innerH;
+    return `<rect x="${(padL + i * barW + 0.5).toFixed(1)}" y="${(padT + innerH - bh).toFixed(1)}" width="${Math.max(0.5, barW - 1).toFixed(1)}" height="${bh.toFixed(1)}" fill="var(--primary)" opacity="0.16" rx="1"/>`;
+  }).join('');
+  let curve = '';
+  if (std > 0) {
+    const pts = [];
+    for (let s = 0; s <= 64; s++) {
+      const v = min + range * s / 64;
+      const pdf = Math.exp(-((v - mean) * (v - mean)) / (2 * std * std));
+      pts.push(`${X(v).toFixed(1)},${(padT + innerH - pdf * innerH).toFixed(1)}`);
+    }
+    curve = `<polyline points="${pts.join(' ')}" fill="none" stroke="var(--primary)" stroke-width="2"/>`;
+  }
+  const vline = (v, col) => `<line x1="${X(v).toFixed(1)}" y1="${padT}" x2="${X(v).toFixed(1)}" y2="${padT + innerH}" stroke="${col}" stroke-width="1.4" stroke-dasharray="4 3"/>`;
+  const axis = `<line x1="${padL}" y1="${padT + innerH}" x2="${W - padR}" y2="${padT + innerH}" stroke="var(--border)" stroke-width="1"/>
+    <text x="${padL}" y="${H - 6}" font-size="9" fill="#8895ab">${fmt(min)}</text>
+    <text x="${W - padR}" y="${H - 6}" font-size="9" fill="#8895ab" text-anchor="end">${fmt(max)}</text>`;
+  const svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:152px;display:block">${bars}${curve}${vline(mean, '#ef4444')}${vline(median, '#10b981')}${axis}</svg>`;
+  const stat = (lbl, val, col) => `<div style="text-align:center"><div style="font-size:8.5px;color:var(--text-soft);text-transform:uppercase;letter-spacing:.3px">${lbl}</div><div style="font-size:12px;font-weight:700${col ? `;color:${col}` : ''}">${fmt(val)}</div></div>`;
+  const stats = `
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:8px">
+      ${stat('Min', min)}${stat('Max', max)}${stat('Mean', mean, '#ef4444')}${stat('Median', median, '#10b981')}${stat('Mode', mode)}
+    </div>
+    <div style="display:flex;gap:14px;justify-content:center;margin-top:7px;font-size:9.5px;color:var(--text-soft)">
+      <span><span style="color:#ef4444;font-weight:700">┊</span> mean</span><span><span style="color:#10b981;font-weight:700">┊</span> median</span><span>n = ${n}</span>
+    </div>`;
+  return svg + stats;
+}
+function openDemoDistPanel() {
+  document.querySelectorAll('.sup-panel-wrap').forEach(e => e.remove());
+  const rows = (_audData && _audData.tables && _audData.tables.age && _audData.tables.age.rows) || [];
+  const vals = { cpm: [], cpv: [], cpe: [] };
+  rows.forEach(g => (g.campaigns || []).forEach(c => {
+    if (c.cpm != null) vals.cpm.push(c.cpm);
+    if (c.cpv != null) vals.cpv.push(c.cpv);
+    if (c.cpe != null) vals.cpe.push(c.cpe);
+  }));
+  const section = (title, sub, arr, fmt) => `
+    <div style="margin-bottom:20px">
+      <div style="font-size:13.5px;font-weight:700">${title} <span style="font-size:11px;color:var(--text-soft);font-weight:500">· ${arr.length} แคมเปญ×กลุ่มอายุ</span></div>
+      <div style="font-size:11px;color:var(--text-soft);margin-bottom:8px">${sub}</div>
+      <div style="border:1px solid var(--border);border-radius:12px;padding:12px 12px 14px">${_distChart(arr, fmt)}</div>
+    </div>`;
+  const wrap = document.createElement('div');
+  wrap.className = 'sup-panel-wrap';
+  wrap.innerHTML = `
+    <div class="sup-panel-backdrop"></div>
+    <div class="sup-panel sup-panel-left" style="width:440px">
+      <div class="sup-panel-head"><button class="sup-panel-close" title="ปิด">✕</button></div>
+      <div class="sup-panel-body" style="padding:4px 22px 28px">
+        <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">📊 การกระจายตัว (Distribution)</div>
+        <div style="font-size:16px;font-weight:800;margin:3px 0 4px">Demographic</div>
+        <div style="font-size:11.5px;color:var(--text-soft);margin-bottom:16px">การกระจายของค่าจากแต่ละแคมเปญ×กลุ่มอายุ · เส้นโค้ง = การกระจายแบบปกติ (fit ด้วย mean/SD)</div>
+        ${section('CPM', 'Cost per 1,000 impressions', vals.cpm, _adsMoney)}
+        ${section('CPV', 'Cost per video view', vals.cpv, _adsMoney4)}
+        ${section('CPE', 'Cost per engagement', vals.cpe, _adsMoney4)}
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  requestAnimationFrame(() => wrap.classList.add('is-open'));
+  const close = () => { wrap.classList.remove('is-open'); document.removeEventListener('keydown', onKey); setTimeout(() => wrap.remove(), 260); };
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  wrap.querySelector('.sup-panel-backdrop').addEventListener('click', close);
+  wrap.querySelector('.sup-panel-close').addEventListener('click', close);
 }
 // ===== Benchmark (CPM แยกตาม Brand × Ad Type — ดึงจาก Google Sheet) =====
 function _benchColor(cpm, min, max) {

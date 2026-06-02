@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.185",
+      "date": "2026-06-02",
+      "title": "Audience Demographic: ปุ่มดูการกระจาย CPM/CPV/CPE (กราฟระฆัง)",
+      "summary": "เพิ่มปุ่ม 📊 การกระจาย ที่หัวตาราง Demographic → พาเนลสไลด์จากซ้าย แสดง histogram + เส้นโค้งปกติ (bell) ของ CPM/CPV/CPE แยกกราฟ พร้อม min/max/mean/median/mode",
+      "changes": [
+        "พาเนลสไลด์จากซ้าย (.sup-panel-left)",
+        "กราฟ histogram + เส้นโค้ง normal (fit ด้วย mean/SD) ต่อ metric",
+        "สถิติใต้กราฟ: min/max/mean/median/mode + เส้น mean(แดง)/median(เขียว)",
+        "ข้อมูลจากทุกแคมเปญ×กลุ่มอายุในตาราง Demographic"
+      ]
+    },
+    {
       "version": "1.9.184",
       "date": "2026-06-02",
       "title": "Audience Report: ย้าย CPV ต่อจาก CPM + เพิ่ม CPE",
