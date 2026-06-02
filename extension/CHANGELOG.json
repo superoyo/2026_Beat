@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.158",
+      "date": "2026-06-01",
+      "title": "Ads: เพิ่ม campaign name ใต้แต่ละ ad account (กางดูได้)",
+      "summary": "หน้า Ads แต่ละบัญชีโฆษณากดเพื่อกางดูรายชื่อแคมเปญ + ยอดใช้จ่ายต่อแคมเปญ (เรียงตามยอด) ดึงเพิ่มจาก Windsor",
+      "changes": [
+        "Backend /api/ads-spend: เพิ่ม field campaign + aggregate spend ต่อ (account, campaign)",
+        "Frontend: บัญชีเป็น header กดกาง/หุบ → แสดงแคมเปญ + ยอด, มี caret + นับจำนวนแคมเปญ"
+      ]
+    },
+    {
       "version": "1.9.157",
       "date": "2026-06-01",
       "title": "เมนูใหม่ Ads — ยอดใช้จ่ายค่าโฆษณา (ดึงจาก Windsor.ai) แยกตาม platform & ad account",

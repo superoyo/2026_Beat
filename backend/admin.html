@@ -1463,22 +1463,37 @@ async function loadAdsSpend() {
   // grand total per currency
   const grand = {};
   plats.forEach(p => Object.entries(p.total_by_cur || {}).forEach(([c, v]) => { grand[c] = (grand[c] || 0) + v; }));
-  const cards = plats.map(p => {
+  const cards = plats.map((p, pi) => {
     const meta = _adsSrcMeta(p.source);
-    const rows = (p.accounts || []).map(a => `
-      <tr style="border-top:1px solid var(--border)">
-        <td style="padding:9px 12px;font-size:13px">${escapeHtml(a.account_name)}${a.account_id ? `<span style="color:var(--text-soft);font-size:11px;font-family:ui-monospace,Menlo,monospace;margin-left:6px">${escapeHtml(a.account_id)}</span>` : ''}</td>
-        <td style="padding:9px 12px;font-size:13px;text-align:right;font-weight:600;white-space:nowrap">${_adsMoney(a.spend)} <span style="color:var(--text-soft);font-weight:400;font-size:11px">${escapeHtml(a.currency)}</span></td>
-      </tr>`).join('');
+    const accBlocks = (p.accounts || []).map((a, ai) => {
+      const camps = a.campaigns || [];
+      const campRows = camps.length
+        ? camps.map(c => `
+          <div style="display:flex;justify-content:space-between;gap:12px;padding:7px 16px 7px 38px;font-size:12.5px;border-top:1px solid var(--border)">
+            <span style="color:var(--text-muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(c.campaign)}">${escapeHtml(c.campaign)}</span>
+            <span style="white-space:nowrap;font-weight:500">${_adsMoney(c.spend)} <span style="color:var(--text-soft);font-size:10.5px">${escapeHtml(a.currency)}</span></span>
+          </div>`).join('')
+        : '<div style="padding:8px 16px 8px 38px;font-size:12px;color:var(--text-muted)">— ไม่มีแคมเปญ —</div>';
+      return `
+        <div style="border-top:1px solid var(--border)">
+          <div class="ads-acc-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;cursor:pointer">
+            <span style="display:flex;align-items:center;gap:8px;min-width:0">
+              <span class="ads-caret" style="font-size:10px;color:var(--text-soft);transition:transform .15s;flex-shrink:0">▶</span>
+              <span style="font-size:13px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(a.account_name)}</span>
+              <span style="font-size:11px;color:var(--text-soft);white-space:nowrap;flex-shrink:0">· ${camps.length} แคมเปญ</span>
+            </span>
+            <span style="font-size:13px;font-weight:700;white-space:nowrap">${_adsMoney(a.spend)} <span style="color:var(--text-soft);font-weight:400;font-size:11px">${escapeHtml(a.currency)}</span></span>
+          </div>
+          <div class="ads-camps" style="display:none">${campRows}</div>
+        </div>`;
+    }).join('');
     return `
       <div class="card" style="display:block;margin-bottom:16px;padding:0;overflow:hidden">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:14px 16px;background:var(--bg-soft);border-bottom:1px solid var(--border)">
           <div style="font-size:15px;font-weight:700">${meta.icon} ${escapeHtml(meta.label)} <span style="font-size:12px;color:var(--text-muted);font-weight:500">· ${p.account_count} บัญชี</span></div>
           <div style="font-size:15px;font-weight:800;color:var(--primary)">${_adsTotalTxt(p.total_by_cur)}</div>
         </div>
-        <table style="width:100%;border-collapse:collapse">
-          <tbody>${rows}</tbody>
-        </table>
+        <div>${accBlocks}</div>
       </div>`;
   }).join('');
   body.innerHTML = `
@@ -1487,6 +1502,16 @@ async function loadAdsSpend() {
       <div style="font-size:14px;font-weight:700">รวมทั้งหมด: <span style="color:var(--primary)">${_adsTotalTxt(grand)}</span></div>
     </div>
     ${cards}`;
+  // คลิกบัญชี → กาง/หุบ campaign
+  body.querySelectorAll('.ads-acc-head').forEach(h => {
+    h.addEventListener('click', () => {
+      const camps = h.nextElementSibling;
+      const caret = h.querySelector('.ads-caret');
+      const isOpen = camps && camps.style.display !== 'none';
+      if (camps) camps.style.display = isOpen ? 'none' : '';
+      if (caret) caret.style.transform = isOpen ? '' : 'rotate(90deg)';
+    });
+  });
 }
 
 // ---------- pages ----------

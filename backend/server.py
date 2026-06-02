@@ -8306,7 +8306,7 @@ def ads_spend(days: int = 7, _sess: dict = Depends(require_admin)) -> dict[str, 
         "api_key": WINDSOR_API_KEY,
         "date_from": date_from,
         "date_to": date_to,
-        "fields": "source,account_id,account_name,spend,currency",
+        "fields": "source,account_id,account_name,campaign,spend,currency",
         "_renderer": "json",
     })
     url = f"{WINDSOR_BASE_URL}/all?{qs}"
@@ -8328,23 +8328,36 @@ def ads_spend(days: int = 7, _sess: dict = Depends(require_admin)) -> dict[str, 
         acc_id = str(r.get("account_id") or "")
         acc_name = str(r.get("account_name") or acc_id or "(unknown)")
         cur = (str(r.get("currency") or "").strip()) or "—"
+        campaign = (str(r.get("campaign") or "").strip()) or "(ไม่ระบุแคมเปญ)"
         try:
             spend = float(r.get("spend") or 0)
         except (TypeError, ValueError):
             spend = 0.0
         p = platforms.setdefault(source, {"source": source, "accounts": {}, "total_by_cur": {}})
         key = acc_id or acc_name
-        a = p["accounts"].setdefault(key, {"account_id": acc_id, "account_name": acc_name, "currency": cur, "spend": 0.0})
+        a = p["accounts"].setdefault(key, {"account_id": acc_id, "account_name": acc_name, "currency": cur, "spend": 0.0, "campaigns": {}})
         a["spend"] += spend
+        c = a["campaigns"].setdefault(campaign, {"campaign": campaign, "spend": 0.0})
+        c["spend"] += spend
         p["total_by_cur"][cur] = p["total_by_cur"].get(cur, 0.0) + spend
     out = []
     for source, p in platforms.items():
         accounts = sorted(p["accounts"].values(), key=lambda x: x["spend"], reverse=True)
+        acc_out = []
+        for a in accounts:
+            camps = sorted(
+                ({"campaign": c["campaign"], "spend": round(c["spend"], 2)} for c in a["campaigns"].values()),
+                key=lambda x: x["spend"], reverse=True,
+            )
+            acc_out.append({
+                "account_id": a["account_id"], "account_name": a["account_name"],
+                "currency": a["currency"], "spend": round(a["spend"], 2), "campaigns": camps,
+            })
         out.append({
             "source": source,
-            "accounts": [{**a, "spend": round(a["spend"], 2)} for a in accounts],
+            "accounts": acc_out,
             "total_by_cur": {k: round(v, 2) for k, v in p["total_by_cur"].items()},
-            "account_count": len(accounts),
+            "account_count": len(acc_out),
         })
     out.sort(key=lambda x: sum(x["total_by_cur"].values()), reverse=True)
     return {"date_from": date_from, "date_to": date_to, "days": days, "platforms": out}
