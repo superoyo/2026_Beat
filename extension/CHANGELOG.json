@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.154",
+      "date": "2026-06-01",
+      "title": "Dashboard: ไอคอนการ์ดสรุป เป็นสไตล์ทองเงา (glossy gold) บนพื้นขาว",
+      "summary": "เปลี่ยนไอคอน emoji บนพื้นเทาในการ์ดสรุป Dashboard เป็นไอคอน SVG สีขาวบนไทล์ไล่เฉดทองเงา (มีแสงไฮไลต์ + เงา) ให้ดูพรีเมียมขึ้น วางบนการ์ดพื้นขาว",
+      "changes": [
+        "qstat-ico: ไทล์ gradient ทอง + glossy highlight + drop shadow, ไอคอน SVG สีขาว",
+        "การ์ด warn (เครื่องยังไม่ผูก / คนยังไม่มีทีม) ใช้ไทล์เฉดส้ม-ทอง",
+        "เปลี่ยน emoji → SVG: rocket / shopping bag / cpu / box / user"
+      ]
+    },
+    {
       "version": "1.9.153",
       "date": "2026-06-01",
       "title": "Dashboard: เพิ่มการ์ดสรุป (Platforms/Skills/AI Projects/เครื่องยังไม่ผูก/คนยังไม่มีทีม) คลิกไปหน้านั้น",
