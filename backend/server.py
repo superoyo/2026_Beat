@@ -8625,7 +8625,12 @@ def ads_campaign_targeting(campaign: str, days: int = 30, _sess: dict = Depends(
     today = utc_now().date()
     date_to = today.isoformat()
     date_from = (today - timedelta(days=days - 1)).isoformat()
-    camp_l = (campaign or "").strip().lower()
+    import re as _re
+
+    def _ckey(s):  # normalize campaign string (collapse tabs/spaces) for robust matching
+        return _re.sub(r"\s+", " ", str(s or "")).strip().lower()
+
+    camp_l = _ckey(campaign)
     if not camp_l:
         raise HTTPException(status_code=400, detail="ต้องระบุ campaign")
 
@@ -8645,13 +8650,19 @@ def ads_campaign_targeting(campaign: str, days: int = 30, _sess: dict = Depends(
     }
     import concurrent.futures as _cf
     results: dict[str, list] = {}
+    errs: dict[str, str] = {}
     with _cf.ThreadPoolExecutor(max_workers=5) as ex:
-        futs = {k: ex.submit(_windsor_get, q, date_from, date_to, 40) for k, q in queries.items()}
+        futs = {k: ex.submit(_windsor_get, q, date_from, date_to, 45) for k, q in queries.items()}
         for k, fu in futs.items():
             try:
                 results[k] = fu.result()
-            except Exception:
+            except urllib.error.HTTPError as e:
                 results[k] = []
+                body = e.read().decode("utf-8", errors="replace")[:200] if hasattr(e, "read") else ""
+                errs[k] = f"HTTP {e.code} {body}"
+            except Exception as e:
+                results[k] = []
+                errs[k] = str(e)[:200]
 
     def _norm_age(v):
         v = str(v or "").strip()
@@ -8661,28 +8672,36 @@ def ads_campaign_targeting(campaign: str, days: int = 30, _sess: dict = Depends(
         v = str(v or "").strip().lower()
         return {"male": "ชาย", "female": "หญิง", "unknown": "ไม่ระบุ", "none": "ไม่ระบุ", "": "ไม่ระบุ"}.get(v, v)
 
-    def _agg(rows, key, norm=lambda x: (str(x or "").strip() or "(ไม่ระบุ)")):
+    matched_counts: dict[str, int] = {}
+
+    def _agg(bk, key, norm=lambda x: (str(x or "").strip() or "(ไม่ระบุ)")):
+        rows = results.get(bk, [])
         out: dict[str, float] = {}
+        m = 0
         for r in rows:
             if not isinstance(r, dict):
                 continue
-            if (str(r.get("campaign") or "").strip().lower()) != camp_l:
+            if _ckey(r.get("campaign")) != camp_l:
                 continue
+            m += 1
             out[norm(r.get(key))] = out.get(norm(r.get(key)), 0.0) + _f(r.get("spend"))
+        matched_counts[bk] = m
         return sorted(({"label": k, "spend": round(v, 2)} for k, v in out.items() if v > 0),
                       key=lambda x: x["spend"], reverse=True)
 
-    age = _agg(results.get("age", []), "age", _norm_age)
-    gender = _agg(results.get("gender", []), "gender", _norm_gender)
-    placement = _agg(results.get("placement", []), "platform_position")
-    region = _agg(results.get("region", []), "region")[:12]
+    age = _agg("age", "age", _norm_age)
+    gender = _agg("gender", "gender", _norm_gender)
+    placement = _agg("placement", "platform_position")
+    region = _agg("region", "region")[:12]
     # ad sets + settings
     adsets: dict[str, Any] = {}
+    _adset_m = 0
     for r in results.get("adset", []):
         if not isinstance(r, dict):
             continue
-        if (str(r.get("campaign") or "").strip().lower()) != camp_l:
+        if _ckey(r.get("campaign")) != camp_l:
             continue
+        _adset_m += 1
         nm = (str(r.get("adset_name") or "").strip()) or "(ไม่ระบุ)"
         a = adsets.setdefault(nm, {"name": nm, "spend": 0.0, "optimization": set(), "destination": set()})
         a["spend"] += _f(r.get("spend"))
@@ -8698,11 +8717,16 @@ def ads_campaign_targeting(campaign: str, days: int = 30, _sess: dict = Depends(
          for a in adsets.values()),
         key=lambda x: x["spend"], reverse=True,
     )
+    matched_counts["adset"] = _adset_m
+    diag = {k: {"fetched": len(results.get(k, [])), "matched": matched_counts.get(k, 0),
+                "err": errs.get(k)} for k in queries}
     return {
         "campaign": campaign,
         "age": age, "gender": gender, "placement": placement, "region": region,
         "adsets": adset_list,
-        "found": bool(age or gender or placement or adset_list),
+        "found": bool(age or gender or placement or region or adset_list),
+        "_diag": diag,
+        "days": days,
     }
 
 

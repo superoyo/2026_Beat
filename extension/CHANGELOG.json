@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.173",
+      "date": "2026-06-02",
+      "title": "Ads targeting: fix age/gender + diagnostic",
+      "summary": "แก้ match ชื่อแคมเปญให้ทนช่องว่าง/tab, normalize age/gender (รองรับ AGE_18_24 และ MALE), เพิ่ม region เข้าเงื่อนไข found, แสดงบรรทัด diagnostic (ดึงได้กี่แถว/match กี่แถว/error) เพื่อหาสาเหตุที่ age/gender ไม่ขึ้น",
+      "changes": [
+        "Backend: normalize campaign key (collapse whitespace/tab) ทั้งสองฝั่งก่อน match",
+        "Backend: ใส่ _diag ต่อ breakdown (fetched/matched/err) ในผลลัพธ์",
+        "Frontend: แสดงบรรทัด diag เล็ก ๆ ใต้ Targeting",
+        "interest: ยังดึงไม่ได้ (Windsor timeout)"
+      ]
+    },
+    {
       "version": "1.9.172",
       "date": "2026-06-01",
       "title": "Ads Report panel: เพิ่มข้อมูล Audience/Targeting ของแคมเปญ",

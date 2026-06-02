@@ -1665,7 +1665,13 @@ async function openBenchmarkPanel(campaign, ownCpm) {
     const tg = await fetchJson(`/api/ads-campaign-targeting?campaign=${encodeURIComponent(campaign)}&days=${_adsDays}`);
     const tbox = wrap.querySelector('#bench-targeting');
     if (!tbox) return;
-    if (!tg.found) { tbox.innerHTML = '<div class="empty" style="padding:14px;font-size:12px">— ไม่พบข้อมูล targeting (ส่วนใหญ่มีเฉพาะ Meta · ช่วงเวลานี้อาจไม่มีแคมเปญนี้) —</div>'; return; }
+    const d = tg._diag || {};
+    const diagLine = Object.keys(d).length
+      ? `<div style="font-size:10px;color:var(--text-muted);margin-top:12px;border-top:1px dashed var(--border);padding-top:7px;line-height:1.7;word-break:break-word">` +
+        Object.entries(d).map(([k, v]) => `${k}: <b>${v.matched}</b>/${v.fetched}${v.err ? ' ⚠️' + escapeHtml(String(v.err).slice(0, 70)) : ''}`).join(' · ') +
+        ` · <span style="opacity:.7">${tg.days || _adsDays}d</span></div>`
+      : '';
+    if (!tg.found) { tbox.innerHTML = '<div class="empty" style="padding:14px;font-size:12px">— ไม่พบข้อมูล targeting (ส่วนใหญ่มีเฉพาะ Meta · ช่วงเวลานี้อาจไม่มีแคมเปญนี้) —</div>' + diagLine; return; }
     const pretty = s => (s || '').replace(/_/g, ' ');
     let html = '';
     html += _adsTgtBars('อายุ (Age)', tg.age, 8);
@@ -1682,7 +1688,7 @@ async function openBenchmarkPanel(campaign, ownCpm) {
           </div>
         </div>`).join('')}</div>`;
     }
-    tbox.innerHTML = html || '<div class="empty" style="padding:14px;font-size:12px">— ไม่มีข้อมูล —</div>';
+    tbox.innerHTML = (html || '<div class="empty" style="padding:14px;font-size:12px">— ไม่มีข้อมูล —</div>') + diagLine;
   } catch (e) {
     const tbox = wrap.querySelector('#bench-targeting');
     if (tbox) tbox.innerHTML = `<div class="empty" style="padding:14px;font-size:12px">โหลด targeting ไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
