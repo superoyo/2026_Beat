@@ -634,6 +634,10 @@ def init_db() -> None:
             ("wazzup_profile_url",     "TEXT"),
             # v1.9.93 — Wazzup employee code (admin ป้อนเอง / extract จาก profileURL ตอน login)
             ("wazzup_emp_code",        "TEXT"),
+            # v1.9.147 — privacy: แชร์ข้อมูลให้คนอื่นเห็นไหม (1=แชร์, 0=ส่วนตัว)
+            ("share_birthdate",        "INTEGER NOT NULL DEFAULT 1"),
+            ("share_shirt_size",       "INTEGER NOT NULL DEFAULT 1"),
+            ("share_phone",            "INTEGER NOT NULL DEFAULT 1"),
         ]:
             if col_name not in member_cols:
                 conn.execute(f"ALTER TABLE members ADD COLUMN {col_name} {col_def}")
@@ -4416,6 +4420,10 @@ class MemberProfileIn(BaseModel):
     shirt_size: Optional[str] = Field(None, max_length=40)
     # v1.9.75 — birthdate: ISO YYYY-MM-DD; '' = clear
     birthdate: Optional[str] = Field(None, max_length=20)
+    # v1.9.147 — privacy: แชร์ข้อมูลให้คนอื่นเห็นไหม
+    share_birthdate: Optional[bool] = None
+    share_shirt_size: Optional[bool] = None
+    share_phone: Optional[bool] = None
 
 
 def _require_member_session(token: Optional[str]) -> dict[str, Any]:
@@ -4423,6 +4431,15 @@ def _require_member_session(token: Optional[str]) -> dict[str, Any]:
     if not sess:
         raise HTTPException(status_code=401, detail="ไม่ได้เข้าสู่ระบบ")
     return sess
+
+
+def _row_share(row: sqlite3.Row, key: str) -> int:
+    """v1.9.147 — อ่านค่า privacy share flag (default 1=แชร์) แบบ defensive"""
+    try:
+        v = row[key]
+    except (KeyError, IndexError):
+        return 1
+    return 0 if v == 0 else 1
 
 
 def _member_row_to_profile(row: sqlite3.Row) -> dict[str, Any]:
@@ -4462,6 +4479,10 @@ def _member_row_to_profile(row: sqlite3.Row) -> dict[str, Any]:
         "shirt_size": shirt_size,
         "birthdate": birthdate,
         "has_wazzup_photo": bool(wpu),
+        # v1.9.147 — privacy share flags (self เห็นค่าตัวเองเสมอ)
+        "share_birthdate": _row_share(row, "share_birthdate"),
+        "share_shirt_size": _row_share(row, "share_shirt_size"),
+        "share_phone": _row_share(row, "share_phone"),
         "created_at": row["created_at"],
         "last_login_at": row["last_login_at"],
     }
@@ -5353,6 +5374,13 @@ def member_update_profile(
             updates["birthdate"] = v
         else:
             updates["birthdate"] = None
+    # v1.9.147 — privacy share flags
+    if payload.share_birthdate is not None:
+        updates["share_birthdate"] = 1 if payload.share_birthdate else 0
+    if payload.share_shirt_size is not None:
+        updates["share_shirt_size"] = 1 if payload.share_shirt_size else 0
+    if payload.share_phone is not None:
+        updates["share_phone"] = 1 if payload.share_phone else 0
 
     if not updates:
         raise HTTPException(status_code=400, detail="ไม่มีอะไรให้บันทึก")
@@ -5364,7 +5392,8 @@ def member_update_profile(
             conn.execute(f"UPDATE members SET {set_clause} WHERE id = ?", values)
             row = conn.execute(
                 "SELECT id, phone, email, display_name, pw_hash, is_admin, avatar_data, "
-                "       shirt_size, birthdate, created_at, last_login_at "
+                "       shirt_size, birthdate, share_birthdate, share_shirt_size, share_phone, "
+                "       created_at, last_login_at "
                 "FROM members WHERE id = ?",
                 (member_id,),
             ).fetchone()
@@ -7473,7 +7502,8 @@ def member_me(
     with db_conn() as conn:
         row = conn.execute(
             "SELECT id, phone, email, display_name, pw_hash, is_admin, avatar_data, "
-            "       shirt_size, birthdate, wazzup_profile_url, created_at, last_login_at "
+            "       shirt_size, birthdate, wazzup_profile_url, "
+            "       share_birthdate, share_shirt_size, share_phone, created_at, last_login_at "
             "FROM members WHERE id = ?",
             (sess["member_id"],),
         ).fetchone()
@@ -7508,7 +7538,7 @@ def member_supervised(fct_member_session: Optional[str] = Cookie(default=None)) 
             team_ids,
         ).fetchall()
         mem_rows = conn.execute(
-            f"SELECT tm.team_id, m.id, m.display_name, m.email, m.phone, m.avatar_data "
+            f"SELECT tm.team_id, m.id, m.display_name, m.email, m.phone, m.avatar_data, m.share_phone "
             f"FROM team_members tm JOIN members m ON m.id = tm.member_id "
             f"WHERE tm.team_id IN ({pl}) ORDER BY m.display_name COLLATE NOCASE",
             team_ids,
@@ -7522,9 +7552,13 @@ def member_supervised(fct_member_session: Optional[str] = Cookie(default=None)) 
     mem_by_team: dict[int, list] = {}
     for r in mem_rows:
         ph = r["phone"]
+        # v1.9.147 — ซ่อนเบอร์ถ้าเจ้าของตั้งเป็นส่วนตัว
+        ph_out = None if (ph and str(ph).startswith("email:")) else ph
+        if _row_share(r, "share_phone") == 0:
+            ph_out = None
         mem_by_team.setdefault(r["team_id"], []).append({
             "id": r["id"], "display_name": r["display_name"], "email": r["email"],
-            "phone": None if (ph and str(ph).startswith("email:")) else ph,
+            "phone": ph_out,
             "avatar_data": r["avatar_data"],
         })
     site_by_team: dict[int, list] = {}
@@ -7564,7 +7598,8 @@ def member_supervised_detail(
             raise HTTPException(status_code=403, detail="คนนี้ไม่ได้อยู่ในทีมที่คุณดูแล")
         row = conn.execute(
             "SELECT id, phone, email, display_name, avatar_data, shirt_size, birthdate, "
-            "       wazzup_emp_code, created_at, last_login_at "
+            "       wazzup_emp_code, share_birthdate, share_shirt_size, share_phone, "
+            "       created_at, last_login_at "
             "FROM members WHERE id = ?", (target_id,),
         ).fetchone()
         if not row:
@@ -7576,17 +7611,23 @@ def member_supervised_detail(
             "ORDER BY hw_type ASC, name COLLATE NOCASE ASC", (target_id,),
         ).fetchall()
     ph = row["phone"]
+    # v1.9.147 — เคารพ privacy: ผู้ดูแลเห็นเฉพาะข้อมูลที่เจ้าของยอมแชร์
+    phone_val = None if (ph and str(ph).startswith("email:")) else ph
+    if _row_share(row, "share_phone") == 0:
+        phone_val = None
+    shirt_val = row["shirt_size"] if _row_share(row, "share_shirt_size") == 1 else None
+    birth_val = row["birthdate"] if _row_share(row, "share_birthdate") == 1 else None
     # เฉพาะทีมที่ผู้ขอ supervise ได้ (ไม่เปิดเผยทีมอื่น)
     visible_teams = [{"id": r["team_id"], "name": r["name"]} for r in target_teams_rows if r["team_id"] in sup_teams]
     return {
         "profile": {
             "id": row["id"],
             "display_name": row["display_name"],
-            "phone": None if (ph and str(ph).startswith("email:")) else ph,
+            "phone": phone_val,
             "email": row["email"],
             "avatar_data": row["avatar_data"],
-            "shirt_size": row["shirt_size"],
-            "birthdate": row["birthdate"],
+            "shirt_size": shirt_val,
+            "birthdate": birth_val,
             "created_at": row["created_at"],
             "last_login_at": row["last_login_at"],
             "teams": visible_teams,

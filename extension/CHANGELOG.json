@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.147",
+      "date": "2026-06-01",
+      "title": "เปลี่ยนเมนู 'บัญชีของฉัน' → My Profile + เพิ่มเมนูย่อย Privacy",
+      "summary": "เปลี่ยนชื่อเมนู บัญชีของฉัน เป็น My Profile + เพิ่มเมนูย่อย Privacy ที่มี toggle switch กำหนดว่าจะแชร์ เบอร์โทร / วันเกิด / ขนาดเสื้อ ให้คนอื่น (เช่น หัวหน้าทีมใน My Team) เห็นหรือไม่ — ปิด = ส่วนตัว",
+      "changes": [
+        "เปลี่ยนชื่อเมนู nav + หัวข้อหน้า 'บัญชีของฉัน' → 'My Profile'",
+        "เพิ่มเมนูย่อย Privacy: toggle แชร์/ส่วนตัว สำหรับ เบอร์โทร, วันเกิด, ขนาดเสื้อ (บันทึกทันทีที่สลับ)",
+        "Backend: คอลัมน์ share_phone/share_birthdate/share_shirt_size + บังคับใช้ใน /api/member/supervised และ /supervised/{id} (เจ้าของตั้งส่วนตัว → ผู้ดูแลเห็นเป็น —)"
+      ]
+    },
+    {
       "version": "1.9.146",
       "date": "2026-06-01",
       "title": "Skill Marketplace: header ยุบตอน scroll (เหมือน AI Project) + เอา count บนหัว Platforms ออก",

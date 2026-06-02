@@ -632,6 +632,13 @@
     /* v1.9.140 — member actions overflow menu (⋮ เพิ่มเติม) */
     .m-menu-item:hover { background: var(--bg-soft); }
     .m-kebab:hover { background: var(--bg-hover); }
+    /* v1.9.147 — toggle switch (Privacy) */
+    .tgl { display: inline-flex; cursor: pointer; flex-shrink: 0; }
+    .tgl-input { display: none; }
+    .tgl-track { width: 46px; height: 26px; border-radius: 999px; background: var(--border-strong); position: relative; transition: background .16s; }
+    .tgl-input:checked + .tgl-track { background: var(--green); }
+    .tgl-thumb { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: left .16s; box-shadow: 0 1px 3px rgba(15,23,42,.25); }
+    .tgl-input:checked + .tgl-track .tgl-thumb { left: 23px; }
     /* Two-column layout for fields (used in wide modals) */
     .field-grid-2 {
       display: grid;
@@ -1057,7 +1064,7 @@
         <a href="#/dashboard" data-route="dashboard" data-label="Dashboard"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></span><span class="nav-label">Dashboard</span></a>
         <a href="#/platforms" data-route="platforms" data-label="Platforms"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></span><span class="nav-label">Platforms</span></a>
         <!-- v1.9.122 — บัญชีของฉัน: direct link (โปรไฟล์/My Device/Extension/Check-in อยู่ในเมนูย่อยของหน้านี้แล้ว) -->
-        <a href="#/account" data-route="account" data-label="บัญชีของฉัน"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><span class="nav-label">บัญชีของฉัน</span></a>
+        <a href="#/account" data-route="account" data-label="My Profile"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><span class="nav-label">My Profile</span></a>
         <!-- v1.9.126 — Supervise: แสดงเฉพาะ member ที่ดูแลทีม (toggle ตอน load) -->
         <a href="#/supervise" id="nav-supervise" data-route="supervise" data-label="My Team" style="display:none"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></span><span class="nav-label">My Team</span></a>
       </div>
@@ -12587,7 +12594,7 @@ async function renderAccountPage() {
 async function renderAdminAccountPage() {
   $('main').innerHTML = `
     <div class="page-head">
-      <h2 class="page-title">👤 บัญชีของฉัน</h2>
+      <h2 class="page-title">👤 My Profile</h2>
     </div>
     <div class="warning-box">
       ⚠️ <strong>คำเตือน:</strong> นี่คือบัญชี <strong>super admin</strong> ที่ใช้จัดการระบบทั้งหมด
@@ -12685,7 +12692,7 @@ async function renderAdminAccountPage() {
 async function renderMemberAccountPage() {
   $('main').innerHTML = `
     <div class="page-head">
-      <h2 class="page-title">👤 บัญชีของฉัน</h2>
+      <h2 class="page-title">👤 My Profile</h2>
     </div>
 
     <div id="member-loading" style="padding:30px;text-align:center;color:var(--text-muted)">กำลังโหลด…</div>
@@ -12700,6 +12707,7 @@ async function renderMemberAccountPage() {
           <button type="button" class="acc-menu-item" data-acc-tab="device"><span class="acc-menu-ico">🖥️</span> My Device</button>
           <button type="button" class="acc-menu-item" data-acc-tab="extension"><span class="acc-menu-ico">🧩</span> Extension</button>
           <button type="button" class="acc-menu-item" data-acc-tab="beacon"><span class="acc-menu-ico">📍</span> Check-in</button>
+          <button type="button" class="acc-menu-item" data-acc-tab="privacy"><span class="acc-menu-ico">🔒</span> Privacy</button>
           <button type="button" class="acc-menu-item" data-acc-tab="team" id="acc-tab-team" style="display:none"><span class="acc-menu-ico">👨‍👩‍👧</span> Team</button>
         </div>
 
@@ -12830,6 +12838,32 @@ async function renderMemberAccountPage() {
                 <button type="button" class="btn" id="m-beacon-refresh" style="font-size:12.5px;padding:6px 12px">🔄 รีเฟรช</button>
               </div>
               <div id="m-beacon-body" style="font-size:13.5px;color:var(--text-muted)">กำลังโหลด…</div>
+            </div>
+          </div>
+
+          <!-- ============ Privacy ============ -->
+          <div data-acc-panel="privacy" style="display:none">
+            <div class="card" style="display:block">
+              <h3 style="margin:0 0 6px;font-size:15px;font-weight:600">🔒 ความเป็นส่วนตัว (Privacy)</h3>
+              <div class="hint" style="font-size:12.5px;color:var(--text-muted);line-height:1.6;margin-bottom:16px">
+                เลือกว่าจะ<strong>แชร์ข้อมูลให้คนอื่นเห็น</strong>หรือไม่ (เช่น หัวหน้าทีมที่ดูแลคุณ ในเมนู My Team) — <strong>ปิด = เก็บเป็นส่วนตัว</strong> ไม่แสดงให้คนอื่นเห็น
+              </div>
+              <div id="m-privacy-rows" style="display:flex;flex-direction:column;gap:2px">
+                ${[
+                  { key: 'phone', icon: '📞', label: 'เบอร์โทรศัพท์', desc: 'แสดงเบอร์ให้คนอื่นที่ดูโปรไฟล์คุณ' },
+                  { key: 'birthdate', icon: '🎂', label: 'วันเกิด', desc: 'แสดงวันเกิดของคุณ' },
+                  { key: 'shirt_size', icon: '👕', label: 'ขนาดเสื้อ', desc: 'แสดงไซส์เสื้อของคุณ' },
+                ].map(it => `
+                  <div style="display:flex;align-items:center;gap:12px;padding:13px 4px;border-bottom:1px solid var(--border)">
+                    <span style="font-size:22px;width:30px;text-align:center;flex-shrink:0">${it.icon}</span>
+                    <div style="flex:1;min-width:0">
+                      <div style="font-weight:600;font-size:14px">${it.label}</div>
+                      <div style="font-size:12px;color:var(--text-muted);margin-top:1px">${it.desc}</div>
+                    </div>
+                    <span class="m-priv-status" data-for="${it.key}" style="font-size:11.5px;font-weight:600;color:var(--text-soft);white-space:nowrap">—</span>
+                    <label class="tgl"><input type="checkbox" class="tgl-input m-priv-toggle" data-priv="${it.key}" /><span class="tgl-track"><span class="tgl-thumb"></span></span></label>
+                  </div>`).join('')}
+              </div>
             </div>
           </div>
 
@@ -13169,6 +13203,19 @@ async function renderMemberAccountPage() {
     if (teamTab) teamTab.style.display = (member.supervised_count || 0) > 0 ? '' : 'none';
     // v1.9.88/95 — login methods cards (เหมือน Meta) + Add Account button
     renderMyLoginCards();
+    // v1.9.147 — privacy toggles
+    renderPrivacyToggles();
+  }
+
+  // v1.9.147 — set ค่า toggle Privacy จาก member.share_*
+  const _PRIV_MAP = { phone: 'share_phone', birthdate: 'share_birthdate', shirt_size: 'share_shirt_size' };
+  function renderPrivacyToggles() {
+    document.querySelectorAll('.m-priv-toggle').forEach(t => {
+      const on = member[_PRIV_MAP[t.dataset.priv]] !== 0;   // default = แชร์
+      t.checked = on;
+      const st = document.querySelector(`.m-priv-status[data-for="${t.dataset.priv}"]`);
+      if (st) { st.textContent = on ? 'แชร์' : 'ส่วนตัว'; st.style.color = on ? 'var(--green)' : 'var(--text-soft)'; }
+    });
   }
 
   function renderMyLoginCards() {
@@ -13616,6 +13663,26 @@ async function renderMemberAccountPage() {
     } finally {
       $('m-save-profile').disabled = false;
     }
+  });
+
+  // v1.9.147 — privacy toggles → PATCH ทันทีที่สลับ
+  document.querySelectorAll('.m-priv-toggle').forEach(t => {
+    t.addEventListener('change', async () => {
+      const field = _PRIV_MAP[t.dataset.priv];
+      const val = t.checked;
+      const st = document.querySelector(`.m-priv-status[data-for="${t.dataset.priv}"]`);
+      const paint = (v) => { if (st) { st.textContent = v ? 'แชร์' : 'ส่วนตัว'; st.style.color = v ? 'var(--green)' : 'var(--text-soft)'; } };
+      paint(val);
+      try {
+        const body = {}; body[field] = val;
+        const data = await fetchJson('/api/member/profile', { method: 'PATCH', body: JSON.stringify(body) });
+        if (data && data.member) member = data.member;
+        showSavedToast(val ? '✓ แชร์ข้อมูลนี้ให้คนอื่นเห็นแล้ว' : '🔒 ตั้งเป็นส่วนตัวแล้ว');
+      } catch (e) {
+        t.checked = !val; paint(!val);   // revert
+        showSavedToast('❌ ' + e.message, 'error');
+      }
+    });
   });
 
   $('m-save-password').addEventListener('click', async () => {
