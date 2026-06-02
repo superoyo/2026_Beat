@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.171",
+      "date": "2026-06-01",
+      "title": "Ads Report: ย้าย CPM ไปคอลัมน์แรก",
+      "summary": "ตารางหน้า Report จัดให้ CPM เป็นคอลัมน์แรก (หลังชื่อบัญชี/แคมเปญ) เน้นตัวหนา + แถวสรุปแพลตฟอร์มโชว์ CPM/CPC รวม (เมื่อสกุลเงินเดียว)",
+      "changes": [
+        "ลำดับคอลัมน์: บัญชี/แคมเปญ · CPM · Spend · Impr · Reach · Freq · Clicks · CTR · CPC",
+        "totals row แสดง CPM/CPC รวมเมื่อแพลตฟอร์มมีสกุลเงินเดียว"
+      ]
+    },
+    {
       "version": "1.9.170",
       "date": "2026-06-01",
       "title": "Ads Report: คลิกแคมเปญ → slide-out แสดง Benchmark ของ Brand×AdType นั้น",

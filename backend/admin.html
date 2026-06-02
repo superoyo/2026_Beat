@@ -1719,14 +1719,14 @@ function _adsDash() { return '<span style="color:var(--text-soft)">—</span>'; 
 function _adsMetricCells(m, cur) {
   const d = _adsDash();
   return `
+    <td class="tnum" style="font-weight:600">${m.cpm != null ? _adsMoney(m.cpm) : d}</td>
     <td class="tnum">${m.spend != null ? `${_adsMoney(m.spend)} <span style="color:var(--text-soft);font-size:10px;font-weight:400">${escapeHtml(cur || '')}</span>` : d}</td>
     <td class="tnum">${m.impressions ? _adsInt(m.impressions) : d}</td>
     <td class="tnum">${m.reach ? _adsInt(m.reach) : d}</td>
     <td class="tnum">${m.frequency != null ? m.frequency : d}</td>
     <td class="tnum">${m.clicks ? _adsInt(m.clicks) : d}</td>
     <td class="tnum">${m.ctr != null ? m.ctr + '%' : d}</td>
-    <td class="tnum">${m.cpc != null ? _adsMoney(m.cpc) : d}</td>
-    <td class="tnum">${m.cpm != null ? _adsMoney(m.cpm) : d}</td>`;
+    <td class="tnum">${m.cpc != null ? _adsMoney(m.cpc) : d}</td>`;
 }
 function renderAdsCards() {
   const wrap = $('ads-cards');
@@ -1736,6 +1736,7 @@ function renderAdsCards() {
   const filtering = q !== '' || tf;
   const thead = `<thead><tr>
     <th style="text-align:left">บัญชี / แคมเปญ</th>
+    <th style="text-align:right">CPM</th>
     <th style="text-align:right">Spend</th>
     <th style="text-align:right">Impr.</th>
     <th style="text-align:right">Reach</th>
@@ -1743,7 +1744,6 @@ function renderAdsCards() {
     <th style="text-align:right">Clicks</th>
     <th style="text-align:right">CTR</th>
     <th style="text-align:right">CPC</th>
-    <th style="text-align:right">CPM</th>
   </tr></thead>`;
   const cards = (_adsData.platforms || []).map(p => {
     const meta = _adsSrcMeta(p.source);
@@ -1783,17 +1783,18 @@ function renderAdsCards() {
         </tr>`).join('');
       return accRow + campRows;
     }).join('');
+    const oneCur = Object.keys(tbc).length === 1;   // CPM/CPC รวมมีความหมายเมื่อสกุลเงินเดียว
     const totRow = `
       <tr class="ads-tot-row">
         <td>รวมทั้งแพลตฟอร์ม</td>
+        <td class="tnum">${oneCur && pt.cpm != null ? _adsMoney(pt.cpm) : _adsDash()}</td>
         <td class="tnum">${_adsTotalTxt(tbc)}</td>
         <td class="tnum">${pt.impressions ? _adsInt(pt.impressions) : _adsDash()}</td>
         <td class="tnum">${pt.reach ? _adsInt(pt.reach) : _adsDash()}</td>
         <td class="tnum">${pt.frequency != null ? pt.frequency : _adsDash()}</td>
         <td class="tnum">${pt.clicks ? _adsInt(pt.clicks) : _adsDash()}</td>
         <td class="tnum">${pt.ctr != null ? pt.ctr + '%' : _adsDash()}</td>
-        <td class="tnum">${_adsDash()}</td>
-        <td class="tnum">${_adsDash()}</td>
+        <td class="tnum">${oneCur && pt.cpc != null ? _adsMoney(pt.cpc) : _adsDash()}</td>
       </tr>`;
     return `
       <div class="card" style="display:block;margin-bottom:16px;padding:0;overflow:hidden">
