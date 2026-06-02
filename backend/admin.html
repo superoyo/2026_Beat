@@ -1550,10 +1550,14 @@ async function loadBenchmark() {
   // min/max CPM ของ cell สำหรับ heatmap
   let cmin = Infinity, cmax = -Infinity;
   brands.forEach(b => adtypes.forEach(t => { const c = d.matrix[b] && d.matrix[b][t]; if (c && c.cpm != null) { cmin = Math.min(cmin, c.cpm); cmax = Math.max(cmax, c.cpm); } }));
-  const f2 = v => v == null ? '<span style="color:var(--text-soft)">—</span>' : Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const cellTd = (c) => {
-    if (!c || c.cpm == null) return `<td class="tnum"><span style="color:var(--text-soft)">—</span></td>`;
-    return `<td class="tnum" style="background:${_benchColor(c.cpm, cmin, cmax)}" title="spend ${_adsMoney(c.spend)} · impr ${_adsInt(c.impressions)}">${f2(c.cpm)}</td>`;
+  const f2 = v => v == null ? '—' : Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const mcell = (c, colored) => {
+    if (!c || (c.cpm == null && c.cpp == null)) return `<td class="tnum"><span style="color:var(--text-soft)">—</span></td>`;
+    const bg = colored && c.cpm != null ? `background:${_benchColor(c.cpm, cmin, cmax)};` : '';
+    return `<td class="tnum" style="${bg}line-height:1.3" title="spend ${_adsMoney(c.spend)} · impr ${_adsInt(c.impressions)} · reach ${_adsInt(c.reach)}">
+      <div style="font-weight:600">${f2(c.cpm)}</div>
+      <div style="font-size:10px;color:var(--text-soft)">CPP ${f2(c.cpp)}</div>
+    </td>`;
   };
   const head = `<thead><tr>
     <th style="text-align:left;position:sticky;left:0;background:var(--bg-soft);z-index:1">Brand \\ Ad Type</th>
@@ -1563,16 +1567,16 @@ async function loadBenchmark() {
   const rows = brands.map(b => `
     <tr>
       <td style="font-weight:600;position:sticky;left:0;background:var(--bg-card);z-index:1">${escapeHtml(b)}</td>
-      ${adtypes.map(t => cellTd(d.matrix[b] && d.matrix[b][t])).join('')}
-      <td class="tnum" style="font-weight:700">${f2(d.brand_totals[b] && d.brand_totals[b].cpm)}</td>
+      ${adtypes.map(t => mcell(d.matrix[b] && d.matrix[b][t], true)).join('')}
+      ${mcell(d.brand_totals[b], false)}
     </tr>`).join('');
   const foot = `<tr class="ads-tot-row">
     <td style="position:sticky;left:0;background:var(--bg-soft);z-index:1">รวม (Ad Type)</td>
-    ${adtypes.map(t => `<td class="tnum">${f2(d.adtype_totals[t] && d.adtype_totals[t].cpm)}</td>`).join('')}
-    <td class="tnum">${f2(d.grand && d.grand.cpm)}</td>
+    ${adtypes.map(t => mcell(d.adtype_totals[t], false)).join('')}
+    ${mcell(d.grand, false)}
   </tr>`;
   body.innerHTML = `
-    <div style="font-size:11.5px;color:var(--text-soft);margin-bottom:10px">${d.row_count} แถว · ${brands.length} brand × ${adtypes.length} ad type · CPM รวม ${f2(d.grand && d.grand.cpm)} · ตัวเลขยิ่งต่ำ/เขียว = ดี · ดึงเมื่อ ${new Date().toLocaleString('th-TH')}</div>
+    <div style="font-size:11.5px;color:var(--text-soft);margin-bottom:10px">${d.row_count} แถว · ${brands.length} brand × ${adtypes.length} ad type · แต่ละช่อง: <strong>CPM</strong> (บน) / <strong>CPP</strong> (ล่าง) · CPM ยิ่งต่ำ/เขียว = ดี · ดึงเมื่อ ${new Date().toLocaleString('th-TH')}</div>
     <div class="card" style="display:block;padding:0;overflow-x:auto">
       <table class="ads-table" style="min-width:max-content">${head}<tbody>${rows}${foot}</tbody></table>
     </div>`;

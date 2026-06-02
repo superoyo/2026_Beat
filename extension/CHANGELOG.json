@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.168",
+      "date": "2026-06-01",
+      "title": "Ads Benchmark: เพิ่ม CPP คู่กับ CPM ในทุกช่อง",
+      "summary": "ตาราง Benchmark แต่ละช่อง (Brand × Ad Type) แสดง CPM (บน) + CPP (ล่าง) — CPP = ถ่วงน้ำหนักด้วย reach (spend/reach×1000)",
+      "changes": [
+        "Backend /api/ads-benchmark: aggregate reach + คำนวณ cpp",
+        "Frontend: แต่ละ cell แสดง CPM + CPP, heatmap ตาม CPM"
+      ]
+    },
+    {
       "version": "1.9.167",
       "date": "2026-06-01",
       "title": "Ads เป็นเมนูย่อย Report + Benchmark (CPM Brand×AdType จาก Google Sheet)",
