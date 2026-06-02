@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.184",
+      "date": "2026-06-02",
+      "title": "Audience Report: ย้าย CPV ต่อจาก CPM + เพิ่ม CPE",
+      "summary": "จัดคอลัมน์ใหม่ CPM · CPV · CPE ติดกัน แล้วตามด้วย Spend/Impr/... และเพิ่ม CPE (Cost Per Engagement = spend ÷ page engagement) sort ได้ + อยู่ใน CSV",
+      "changes": [
+        "Backend: ดึง actions_page_engagement → engagements + cpe",
+        "Frontend: refactor ตารางเป็น column-driven (_AUD_COLS) ลำดับ CPM·CPV·CPE·Spend·…",
+        "CPE sort ได้, CSV เพิ่ม Engagements + CPE"
+      ]
+    },
+    {
       "version": "1.9.183",
       "date": "2026-06-02",
       "title": "Audience Report: เพิ่มคอลัมน์ CPV ทุกตาราง",

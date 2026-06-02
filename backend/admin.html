@@ -1450,14 +1450,15 @@ function _adsAllTypes() {
   return order.filter(f => set.has(f)).concat([...set].filter(f => !order.includes(f)));
 }
 function _adsAgg(camps) {
-  let spend = 0, impr = 0, clk = 0, reach = 0, views = 0;
-  camps.forEach(c => { spend += c.spend || 0; impr += c.impressions || 0; clk += c.clicks || 0; reach += c.reach || 0; views += c.views || 0; });
+  let spend = 0, impr = 0, clk = 0, reach = 0, views = 0, eng = 0;
+  camps.forEach(c => { spend += c.spend || 0; impr += c.impressions || 0; clk += c.clicks || 0; reach += c.reach || 0; views += c.views || 0; eng += c.engagements || 0; });
   return {
-    spend, impressions: impr, clicks: clk, reach, views,
+    spend, impressions: impr, clicks: clk, reach, views, engagements: eng,
     ctr: impr ? +(clk / impr * 100).toFixed(2) : null,
     cpc: clk ? +(spend / clk).toFixed(2) : null,
     cpm: impr ? +(spend / impr * 1000).toFixed(2) : null,
     cpv: views ? +(spend / views).toFixed(4) : null,
+    cpe: eng ? +(spend / eng).toFixed(4) : null,
     frequency: reach ? +(impr / reach).toFixed(2) : null,
   };
 }
@@ -1586,6 +1587,19 @@ const _AUD_TABLES = [
   { key: 'placement', title: 'Placement',               icon: '📍', col: 'Placement', pretty: s => (s || '').replace(/_/g, ' ') },
   { key: 'region',    title: 'Region',                  icon: '🗺️', col: 'ภูมิภาค',  pretty: s => s },
 ];
+// v1.9.184 — คอลัมน์ตาราง Audience (ลำดับ: CPM · CPV · CPE · Spend · …) — group ใช้ x.oneCur, campaign ใช้ค่าตรง
+const _AUD_COLS = [
+  { k: 'cpm', l: 'CPM', bold: true, cell: (m, x) => (x.isGroup && !x.oneCur) ? _adsDash() : (m.cpm != null ? _adsMoney(m.cpm) : _adsDash()) },
+  { k: 'cpv', l: 'CPV', cell: (m, x) => (x.isGroup && !x.oneCur) ? _adsDash() : (m.cpv != null ? _adsMoney4(m.cpv) : _adsDash()) },
+  { k: 'cpe', l: 'CPE', cell: (m, x) => (x.isGroup && !x.oneCur) ? _adsDash() : (m.cpe != null ? _adsMoney4(m.cpe) : _adsDash()) },
+  { k: 'spend', l: 'Spend', cell: (m, x) => x.isGroup ? _adsTotalTxt(x.byCur) : (m.spend != null ? `${_adsMoney(m.spend)} <span style="color:var(--text-soft);font-size:10px;font-weight:400">${escapeHtml(x.currency || '')}</span>` : _adsDash()) },
+  { k: 'impressions', l: 'Impr.', cell: m => m.impressions ? _adsInt(m.impressions) : _adsDash() },
+  { k: 'reach', l: 'Reach', cell: m => m.reach ? _adsInt(m.reach) : _adsDash() },
+  { k: 'frequency', l: 'Freq.', cell: m => m.frequency != null ? m.frequency : _adsDash() },
+  { k: 'clicks', l: 'Clicks', cell: m => m.clicks ? _adsInt(m.clicks) : _adsDash() },
+  { k: 'ctr', l: 'CTR', cell: m => m.ctr != null ? m.ctr + '%' : _adsDash() },
+  { k: 'cpc', l: 'CPC', cell: (m, x) => (x.isGroup && !x.oneCur) ? _adsDash() : (m.cpc != null ? _adsMoney(m.cpc) : _adsDash()) },
+];
 function renderAudienceBody() {
   const body = $('aud-body');
   if (!body || !_audData) return;
@@ -1656,8 +1670,9 @@ function _audTableHtml(table, c, q) {
   const _sv = {
     label: g => g.label,
     spend: g => Object.values(g.byCur).reduce((s, v) => s + v, 0),
-    cpm: g => g.agg.cpm, impressions: g => g.agg.impressions, reach: g => g.agg.reach,
-    frequency: g => g.agg.frequency, clicks: g => g.agg.clicks, ctr: g => g.agg.ctr, cpc: g => g.agg.cpc, cpv: g => g.agg.cpv,
+    cpm: g => g.agg.cpm, cpv: g => g.agg.cpv, cpe: g => g.agg.cpe,
+    impressions: g => g.agg.impressions, reach: g => g.agg.reach,
+    frequency: g => g.agg.frequency, clicks: g => g.agg.clicks, ctr: g => g.agg.ctr, cpc: g => g.agg.cpc,
   };
   if (sort && _sv[sort.col]) {
     const dir = sort.dir === 'asc' ? 1 : -1, get = _sv[sort.col];
@@ -1670,18 +1685,15 @@ function _audTableHtml(table, c, q) {
       return dir * (va - vb);
     });
   }
-  const COLS = [
-    { k: 'label', l: c.col, a: 'left' }, { k: 'cpm', l: 'CPM' }, { k: 'spend', l: 'Spend' },
-    { k: 'impressions', l: 'Impr.' }, { k: 'reach', l: 'Reach' }, { k: 'frequency', l: 'Freq.' },
-    { k: 'clicks', l: 'Clicks' }, { k: 'ctr', l: 'CTR' }, { k: 'cpc', l: 'CPC' }, { k: 'cpv', l: 'CPV' },
-  ];
-  const thead = `<thead><tr>${COLS.map(col => {
-    const on = sort && sort.col === col.k;
+  const thBtn = (k, l, align) => {
+    const on = sort && sort.col === k;
     const ind = on ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
-    return `<th data-sort="${col.k}" data-tbl="${escapeHtml(c.key)}" style="text-align:${col.a || 'right'};cursor:pointer;user-select:none;white-space:nowrap;${on ? 'color:var(--primary)' : ''}" title="คลิกเพื่อจัดเรียง">${escapeHtml(col.l)}${ind}</th>`;
-  }).join('')}</tr></thead>`;
+    return `<th data-sort="${k}" data-tbl="${escapeHtml(c.key)}" style="text-align:${align};cursor:pointer;user-select:none;white-space:nowrap;${on ? 'color:var(--primary)' : ''}" title="คลิกเพื่อจัดเรียง">${escapeHtml(l)}${ind}</th>`;
+  };
+  const thead = `<thead><tr>${thBtn('label', c.col, 'left')}${_AUD_COLS.map(col => thBtn(col.k, col.l, 'right')).join('')}</tr></thead>`;
+  const cellTd = (col, m, x) => `<td class="tnum"${col.bold ? ' style="font-weight:600"' : ''}>${col.cell(m, x)}</td>`;
   const rowsHtml = grpRows.map(g => {
-    const m = g.agg;
+    const gx = { isGroup: true, oneCur: g.oneCur, byCur: g.byCur };
     const grpRow = `
       <tr class="aud-grp-row" data-grp="${g.gi}" style="cursor:pointer">
         <td><span style="display:inline-flex;align-items:center;gap:7px;max-width:340px">
@@ -1689,41 +1701,23 @@ function _audTableHtml(table, c, q) {
           <span style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(c.pretty(g.label))}">${escapeHtml(c.pretty(g.label))}</span>
           <span style="font-size:10.5px;color:var(--text-soft);white-space:nowrap">· ${g.camps.length}</span>
         </span></td>
-        <td class="tnum" style="font-weight:600">${g.oneCur && m.cpm != null ? _adsMoney(m.cpm) : _adsDash()}</td>
-        <td class="tnum">${_adsTotalTxt(g.byCur)}</td>
-        <td class="tnum">${m.impressions ? _adsInt(m.impressions) : _adsDash()}</td>
-        <td class="tnum">${m.reach ? _adsInt(m.reach) : _adsDash()}</td>
-        <td class="tnum">${m.frequency != null ? m.frequency : _adsDash()}</td>
-        <td class="tnum">${m.clicks ? _adsInt(m.clicks) : _adsDash()}</td>
-        <td class="tnum">${m.ctr != null ? m.ctr + '%' : _adsDash()}</td>
-        <td class="tnum">${g.oneCur && m.cpc != null ? _adsMoney(m.cpc) : _adsDash()}</td>
-        <td class="tnum">${g.oneCur && m.cpv != null ? _adsMoney4(m.cpv) : _adsDash()}</td>
+        ${_AUD_COLS.map(col => cellTd(col, g.agg, gx)).join('')}
       </tr>`;
-    const subRows = g.camps.map(cp => `
+    const subRows = g.camps.map(cp => {
+      const cx = { isGroup: false, currency: cp.currency };
+      return `
       <tr class="aud-sub-row" data-grp-of="${g.gi}" style="display:${g.open ? '' : 'none'}">
         <td style="padding-left:32px;max-width:420px"><span style="color:var(--text-muted);display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;vertical-align:bottom" title="${escapeHtml(cp.campaign)}">${escapeHtml(cp.campaign)}</span></td>
-        ${_adsMetricCells(cp, cp.currency)}
-        <td class="tnum">${cp.cpv != null ? _adsMoney4(cp.cpv) : _adsDash()}</td>
-      </tr>`).join('');
+        ${_AUD_COLS.map(col => cellTd(col, cp, cx)).join('')}
+      </tr>`;
+    }).join('');
     return grpRow + subRows;
   }).join('');
   const gByCur = {};
   grpRows.forEach(g => Object.entries(g.byCur).forEach(([k, v]) => { gByCur[k] = (gByCur[k] || 0) + v; }));
   const gAgg = _adsAgg(grpRows.flatMap(g => g.camps));
   const gOne = Object.keys(gByCur).length === 1;
-  const totRow = `
-    <tr class="ads-tot-row">
-      <td>รวม</td>
-      <td class="tnum">${gOne && gAgg.cpm != null ? _adsMoney(gAgg.cpm) : _adsDash()}</td>
-      <td class="tnum">${_adsTotalTxt(gByCur)}</td>
-      <td class="tnum">${gAgg.impressions ? _adsInt(gAgg.impressions) : _adsDash()}</td>
-      <td class="tnum">${gAgg.reach ? _adsInt(gAgg.reach) : _adsDash()}</td>
-      <td class="tnum">${gAgg.frequency != null ? gAgg.frequency : _adsDash()}</td>
-      <td class="tnum">${gAgg.clicks ? _adsInt(gAgg.clicks) : _adsDash()}</td>
-      <td class="tnum">${gAgg.ctr != null ? gAgg.ctr + '%' : _adsDash()}</td>
-      <td class="tnum">${gOne && gAgg.cpc != null ? _adsMoney(gAgg.cpc) : _adsDash()}</td>
-      <td class="tnum">${gOne && gAgg.cpv != null ? _adsMoney4(gAgg.cpv) : _adsDash()}</td>
-    </tr>`;
+  const totRow = `<tr class="ads-tot-row"><td>รวม</td>${_AUD_COLS.map(col => cellTd(col, gAgg, { isGroup: true, oneCur: gOne, byCur: gByCur })).join('')}</tr>`;
   const note = (table.truncated && !filtering) ? `<div style="font-size:10.5px;color:var(--text-soft);padding:8px 16px;border-top:1px solid var(--border)">* แสดง top ${table.shown} จาก ${table.total} (เรียงตาม spend)</div>` : '';
   const errNote = table.err ? `<div style="font-size:10.5px;color:#dc2626;padding:8px 16px;border-top:1px solid var(--border)">⚠️ ดึงไม่สำเร็จ: ${escapeHtml(String(table.err).slice(0, 80))}</div>` : '';
   return `
@@ -1742,13 +1736,13 @@ function exportAudienceCsv() {
   if (!_audData || !_audData.tables) return;
   const esc = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
   const nz = v => (v == null ? '' : v);
-  const lines = [['Breakdown', 'Value', 'Campaign', 'Spend', 'Currency', 'Impressions', 'Reach', 'Frequency', 'Clicks', 'CTR(%)', 'CPC', 'CPM', 'Views', 'CPV'].join(',')];
+  const lines = [['Breakdown', 'Value', 'Campaign', 'Spend', 'Currency', 'Impressions', 'Reach', 'Frequency', 'Clicks', 'CTR(%)', 'CPC', 'CPM', 'Views', 'CPV', 'Engagements', 'CPE'].join(',')];
   _AUD_TABLES.forEach(cfg => {
     const t = _audData.tables[cfg.key];
     if (!t) return;
     (t.rows || []).forEach(g => {
       (g.campaigns || []).forEach(c => {
-        lines.push([cfg.title, cfg.pretty(g.label), c.campaign, c.spend, c.currency, c.impressions, c.reach, nz(c.frequency), c.clicks, nz(c.ctr), nz(c.cpc), nz(c.cpm), nz(c.views), nz(c.cpv)].map(esc).join(','));
+        lines.push([cfg.title, cfg.pretty(g.label), c.campaign, c.spend, c.currency, c.impressions, c.reach, nz(c.frequency), c.clicks, nz(c.ctr), nz(c.cpc), nz(c.cpm), nz(c.views), nz(c.cpv), nz(c.engagements), nz(c.cpe)].map(esc).join(','));
       });
     });
   });
