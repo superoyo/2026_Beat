@@ -8810,6 +8810,98 @@ def ads_campaign_targeting(campaign: str, days: int = 30, _sess: dict = Depends(
 
 
 # ===========================================================================
+# v1.9.180 — Audience Report: ใช้จ่ายแยกตามกลุ่มอายุ (Age) → breakdown แคมเปญ
+# ===========================================================================
+@app.get("/api/ads-audience")
+def ads_audience(days: int = 7, _sess: dict = Depends(_require_module("ads"))) -> dict[str, Any]:
+    if not WINDSOR_API_KEY:
+        raise HTTPException(status_code=503, detail="ยังไม่ได้ตั้งค่า WINDSOR_API_KEY")
+    days = max(1, min(int(days or 7), 90))
+    today = utc_now().date()
+    date_to = today.isoformat()
+    date_from = (today - timedelta(days=days - 1)).isoformat()
+    # age breakdown ใช้ได้เฉพาะ connector "facebook" (Meta) — connector "all" รวม twitter ซึ่ง reject age
+    try:
+        rows = _windsor_get("campaign,age,spend,impressions,clicks,reach,currency", date_from, date_to, 60, "facebook")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")[:200] if hasattr(e, "read") else ""
+        raise HTTPException(status_code=502, detail=f"ดึง Windsor ไม่สำเร็จ (HTTP {e.code}) {body}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ดึง Windsor ไม่สำเร็จ: {e}")
+
+    def _f(v):
+        try:
+            return float(v or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _norm_age(v):
+        v = str(v or "").strip()
+        v = v.replace("AGE_", "").replace("_", "-").replace(" to ", "-")
+        return v or "(ไม่ระบุ)"
+
+    def _metrics(spend: float, impr: float, clk: float, reach: float) -> dict[str, Any]:
+        return {
+            "spend": round(spend, 2),
+            "impressions": int(round(impr)),
+            "clicks": int(round(clk)),
+            "reach": int(round(reach)),
+            "ctr": round(clk / impr * 100, 2) if impr else None,
+            "cpc": round(spend / clk, 2) if clk else None,
+            "cpm": round(spend / impr * 1000, 2) if impr else None,
+            "frequency": round(impr / reach, 2) if reach else None,
+        }
+
+    ages: dict[str, Any] = {}
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        age = _norm_age(r.get("age"))
+        camp = (str(r.get("campaign") or "").strip()) or "(ไม่ระบุแคมเปญ)"
+        cur = (str(r.get("currency") or "").strip()) or "—"
+        sp, im, ck, rc = _f(r.get("spend")), _f(r.get("impressions")), _f(r.get("clicks")), _f(r.get("reach"))
+        a = ages.setdefault(age, {"age": age, "campaigns": {}, "by_cur": {}, "impressions": 0.0, "clicks": 0.0, "reach": 0.0})
+        a["by_cur"][cur] = a["by_cur"].get(cur, 0.0) + sp
+        a["impressions"] += im
+        a["clicks"] += ck
+        a["reach"] += rc
+        c = a["campaigns"].setdefault(camp, {"campaign": camp, "currency": cur, "spend": 0.0, "impressions": 0.0, "clicks": 0.0, "reach": 0.0})
+        c["spend"] += sp
+        c["impressions"] += im
+        c["clicks"] += ck
+        c["reach"] += rc
+
+    _AGE_ORDER = {"13-17": 0, "18-24": 1, "25-34": 2, "35-44": 3, "45-54": 4, "55-64": 5, "65+": 6}
+    out_ages = []
+    grand_cur: dict[str, float] = {}
+    for age in sorted(ages, key=lambda a: (_AGE_ORDER.get(a, 90), a)):
+        a = ages[age]
+        camps = sorted(
+            ({"campaign": c["campaign"], "currency": c["currency"],
+              **_metrics(c["spend"], c["impressions"], c["clicks"], c["reach"])}
+             for c in a["campaigns"].values()),
+            key=lambda x: x["spend"], reverse=True,
+        )
+        tot_spend = sum(a["by_cur"].values())
+        out_ages.append({
+            "age": age,
+            "total_by_cur": {k: round(v, 2) for k, v in a["by_cur"].items()},
+            **_metrics(tot_spend, a["impressions"], a["clicks"], a["reach"]),
+            "campaigns": camps,
+        })
+        for k, v in a["by_cur"].items():
+            grand_cur[k] = grand_cur.get(k, 0.0) + v
+
+    return {
+        "days": days,
+        "date_from": date_from,
+        "date_to": date_to,
+        "ages": out_ages,
+        "total_by_cur": {k: round(v, 2) for k, v in grand_cur.items()},
+    }
+
+
+# ===========================================================================
 # v1.9.162 — IAM: กำหนดสิทธิ์เข้าถึง module ต่อบุคคล/ทีม/ทั้งหมด
 # ===========================================================================
 IAM_MODULES = [

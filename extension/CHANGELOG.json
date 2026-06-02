@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.180",
+      "date": "2026-06-02",
+      "title": "Ads: เพิ่มเมนูย่อย Audience Report (แยกตามกลุ่มอายุ)",
+      "summary": "หน้าใหม่ใต้ Ads คล้าย Report แต่บนสุดเป็นกลุ่มอายุ (Age Group) รวม metric กด expand → breakdown เป็นแคมเปญ ดึง age breakdown จาก Windsor connector facebook (Meta)",
+      "changes": [
+        "Backend GET /api/ads-audience: age breakdown (facebook connector) → campaign",
+        "Frontend: เมนูย่อย Audience Report (ตาราง age → expand campaign, search, CSV)",
+        "กลุ่มอายุเรียงตามช่วงวัย, CPM/CPC ระดับ age แสดงเมื่อสกุลเงินเดียว",
+        "หมายเหตุ: age breakdown มีเฉพาะ Meta (TikTok/Twitter ไม่รองรับ)"
+      ]
+    },
+    {
       "version": "1.9.179",
       "date": "2026-06-02",
       "title": "Benchmark panel: รายการ Ads แบบแนวยาว อ่านง่าย + พาเนลกว้างขึ้น",

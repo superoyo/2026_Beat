@@ -1081,7 +1081,7 @@
         <a href="#/dashboard" data-route="dashboard" data-label="Dashboard"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></span><span class="nav-label">Dashboard</span></a>
         <a href="#/platforms" data-route="platforms" data-label="Platforms"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></span><span class="nav-label">Platforms</span></a>
         <!-- v1.9.163/167 — Ads (submenu: Report + Benchmark) -->
-        <a href="#/ads" data-route="ads" data-route-extra="ads-benchmark" data-label="Ads"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg></span><span class="nav-label">Ads</span></a>
+        <a href="#/ads" data-route="ads" data-route-extra="ads-benchmark,ads-audience" data-label="Ads"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg></span><span class="nav-label">Ads</span></a>
         <!-- v1.9.164 — Customer: ย้ายขึ้นโซนบน (กรองตามสิทธิ์ IAM อยู่แล้ว) -->
         <a href="#/calendar" data-route="calendar" data-route-extra="domains,websites,services-config" data-label="Customer"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span><span class="nav-label">Customer</span></a>
         <!-- v1.9.122 — บัญชีของฉัน: direct link (โปรไฟล์/My Device/Extension/Check-in อยู่ในเมนูย่อยของหน้านี้แล้ว) -->
@@ -1252,12 +1252,12 @@ function _extractErrDetail(j) {
 }
 
 // admin-only routes — member ห้ามเข้า (bounce ไป default)
-const ADMIN_ONLY_ROUTES = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads', 'ads-benchmark']);
+const ADMIN_ONLY_ROUTES = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads', 'ads-benchmark', 'ads-audience']);
 // menu items ที่ซ่อนใน sidebar สำหรับ member
 // (dashboard เห็นได้ทุกบทบาท — ใช้เป็นหน้าแรกของ member ด้วย)
-const HIDE_FROM_MEMBER_NAV = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads', 'ads-benchmark']);
+const HIDE_FROM_MEMBER_NAV = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads', 'ads-benchmark', 'ads-audience']);
 // v1.9.162 — IAM: route → module ที่ต้องมีสิทธิ์ (member ที่ถูก grant ถึงเข้าได้)
-const ROUTE_MODULE = { platforms: 'platform', ads: 'ads', 'ads-benchmark': 'ads', calendar: 'customer', domains: 'customer', websites: 'customer', 'services-config': 'customer', 'domains-config': 'customer' };
+const ROUTE_MODULE = { platforms: 'platform', ads: 'ads', 'ads-benchmark': 'ads', 'ads-audience': 'ads', calendar: 'customer', domains: 'customer', websites: 'customer', 'services-config': 'customer', 'domains-config': 'customer' };
 let currentModules = new Set();   // module ที่ผู้ใช้ปัจจุบันเข้าถึงได้ (member)
 
 // ---------- routing ----------
@@ -1279,6 +1279,7 @@ const routes = {
   'iam':              () => renderSettingPage('iam'),
   'ads':              () => renderAdsSection('ads'),
   'ads-benchmark':    () => renderAdsSection('ads-benchmark'),
+  'ads-audience':     () => renderAdsSection('ads-audience'),
   'my-device':        renderMyDevicePage,
   'domains-config':   renderDomainsConfigPage,
   'members':          () => renderPeoplesPage('members'),
@@ -1415,6 +1416,8 @@ let _adsSearch = '';
 let _adsType = '__all__';   // v1.9.165 — filter ตาม ad type (objective)
 let _benchData = null;      // v1.9.170 — cache benchmark (ใช้ใน slide-out จาก Report)
 let _benchMode = 'brand';   // v1.9.176 — 'brand' | 'category'
+let _audData = null;        // v1.9.180 — Audience Report (age breakdown)
+let _audSearch = '';
 // v1.9.170 — แยก brand/adtype จากชื่อ campaign (มิเรอร์ logic backend benchmark)
 const _BENCH_ADTYPES = ['Video Thruplay', 'Video Views', 'Page Likes', 'Page Like', 'CPAS', 'Reach', 'Engagement', 'Traffic', 'Awareness', 'Messages', 'Message', 'Conversions', 'Conversion', 'Purchases', 'Purchase', 'Leads', 'Lead'];
 function _benchBrandOf(camp) {
@@ -1516,8 +1519,9 @@ function _adsTrendSvg(trend) {
 // v1.9.167 — Ads เป็น submenu: Report (เดิม) + Benchmark
 function renderAdsSection(active) {
   return renderSubmenuPage({ title: '💰 Ads', active: active || 'ads', items: [
-    { route: 'ads',           ico: '📊', label: 'Report',    render: () => renderAdsReport() },
-    { route: 'ads-benchmark', ico: '📈', label: 'Benchmark', render: () => renderAdsBenchmark() },
+    { route: 'ads',           ico: '📊', label: 'Report',          render: () => renderAdsReport() },
+    { route: 'ads-audience',  ico: '👥', label: 'Audience Report', render: () => renderAdsAudience() },
+    { route: 'ads-benchmark', ico: '📈', label: 'Benchmark',       render: () => renderAdsBenchmark() },
   ]});
 }
 async function renderAdsReport() {
@@ -1536,6 +1540,175 @@ async function renderAdsReport() {
   const rb = $('ads-refresh');
   if (rb) rb.onclick = () => loadAdsSpend();
   loadAdsSpend();
+}
+// ===== Audience Report (ใช้จ่ายแยกตามกลุ่มอายุ → breakdown แคมเปญ) =====
+async function renderAdsAudience() {
+  _subMain().innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <select id="aud-days" style="padding:8px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:9px;background:var(--bg-input);color:var(--text);cursor:pointer">
+        <option value="7">7 วันล่าสุด</option>
+        <option value="14">14 วันล่าสุด</option>
+        <option value="30">30 วันล่าสุด</option>
+      </select>
+      <button class="btn" id="aud-refresh" style="font-size:13px;padding:8px 14px">🔄 รีเฟรช</button>
+    </div>
+    <div id="aud-body"><div class="empty">กำลังโหลด…</div></div>`;
+  const sel = $('aud-days');
+  if (sel) { sel.value = String(_adsDays); sel.onchange = () => { _adsDays = parseInt(sel.value, 10) || 7; _audSearch = ''; loadAudience(); }; }
+  const rb = $('aud-refresh');
+  if (rb) rb.onclick = () => loadAudience();
+  loadAudience();
+}
+async function loadAudience() {
+  const body = $('aud-body');
+  if (!body) return;
+  body.innerHTML = '<div class="empty">⏳ กำลังดึงข้อมูลจาก Windsor… (เฉพาะ Meta · อาจช้าสักครู่)</div>';
+  try { _audData = await fetchJson(`/api/ads-audience?days=${_adsDays}`); }
+  catch (e) {
+    const msg = e.message || '';
+    if (/WINDSOR_API_KEY/.test(msg)) {
+      body.innerHTML = `<div class="card" style="display:block;border-color:rgba(245,158,11,.4);background:rgba(245,158,11,.06)">
+        <div style="font-size:15px;font-weight:700;margin-bottom:8px">⚙️ ยังไม่ได้ตั้งค่า Windsor API</div>
+        <div style="font-size:13.5px;color:var(--text-muted);line-height:1.7">ต้องตั้งค่า <code style="background:var(--bg-soft);padding:1px 6px;border-radius:5px;font-family:ui-monospace,Menlo,monospace">WINDSOR_API_KEY</code> บน Railway ก่อน</div></div>`;
+      return;
+    }
+    body.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(msg)}</div>`;
+    return;
+  }
+  renderAudienceBody();
+}
+function renderAudienceBody() {
+  const body = $('aud-body');
+  if (!body || !_audData) return;
+  const ages = _audData.ages || [];
+  const dateRange = `${escapeHtml(_audData.date_from)} → ${escapeHtml(_audData.date_to)}`;
+  if (ages.length === 0) {
+    body.innerHTML = `<div class="empty" style="padding:30px;text-align:center">— ไม่มีข้อมูลกลุ่มอายุในช่วง ${dateRange} (age breakdown มีเฉพาะ Meta) —</div>`;
+    return;
+  }
+  body.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+      <div style="font-size:12.5px;color:var(--text-muted)">📅 ${dateRange} · 👥 แยกตามกลุ่มอายุ (Meta) · รวม <strong style="color:var(--primary)">${_adsTotalTxt(_audData.total_by_cur)}</strong></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input id="aud-search" type="text" value="${escapeHtml(_audSearch)}" placeholder="🔍 ค้นหาแคมเปญ..." autocomplete="off"
+               style="padding:8px 12px;font-size:13px;border:1px solid var(--border);border-radius:9px;background:var(--bg-input);color:var(--text);min-width:200px" />
+        <button class="btn" id="aud-export" style="font-size:13px;padding:8px 14px">⬇ CSV</button>
+      </div>
+    </div>
+    <div id="aud-cards"></div>`;
+  const si = $('aud-search');
+  if (si) { let _t; si.addEventListener('input', e => { clearTimeout(_t); const v = e.target.value; _t = setTimeout(() => { _audSearch = v; renderAudienceCards(); }, 220); }); }
+  const ex = $('aud-export');
+  if (ex) ex.onclick = exportAudienceCsv;
+  renderAudienceCards();
+}
+function renderAudienceCards() {
+  const wrap = $('aud-cards');
+  if (!wrap || !_audData) return;
+  const q = _audSearch.trim().toLowerCase();
+  const filtering = q !== '';
+  const thead = `<thead><tr>
+    <th style="text-align:left">กลุ่มอายุ / แคมเปญ</th>
+    <th style="text-align:right">CPM</th>
+    <th style="text-align:right">Spend</th>
+    <th style="text-align:right">Impr.</th>
+    <th style="text-align:right">Reach</th>
+    <th style="text-align:right">Freq.</th>
+    <th style="text-align:right">Clicks</th>
+    <th style="text-align:right">CTR</th>
+    <th style="text-align:right">CPC</th>
+  </tr></thead>`;
+  const ageRows = (_audData.ages || []).map((a, ai) => {
+    const camps = (a.campaigns || []).filter(c => !q || (c.campaign || '').toLowerCase().includes(q));
+    if (camps.length === 0) return null;
+    const byCur = {};
+    camps.forEach(c => { byCur[c.currency] = (byCur[c.currency] || 0) + (c.spend || 0); });
+    return { age: a.age, camps, byCur, agg: _adsAgg(camps), oneCur: Object.keys(byCur).length === 1, open: filtering, ai };
+  }).filter(Boolean);
+  if (ageRows.length === 0) {
+    wrap.innerHTML = '<div class="empty" style="padding:24px;text-align:center;color:var(--text-muted)">— ไม่พบแคมเปญที่ตรงกับคำค้น —</div>';
+    return;
+  }
+  const rowsHtml = ageRows.map(a => {
+    const m = a.agg;
+    const ageRow = `
+      <tr class="aud-age-row" data-age="${a.ai}" style="cursor:pointer">
+        <td><span style="display:inline-flex;align-items:center;gap:7px">
+          <span class="aud-caret" style="font-size:9px;color:var(--text-soft);transition:transform .15s;transform:${a.open ? 'rotate(90deg)' : ''}">▶</span>
+          <span style="font-weight:700">${escapeHtml(a.age)}</span>
+          <span style="font-size:10.5px;color:var(--text-soft)">· ${a.camps.length}</span>
+        </span></td>
+        <td class="tnum" style="font-weight:600">${a.oneCur && m.cpm != null ? _adsMoney(m.cpm) : _adsDash()}</td>
+        <td class="tnum">${_adsTotalTxt(a.byCur)}</td>
+        <td class="tnum">${m.impressions ? _adsInt(m.impressions) : _adsDash()}</td>
+        <td class="tnum">${m.reach ? _adsInt(m.reach) : _adsDash()}</td>
+        <td class="tnum">${m.frequency != null ? m.frequency : _adsDash()}</td>
+        <td class="tnum">${m.clicks ? _adsInt(m.clicks) : _adsDash()}</td>
+        <td class="tnum">${m.ctr != null ? m.ctr + '%' : _adsDash()}</td>
+        <td class="tnum">${a.oneCur && m.cpc != null ? _adsMoney(m.cpc) : _adsDash()}</td>
+      </tr>`;
+    const campRows = a.camps.map(c => `
+      <tr class="aud-camp-row" data-camp-of="${a.ai}" style="display:${a.open ? '' : 'none'}">
+        <td style="padding-left:32px;max-width:420px"><span style="color:var(--text-muted);display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;vertical-align:bottom" title="${escapeHtml(c.campaign)}">${escapeHtml(c.campaign)}</span></td>
+        ${_adsMetricCells(c, c.currency)}
+      </tr>`).join('');
+    return ageRow + campRows;
+  }).join('');
+  const gByCur = {};
+  ageRows.forEach(a => Object.entries(a.byCur).forEach(([k, v]) => { gByCur[k] = (gByCur[k] || 0) + v; }));
+  const gAgg = _adsAgg(ageRows.flatMap(a => a.camps));
+  const gOne = Object.keys(gByCur).length === 1;
+  const totRow = `
+    <tr class="ads-tot-row">
+      <td>รวมทุกกลุ่มอายุ</td>
+      <td class="tnum">${gOne && gAgg.cpm != null ? _adsMoney(gAgg.cpm) : _adsDash()}</td>
+      <td class="tnum">${_adsTotalTxt(gByCur)}</td>
+      <td class="tnum">${gAgg.impressions ? _adsInt(gAgg.impressions) : _adsDash()}</td>
+      <td class="tnum">${gAgg.reach ? _adsInt(gAgg.reach) : _adsDash()}</td>
+      <td class="tnum">${gAgg.frequency != null ? gAgg.frequency : _adsDash()}</td>
+      <td class="tnum">${gAgg.clicks ? _adsInt(gAgg.clicks) : _adsDash()}</td>
+      <td class="tnum">${gAgg.ctr != null ? gAgg.ctr + '%' : _adsDash()}</td>
+      <td class="tnum">${gOne && gAgg.cpc != null ? _adsMoney(gAgg.cpc) : _adsDash()}</td>
+    </tr>`;
+  wrap.innerHTML = `
+    <div class="card" style="display:block;margin-bottom:16px;padding:0;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:13px 16px;background:var(--bg-soft);border-bottom:1px solid var(--border)">
+        <div style="font-size:15px;font-weight:700">👥 Audience · <span style="font-size:12px;color:var(--text-muted);font-weight:500">${ageRows.length} กลุ่มอายุ (Meta)</span></div>
+        <div style="font-size:15px;font-weight:800;color:var(--primary)">${_adsTotalTxt(gByCur)}</div>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="ads-table">${thead}<tbody>${rowsHtml}${totRow}</tbody></table>
+      </div>
+    </div>`;
+  const tbl = wrap.querySelector('table.ads-table');
+  if (tbl) tbl.querySelectorAll('.aud-age-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const ai = row.dataset.age;
+      const caret = row.querySelector('.aud-caret');
+      const camps = tbl.querySelectorAll(`.aud-camp-row[data-camp-of="${ai}"]`);
+      const isOpen = camps.length && camps[0].style.display !== 'none';
+      camps.forEach(cr => { cr.style.display = isOpen ? 'none' : ''; });
+      if (caret) caret.style.transform = isOpen ? '' : 'rotate(90deg)';
+    });
+  });
+}
+function exportAudienceCsv() {
+  if (!_audData || !_audData.ages) return;
+  const esc = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const nz = v => (v == null ? '' : v);
+  const lines = [['Age Group', 'Campaign', 'Spend', 'Currency', 'Impressions', 'Reach', 'Frequency', 'Clicks', 'CTR(%)', 'CPC', 'CPM'].join(',')];
+  _audData.ages.forEach(a => {
+    (a.campaigns || []).forEach(c => {
+      lines.push([a.age, c.campaign, c.spend, c.currency, c.impressions, c.reach, nz(c.frequency), c.clicks, nz(c.ctr), nz(c.cpc), nz(c.cpm)].map(esc).join(','));
+    });
+  });
+  const csv = '﻿' + lines.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `ads-audience_${_audData.date_from}_${_audData.date_to}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 // ===== Benchmark (CPM แยกตาม Brand × Ad Type — ดึงจาก Google Sheet) =====
 function _benchColor(cpm, min, max) {
