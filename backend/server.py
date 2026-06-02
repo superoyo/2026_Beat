@@ -7538,7 +7538,8 @@ def member_supervised(fct_member_session: Optional[str] = Cookie(default=None)) 
             team_ids,
         ).fetchall()
         mem_rows = conn.execute(
-            f"SELECT tm.team_id, m.id, m.display_name, m.email, m.phone, m.avatar_data, m.share_phone "
+            f"SELECT tm.team_id, m.id, m.display_name, m.email, m.phone, m.avatar_data, "
+            f"       m.share_phone, m.birthdate, m.share_birthdate "
             f"FROM team_members tm JOIN members m ON m.id = tm.member_id "
             f"WHERE tm.team_id IN ({pl}) ORDER BY m.display_name COLLATE NOCASE",
             team_ids,
@@ -7556,10 +7557,13 @@ def member_supervised(fct_member_session: Optional[str] = Cookie(default=None)) 
         ph_out = None if (ph and str(ph).startswith("email:")) else ph
         if _row_share(r, "share_phone") == 0:
             ph_out = None
+        # v1.9.151 — birthdate (สำหรับ badge วันเกิด) — เคารพ privacy
+        bday = r["birthdate"] if _row_share(r, "share_birthdate") == 1 else None
         mem_by_team.setdefault(r["team_id"], []).append({
             "id": r["id"], "display_name": r["display_name"], "email": r["email"],
             "phone": ph_out,
             "avatar_data": r["avatar_data"],
+            "birthdate": bday,
         })
     site_by_team: dict[int, list] = {}
     for r in site_rows:

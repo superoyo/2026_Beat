@@ -11321,6 +11321,18 @@ function fmtMemberDate(iso) {
     hour: '2-digit', minute: '2-digit',
   });
 }
+// v1.9.151 — จำนวนวันถึงวันเกิดถัดไป (0 = เกิดวันนี้, null = ไม่มี/รูปแบบผิด)
+function _daysUntilBirthday(birthdate) {
+  if (!birthdate || !/^\d{4}-\d{2}-\d{2}$/.test(birthdate)) return null;
+  const parts = birthdate.split('-');
+  const bm = parseInt(parts[1], 10), bd = parseInt(parts[2], 10);
+  if (bm < 1 || bm > 12 || bd < 1 || bd > 31) return null;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let next = new Date(now.getFullYear(), bm - 1, bd);
+  if (next < today) next = new Date(now.getFullYear() + 1, bm - 1, bd);
+  return Math.round((next - today) / 86400000);
+}
 
 async function loadMembersList() {
   let data, teamsData;
@@ -13438,9 +13450,17 @@ async function renderMemberAccountPage() {
           const photo = m.avatar_data
             ? `<img src="${m.avatar_data}" alt="" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;display:block" />`
             : `<div style="width:100%;aspect-ratio:1;border-radius:12px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:38px;display:flex;align-items:center;justify-content:center">${escapeHtml(initial)}</div>`;
+          // v1.9.151 — badge วันเกิด ทับมุมล่างของรูป
+          const dBday = _daysUntilBirthday(m.birthdate);
+          let bdayBadge = '';
+          if (dBday === 0) {
+            bdayBadge = `<div style="position:absolute;left:6px;right:6px;bottom:6px;text-align:center;padding:4px 6px;border-radius:8px;background:linear-gradient(135deg,#f59e0b,#ec4899);color:#fff;font-size:11px;font-weight:700;box-shadow:0 2px 8px rgba(15,23,42,.3)">🎂 เกิดวันนี้</div>`;
+          } else if (dBday !== null && dBday >= 1 && dBday <= 30) {
+            bdayBadge = `<div style="position:absolute;left:6px;right:6px;bottom:6px;text-align:center;padding:3px 6px;border-radius:8px;background:rgba(15,23,42,.72);color:#fff;font-size:10.5px;font-weight:600">🎂 วันเกิดในอีก ${dBday} วัน</div>`;
+          }
           return `
             <div class="sup-member-card" data-sup-member="${m.id}" data-sup-name="${escapeHtml(m.display_name || m.email || '')}" style="display:flex;flex-direction:column;gap:7px;cursor:pointer;border-radius:12px;padding:4px;margin:-4px;transition:background .12s" title="ดูข้อมูล Profile / Device">
-              ${photo}
+              <div style="position:relative;width:100%">${photo}${bdayBadge}</div>
               <div style="font-weight:600;font-size:13.5px;line-height:1.3">${escapeHtml(m.display_name || '(ไม่ได้ตั้งชื่อ)')}</div>
               <div style="font-size:11.5px;color:var(--text-muted);margin-top:-4px">${m.phone ? '📞 ' + escapeHtml(m.phone) : ''}</div>
             </div>`;

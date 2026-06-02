@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.151",
+      "date": "2026-06-01",
+      "title": "My Profile > Team: badge วันเกิดบนรูปสมาชิก (เกิดวันนี้ / อีก xx วัน)",
+      "summary": "ในแท็บ Team ถ้าสมาชิกคนไหนเกิดวันนี้ จะแสดง '🎂 เกิดวันนี้' ทับมุมล่างของรูป; ถ้าเกิดภายใน 30 วันข้างหน้า แสดง '🎂 วันเกิดในอีก xx วัน' (เคารพ Privacy — ถ้าตั้งวันเกิดเป็นส่วนตัวจะไม่แสดง)",
+      "changes": [
+        "Backend /api/member/supervised: เพิ่ม birthdate (mask ตาม share_birthdate)",
+        "Frontend: helper _daysUntilBirthday + badge overlay ทับขอบล่างรูปในการ์ด Team"
+      ]
+    },
+    {
       "version": "1.9.150",
       "date": "2026-06-01",
       "title": "Peoples > Members: แถวเหลือแค่ข้อมูล คลิกทั้งแถวเปิด panel จัดเป็น tab",
