@@ -2,6 +2,27 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.160",
+      "date": "2026-06-01",
+      "title": "Ads: เพิ่ม measurement reach/frequency + สรุปรวมต่อแพลตฟอร์ม",
+      "summary": "หน้า Ads เพิ่ม Reach + Frequency ในทุกระดับ (แพลตฟอร์ม/บัญชี/แคมเปญ) + แถบสรุป metrics รวมต่อแพลตฟอร์ม (impressions/reach/clicks/CTR) + ใส่ใน CSV ด้วย (ROAS/conversions ดึงไม่ได้เพราะ Windsor all-connector ไม่มี field generic + บัญชีไม่ได้ตั้ง conversion tracking)",
+      "changes": [
+        "Backend /api/ads-spend: เพิ่ม field reach → คำนวณ frequency (impr/reach) + platform totals",
+        "Frontend: metrics line เพิ่ม reach/freq, หัวการ์ดแพลตฟอร์มมีแถบสรุป metrics รวม, CSV เพิ่มคอลัมน์ Reach/Frequency"
+      ]
+    },
+    {
+      "version": "1.9.159",
+      "date": "2026-06-01",
+      "title": "Ads: เพิ่ม metrics + กราฟแนวโน้ม + ค้นหา + Export CSV",
+      "summary": "หน้า Ads เพิ่ม 4 อย่าง — แสดง metrics (impressions/clicks/CPC/CPM/CTR) ต่อบัญชี+แคมเปญ, กราฟแนวโน้มค่าใช้จ่ายรายวันแยกตามแพลตฟอร์ม, ช่องค้นหาบัญชี/แคมเปญ, และปุ่ม Export CSV",
+      "changes": [
+        "Backend /api/ads-spend: ดึง impressions/clicks เพิ่ม + คำนวณ CPC/CPM/CTR, เพิ่ม query trend (spend รายวันต่อ source)",
+        "Frontend: กราฟ SVG แนวโน้มรายวัน (เส้นต่อแพลตฟอร์ม), metrics line ต่อบัญชี/แคมเปญ",
+        "ช่องค้นหา (กรองบัญชี/แคมเปญ auto-expand), ปุ่ม ⬇ CSV (มี BOM รองรับภาษาไทยใน Excel)"
+      ]
+    },
+    {
       "version": "1.9.158",
       "date": "2026-06-01",
       "title": "Ads: เพิ่ม campaign name ใต้แต่ละ ad account (กางดูได้)",

@@ -8302,24 +8302,43 @@ def ads_spend(days: int = 7, _sess: dict = Depends(require_admin)) -> dict[str, 
     date_to = today.isoformat()
     date_from = (today - timedelta(days=days - 1)).isoformat()
     from urllib.parse import urlencode as _urlencode
-    qs = _urlencode({
-        "api_key": WINDSOR_API_KEY,
-        "date_from": date_from,
-        "date_to": date_to,
-        "fields": "source,account_id,account_name,campaign,spend,currency",
-        "_renderer": "json",
-    })
-    url = f"{WINDSOR_BASE_URL}/all?{qs}"
-    req = urllib.request.Request(url, headers={"Accept": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=55) as resp:
+
+    def _windsor(fields: str) -> list:
+        qs = _urlencode({"api_key": WINDSOR_API_KEY, "date_from": date_from, "date_to": date_to,
+                         "fields": fields, "_renderer": "json"})
+        req = urllib.request.Request(f"{WINDSOR_BASE_URL}/all?{qs}", headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=50) as resp:
             raw = _json.loads(resp.read().decode("utf-8", errors="replace"))
+        return raw.get("data", []) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
+
+    try:
+        rows = _windsor("source,account_id,account_name,campaign,spend,impressions,clicks,reach,currency")
+        trend_rows = _windsor("source,date,spend")
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:300] if hasattr(e, "read") else ""
         raise HTTPException(status_code=502, detail=f"Windsor API error (HTTP {e.code}) {body}")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"เชื่อมต่อ Windsor ไม่สำเร็จ: {e}")
-    rows = raw.get("data", []) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
+
+    def _f(v) -> float:
+        try:
+            return float(v or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _metrics(spend: float, impr: float, clk: float, reach: float) -> dict[str, Any]:
+        return {
+            "spend": round(spend, 2),
+            "impressions": int(round(impr)),
+            "clicks": int(round(clk)),
+            "reach": int(round(reach)),
+            "ctr": round(clk / impr * 100, 2) if impr else None,
+            "cpc": round(spend / clk, 2) if clk else None,
+            "cpm": round(spend / impr * 1000, 2) if impr else None,
+            "frequency": round(impr / reach, 2) if reach else None,
+        }
+
+    # ---- breakdown: platform → account → campaign (+ metrics) ----
     platforms: dict[str, Any] = {}
     for r in rows:
         if not isinstance(r, dict):
@@ -8329,16 +8348,20 @@ def ads_spend(days: int = 7, _sess: dict = Depends(require_admin)) -> dict[str, 
         acc_name = str(r.get("account_name") or acc_id or "(unknown)")
         cur = (str(r.get("currency") or "").strip()) or "—"
         campaign = (str(r.get("campaign") or "").strip()) or "(ไม่ระบุแคมเปญ)"
-        try:
-            spend = float(r.get("spend") or 0)
-        except (TypeError, ValueError):
-            spend = 0.0
+        spend, impr, clk, rch = _f(r.get("spend")), _f(r.get("impressions")), _f(r.get("clicks")), _f(r.get("reach"))
         p = platforms.setdefault(source, {"source": source, "accounts": {}, "total_by_cur": {}})
         key = acc_id or acc_name
-        a = p["accounts"].setdefault(key, {"account_id": acc_id, "account_name": acc_name, "currency": cur, "spend": 0.0, "campaigns": {}})
+        a = p["accounts"].setdefault(key, {"account_id": acc_id, "account_name": acc_name, "currency": cur,
+                                           "spend": 0.0, "impressions": 0.0, "clicks": 0.0, "reach": 0.0, "campaigns": {}})
         a["spend"] += spend
-        c = a["campaigns"].setdefault(campaign, {"campaign": campaign, "spend": 0.0})
+        a["impressions"] += impr
+        a["clicks"] += clk
+        a["reach"] += rch
+        c = a["campaigns"].setdefault(campaign, {"campaign": campaign, "spend": 0.0, "impressions": 0.0, "clicks": 0.0, "reach": 0.0})
         c["spend"] += spend
+        c["impressions"] += impr
+        c["clicks"] += clk
+        c["reach"] += rch
         p["total_by_cur"][cur] = p["total_by_cur"].get(cur, 0.0) + spend
     out = []
     for source, p in platforms.items():
@@ -8346,21 +8369,52 @@ def ads_spend(days: int = 7, _sess: dict = Depends(require_admin)) -> dict[str, 
         acc_out = []
         for a in accounts:
             camps = sorted(
-                ({"campaign": c["campaign"], "spend": round(c["spend"], 2)} for c in a["campaigns"].values()),
+                ({"campaign": c["campaign"], **_metrics(c["spend"], c["impressions"], c["clicks"], c["reach"])}
+                 for c in a["campaigns"].values()),
                 key=lambda x: x["spend"], reverse=True,
             )
-            acc_out.append({
-                "account_id": a["account_id"], "account_name": a["account_name"],
-                "currency": a["currency"], "spend": round(a["spend"], 2), "campaigns": camps,
-            })
+            acc_out.append({"account_id": a["account_id"], "account_name": a["account_name"], "currency": a["currency"],
+                            **_metrics(a["spend"], a["impressions"], a["clicks"], a["reach"]), "campaigns": camps})
+        # platform-level totals (สรุปรวมต่อแพลตฟอร์ม — ไม่ขึ้นกับสกุลเงิน)
+        t_impr = sum(a["impressions"] for a in acc_out)
+        t_clk = sum(a["clicks"] for a in acc_out)
+        t_reach = sum(a["reach"] for a in acc_out)
+        totals = {
+            "impressions": t_impr, "clicks": t_clk, "reach": t_reach,
+            "ctr": round(t_clk / t_impr * 100, 2) if t_impr else None,
+            "frequency": round(t_impr / t_reach, 2) if t_reach else None,
+        }
         out.append({
             "source": source,
             "accounts": acc_out,
             "total_by_cur": {k: round(v, 2) for k, v in p["total_by_cur"].items()},
             "account_count": len(acc_out),
+            "totals": totals,
         })
     out.sort(key=lambda x: sum(x["total_by_cur"].values()), reverse=True)
-    return {"date_from": date_from, "date_to": date_to, "days": days, "platforms": out}
+
+    # ---- trend: daily spend per source ----
+    trend_map: dict[str, dict[str, float]] = {}
+    sources_seen: set[str] = set()
+    for r in trend_rows:
+        if not isinstance(r, dict):
+            continue
+        d = str(r.get("date") or "").strip()[:10]
+        if not d:
+            continue
+        s = (str(r.get("source") or "other").strip()) or "other"
+        sources_seen.add(s)
+        dm = trend_map.setdefault(d, {})
+        dm[s] = dm.get(s, 0.0) + _f(r.get("spend"))
+    dates = sorted(trend_map.keys())
+    srcs = sorted(sources_seen)
+    trend = {
+        "dates": dates,
+        "sources": srcs,
+        "series": {s: [round(trend_map[d].get(s, 0.0), 2) for d in dates] for s in srcs},
+    }
+
+    return {"date_from": date_from, "date_to": date_to, "days": days, "platforms": out, "trend": trend}
 
 
 # ===========================================================================

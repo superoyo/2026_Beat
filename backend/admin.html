@@ -1397,6 +1397,8 @@ function renderDashboardEmbed() {
 
 // ============== v1.9.157 — Ads (ยอดใช้จ่ายค่าโฆษณา จาก Windsor) ==============
 let _adsDays = 7;
+let _adsData = null;
+let _adsSearch = '';
 const _ADS_SRC = {
   facebook:   { icon: '📘', label: 'Meta Ads' },
   meta:       { icon: '📘', label: 'Meta Ads' },
@@ -1406,12 +1408,53 @@ const _ADS_SRC = {
   bing:       { icon: '🅱️', label: 'Microsoft Ads' },
   linkedin:   { icon: '💼', label: 'LinkedIn Ads' },
 };
+const _ADS_COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 function _adsSrcMeta(s) { return _ADS_SRC[s] || { icon: '📊', label: s }; }
 function _adsMoney(n) { return (Number(n) || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function _adsInt(n) { return (Number(n) || 0).toLocaleString('th-TH'); }
 function _adsTotalTxt(byCur) {
   const keys = Object.keys(byCur || {});
   if (keys.length === 0) return '0.00';
   return keys.map(c => `${_adsMoney(byCur[c])} ${escapeHtml(c)}`).join(' · ');
+}
+function _adsMetricsLine(m) {
+  const parts = [];
+  if (m.impressions) parts.push(`👁 ${_adsInt(m.impressions)}`);
+  if (m.reach) parts.push(`🙋 reach ${_adsInt(m.reach)}`);
+  if (m.frequency != null) parts.push(`freq ${m.frequency}`);
+  if (m.clicks) parts.push(`🖱 ${_adsInt(m.clicks)}`);
+  if (m.ctr != null) parts.push(`CTR ${m.ctr}%`);
+  if (m.cpc != null) parts.push(`CPC ${_adsMoney(m.cpc)}`);
+  if (m.cpm != null) parts.push(`CPM ${_adsMoney(m.cpm)}`);
+  return parts.join(' · ');
+}
+function _adsTrendSvg(trend) {
+  const dates = (trend && trend.dates) || [];
+  const sources = (trend && trend.sources) || [];
+  if (dates.length < 2 || sources.length === 0) return '';
+  let max = 0;
+  sources.forEach(s => (trend.series[s] || []).forEach(v => { if (v > max) max = v; }));
+  if (max <= 0) return '';
+  const W = 760, H = 200, padL = 6, padR = 6, padT = 12, padB = 26;
+  const innerW = W - padL - padR, innerH = H - padT - padB, n = dates.length;
+  const x = i => padL + (i / (n - 1)) * innerW;
+  const y = v => padT + innerH - (v / max) * innerH;
+  const lines = sources.map((s, si) => {
+    const col = _ADS_COLORS[si % _ADS_COLORS.length];
+    const ser = trend.series[s] || [];
+    const pts = ser.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+    const dots = ser.map((v, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.4" fill="${col}"/>`).join('');
+    return `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>${dots}`;
+  }).join('');
+  const xl = dates.map((d, i) => `<text x="${x(i).toFixed(1)}" y="${H - 8}" font-size="9" fill="#8895ab" text-anchor="middle">${escapeHtml(d.slice(5))}</text>`).join('');
+  const legend = sources.map((s, si) => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--text-muted)"><span style="width:11px;height:11px;border-radius:3px;background:${_ADS_COLORS[si % _ADS_COLORS.length]}"></span>${escapeHtml(_adsSrcMeta(s).label)}</span>`).join('');
+  return `
+    <div class="card" style="display:block;margin-bottom:16px">
+      <div style="font-size:13.5px;font-weight:700;margin-bottom:10px">📈 แนวโน้มค่าใช้จ่ายรายวัน</div>
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:200px;display:block">${lines}${xl}</svg>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">${legend}</div>
+      <div style="font-size:10.5px;color:var(--text-soft);margin-top:5px">* แต่ละเส้นเป็นสกุลเงินของแพลตฟอร์มนั้น ๆ (สเกลตามยอดสูงสุด)</div>
+    </div>`;
 }
 async function renderAdsPage() {
   $('main').innerHTML = `
@@ -1428,7 +1471,7 @@ async function renderAdsPage() {
     </div>
     <div id="ads-body"><div class="empty">กำลังโหลด…</div></div>`;
   const sel = $('ads-days');
-  if (sel) { sel.value = String(_adsDays); sel.onchange = () => { _adsDays = parseInt(sel.value, 10) || 7; loadAdsSpend(); }; }
+  if (sel) { sel.value = String(_adsDays); sel.onchange = () => { _adsDays = parseInt(sel.value, 10) || 7; _adsSearch = ''; loadAdsSpend(); }; }
   const rb = $('ads-refresh');
   if (rb) rb.onclick = () => loadAdsSpend();
   loadAdsSpend();
@@ -1437,73 +1480,120 @@ async function loadAdsSpend() {
   const body = $('ads-body');
   if (!body) return;
   body.innerHTML = '<div class="empty">⏳ กำลังดึงข้อมูลจาก Windsor… (อาจใช้เวลาสักครู่)</div>';
-  let data;
-  try { data = await fetchJson(`/api/ads-spend?days=${_adsDays}`); }
+  try { _adsData = await fetchJson(`/api/ads-spend?days=${_adsDays}`); }
   catch (e) {
     const msg = e.message || '';
     if (/WINDSOR_API_KEY/.test(msg)) {
       body.innerHTML = `<div class="card" style="display:block;border-color:rgba(245,158,11,.4);background:rgba(245,158,11,.06)">
         <div style="font-size:15px;font-weight:700;margin-bottom:8px">⚙️ ยังไม่ได้ตั้งค่า Windsor API</div>
         <div style="font-size:13.5px;color:var(--text-muted);line-height:1.7">
-          เมนูนี้ดึงข้อมูลจาก <strong>Windsor.ai</strong> — ต้องตั้งค่า environment variable <code style="background:var(--bg-soft);padding:1px 6px;border-radius:5px;font-family:ui-monospace,Menlo,monospace">WINDSOR_API_KEY</code> บน Railway ก่อน<br>
-          (เอา API key ได้จาก windsor.ai → Settings → API key)
-        </div>
-      </div>`;
+          เมนูนี้ดึงข้อมูลจาก <strong>Windsor.ai</strong> — ต้องตั้งค่า environment variable <code style="background:var(--bg-soft);padding:1px 6px;border-radius:5px;font-family:ui-monospace,Menlo,monospace">WINDSOR_API_KEY</code> บน Railway ก่อน
+        </div></div>`;
       return;
     }
     body.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(msg)}</div>`;
     return;
   }
-  const plats = data.platforms || [];
-  const dateRange = `${escapeHtml(data.date_from)} → ${escapeHtml(data.date_to)}`;
+  renderAdsBody();
+}
+function renderAdsBody() {
+  const body = $('ads-body');
+  if (!body || !_adsData) return;
+  const plats = _adsData.platforms || [];
+  const dateRange = `${escapeHtml(_adsData.date_from)} → ${escapeHtml(_adsData.date_to)}`;
   if (plats.length === 0) {
     body.innerHTML = `<div class="empty" style="padding:30px;text-align:center">— ไม่มีข้อมูลใช้จ่ายในช่วง ${dateRange} —</div>`;
     return;
   }
-  // grand total per currency
   const grand = {};
   plats.forEach(p => Object.entries(p.total_by_cur || {}).forEach(([c, v]) => { grand[c] = (grand[c] || 0) + v; }));
-  const cards = plats.map((p, pi) => {
+  body.innerHTML = `
+    ${_adsTrendSvg(_adsData.trend)}
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+      <div style="font-size:12.5px;color:var(--text-muted)">📅 ${dateRange} · รวมทั้งหมด <strong style="color:var(--primary)">${_adsTotalTxt(grand)}</strong></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input id="ads-search" type="text" value="${escapeHtml(_adsSearch)}" placeholder="🔍 ค้นหาบัญชี / แคมเปญ..." autocomplete="off"
+               style="padding:8px 12px;font-size:13px;border:1px solid var(--border);border-radius:9px;background:var(--bg-input);color:var(--text);min-width:220px" />
+        <button class="btn" id="ads-export" style="font-size:13px;padding:8px 14px">⬇ CSV</button>
+      </div>
+    </div>
+    <div id="ads-cards"></div>`;
+  const si = $('ads-search');
+  if (si) {
+    let _t;
+    si.addEventListener('input', e => { clearTimeout(_t); const v = e.target.value; _t = setTimeout(() => { _adsSearch = v; renderAdsCards(); }, 220); });
+  }
+  const ex = $('ads-export');
+  if (ex) ex.onclick = exportAdsCsv;
+  renderAdsCards();
+}
+function renderAdsCards() {
+  const wrap = $('ads-cards');
+  if (!wrap || !_adsData) return;
+  const q = _adsSearch.trim().toLowerCase();
+  const cards = (_adsData.platforms || []).map(p => {
     const meta = _adsSrcMeta(p.source);
-    const accBlocks = (p.accounts || []).map((a, ai) => {
+    // filter accounts/campaigns by search
+    let accounts = p.accounts || [];
+    if (q) {
+      accounts = accounts.map(a => {
+        const accHit = (a.account_name || '').toLowerCase().includes(q);
+        const camps = accHit ? a.campaigns : (a.campaigns || []).filter(c => (c.campaign || '').toLowerCase().includes(q));
+        if (accHit || camps.length) return { ...a, campaigns: camps, _expand: !accHit };
+        return null;
+      }).filter(Boolean);
+    }
+    if (accounts.length === 0) return '';
+    const accBlocks = accounts.map(a => {
       const camps = a.campaigns || [];
       const campRows = camps.length
-        ? camps.map(c => `
-          <div style="display:flex;justify-content:space-between;gap:12px;padding:7px 16px 7px 38px;font-size:12.5px;border-top:1px solid var(--border)">
-            <span style="color:var(--text-muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(c.campaign)}">${escapeHtml(c.campaign)}</span>
-            <span style="white-space:nowrap;font-weight:500">${_adsMoney(c.spend)} <span style="color:var(--text-soft);font-size:10.5px">${escapeHtml(a.currency)}</span></span>
-          </div>`).join('')
+        ? camps.map(c => {
+            const mline = _adsMetricsLine(c);
+            return `
+            <div style="padding:7px 16px 7px 38px;border-top:1px solid var(--border)">
+              <div style="display:flex;justify-content:space-between;gap:12px;font-size:12.5px">
+                <span style="color:var(--text-muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(c.campaign)}">${escapeHtml(c.campaign)}</span>
+                <span style="white-space:nowrap;font-weight:600">${_adsMoney(c.spend)} <span style="color:var(--text-soft);font-size:10.5px;font-weight:400">${escapeHtml(a.currency)}</span></span>
+              </div>
+              ${mline ? `<div style="font-size:10.5px;color:var(--text-soft);margin-top:2px">${mline}</div>` : ''}
+            </div>`;
+          }).join('')
         : '<div style="padding:8px 16px 8px 38px;font-size:12px;color:var(--text-muted)">— ไม่มีแคมเปญ —</div>';
+      const open = a._expand ? '' : 'none';
+      const caretRot = a._expand ? 'rotate(90deg)' : '';
+      const aMline = _adsMetricsLine(a);
       return `
         <div style="border-top:1px solid var(--border)">
-          <div class="ads-acc-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;cursor:pointer">
-            <span style="display:flex;align-items:center;gap:8px;min-width:0">
-              <span class="ads-caret" style="font-size:10px;color:var(--text-soft);transition:transform .15s;flex-shrink:0">▶</span>
-              <span style="font-size:13px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(a.account_name)}</span>
-              <span style="font-size:11px;color:var(--text-soft);white-space:nowrap;flex-shrink:0">· ${camps.length} แคมเปญ</span>
-            </span>
-            <span style="font-size:13px;font-weight:700;white-space:nowrap">${_adsMoney(a.spend)} <span style="color:var(--text-soft);font-weight:400;font-size:11px">${escapeHtml(a.currency)}</span></span>
+          <div class="ads-acc-head" style="padding:10px 14px;cursor:pointer">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+              <span style="display:flex;align-items:center;gap:8px;min-width:0">
+                <span class="ads-caret" style="font-size:10px;color:var(--text-soft);transition:transform .15s;flex-shrink:0;transform:${caretRot}">▶</span>
+                <span style="font-size:13px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(a.account_name)}</span>
+                <span style="font-size:11px;color:var(--text-soft);white-space:nowrap;flex-shrink:0">· ${camps.length} แคมเปญ</span>
+              </span>
+              <span style="font-size:13px;font-weight:700;white-space:nowrap">${_adsMoney(a.spend)} <span style="color:var(--text-soft);font-weight:400;font-size:11px">${escapeHtml(a.currency)}</span></span>
+            </div>
+            ${aMline ? `<div style="font-size:10.5px;color:var(--text-soft);margin-top:3px;margin-left:18px">${aMline}</div>` : ''}
           </div>
-          <div class="ads-camps" style="display:none">${campRows}</div>
+          <div class="ads-camps" style="display:${open}">${campRows}</div>
         </div>`;
     }).join('');
+    const t = p.totals || {};
+    const totLine = _adsMetricsLine({ impressions: t.impressions, reach: t.reach, frequency: t.frequency, clicks: t.clicks, ctr: t.ctr });
     return `
       <div class="card" style="display:block;margin-bottom:16px;padding:0;overflow:hidden">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:14px 16px;background:var(--bg-soft);border-bottom:1px solid var(--border)">
-          <div style="font-size:15px;font-weight:700">${meta.icon} ${escapeHtml(meta.label)} <span style="font-size:12px;color:var(--text-muted);font-weight:500">· ${p.account_count} บัญชี</span></div>
-          <div style="font-size:15px;font-weight:800;color:var(--primary)">${_adsTotalTxt(p.total_by_cur)}</div>
+        <div style="padding:14px 16px;background:var(--bg-soft);border-bottom:1px solid var(--border)">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+            <div style="font-size:15px;font-weight:700">${meta.icon} ${escapeHtml(meta.label)} <span style="font-size:12px;color:var(--text-muted);font-weight:500">· ${accounts.length} บัญชี</span></div>
+            <div style="font-size:15px;font-weight:800;color:var(--primary)">${_adsTotalTxt(p.total_by_cur)}</div>
+          </div>
+          ${totLine ? `<div style="font-size:11px;color:var(--text-soft);margin-top:5px">${totLine}</div>` : ''}
         </div>
         <div>${accBlocks}</div>
       </div>`;
   }).join('');
-  body.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px">
-      <div style="font-size:12.5px;color:var(--text-muted)">📅 ${dateRange} · ${plats.length} แพลตฟอร์ม</div>
-      <div style="font-size:14px;font-weight:700">รวมทั้งหมด: <span style="color:var(--primary)">${_adsTotalTxt(grand)}</span></div>
-    </div>
-    ${cards}`;
-  // คลิกบัญชี → กาง/หุบ campaign
-  body.querySelectorAll('.ads-acc-head').forEach(h => {
+  wrap.innerHTML = cards || '<div class="empty" style="padding:24px;text-align:center;color:var(--text-muted)">— ไม่พบบัญชี/แคมเปญที่ตรงกับคำค้น —</div>';
+  wrap.querySelectorAll('.ads-acc-head').forEach(h => {
     h.addEventListener('click', () => {
       const camps = h.nextElementSibling;
       const caret = h.querySelector('.ads-caret');
@@ -1512,6 +1602,27 @@ async function loadAdsSpend() {
       if (caret) caret.style.transform = isOpen ? '' : 'rotate(90deg)';
     });
   });
+}
+function exportAdsCsv() {
+  if (!_adsData || !_adsData.platforms) return;
+  const esc = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const lines = [['Platform', 'Account', 'Account ID', 'Campaign', 'Spend', 'Currency', 'Impressions', 'Reach', 'Frequency', 'Clicks', 'CTR(%)', 'CPC', 'CPM'].join(',')];
+  _adsData.platforms.forEach(p => {
+    const label = _adsSrcMeta(p.source).label;
+    (p.accounts || []).forEach(a => {
+      (a.campaigns || []).forEach(c => {
+        const nz = v => (v == null ? '' : v);
+        lines.push([label, a.account_name, a.account_id, c.campaign, c.spend, a.currency, c.impressions, c.reach, nz(c.frequency), c.clicks, nz(c.ctr), nz(c.cpc), nz(c.cpm)].map(esc).join(','));
+      });
+    });
+  });
+  const csv = '﻿' + lines.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `ads-spend_${_adsData.date_from}_${_adsData.date_to}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // ---------- pages ----------
