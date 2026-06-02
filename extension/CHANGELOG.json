@@ -2,6 +2,15 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.152",
+      "date": "2026-06-01",
+      "title": "Members panel: เพิ่มปุ่ม copy ท้ายอีเมล",
+      "summary": "ในพาเนล member (กดแถวรายชื่อ Member) แท็บ 'ข้อมูล' เพิ่มไอคอน 📋 ท้ายอีเมล กดแล้วคัดลอกอีเมลไป clipboard (ขึ้น ✓ ชั่วครู่)",
+      "changes": [
+        "เพิ่มปุ่ม .mp-copy ท้ายอีเมลใน openMemberPanel → navigator.clipboard.writeText"
+      ]
+    },
+    {
       "version": "1.9.151",
       "date": "2026-06-01",
       "title": "My Profile > Team: badge วันเกิดบนรูปสมาชิก (เกิดวันนี้ / อีก xx วัน)",

@@ -11561,7 +11561,7 @@ function openMemberPanel(m) {
   const infoPane = `
     <div style="display:grid;grid-template-columns:118px 1fr;gap:11px 14px;font-size:13.5px">
       <div style="color:var(--text-muted)">เบอร์มือถือ</div><div>${m.phone ? '📞 ' + escapeHtml(m.phone) : '—'}</div>
-      <div style="color:var(--text-muted)">อีเมล</div><div style="word-break:break-all">${m.email ? escapeHtml(m.email) : '—'}</div>
+      <div style="color:var(--text-muted)">อีเมล</div><div style="word-break:break-all">${m.email ? `${escapeHtml(m.email)} <button type="button" class="mp-copy" data-copy="${escapeHtml(m.email)}" title="คัดลอกอีเมล" style="border:none;background:none;cursor:pointer;font-size:12.5px;padding:0 3px;color:var(--text-soft);vertical-align:baseline">📋</button>` : '—'}</div>
       <div style="color:var(--text-muted)">เข้าระบบล่าสุด</div><div>${escapeHtml(lastLogin)}</div>
       <div style="color:var(--text-muted)">Extension</div><div>${ext}</div>
       <div style="color:var(--text-muted)">ทีม</div><div style="display:flex;flex-wrap:wrap;gap:4px">${teamChips}</div>
@@ -11624,6 +11624,15 @@ function openMemberPanel(m) {
     b.addEventListener('mouseenter', () => { b.style.background = 'var(--bg-soft)'; });
     b.addEventListener('mouseleave', () => { b.style.background = 'var(--bg-card)'; });
     b.addEventListener('click', (e) => { e.stopPropagation(); _removeMemberMenu(); handleMemberAction(b); });
+  });
+  // v1.9.152 — ปุ่ม copy อีเมล
+  wrap.querySelectorAll('.mp-copy[data-copy]').forEach(b => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      try { navigator.clipboard.writeText(b.dataset.copy); } catch {}
+      const orig = b.textContent; b.textContent = '✓'; b.style.color = 'var(--green)';
+      setTimeout(() => { b.textContent = orig; b.style.color = 'var(--text-soft)'; }, 900);
+    });
   });
   const stB = wrap.querySelector('#mp-stats-btn');
   if (stB) stB.addEventListener('click', () => { _removeMemberMenu(); showMemberStatsModal(m.id, name); });
