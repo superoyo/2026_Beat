@@ -8550,6 +8550,10 @@ _BRAND_CATEGORY = {
     "dutch": "Dairy", "arabus": "Beverage (RTD)", "beanwell": "Beverage (Coffee)",
     # Healthcare / Services
     "navavej": "Healthcare",
+    # E-commerce / Pet / Automotive
+    "lso": "Online Shopping",
+    "hajiko": "Pet Product", "hashi": "Pet Product",
+    "pulza": "Car Maintenance",
 }
 _BENCH_CAT_UNKNOWN = "ไม่ระบุหมวด"
 

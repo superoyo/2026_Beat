@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.178",
+      "date": "2026-06-02",
+      "title": "Benchmark: เพิ่มหมวดให้ LSO / Hajiko / Hashi / Pulza",
+      "summary": "อัปเดต category mapping ตามที่ผู้ใช้ยืนยัน: LSO=Online Shopping, Hajiko/Hashi=Pet Product, Pulza=Car Maintenance",
+      "changes": [
+        "LSO → Online Shopping",
+        "Hajiko, Hashi → Pet Product",
+        "Pulza → Car Maintenance"
+      ]
+    },
+    {
       "version": "1.9.177",
       "date": "2026-06-02",
       "title": "Benchmark: โหมด Category แสดงรายชื่อแบรนด์ใต้ชื่อหมวด",
