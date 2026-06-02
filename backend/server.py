@@ -7550,6 +7550,29 @@ def member_supervised(fct_member_session: Optional[str] = Cookie(default=None)) 
             f"WHERE ts.team_id IN ({pl}) ORDER BY s.name COLLATE NOCASE",
             team_ids,
         ).fetchall()
+        # v1.9.156 — credential ที่ supervisor (member_id) เข้าถึงได้ แยกตาม site_id
+        cred_rows = conn.execute(
+            """
+            SELECT DISTINCT c.site_id, c.username FROM credentials c
+            JOIN (
+                SELECT DISTINCT credential_id FROM (
+                    SELECT c2.id AS credential_id
+                    FROM team_sites ts JOIN team_members tm ON tm.team_id = ts.team_id
+                    JOIN credentials c2 ON c2.site_id = ts.site_id
+                    WHERE tm.member_id = ?
+                    UNION
+                    SELECT cm.credential_id FROM credential_members cm WHERE cm.member_id = ?
+                )
+            ) acc ON acc.credential_id = c.id
+            WHERE c.site_id IS NOT NULL
+            ORDER BY c.username COLLATE NOCASE
+            """,
+            (member_id, member_id),
+        ).fetchall()
+        creds_by_site: dict[int, list] = {}
+        for cr in cred_rows:
+            if cr["username"]:
+                creds_by_site.setdefault(cr["site_id"], []).append(cr["username"])
     mem_by_team: dict[int, list] = {}
     for r in mem_rows:
         ph = r["phone"]
@@ -7569,6 +7592,7 @@ def member_supervised(fct_member_session: Optional[str] = Cookie(default=None)) 
     for r in site_rows:
         site_by_team.setdefault(r["team_id"], []).append({
             "id": r["id"], "name": r["name"], "url_pattern": r["url_pattern"], "logo_data": r["logo_data"],
+            "credentials": creds_by_site.get(r["id"], []),  # v1.9.156 — email ที่ใช้ login ได้
         })
     return {
         "teams": [

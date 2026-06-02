@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.156",
+      "date": "2026-06-01",
+      "title": "My Profile > Team: แสดง credential (email) ที่ใช้ login ได้ ต่อท้ายแต่ละ platform",
+      "summary": "ในส่วน 'แพลตฟอร์มที่ทีมใช้' ของแท็บ Team ใน My Profile แสดงอีเมล/username ของ credential ที่ผู้ใช้เข้าถึงได้ ต่อท้ายชื่อ platform แต่ละตัว ถ้ายังไม่มี credential แสดง 'ยังไม่มี credential ที่คุณเข้าถึงได้'",
+      "changes": [
+        "Backend /api/member/supervised: เพิ่ม query credential ที่ supervisor เข้าถึงได้ (via team+direct grant) แนบ credentials[] ต่อแต่ละ site",
+        "Frontend: platform card แสดงชื่อ + username chip (👤 email@...) หรือข้อความ fallback"
+      ]
+    },
+    {
       "version": "1.9.155",
       "date": "2026-06-01",
       "title": "Device & Software: จัดกลุ่ม submenu (Software / Hardware / Document)",
