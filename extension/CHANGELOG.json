@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.166",
+      "date": "2026-06-01",
+      "title": "Ads: filter เปลี่ยนเป็นรูปแบบโฆษณา (ภาพนิ่ง/วิดีโอ/หลายภาพ)",
+      "summary": "filter ในหน้า Ads เปลี่ยนจาก objective เป็น ad format (ภาพนิ่ง/วิดีโอ/หลายภาพ) — ดึงจาก Windsor หลาย field (instagram media type → ad_format → object_type) แล้ว normalize เป็น image/video/carousel; ยังแสดง objective เป็น badge เหมือนเดิม",
+      "changes": [
+        "Backend: coalesce effective_instagram_media__media_type/ad_format/object_type → ad_format (format หลักของแคมเปญตาม spend)",
+        "Frontend: dropdown filter เป็นรูปแบบโฆษณา + icon รูปแบบในแต่ละแคมเปญ, CSV แยกคอลัมน์ Objective/Ad Format"
+      ]
+    },
+    {
       "version": "1.9.165",
       "date": "2026-06-01",
       "title": "Ads: เพิ่ม filter ตาม Ad Type (objective)",

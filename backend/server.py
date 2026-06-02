@@ -8357,7 +8357,7 @@ def ads_spend(days: int = 7, _sess: dict = Depends(_require_module("ads"))) -> d
         return raw.get("data", []) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
 
     try:
-        rows = _windsor("source,account_id,account_name,campaign,objective,ad_type,spend,impressions,clicks,reach,currency")
+        rows = _windsor("source,account_id,account_name,campaign,objective,ad_type,ad_format,object_type,effective_instagram_media__media_type,spend,impressions,clicks,reach,currency")
         trend_rows = _windsor("source,date,spend")
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:300] if hasattr(e, "read") else ""
@@ -8370,6 +8370,21 @@ def ads_spend(days: int = 7, _sess: dict = Depends(_require_module("ads"))) -> d
             return float(v or 0)
         except (TypeError, ValueError):
             return 0.0
+
+    def _norm_fmt(r) -> str:
+        """v1.9.166 — รวม field หลายตัวเป็น ad format: image / video / carousel / other"""
+        imt = str(r.get("effective_instagram_media__media_type") or "").strip().upper()
+        if imt == "IMAGE": return "image"
+        if imt == "VIDEO": return "video"
+        if imt == "CAROUSEL_ALBUM": return "carousel"
+        af = str(r.get("ad_format") or "").strip().upper()
+        if af == "SINGLE_IMAGE": return "image"
+        if af in ("SINGLE_VIDEO", "LIVE_CONTENT"): return "video"
+        if af in ("CAROUSEL_ADS", "CATALOG_CAROUSEL"): return "carousel"
+        ot = str(r.get("object_type") or "").strip().upper()
+        if ot == "PHOTO": return "image"
+        if ot == "VIDEO": return "video"
+        return "other"
 
     def _metrics(spend: float, impr: float, clk: float, reach: float) -> dict[str, Any]:
         return {
@@ -8404,20 +8419,28 @@ def ads_spend(days: int = 7, _sess: dict = Depends(_require_module("ads"))) -> d
         a["impressions"] += impr
         a["clicks"] += clk
         a["reach"] += rch
-        c = a["campaigns"].setdefault(campaign, {"campaign": campaign, "ad_type": ad_type, "spend": 0.0, "impressions": 0.0, "clicks": 0.0, "reach": 0.0})
+        c = a["campaigns"].setdefault(campaign, {"campaign": campaign, "ad_type": ad_type, "spend": 0.0, "impressions": 0.0, "clicks": 0.0, "reach": 0.0, "_fmt": {}})
         c["ad_type"] = ad_type
         c["spend"] += spend
         c["impressions"] += impr
         c["clicks"] += clk
         c["reach"] += rch
+        # v1.9.166 — เก็บ spend ต่อ ad format เพื่อหา format หลักของแคมเปญ
+        c["_fmt"][_norm_fmt(r)] = c["_fmt"].get(_norm_fmt(r), 0.0) + spend
         p["total_by_cur"][cur] = p["total_by_cur"].get(cur, 0.0) + spend
     out = []
     for source, p in platforms.items():
         accounts = sorted(p["accounts"].values(), key=lambda x: x["spend"], reverse=True)
         acc_out = []
         for a in accounts:
+            def _dom_fmt(c):
+                fm = c.get("_fmt") or {}
+                real = {k: v for k, v in fm.items() if k != "other"}
+                pick = real or fm
+                return max(pick, key=pick.get) if pick else "other"
             camps = sorted(
-                ({"campaign": c["campaign"], "ad_type": c.get("ad_type"), **_metrics(c["spend"], c["impressions"], c["clicks"], c["reach"])}
+                ({"campaign": c["campaign"], "ad_type": c.get("ad_type"), "ad_format": _dom_fmt(c),
+                  **_metrics(c["spend"], c["impressions"], c["clicks"], c["reach"])}
                  for c in a["campaigns"].values()),
                 key=lambda x: x["spend"], reverse=True,
             )

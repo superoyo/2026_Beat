@@ -1417,10 +1417,15 @@ const _ADS_OBJ = {
   REACH: 'Reach', VIDEO_VIEWS: 'Video Views', LINK_CLICKS: 'Link Clicks', POST_ENGAGEMENT: 'Post Engagement',
 };
 function _adsTypeLabel(t) { return _ADS_OBJ[t] || t; }
+// v1.9.166 — ad format (creative) labels — ใช้ใน filter
+const _ADS_FMT = { image: '🖼️ ภาพนิ่ง', video: '🎬 วิดีโอ', carousel: '🎠 หลายภาพ', other: 'อื่น ๆ / ไม่ระบุ' };
+const _ADS_FMT_ICON = { image: '🖼️', video: '🎬', carousel: '🎠', other: '' };
+function _adsFmtLabel(f) { return _ADS_FMT[f] || f; }
 function _adsAllTypes() {
   const set = new Set();
-  (_adsData && _adsData.platforms || []).forEach(p => (p.accounts || []).forEach(a => (a.campaigns || []).forEach(c => { if (c.ad_type) set.add(c.ad_type); })));
-  return Array.from(set).sort((a, b) => _adsTypeLabel(a).localeCompare(_adsTypeLabel(b)));
+  (_adsData && _adsData.platforms || []).forEach(p => (p.accounts || []).forEach(a => (a.campaigns || []).forEach(c => { if (c.ad_format) set.add(c.ad_format); })));
+  const order = ['image', 'video', 'carousel', 'other'];
+  return order.filter(f => set.has(f)).concat([...set].filter(f => !order.includes(f)));
 }
 function _adsAgg(camps) {
   let spend = 0, impr = 0, clk = 0, reach = 0;
@@ -1547,8 +1552,8 @@ function renderAdsBody() {
       <div style="font-size:12.5px;color:var(--text-muted)">📅 ${dateRange} · รวมทั้งหมด <strong style="color:var(--primary)">${_adsTotalTxt(grand)}</strong></div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <select id="ads-type" style="padding:8px 12px;font-size:13px;border:1px solid var(--border);border-radius:9px;background:var(--bg-input);color:var(--text);cursor:pointer">
-          <option value="__all__">📂 ทุก Ad Type</option>
-          ${_adsAllTypes().map(t => `<option value="${escapeHtml(t)}" ${_adsType === t ? 'selected' : ''}>${escapeHtml(_adsTypeLabel(t))}</option>`).join('')}
+          <option value="__all__">📂 ทุกรูปแบบโฆษณา</option>
+          ${_adsAllTypes().map(t => `<option value="${escapeHtml(t)}" ${_adsType === t ? 'selected' : ''}>${escapeHtml(_adsFmtLabel(t))}</option>`).join('')}
         </select>
         <input id="ads-search" type="text" value="${escapeHtml(_adsSearch)}" placeholder="🔍 ค้นหาบัญชี / แคมเปญ..." autocomplete="off"
                style="padding:8px 12px;font-size:13px;border:1px solid var(--border);border-radius:9px;background:var(--bg-input);color:var(--text);min-width:200px" />
@@ -1603,7 +1608,7 @@ function renderAdsCards() {
     const accounts = (p.accounts || []).map(a => {
       const accHit = !!q && (a.account_name || '').toLowerCase().includes(q);
       const camps = (a.campaigns || []).filter(c => {
-        if (tf && c.ad_type !== _adsType) return false;        // filter ตาม ad type
+        if (tf && c.ad_format !== _adsType) return false;      // filter ตามรูปแบบโฆษณา (format)
         if (!q || accHit) return true;
         return (c.campaign || '').toLowerCase().includes(q);
       });
@@ -1631,7 +1636,7 @@ function renderAdsCards() {
         </tr>`;
       const campRows = camps.map(c => `
         <tr class="ads-camp-row" data-camp-of="${ai}" style="display:${open ? '' : 'none'}">
-          <td style="padding-left:32px;max-width:360px"><span style="display:inline-flex;align-items:center;gap:6px;max-width:100%"><span style="color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(c.campaign)}">${escapeHtml(c.campaign)}</span>${c.ad_type ? `<span style="flex-shrink:0;font-size:9px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--bg-hover);color:var(--text-soft)" title="Ad Type">${escapeHtml(_adsTypeLabel(c.ad_type))}</span>` : ''}</span></td>
+          <td style="padding-left:32px;max-width:380px"><span style="display:inline-flex;align-items:center;gap:6px;max-width:100%"><span style="color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(c.campaign)}">${escapeHtml(c.campaign)}</span>${c.ad_format && _ADS_FMT_ICON[c.ad_format] ? `<span style="flex-shrink:0" title="${escapeHtml(_adsFmtLabel(c.ad_format))}">${_ADS_FMT_ICON[c.ad_format]}</span>` : ''}${c.ad_type ? `<span style="flex-shrink:0;font-size:9px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--bg-hover);color:var(--text-soft)" title="Objective">${escapeHtml(_adsTypeLabel(c.ad_type))}</span>` : ''}</span></td>
           ${_adsMetricCells(c, a.currency)}
         </tr>`).join('');
       return accRow + campRows;
@@ -1676,13 +1681,13 @@ function renderAdsCards() {
 function exportAdsCsv() {
   if (!_adsData || !_adsData.platforms) return;
   const esc = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-  const lines = [['Platform', 'Account', 'Account ID', 'Campaign', 'Ad Type', 'Spend', 'Currency', 'Impressions', 'Reach', 'Frequency', 'Clicks', 'CTR(%)', 'CPC', 'CPM'].join(',')];
+  const lines = [['Platform', 'Account', 'Account ID', 'Campaign', 'Objective', 'Ad Format', 'Spend', 'Currency', 'Impressions', 'Reach', 'Frequency', 'Clicks', 'CTR(%)', 'CPC', 'CPM'].join(',')];
   _adsData.platforms.forEach(p => {
     const label = _adsSrcMeta(p.source).label;
     (p.accounts || []).forEach(a => {
       (a.campaigns || []).forEach(c => {
         const nz = v => (v == null ? '' : v);
-        lines.push([label, a.account_name, a.account_id, c.campaign, _adsTypeLabel(c.ad_type || ''), c.spend, a.currency, c.impressions, c.reach, nz(c.frequency), c.clicks, nz(c.ctr), nz(c.cpc), nz(c.cpm)].map(esc).join(','));
+        lines.push([label, a.account_name, a.account_id, c.campaign, _adsTypeLabel(c.ad_type || ''), _adsFmtLabel(c.ad_format || 'other'), c.spend, a.currency, c.impressions, c.reach, nz(c.frequency), c.clicks, nz(c.ctr), nz(c.cpc), nz(c.cpm)].map(esc).join(','));
       });
     });
   });
