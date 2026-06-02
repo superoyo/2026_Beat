@@ -8239,6 +8239,29 @@ def team_options(_auth: dict = Depends(require_admin_or_member)) -> dict[str, An
     return {"teams": [dict(r) for r in rows]}
 
 
+# v1.9.153 — Dashboard quick stats (จำนวนรวม + ที่ต้องจัดการ) — คลิกการ์ดไปหน้านั้น
+@app.get("/api/dashboard-stats")
+def dashboard_stats(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
+    with db_conn() as conn:
+        platforms = conn.execute("SELECT COUNT(*) AS n FROM sites").fetchone()["n"]
+        skills = conn.execute("SELECT COUNT(*) AS n FROM skills").fetchone()["n"]
+        ai_projects = conn.execute("SELECT COUNT(*) AS n FROM ai_projects").fetchone()["n"]
+        unbound_pc = conn.execute(
+            "SELECT COUNT(*) AS n FROM hardware WHERE hw_type = 'pc' AND current_member_id IS NULL"
+        ).fetchone()["n"]
+        members_no_team = conn.execute(
+            "SELECT COUNT(*) AS n FROM members m "
+            "WHERE NOT EXISTS (SELECT 1 FROM team_members tm WHERE tm.member_id = m.id)"
+        ).fetchone()["n"]
+    return {
+        "platforms": platforms,
+        "skills": skills,
+        "ai_projects": ai_projects,
+        "unbound_pc": unbound_pc,
+        "members_no_team": members_no_team,
+    }
+
+
 # ===========================================================================
 # Member pages (HTML)
 # ===========================================================================

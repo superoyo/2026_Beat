@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.153",
+      "date": "2026-06-01",
+      "title": "Dashboard: เพิ่มการ์ดสรุป (Platforms/Skills/AI Projects/เครื่องยังไม่ผูก/คนยังไม่มีทีม) คลิกไปหน้านั้น",
+      "summary": "หน้า Dashboard เพิ่มแถวการ์ดสรุป 5 ใบ — จำนวน Platforms / Skills / AI Projects ทั้งหมด + เครื่องที่ยังไม่ผูก + คนที่ยังไม่ได้ assign team — คลิกการ์ดแล้วเด้งไปหน้านั้นทันที",
+      "changes": [
+        "Backend: GET /api/dashboard-stats (platforms/skills/ai_projects/unbound_pc/members_no_team)",
+        "Dashboard: การ์ดคลิกได้ นำทาง parent SPA (#/platforms, /skill, /aiproject, /hardware-pc-unassigned, /members)",
+        "SPA: รองรับ deep-link #/platforms/<tab> + การ์ด 'คนยังไม่มีทีม' ตั้ง filter __none__ ให้อัตโนมัติ"
+      ]
+    },
+    {
       "version": "1.9.152",
       "date": "2026-06-01",
       "title": "Members panel: เพิ่มปุ่ม copy ท้ายอีเมล",

@@ -217,6 +217,15 @@
     .stats-row > .panel { margin-bottom: 18px; display: flex; flex-direction: column; }
     .stats-row > .panel .chart-wrap { flex: 1 1 auto; min-height: 280px; height: auto; }
     @media (max-width: 860px) { .stats-row { grid-template-columns: 1fr; gap: 0; } }
+    /* v1.9.153 — quick stat cards (คลิกไปหน้านั้น) */
+    .quick-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); gap: 14px; margin-bottom: 20px; }
+    .qstat { display: flex; align-items: center; gap: 13px; padding: 16px 18px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; cursor: pointer; transition: all .15s; box-shadow: var(--shadow-sm); }
+    .qstat:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: 0 8px 22px rgba(37,99,235,.12); }
+    .qstat-ico { font-size: 26px; width: 46px; height: 46px; display: flex; align-items: center; justify-content: center; border-radius: 11px; background: var(--bg-soft); flex-shrink: 0; }
+    .qstat-num { font-size: 26px; font-weight: 800; line-height: 1.05; color: var(--text); }
+    .qstat-label { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; }
+    .qstat.warn .qstat-num { color: var(--warning, #f59e0b); }
+    .qstat.warn .qstat-ico { background: rgba(245,158,11,.12); }
     /* v1.9.108 — PC stats filter buttons */
     .pc-filter-btn {
       padding: 6px 14px; font-size: 12.5px; font-weight: 600; font-family: inherit;
@@ -352,6 +361,30 @@
     </div>
 
     <div id="main-view">
+      <!-- v1.9.153 — quick stat cards: รวมในระบบ + ที่ต้องจัดการ (คลิกไปหน้านั้น) -->
+      <div class="quick-stats">
+        <div class="qstat" data-nav="#/platforms" title="ไปหน้า Platforms">
+          <div class="qstat-ico">🚀</div>
+          <div><div class="qstat-num" id="qs-platforms">—</div><div class="qstat-label">Platforms ในระบบ</div></div>
+        </div>
+        <div class="qstat" data-nav="#/platforms/skill" title="ไปหน้า Skill Marketplace">
+          <div class="qstat-ico">🛒</div>
+          <div><div class="qstat-num" id="qs-skills">—</div><div class="qstat-label">Skills ในระบบ</div></div>
+        </div>
+        <div class="qstat" data-nav="#/platforms/aiproject" title="ไปหน้า AI Project">
+          <div class="qstat-ico">🤖</div>
+          <div><div class="qstat-num" id="qs-aiprojects">—</div><div class="qstat-label">AI Projects ในระบบ</div></div>
+        </div>
+        <div class="qstat warn" data-nav="#/hardware-pc-unassigned" title="ไปหน้าคอมส่วนกลาง (ยังไม่ผูก)">
+          <div class="qstat-ico">📦</div>
+          <div><div class="qstat-num" id="qs-unbound">—</div><div class="qstat-label">เครื่องยังไม่ผูก</div></div>
+        </div>
+        <div class="qstat warn" data-nav="#/members" data-filter="__none__" title="ไปหน้ารายชื่อ (ยังไม่มีทีม)">
+          <div class="qstat-ico">🙋</div>
+          <div><div class="qstat-num" id="qs-noteam">—</div><div class="qstat-label">คนยังไม่มีทีม</div></div>
+        </div>
+      </div>
+
       <!-- v1.9.109 — กราฟสรุป 2 คอลัมน์: สมาชิก (ซ้าย) + คอมพิวเตอร์ (ขวา) -->
       <div class="stats-row">
       <!-- v1.9.106 — สรุปจำนวนสมาชิก + กราฟลงทะเบียนรายวัน -->
@@ -1227,6 +1260,7 @@ async function refresh() {
     renderPcStats().catch(() => {});
     renderRecentMembers().catch(() => {});
     renderTopPlatforms().catch(() => {});
+    renderQuickStats().catch(() => {});
     // ถ้ากำลังดู account detail อยู่ → ก็ refresh detail ของมันด้วย
     if (currentAccountKey) {
       const acct = (accounts.accounts || []).find(a => a.account_key === currentAccountKey);
@@ -1494,6 +1528,25 @@ document.querySelectorAll('.pc-filter-btn').forEach(btn => {
 
 // Back button — กลับไปหน้า accounts grid
 document.getElementById('back-to-accounts').addEventListener('click', closeAccountDetail);
+
+// v1.9.153 — quick stat cards: โหลดจำนวน + คลิกไปหน้านั้น (นำทาง parent SPA)
+async function renderQuickStats() {
+  let s;
+  try { s = await fetchJson('/api/dashboard-stats'); } catch { return; }
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = fmtInt(v); };
+  set('qs-platforms', s.platforms);
+  set('qs-skills', s.skills);
+  set('qs-aiprojects', s.ai_projects);
+  set('qs-unbound', s.unbound_pc);
+  set('qs-noteam', s.members_no_team);
+}
+document.querySelectorAll('.qstat[data-nav]').forEach(c => {
+  c.addEventListener('click', () => {
+    const win = window.top || window;
+    try { if (c.dataset.filter) win.sessionStorage.setItem('m_pending_filter', c.dataset.filter); } catch {}
+    try { win.location.hash = c.dataset.nav; } catch { location.hash = c.dataset.nav; }
+  });
+});
 
 (async () => {
   await refresh();

@@ -1356,6 +1356,10 @@ async function navigate() {
     // Teams page now uses tabs — pass team_id เพื่อ select tab
     setActive('teams');
     await renderPeoplesPage('teams', parseInt(parts[1], 10));
+  } else if (route === 'platforms' && parts[1]) {
+    // v1.9.153 — deep-link ไป sub-tab ของ Platforms (#/platforms/skill, /aiproject)
+    setActive('platforms');
+    await renderPlatformsPage(parts[1]);
   } else if (routes[route]) {
     setActive(route);
     await routes[route]();
@@ -2791,7 +2795,7 @@ let _platformSort = 'mine';   // 'az' | 'mine' | 'global'
 let _teamsOverview = null;     // [{id, name, site_ids}, ...]
 let _spotlightTeamId = null;   // null = ไม่เลือก spotlight
 
-async function renderPlatformsPage() {
+async function renderPlatformsPage(initialTab) {
   $('main').innerHTML = `
     <div class="page-head">
       <h2 class="page-title">🚀 Platforms</h2>
@@ -2859,6 +2863,8 @@ async function renderPlatformsPage() {
     if (panel === 'aiproject' && !_aiprojLoaded) { _aiprojLoaded = true; renderAiProjects(); }
   }
   document.querySelectorAll('[data-plat-tab]').forEach(b => b.addEventListener('click', () => showPlatPanel(b.dataset.platTab)));
+  // v1.9.153 — เปิด tab ตาม deep-link (เช่นจาก dashboard)
+  if (initialTab && ['platform', 'skill', 'aiproject'].includes(initialTab)) showPlatPanel(initialTab);
 
   let data;
   try {
@@ -11359,6 +11365,11 @@ async function loadMembersList() {
       ${_teamsCache.map(t => `<option value="${t.id}">${escapeHtml(t.name)} (${t.member_count})</option>`).join('')}
     `;
     if (currentVal) filterEl.value = currentVal;   // restore selection
+    // v1.9.153 — deep-link filter (เช่นจาก dashboard: คนยังไม่มีทีม)
+    try {
+      const pf = sessionStorage.getItem('m_pending_filter');
+      if (pf !== null) { sessionStorage.removeItem('m_pending_filter'); filterEl.value = pf; }
+    } catch {}
     // wire change handler (idempotent — ใส่ใหม่ทุก load)
     filterEl.onchange = applyMemberFilter;
   }
