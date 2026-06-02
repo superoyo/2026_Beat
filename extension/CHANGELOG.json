@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.177",
+      "date": "2026-06-02",
+      "title": "Benchmark: โหมด Category แสดงรายชื่อแบรนด์ใต้ชื่อหมวด",
+      "summary": "ในโหมด 'ตาม Category' แสดงรายชื่อแบรนด์ที่อยู่ในหมวดนั้น (เรียงตาม spend) เป็นตัวเล็กใต้ชื่อ category",
+      "changes": [
+        "Frontend: invert brand_category → รายชื่อแบรนด์ต่อหมวด, เรียงตาม spend",
+        "แสดงใต้ชื่อ category (ตัวเล็ก, ตัดบรรทัดได้)"
+      ]
+    },
+    {
       "version": "1.9.176",
       "date": "2026-06-02",
       "title": "Benchmark: หมวดสินค้า (AC Nielsen) ใต้ชื่อแบรนด์ + toggle Brand/Category",

@@ -1593,6 +1593,13 @@ function renderBenchTable() {
   const rows0 = v.rows || [], adtypes = v.adtypes || [];
   if (rows0.length === 0) { body.innerHTML = '<div class="empty">— ไม่มีข้อมูลในชีต —</div>'; return; }
   const bc = _benchData.brand_category || {};
+  // โหมด category: รวมรายชื่อแบรนด์ในแต่ละหมวด (เรียงตาม spend)
+  const brandsByCat = {};
+  if (!isBrand) {
+    const bt = (_benchData.views && _benchData.views.brand && _benchData.views.brand.row_totals) || _benchData.brand_totals || {};
+    Object.keys(bc).forEach(b => { (brandsByCat[bc[b]] = brandsByCat[bc[b]] || []).push(b); });
+    Object.keys(brandsByCat).forEach(cg => brandsByCat[cg].sort((a, b) => (((bt[b] || {}).spend) || 0) - (((bt[a] || {}).spend) || 0)));
+  }
   let cmin = Infinity, cmax = -Infinity;
   rows0.forEach(r => adtypes.forEach(t => { const c = v.matrix[r] && v.matrix[r][t]; if (c && c.avg != null) { cmin = Math.min(cmin, c.avg); cmax = Math.max(cmax, c.avg); } }));
   const f2 = v2 => v2 == null ? '—' : Number(v2).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1614,7 +1621,9 @@ function renderBenchTable() {
     <tr>
       <td style="position:sticky;left:0;background:var(--bg-card);z-index:1">
         <div style="font-weight:600">${escapeHtml(r)}</div>
-        ${isBrand && bc[r] ? `<div style="font-size:9.5px;color:var(--text-soft);font-weight:400;margin-top:1px">${escapeHtml(bc[r])}</div>` : ''}
+        ${isBrand
+        ? (bc[r] ? `<div style="font-size:9.5px;color:var(--text-soft);font-weight:400;margin-top:1px">${escapeHtml(bc[r])}</div>` : '')
+        : ((brandsByCat[r] && brandsByCat[r].length) ? `<div style="font-size:9.5px;color:var(--text-soft);font-weight:400;margin-top:1px;max-width:230px;white-space:normal;line-height:1.4">${escapeHtml(brandsByCat[r].join(', '))}</div>` : '')}
       </td>
       ${adtypes.map(t => mcell(v.matrix[r] && v.matrix[r][t], true, r, t)).join('')}
       ${mcell(v.row_totals[r], false, r, '')}
