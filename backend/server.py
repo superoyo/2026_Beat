@@ -4600,6 +4600,9 @@ WAZZUP_PHOTO_HOST_SUFFIX = os.environ.get("WAZZUP_PHOTO_HOST_SUFFIX", "fareastfa
 # v1.9.116 — Beacon device API (ตำแหน่ง check-in พนักงาน) — host คนละตัวกับ Wazzup auth
 BEACON_BASE_URL = os.environ.get("BEACON_BASE_URL", "https://123d92f01m.execute-api.ap-southeast-1.amazonaws.com/dev")
 BEACON_ORIGIN = os.environ.get("BEACON_ORIGIN", "https://job.fareastfamelineddb.com")
+# v1.9.157 — Windsor.ai (ดึงยอดใช้จ่ายค่าโฆษณา Meta/TikTok/X ฯลฯ) — ต้องตั้ง WINDSOR_API_KEY บน Railway
+WINDSOR_API_KEY = os.environ.get("WINDSOR_API_KEY", "").strip()
+WINDSOR_BASE_URL = os.environ.get("WINDSOR_BASE_URL", "https://connectors.windsor.ai").rstrip("/")
 
 
 class WazzupLoginIn(BaseModel):
@@ -8284,6 +8287,67 @@ def dashboard_stats(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
         "unbound_pc": unbound_pc,
         "members_no_team": members_no_team,
     }
+
+
+# ===========================================================================
+# v1.9.157 — Ads spend (ดึงจาก Windsor.ai — 7 วันย้อนหลัง แยกตาม platform & ad account)
+# ===========================================================================
+@app.get("/api/ads-spend")
+def ads_spend(days: int = 7, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    if not WINDSOR_API_KEY:
+        raise HTTPException(status_code=503,
+                            detail="ยังไม่ได้ตั้งค่า WINDSOR_API_KEY ใน environment — ตั้งค่าบน Railway ก่อนใช้งาน")
+    days = max(1, min(int(days or 7), 90))
+    today = utc_now().date()
+    date_to = today.isoformat()
+    date_from = (today - timedelta(days=days - 1)).isoformat()
+    from urllib.parse import urlencode as _urlencode
+    qs = _urlencode({
+        "api_key": WINDSOR_API_KEY,
+        "date_from": date_from,
+        "date_to": date_to,
+        "fields": "source,account_id,account_name,spend,currency",
+        "_renderer": "json",
+    })
+    url = f"{WINDSOR_BASE_URL}/all?{qs}"
+    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=55) as resp:
+            raw = _json.loads(resp.read().decode("utf-8", errors="replace"))
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")[:300] if hasattr(e, "read") else ""
+        raise HTTPException(status_code=502, detail=f"Windsor API error (HTTP {e.code}) {body}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"เชื่อมต่อ Windsor ไม่สำเร็จ: {e}")
+    rows = raw.get("data", []) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
+    platforms: dict[str, Any] = {}
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        source = (str(r.get("source") or "other").strip()) or "other"
+        acc_id = str(r.get("account_id") or "")
+        acc_name = str(r.get("account_name") or acc_id or "(unknown)")
+        cur = (str(r.get("currency") or "").strip()) or "—"
+        try:
+            spend = float(r.get("spend") or 0)
+        except (TypeError, ValueError):
+            spend = 0.0
+        p = platforms.setdefault(source, {"source": source, "accounts": {}, "total_by_cur": {}})
+        key = acc_id or acc_name
+        a = p["accounts"].setdefault(key, {"account_id": acc_id, "account_name": acc_name, "currency": cur, "spend": 0.0})
+        a["spend"] += spend
+        p["total_by_cur"][cur] = p["total_by_cur"].get(cur, 0.0) + spend
+    out = []
+    for source, p in platforms.items():
+        accounts = sorted(p["accounts"].values(), key=lambda x: x["spend"], reverse=True)
+        out.append({
+            "source": source,
+            "accounts": [{**a, "spend": round(a["spend"], 2)} for a in accounts],
+            "total_by_cur": {k: round(v, 2) for k, v in p["total_by_cur"].items()},
+            "account_count": len(accounts),
+        })
+    out.sort(key=lambda x: sum(x["total_by_cur"].values()), reverse=True)
+    return {"date_from": date_from, "date_to": date_to, "days": days, "platforms": out}
 
 
 # ===========================================================================

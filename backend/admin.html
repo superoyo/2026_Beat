@@ -1093,6 +1093,11 @@
           <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
           <span class="nav-label">Customer</span>
         </a>
+        <!-- v1.9.157 — Ads: ยอดใช้จ่ายค่าโฆษณา (Windsor) -->
+        <a href="#/ads" data-route="ads" data-label="Ads">
+          <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg></span>
+          <span class="nav-label">Ads</span>
+        </a>
         <!-- v1.9.124 — Device & Software: direct link -->
         <a href="#/sites" data-route="sites" data-route-extra="hardware-pc,hardware-pc-unassigned,hardware-device,hardware-network,financial-documents" data-label="Device & Software">
           <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>
@@ -1244,10 +1249,10 @@ function _extractErrDetail(j) {
 }
 
 // admin-only routes — member ห้ามเข้า (bounce ไป default)
-const ADMIN_ONLY_ROUTES = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents']);
+const ADMIN_ONLY_ROUTES = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads']);
 // menu items ที่ซ่อนใน sidebar สำหรับ member
 // (dashboard เห็นได้ทุกบทบาท — ใช้เป็นหน้าแรกของ member ด้วย)
-const HIDE_FROM_MEMBER_NAV = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents']);
+const HIDE_FROM_MEMBER_NAV = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads']);
 
 // ---------- routing ----------
 const routes = {
@@ -1265,6 +1270,7 @@ const routes = {
   'financial-documents': () => renderDeviceSoftwarePage('financial-documents'),
   'logs':             () => renderSettingPage('logs'),
   'security':         () => renderSettingPage('security'),
+  'ads':              renderAdsPage,
   'my-device':        renderMyDevicePage,
   'domains-config':   renderDomainsConfigPage,
   'members':          () => renderPeoplesPage('members'),
@@ -1387,6 +1393,100 @@ function renderDashboardEmbed() {
   const m = $('main');
   m.classList.add('no-pad');
   m.innerHTML = `<iframe src="/dashboard" title="FEFL Beat Dashboard"></iframe>`;
+}
+
+// ============== v1.9.157 — Ads (ยอดใช้จ่ายค่าโฆษณา จาก Windsor) ==============
+let _adsDays = 7;
+const _ADS_SRC = {
+  facebook:   { icon: '📘', label: 'Meta Ads' },
+  meta:       { icon: '📘', label: 'Meta Ads' },
+  tiktok:     { icon: '🎵', label: 'TikTok Ads' },
+  twitter:    { icon: '𝕏',  label: 'X (Twitter) Ads' },
+  google_ads: { icon: '🔍', label: 'Google Ads' },
+  bing:       { icon: '🅱️', label: 'Microsoft Ads' },
+  linkedin:   { icon: '💼', label: 'LinkedIn Ads' },
+};
+function _adsSrcMeta(s) { return _ADS_SRC[s] || { icon: '📊', label: s }; }
+function _adsMoney(n) { return (Number(n) || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function _adsTotalTxt(byCur) {
+  const keys = Object.keys(byCur || {});
+  if (keys.length === 0) return '0.00';
+  return keys.map(c => `${_adsMoney(byCur[c])} ${escapeHtml(c)}`).join(' · ');
+}
+async function renderAdsPage() {
+  $('main').innerHTML = `
+    <div class="page-head" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <h2 class="page-title">💰 Ads — ยอดใช้จ่ายค่าโฆษณา</h2>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="ads-days" style="padding:8px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:9px;background:var(--bg-input);color:var(--text);cursor:pointer">
+          <option value="7">7 วันล่าสุด</option>
+          <option value="14">14 วันล่าสุด</option>
+          <option value="30">30 วันล่าสุด</option>
+        </select>
+        <button class="btn" id="ads-refresh" style="font-size:13px;padding:8px 14px">🔄 รีเฟรช</button>
+      </div>
+    </div>
+    <div id="ads-body"><div class="empty">กำลังโหลด…</div></div>`;
+  const sel = $('ads-days');
+  if (sel) { sel.value = String(_adsDays); sel.onchange = () => { _adsDays = parseInt(sel.value, 10) || 7; loadAdsSpend(); }; }
+  const rb = $('ads-refresh');
+  if (rb) rb.onclick = () => loadAdsSpend();
+  loadAdsSpend();
+}
+async function loadAdsSpend() {
+  const body = $('ads-body');
+  if (!body) return;
+  body.innerHTML = '<div class="empty">⏳ กำลังดึงข้อมูลจาก Windsor… (อาจใช้เวลาสักครู่)</div>';
+  let data;
+  try { data = await fetchJson(`/api/ads-spend?days=${_adsDays}`); }
+  catch (e) {
+    const msg = e.message || '';
+    if (/WINDSOR_API_KEY/.test(msg)) {
+      body.innerHTML = `<div class="card" style="display:block;border-color:rgba(245,158,11,.4);background:rgba(245,158,11,.06)">
+        <div style="font-size:15px;font-weight:700;margin-bottom:8px">⚙️ ยังไม่ได้ตั้งค่า Windsor API</div>
+        <div style="font-size:13.5px;color:var(--text-muted);line-height:1.7">
+          เมนูนี้ดึงข้อมูลจาก <strong>Windsor.ai</strong> — ต้องตั้งค่า environment variable <code style="background:var(--bg-soft);padding:1px 6px;border-radius:5px;font-family:ui-monospace,Menlo,monospace">WINDSOR_API_KEY</code> บน Railway ก่อน<br>
+          (เอา API key ได้จาก windsor.ai → Settings → API key)
+        </div>
+      </div>`;
+      return;
+    }
+    body.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(msg)}</div>`;
+    return;
+  }
+  const plats = data.platforms || [];
+  const dateRange = `${escapeHtml(data.date_from)} → ${escapeHtml(data.date_to)}`;
+  if (plats.length === 0) {
+    body.innerHTML = `<div class="empty" style="padding:30px;text-align:center">— ไม่มีข้อมูลใช้จ่ายในช่วง ${dateRange} —</div>`;
+    return;
+  }
+  // grand total per currency
+  const grand = {};
+  plats.forEach(p => Object.entries(p.total_by_cur || {}).forEach(([c, v]) => { grand[c] = (grand[c] || 0) + v; }));
+  const cards = plats.map(p => {
+    const meta = _adsSrcMeta(p.source);
+    const rows = (p.accounts || []).map(a => `
+      <tr style="border-top:1px solid var(--border)">
+        <td style="padding:9px 12px;font-size:13px">${escapeHtml(a.account_name)}${a.account_id ? `<span style="color:var(--text-soft);font-size:11px;font-family:ui-monospace,Menlo,monospace;margin-left:6px">${escapeHtml(a.account_id)}</span>` : ''}</td>
+        <td style="padding:9px 12px;font-size:13px;text-align:right;font-weight:600;white-space:nowrap">${_adsMoney(a.spend)} <span style="color:var(--text-soft);font-weight:400;font-size:11px">${escapeHtml(a.currency)}</span></td>
+      </tr>`).join('');
+    return `
+      <div class="card" style="display:block;margin-bottom:16px;padding:0;overflow:hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:14px 16px;background:var(--bg-soft);border-bottom:1px solid var(--border)">
+          <div style="font-size:15px;font-weight:700">${meta.icon} ${escapeHtml(meta.label)} <span style="font-size:12px;color:var(--text-muted);font-weight:500">· ${p.account_count} บัญชี</span></div>
+          <div style="font-size:15px;font-weight:800;color:var(--primary)">${_adsTotalTxt(p.total_by_cur)}</div>
+        </div>
+        <table style="width:100%;border-collapse:collapse">
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }).join('');
+  body.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+      <div style="font-size:12.5px;color:var(--text-muted)">📅 ${dateRange} · ${plats.length} แพลตฟอร์ม</div>
+      <div style="font-size:14px;font-weight:700">รวมทั้งหมด: <span style="color:var(--primary)">${_adsTotalTxt(grand)}</span></div>
+    </div>
+    ${cards}`;
 }
 
 // ---------- pages ----------

@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.157",
+      "date": "2026-06-01",
+      "title": "เมนูใหม่ Ads — ยอดใช้จ่ายค่าโฆษณา (ดึงจาก Windsor.ai) แยกตาม platform & ad account",
+      "summary": "เพิ่มเมนู Ads (admin) แสดงยอดใช้จ่ายค่าโฆษณา 7 วันย้อนหลัง (เลือก 7/14/30 วันได้) ดึงจาก Windsor.ai รวมทุก source ที่เชื่อมไว้ (Meta/TikTok/X ฯลฯ) จัดกลุ่มตามแพลตฟอร์ม → บัญชีโฆษณา พร้อมยอดรวมต่อสกุลเงิน",
+      "changes": [
+        "Backend: GET /api/ads-spend (admin) เรียก Windsor connectors API ผ่าน WINDSOR_API_KEY (env), aggregate spend ตาม source+account",
+        "Frontend: เมนู Ads + หน้าแสดงผลแยกตามแพลตฟอร์ม/บัญชี + ยอดรวม, ถ้ายังไม่ตั้ง WINDSOR_API_KEY จะแสดงวิธีตั้งค่า",
+        "ต้องตั้ง env var WINDSOR_API_KEY บน Railway (เอา key จาก windsor.ai → Settings)"
+      ]
+    },
+    {
       "version": "1.9.156",
       "date": "2026-06-01",
       "title": "My Profile > Team: แสดง credential (email) ที่ใช้ login ได้ ต่อท้ายแต่ละ platform",
