@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.175",
+      "date": "2026-06-02",
+      "title": "Benchmark: คลิกช่อง → สไลด์ขวาแสดงรายแคมเปญ (ที่มาของ CPM)",
+      "summary": "คลิกช่องใน matrix Brand×AdType (รวมช่องรวมของ brand/adtype) เปิดพาเนลด้านขวา แสดง avg/min/max CPM + รายแคมเปญทั้งหมดที่ประกอบเป็นค่านั้น พร้อม performance (CPM/spend/impr/reach/freq/CPP) เรียงตาม spend และ badge ▼ต่ำสุด/▲สูงสุด",
+      "changes": [
+        "Backend ads-benchmark: ส่ง details (brand→adtype→รายแคมเปญ) จากชีต พร้อม objective/reach/frequency/cpp",
+        "Frontend: ช่อง matrix คลิกได้ → openBenchCellPanel แสดงที่มาของเลข",
+        "ช่องรวม brand = ทุก Ad Type, ช่องรวม ad type = ทุก Brand"
+      ]
+    },
+    {
       "version": "1.9.174",
       "date": "2026-06-02",
       "title": "Ads targeting: แก้ age/gender ขึ้นแล้ว (ดึงจาก connector facebook)",
