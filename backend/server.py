@@ -8530,6 +8530,34 @@ def _bench_adtype(camp: str) -> str:
     return "(ไม่ระบุ)"
 
 
+# v1.9.176 — หมวดสินค้าของแต่ละแบรนด์ (อิงหมวดแบบ AC Nielsen / FMCG)
+# key = brand (ตัวพิมพ์เล็ก, ตรงกับผลของ _bench_brand) → category
+# *** แก้/เพิ่มได้ตรงนี้ — แบรนด์ที่ไม่อยู่ในรายการจะเป็น "ไม่ระบุ" ***
+_BRAND_CATEGORY = {
+    # Oral Care (ผลิตภัณฑ์ดูแลช่องปาก)
+    "systema": "Oral Care", "systema-oral": "Oral Care", "salz": "Oral Care", "zact": "Oral Care",
+    # Baby & Kids Care
+    "kodomo": "Baby & Kids Care",
+    # Personal Care / Body Wash
+    "kirei": "Personal & Body Care", "hi": "Personal & Body Care",
+    # Home & Fabric / Dishwashing
+    "pao": "Fabric Care (Detergent)", "fresh": "Fabric Care (Softener)", "lipon": "Dishwashing",
+    # Paper & Tissue
+    "mont": "Paper & Tissue",
+    # Food
+    "mama": "Instant Noodles", "farmhouse": "Bakery", "bissin": "Snacks (Biscuits)",
+    # Beverage / Dairy
+    "dutch": "Dairy", "arabus": "Beverage (RTD)", "beanwell": "Beverage (Coffee)",
+    # Healthcare / Services
+    "navavej": "Healthcare",
+}
+_BENCH_CAT_UNKNOWN = "ไม่ระบุหมวด"
+
+
+def _bench_category(brand: str) -> str:
+    return _BRAND_CATEGORY.get((brand or "").strip().lower(), _BENCH_CAT_UNKNOWN)
+
+
 @app.get("/api/ads-benchmark")
 def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, Any]:
     url = f"https://docs.google.com/spreadsheets/d/{ADS_BENCHMARK_SHEET_ID}/export?format=csv"
@@ -8567,45 +8595,39 @@ def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
     def _newd():
         return {"spend": 0.0, "cpms": []}
 
-    cells: dict = {}
-    brand_tot: dict = {}
-    adtype_tot: dict = {}
-    details: dict = {}   # brand -> adtype -> [รายแคมเปญ]
-    grand = _newd()
-    n = 0
+    # ---- อ่านทุกแถวเป็น record ก่อน แล้วค่อยสรุปได้ทั้งแบบ brand และ category ----
+    recs: list = []
     for row in reader:
         camp = (row.get(k_camp) or "").strip()
         if not camp:
             continue
         spend = _ff(row.get(k_spend)) if k_spend else 0.0
         impr = _ff(row.get(k_impr)) if k_impr else 0.0
-        # CPM ต่อแคมเปญ: ใช้คอลัมน์ cpm ถ้ามี ไม่งั้นคำนวณจาก spend/impr
         cpm_v = _ff(row.get(k_cpm)) if k_cpm else 0.0
         if cpm_v <= 0 and impr > 0:
             cpm_v = spend / impr * 1000
         if spend == 0 and impr == 0:
             continue
         brand = _bench_brand(camp)
-        adtype = _bench_adtype(camp)
-        n += 1
-        for d in (cells.setdefault((brand, adtype), _newd()),
-                  brand_tot.setdefault(brand, _newd()),
-                  adtype_tot.setdefault(adtype, _newd()),
-                  grand):
-            d["spend"] += spend
-            if cpm_v > 0:
-                d["cpms"].append(cpm_v)
-        details.setdefault(brand, {}).setdefault(adtype, []).append({
-            "campaign": camp,
-            "objective": (row.get(k_obj) or "").strip() if k_obj else "",
-            "source": (row.get(k_src) or "").strip() if k_src else "",
-            "spend": round(spend, 2),
-            "impressions": int(round(impr)),
-            "reach": int(round(_ff(row.get(k_reach)))) if k_reach else None,
-            "frequency": round(_ff(row.get(k_freq)), 3) if k_freq else None,
-            "cpm": round(cpm_v, 2) if cpm_v > 0 else None,
-            "cpp": round(_ff(row.get(k_cpp)), 2) if k_cpp else None,
+        recs.append({
+            "brand": brand,
+            "category": _bench_category(brand),
+            "adtype": _bench_adtype(camp),
+            "spend": spend,
+            "cpm": cpm_v,
+            "detail": {
+                "campaign": camp,
+                "objective": (row.get(k_obj) or "").strip() if k_obj else "",
+                "source": (row.get(k_src) or "").strip() if k_src else "",
+                "spend": round(spend, 2),
+                "impressions": int(round(impr)),
+                "reach": int(round(_ff(row.get(k_reach)))) if k_reach else None,
+                "frequency": round(_ff(row.get(k_freq)), 3) if k_freq else None,
+                "cpm": round(cpm_v, 2) if cpm_v > 0 else None,
+                "cpp": round(_ff(row.get(k_cpp)), 2) if k_cpp else None,
+            },
         })
+    n = len(recs)
 
     def _agg(d):
         cs = d["cpms"]
@@ -8617,22 +8639,52 @@ def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
             "spend": round(d["spend"], 2),
         }
 
-    brands = sorted(brand_tot, key=lambda b: brand_tot[b]["spend"], reverse=True)
-    adtypes = sorted(adtype_tot, key=lambda t: adtype_tot[t]["spend"], reverse=True)
-    matrix = {b: {t: _agg(cells[(b, t)]) for t in adtypes if (b, t) in cells} for b in brands}
-    # เรียงรายแคมเปญในแต่ละ cell ตาม spend มาก→น้อย
-    for b in details:
-        for t in details[b]:
-            details[b][t].sort(key=lambda x: x["spend"], reverse=True)
+    def _build_view(group_key: str) -> dict:
+        cells: dict = {}
+        gtot: dict = {}
+        atot: dict = {}
+        details: dict = {}
+        grand = _newd()
+        for r in recs:
+            g, t, spend, cpm_v = r[group_key], r["adtype"], r["spend"], r["cpm"]
+            for d in (cells.setdefault((g, t), _newd()),
+                      gtot.setdefault(g, _newd()),
+                      atot.setdefault(t, _newd()),
+                      grand):
+                d["spend"] += spend
+                if cpm_v > 0:
+                    d["cpms"].append(cpm_v)
+            details.setdefault(g, {}).setdefault(t, []).append(r["detail"])
+        groups = sorted(gtot, key=lambda x: gtot[x]["spend"], reverse=True)
+        adtypes = sorted(atot, key=lambda x: atot[x]["spend"], reverse=True)
+        for g in details:
+            for t in details[g]:
+                details[g][t].sort(key=lambda x: x["spend"], reverse=True)
+        return {
+            "rows": groups,
+            "adtypes": adtypes,
+            "matrix": {g: {t: _agg(cells[(g, t)]) for t in adtypes if (g, t) in cells} for g in groups},
+            "row_totals": {g: _agg(gtot[g]) for g in groups},
+            "adtype_totals": {t: _agg(atot[t]) for t in adtypes},
+            "grand": _agg(grand),
+            "details": details,
+        }
+
+    brand_view = _build_view("brand")
+    cat_view = _build_view("category")
+    brand_category = {b: _bench_category(b) for b in brand_view["rows"]}
     return {
         "row_count": n,
-        "brands": brands,
-        "adtypes": adtypes,
-        "matrix": matrix,
-        "brand_totals": {b: _agg(brand_tot[b]) for b in brands},
-        "adtype_totals": {t: _agg(adtype_tot[t]) for t in adtypes},
-        "grand": _agg(grand),
-        "details": details,
+        "brand_category": brand_category,
+        "views": {"brand": brand_view, "category": cat_view},
+        # ---- legacy fields (by brand) — ใช้โดย slide-out ในหน้า Report ----
+        "brands": brand_view["rows"],
+        "adtypes": brand_view["adtypes"],
+        "matrix": brand_view["matrix"],
+        "brand_totals": brand_view["row_totals"],
+        "adtype_totals": brand_view["adtype_totals"],
+        "grand": brand_view["grand"],
+        "details": brand_view["details"],
     }
 
 

@@ -1414,6 +1414,7 @@ let _adsData = null;
 let _adsSearch = '';
 let _adsType = '__all__';   // v1.9.165 — filter ตาม ad type (objective)
 let _benchData = null;      // v1.9.170 — cache benchmark (ใช้ใน slide-out จาก Report)
+let _benchMode = 'brand';   // v1.9.176 — 'brand' | 'category'
 // v1.9.170 — แยก brand/adtype จากชื่อ campaign (มิเรอร์ logic backend benchmark)
 const _BENCH_ADTYPES = ['Video Thruplay', 'Video Views', 'Page Likes', 'Page Like', 'CPAS', 'Reach', 'Engagement', 'Traffic', 'Awareness', 'Messages', 'Message', 'Conversions', 'Conversion', 'Purchases', 'Purchase', 'Leads', 'Lead'];
 function _benchBrandOf(camp) {
@@ -1546,78 +1547,110 @@ function _benchColor(cpm, min, max) {
 async function renderAdsBenchmark() {
   _subMain().innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px">
-      <div style="font-size:12.5px;color:var(--text-muted)">📈 Benchmark CPM — Brand × Ad Type (ดึงสดจาก Google Sheet, ถ่วงน้ำหนักด้วย impressions)</div>
-      <button class="btn" id="bench-refresh" style="font-size:13px;padding:8px 14px">🔄 รีเฟรช</button>
+      <div style="font-size:12.5px;color:var(--text-muted)">📈 Benchmark CPM — ดึงสดจาก Google Sheet (ถ่วงน้ำหนักด้วย impressions)</div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <div style="display:inline-flex;border:1px solid var(--border);border-radius:999px;overflow:hidden" id="bench-toggle">
+          <button class="bench-mode-btn" data-mode="brand">ตาม Brand</button>
+          <button class="bench-mode-btn" data-mode="category">ตาม Category</button>
+        </div>
+        <button class="btn" id="bench-refresh" style="font-size:13px;padding:8px 14px">🔄 รีเฟรช</button>
+      </div>
     </div>
     <div id="bench-body"><div class="empty">กำลังโหลด…</div></div>`;
+  _subMain().querySelectorAll('.bench-mode-btn').forEach(btn => {
+    btn.onclick = () => { if (_benchMode === btn.dataset.mode) return; _benchMode = btn.dataset.mode; _syncBenchToggle(); if (_benchData) renderBenchTable(); };
+  });
+  _syncBenchToggle();
   const rb = $('bench-refresh');
   if (rb) rb.onclick = loadBenchmark;
   loadBenchmark();
+}
+function _syncBenchToggle() {
+  document.querySelectorAll('.bench-mode-btn').forEach(b => {
+    const on = b.dataset.mode === _benchMode;
+    b.style.cssText = `border:0;padding:7px 16px;font-size:12.5px;font-weight:600;cursor:pointer;transition:background .15s;${on ? 'background:var(--primary);color:#fff' : 'background:var(--bg-card);color:var(--text-muted)'}`;
+  });
 }
 async function loadBenchmark() {
   const body = $('bench-body');
   if (!body) return;
   body.innerHTML = '<div class="empty">⏳ กำลังดึงจาก Google Sheet…</div>';
-  let d;
-  try { d = await fetchJson('/api/ads-benchmark'); }
+  try { _benchData = await fetchJson('/api/ads-benchmark'); }
   catch (e) { body.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`; return; }
-  _benchData = d;
-  const brands = d.brands || [], adtypes = d.adtypes || [];
-  if (brands.length === 0) { body.innerHTML = '<div class="empty">— ไม่มีข้อมูลในชีต —</div>'; return; }
-  // ช่วง avg CPM ของ cell สำหรับ heatmap
+  renderBenchTable();
+}
+// คืน view ตามโหมดปัจจุบัน (รองรับ response เดิมที่ยังไม่มี views)
+function _benchView() {
+  const d = _benchData || {};
+  if (d.views && d.views[_benchMode]) return d.views[_benchMode];
+  return { rows: d.brands || [], adtypes: d.adtypes || [], matrix: d.matrix || {}, row_totals: d.brand_totals || {}, adtype_totals: d.adtype_totals || {}, grand: d.grand, details: d.details || {} };
+}
+function renderBenchTable() {
+  const body = $('bench-body');
+  if (!body || !_benchData) return;
+  const v = _benchView();
+  const isBrand = _benchMode === 'brand';
+  const rows0 = v.rows || [], adtypes = v.adtypes || [];
+  if (rows0.length === 0) { body.innerHTML = '<div class="empty">— ไม่มีข้อมูลในชีต —</div>'; return; }
+  const bc = _benchData.brand_category || {};
   let cmin = Infinity, cmax = -Infinity;
-  brands.forEach(b => adtypes.forEach(t => { const c = d.matrix[b] && d.matrix[b][t]; if (c && c.avg != null) { cmin = Math.min(cmin, c.avg); cmax = Math.max(cmax, c.avg); } }));
-  const f2 = v => v == null ? '—' : Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const mcell = (c, colored, b, t) => {
+  rows0.forEach(r => adtypes.forEach(t => { const c = v.matrix[r] && v.matrix[r][t]; if (c && c.avg != null) { cmin = Math.min(cmin, c.avg); cmax = Math.max(cmax, c.avg); } }));
+  const f2 = v2 => v2 == null ? '—' : Number(v2).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const mcell = (c, colored, rk, t) => {
     if (!c || c.avg == null) return `<td class="tnum"><span style="color:var(--text-soft)">—</span></td>`;
     const bg = colored ? `background:${_benchColor(c.avg, cmin, cmax)};` : '';
-    const click = (b !== undefined || t !== undefined);
-    return `<td class="tnum"${click ? ` data-bench-click="1" data-bench-b="${escapeHtml(b || '')}" data-bench-t="${escapeHtml(t || '')}"` : ''} style="${bg}line-height:1.3${click ? ';cursor:pointer' : ''}" title="avg CPM ${f2(c.avg)} · ต่ำสุด ${f2(c.min)} · สูงสุด ${f2(c.max)} · ${c.n} แคมเปญ · spend ${_adsMoney(c.spend)}${click ? ' · คลิกดูรายแคมเปญ' : ''}">
+    const click = (rk !== undefined || t !== undefined);
+    return `<td class="tnum"${click ? ` data-bench-click="1" data-bench-r="${escapeHtml(rk || '')}" data-bench-t="${escapeHtml(t || '')}"` : ''} style="${bg}line-height:1.3${click ? ';cursor:pointer' : ''}" title="avg CPM ${f2(c.avg)} · ต่ำสุด ${f2(c.min)} · สูงสุด ${f2(c.max)} · ${c.n} แคมเปญ · spend ${_adsMoney(c.spend)}${click ? ' · คลิกดูรายแคมเปญ' : ''}">
       <div style="font-weight:600">${f2(c.avg)}</div>
       <div style="font-size:9.5px;color:var(--text-soft)">${f2(c.min)}–${f2(c.max)}</div>
     </td>`;
   };
   const head = `<thead><tr>
-    <th style="text-align:left;position:sticky;left:0;background:var(--bg-soft);z-index:1">Brand \\ Ad Type</th>
+    <th style="text-align:left;position:sticky;left:0;background:var(--bg-soft);z-index:1">${isBrand ? 'Brand' : 'Category'} \\ Ad Type</th>
     ${adtypes.map(t => `<th style="text-align:right">${escapeHtml(t)}</th>`).join('')}
     <th style="text-align:right;background:var(--bg-soft)">รวม</th>
   </tr></thead>`;
-  const rows = brands.map(b => `
+  const rows = rows0.map(r => `
     <tr>
-      <td style="font-weight:600;position:sticky;left:0;background:var(--bg-card);z-index:1">${escapeHtml(b)}</td>
-      ${adtypes.map(t => mcell(d.matrix[b] && d.matrix[b][t], true, b, t)).join('')}
-      ${mcell(d.brand_totals[b], false, b, '')}
+      <td style="position:sticky;left:0;background:var(--bg-card);z-index:1">
+        <div style="font-weight:600">${escapeHtml(r)}</div>
+        ${isBrand && bc[r] ? `<div style="font-size:9.5px;color:var(--text-soft);font-weight:400;margin-top:1px">${escapeHtml(bc[r])}</div>` : ''}
+      </td>
+      ${adtypes.map(t => mcell(v.matrix[r] && v.matrix[r][t], true, r, t)).join('')}
+      ${mcell(v.row_totals[r], false, r, '')}
     </tr>`).join('');
   const foot = `<tr class="ads-tot-row">
     <td style="position:sticky;left:0;background:var(--bg-soft);z-index:1">รวม (Ad Type)</td>
-    ${adtypes.map(t => mcell(d.adtype_totals[t], false, '', t)).join('')}
-    ${mcell(d.grand, false)}
+    ${adtypes.map(t => mcell(v.adtype_totals[t], false, '', t)).join('')}
+    ${mcell(v.grand, false)}
   </tr>`;
   body.innerHTML = `
-    <div style="font-size:11.5px;color:var(--text-soft);margin-bottom:10px">${d.row_count} แถว · ${brands.length} brand × ${adtypes.length} ad type · แต่ละช่อง: <strong>Average CPM</strong> (บน) · <strong>min–max</strong> (ล่าง) · ยิ่งต่ำ/เขียว = ดี · 👆 คลิกช่องเพื่อดูรายแคมเปญ · ดึงเมื่อ ${new Date().toLocaleString('th-TH')}</div>
+    <div style="font-size:11.5px;color:var(--text-soft);margin-bottom:10px">${_benchData.row_count} แถว · ${rows0.length} ${isBrand ? 'brand' : 'category'} × ${adtypes.length} ad type · แต่ละช่อง: <strong>Average CPM</strong> (บน) · <strong>min–max</strong> (ล่าง) · ยิ่งต่ำ/เขียว = ดี · 👆 คลิกช่องเพื่อดูรายแคมเปญ · ดึงเมื่อ ${new Date().toLocaleString('th-TH')}</div>
     <div class="card" style="display:block;padding:0;overflow-x:auto">
       <table class="ads-table" style="min-width:max-content">${head}<tbody>${rows}${foot}</tbody></table>
     </div>`;
-  body.addEventListener('click', (e) => {
+  body.onclick = (e) => {
     const td = e.target.closest('[data-bench-click]');
     if (!td) return;
-    openBenchCellPanel(td.dataset.benchB || null, td.dataset.benchT || null);
-  });
+    openBenchCellPanel(td.dataset.benchR || null, td.dataset.benchT || null);
+  };
 }
-// v1.9.175 — คลิกช่องใน Benchmark matrix → slide-out แสดงรายแคมเปญ (ที่มาของ CPM)
-async function openBenchCellPanel(brand, adtype) {
+// v1.9.175/176 — คลิกช่องใน Benchmark matrix → slide-out แสดงรายแคมเปญ (ที่มาของ CPM)
+async function openBenchCellPanel(rowKey, adtype) {
   document.querySelectorAll('.sup-panel-wrap').forEach(e => e.remove());
   if (!_benchData) { try { _benchData = await fetchJson('/api/ads-benchmark'); } catch (e) { return; } }
-  const det = _benchData.details || {};
+  const v = _benchView();
+  const dimName = _benchMode === 'brand' ? 'Brand' : 'Category';
+  const det = v.details || {};
   let rows = [];
-  if (brand && adtype) rows = (det[brand] && det[brand][adtype]) || [];
-  else if (brand) rows = Object.values(det[brand] || {}).reduce((a, x) => a.concat(x), []);
+  if (rowKey && adtype) rows = (det[rowKey] && det[rowKey][adtype]) || [];
+  else if (rowKey) rows = Object.values(det[rowKey] || {}).reduce((a, x) => a.concat(x), []);
   else if (adtype) rows = Object.keys(det).reduce((a, b) => a.concat(det[b][adtype] || []), []);
   rows = rows.slice().sort((a, b) => (b.spend || 0) - (a.spend || 0));
   let stat, label, sub;
-  if (brand && adtype) { stat = (_benchData.matrix[brand] || {})[adtype]; label = `${brand} × ${adtype}`; sub = 'Brand × Ad Type'; }
-  else if (brand) { stat = _benchData.brand_totals[brand]; label = brand; sub = 'ทุก Ad Type'; }
-  else { stat = _benchData.adtype_totals[adtype]; label = adtype; sub = 'ทุก Brand'; }
+  if (rowKey && adtype) { stat = (v.matrix[rowKey] || {})[adtype]; label = `${rowKey} × ${adtype}`; sub = `${dimName} × Ad Type`; }
+  else if (rowKey) { stat = v.row_totals[rowKey]; label = rowKey; sub = 'ทุก Ad Type'; }
+  else { stat = v.adtype_totals[adtype]; label = adtype; sub = `ทุก ${dimName}`; }
   const f2 = v => v == null ? '—' : Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fi = v => v == null ? '—' : Number(v).toLocaleString('th-TH');
   const cpms = rows.map(r => r.cpm).filter(v => v != null);

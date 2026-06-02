@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.176",
+      "date": "2026-06-02",
+      "title": "Benchmark: หมวดสินค้า (AC Nielsen) ใต้ชื่อแบรนด์ + toggle Brand/Category",
+      "summary": "ใส่ category (อิงหมวดแบบ AC Nielsen / FMCG) เป็นตัวเล็กใต้ชื่อแบรนด์ และเพิ่มปุ่ม toggle ด้านบนตารางเพื่อสลับคำนวณ avg/min/max CPM ตาม Brand หรือ ตาม Category",
+      "changes": [
+        "Backend ads-benchmark: ส่ง 2 views (brand/category) + brand_category map (_BRAND_CATEGORY แก้ไขได้ในโค้ด)",
+        "Frontend: toggle ตาม Brand / ตาม Category, สลับแล้ว render ใหม่ทันที (ไม่ดึงซ้ำ)",
+        "ใต้ชื่อแบรนด์แสดง category ตัวเล็ก, คลิกช่องดูรายแคมเปญทำงานทั้งสองโหมด",
+        "แบรนด์ที่ยังไม่รู้หมวด (LSO/Hajiko/Hashi/Pulza ฯลฯ) = 'ไม่ระบุหมวด' รอยืนยัน"
+      ]
+    },
+    {
       "version": "1.9.175",
       "date": "2026-06-02",
       "title": "Benchmark: คลิกช่อง → สไลด์ขวาแสดงรายแคมเปญ (ที่มาของ CPM)",
