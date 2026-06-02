@@ -1079,8 +1079,8 @@
       <div class="nav-section">
         <a href="#/dashboard" data-route="dashboard" data-label="Dashboard"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></span><span class="nav-label">Dashboard</span></a>
         <a href="#/platforms" data-route="platforms" data-label="Platforms"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></span><span class="nav-label">Platforms</span></a>
-        <!-- v1.9.163 — Ads: ย้ายขึ้นโซนบน (กรองตามสิทธิ์ IAM อยู่แล้ว) -->
-        <a href="#/ads" data-route="ads" data-label="Ads"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg></span><span class="nav-label">Ads</span></a>
+        <!-- v1.9.163/167 — Ads (submenu: Report + Benchmark) -->
+        <a href="#/ads" data-route="ads" data-route-extra="ads-benchmark" data-label="Ads"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg></span><span class="nav-label">Ads</span></a>
         <!-- v1.9.164 — Customer: ย้ายขึ้นโซนบน (กรองตามสิทธิ์ IAM อยู่แล้ว) -->
         <a href="#/calendar" data-route="calendar" data-route-extra="domains,websites,services-config" data-label="Customer"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span><span class="nav-label">Customer</span></a>
         <!-- v1.9.122 — บัญชีของฉัน: direct link (โปรไฟล์/My Device/Extension/Check-in อยู่ในเมนูย่อยของหน้านี้แล้ว) -->
@@ -1251,12 +1251,12 @@ function _extractErrDetail(j) {
 }
 
 // admin-only routes — member ห้ามเข้า (bounce ไป default)
-const ADMIN_ONLY_ROUTES = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads']);
+const ADMIN_ONLY_ROUTES = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads', 'ads-benchmark']);
 // menu items ที่ซ่อนใน sidebar สำหรับ member
 // (dashboard เห็นได้ทุกบทบาท — ใช้เป็นหน้าแรกของ member ด้วย)
-const HIDE_FROM_MEMBER_NAV = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads']);
+const HIDE_FROM_MEMBER_NAV = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads', 'ads-benchmark']);
 // v1.9.162 — IAM: route → module ที่ต้องมีสิทธิ์ (member ที่ถูก grant ถึงเข้าได้)
-const ROUTE_MODULE = { platforms: 'platform', ads: 'ads', calendar: 'customer', domains: 'customer', websites: 'customer', 'services-config': 'customer', 'domains-config': 'customer' };
+const ROUTE_MODULE = { platforms: 'platform', ads: 'ads', 'ads-benchmark': 'ads', calendar: 'customer', domains: 'customer', websites: 'customer', 'services-config': 'customer', 'domains-config': 'customer' };
 let currentModules = new Set();   // module ที่ผู้ใช้ปัจจุบันเข้าถึงได้ (member)
 
 // ---------- routing ----------
@@ -1276,7 +1276,8 @@ const routes = {
   'logs':             () => renderSettingPage('logs'),
   'security':         () => renderSettingPage('security'),
   'iam':              () => renderSettingPage('iam'),
-  'ads':              renderAdsPage,
+  'ads':              () => renderAdsSection('ads'),
+  'ads-benchmark':    () => renderAdsSection('ads-benchmark'),
   'my-device':        renderMyDevicePage,
   'domains-config':   renderDomainsConfigPage,
   'members':          () => renderPeoplesPage('members'),
@@ -1495,18 +1496,22 @@ function _adsTrendSvg(trend) {
       <div style="font-size:10.5px;color:var(--text-soft);margin-top:5px">* แต่ละเส้นเป็นสกุลเงินของแพลตฟอร์มนั้น ๆ (สเกลตามยอดสูงสุด)</div>
     </div>`;
 }
-async function renderAdsPage() {
-  $('main').innerHTML = `
-    <div class="page-head" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-      <h2 class="page-title">💰 Ads — ยอดใช้จ่ายค่าโฆษณา</h2>
-      <div style="display:flex;gap:8px;align-items:center">
-        <select id="ads-days" style="padding:8px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:9px;background:var(--bg-input);color:var(--text);cursor:pointer">
-          <option value="7">7 วันล่าสุด</option>
-          <option value="14">14 วันล่าสุด</option>
-          <option value="30">30 วันล่าสุด</option>
-        </select>
-        <button class="btn" id="ads-refresh" style="font-size:13px;padding:8px 14px">🔄 รีเฟรช</button>
-      </div>
+// v1.9.167 — Ads เป็น submenu: Report (เดิม) + Benchmark
+function renderAdsSection(active) {
+  return renderSubmenuPage({ title: '💰 Ads', active: active || 'ads', items: [
+    { route: 'ads',           ico: '📊', label: 'Report',    render: () => renderAdsReport() },
+    { route: 'ads-benchmark', ico: '📈', label: 'Benchmark', render: () => renderAdsBenchmark() },
+  ]});
+}
+async function renderAdsReport() {
+  _subMain().innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <select id="ads-days" style="padding:8px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:9px;background:var(--bg-input);color:var(--text);cursor:pointer">
+        <option value="7">7 วันล่าสุด</option>
+        <option value="14">14 วันล่าสุด</option>
+        <option value="30">30 วันล่าสุด</option>
+      </select>
+      <button class="btn" id="ads-refresh" style="font-size:13px;padding:8px 14px">🔄 รีเฟรช</button>
     </div>
     <div id="ads-body"><div class="empty">กำลังโหลด…</div></div>`;
   const sel = $('ads-days');
@@ -1514,6 +1519,63 @@ async function renderAdsPage() {
   const rb = $('ads-refresh');
   if (rb) rb.onclick = () => loadAdsSpend();
   loadAdsSpend();
+}
+// ===== Benchmark (CPM แยกตาม Brand × Ad Type — ดึงจาก Google Sheet) =====
+function _benchColor(cpm, min, max) {
+  if (cpm == null) return 'transparent';
+  const t = max > min ? (cpm - min) / (max - min) : 0;   // 0=ต่ำ(ดี) 1=สูง(แย่)
+  const hue = 125 * (1 - t);                              // เขียว→แดง
+  return `hsl(${hue.toFixed(0)}, 70%, 90%)`;
+}
+async function renderAdsBenchmark() {
+  _subMain().innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+      <div style="font-size:12.5px;color:var(--text-muted)">📈 Benchmark CPM — Brand × Ad Type (ดึงสดจาก Google Sheet, ถ่วงน้ำหนักด้วย impressions)</div>
+      <button class="btn" id="bench-refresh" style="font-size:13px;padding:8px 14px">🔄 รีเฟรช</button>
+    </div>
+    <div id="bench-body"><div class="empty">กำลังโหลด…</div></div>`;
+  const rb = $('bench-refresh');
+  if (rb) rb.onclick = loadBenchmark;
+  loadBenchmark();
+}
+async function loadBenchmark() {
+  const body = $('bench-body');
+  if (!body) return;
+  body.innerHTML = '<div class="empty">⏳ กำลังดึงจาก Google Sheet…</div>';
+  let d;
+  try { d = await fetchJson('/api/ads-benchmark'); }
+  catch (e) { body.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`; return; }
+  const brands = d.brands || [], adtypes = d.adtypes || [];
+  if (brands.length === 0) { body.innerHTML = '<div class="empty">— ไม่มีข้อมูลในชีต —</div>'; return; }
+  // min/max CPM ของ cell สำหรับ heatmap
+  let cmin = Infinity, cmax = -Infinity;
+  brands.forEach(b => adtypes.forEach(t => { const c = d.matrix[b] && d.matrix[b][t]; if (c && c.cpm != null) { cmin = Math.min(cmin, c.cpm); cmax = Math.max(cmax, c.cpm); } }));
+  const f2 = v => v == null ? '<span style="color:var(--text-soft)">—</span>' : Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const cellTd = (c) => {
+    if (!c || c.cpm == null) return `<td class="tnum"><span style="color:var(--text-soft)">—</span></td>`;
+    return `<td class="tnum" style="background:${_benchColor(c.cpm, cmin, cmax)}" title="spend ${_adsMoney(c.spend)} · impr ${_adsInt(c.impressions)}">${f2(c.cpm)}</td>`;
+  };
+  const head = `<thead><tr>
+    <th style="text-align:left;position:sticky;left:0;background:var(--bg-soft);z-index:1">Brand \\ Ad Type</th>
+    ${adtypes.map(t => `<th style="text-align:right">${escapeHtml(t)}</th>`).join('')}
+    <th style="text-align:right;background:var(--bg-soft)">รวม</th>
+  </tr></thead>`;
+  const rows = brands.map(b => `
+    <tr>
+      <td style="font-weight:600;position:sticky;left:0;background:var(--bg-card);z-index:1">${escapeHtml(b)}</td>
+      ${adtypes.map(t => cellTd(d.matrix[b] && d.matrix[b][t])).join('')}
+      <td class="tnum" style="font-weight:700">${f2(d.brand_totals[b] && d.brand_totals[b].cpm)}</td>
+    </tr>`).join('');
+  const foot = `<tr class="ads-tot-row">
+    <td style="position:sticky;left:0;background:var(--bg-soft);z-index:1">รวม (Ad Type)</td>
+    ${adtypes.map(t => `<td class="tnum">${f2(d.adtype_totals[t] && d.adtype_totals[t].cpm)}</td>`).join('')}
+    <td class="tnum">${f2(d.grand && d.grand.cpm)}</td>
+  </tr>`;
+  body.innerHTML = `
+    <div style="font-size:11.5px;color:var(--text-soft);margin-bottom:10px">${d.row_count} แถว · ${brands.length} brand × ${adtypes.length} ad type · CPM รวม ${f2(d.grand && d.grand.cpm)} · ตัวเลขยิ่งต่ำ/เขียว = ดี · ดึงเมื่อ ${new Date().toLocaleString('th-TH')}</div>
+    <div class="card" style="display:block;padding:0;overflow-x:auto">
+      <table class="ads-table" style="min-width:max-content">${head}<tbody>${rows}${foot}</tbody></table>
+    </div>`;
 }
 async function loadAdsSpend() {
   const body = $('ads-body');

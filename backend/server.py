@@ -4626,6 +4626,8 @@ BEACON_ORIGIN = os.environ.get("BEACON_ORIGIN", "https://job.fareastfamelineddb.
 # v1.9.157 — Windsor.ai (ดึงยอดใช้จ่ายค่าโฆษณา Meta/TikTok/X ฯลฯ) — ต้องตั้ง WINDSOR_API_KEY บน Railway
 WINDSOR_API_KEY = os.environ.get("WINDSOR_API_KEY", "").strip()
 WINDSOR_BASE_URL = os.environ.get("WINDSOR_BASE_URL", "https://connectors.windsor.ai").rstrip("/")
+# v1.9.167 — Ads Benchmark: Google Sheet (public) ที่ดึง CPM benchmark — tab แรก
+ADS_BENCHMARK_SHEET_ID = os.environ.get("ADS_BENCHMARK_SHEET_ID", "1V2dx573u9NcbAdwYOABo4HpqcuOMTJNme2iay-i4fFw")
 
 
 class WazzupLoginIn(BaseModel):
@@ -8486,6 +8488,106 @@ def ads_spend(days: int = 7, _sess: dict = Depends(_require_module("ads"))) -> d
     }
 
     return {"date_from": date_from, "date_to": date_to, "days": days, "platforms": out, "trend": trend}
+
+
+# ===========================================================================
+# v1.9.167 — Ads Benchmark: CPM แยกตาม Brand × Ad Type (ดึงจาก Google Sheet)
+# ===========================================================================
+# AdType vocabulary — match จากชื่อ campaign (เรียงตามความเฉพาะเจาะจง)
+_BENCH_ADTYPES = [
+    "Video Thruplay", "Video Views", "Page Likes", "Page Like", "CPAS",
+    "Reach", "Engagement", "Traffic", "Awareness", "Messages", "Message",
+    "Conversions", "Conversion", "Purchases", "Purchase", "Leads", "Lead",
+]
+
+
+def _bench_brand(camp: str) -> str:
+    """Brand = คำแรกหลัง ] ตัวแรก (ข้าม space/dash นำหน้า)"""
+    i = camp.find("]")
+    if i < 0:
+        return "(ไม่ระบุ)"
+    rest = camp[i + 1:].lstrip(" -–—\t​\xa0")
+    parts = rest.split()
+    return (parts[0].strip(" .,:") if parts else "") or "(ไม่ระบุ)"
+
+
+def _bench_adtype(camp: str) -> str:
+    low = camp.lower()
+    for t in _BENCH_ADTYPES:
+        if t.lower() in low:
+            return t
+    return "(ไม่ระบุ)"
+
+
+@app.get("/api/ads-benchmark")
+def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, Any]:
+    url = f"https://docs.google.com/spreadsheets/d/{ADS_BENCHMARK_SHEET_ID}/export?format=csv"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "text/csv,*/*"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"ดึง Google Sheet ไม่สำเร็จ (HTTP {e.code}) — ตรวจว่าแชร์เป็น 'ทุกคนที่มีลิงก์'")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ดึง Google Sheet ไม่สำเร็จ: {e}")
+    import csv as _csv
+    import io as _io
+    reader = _csv.DictReader(_io.StringIO(raw))
+    # หา key ของคอลัมน์ (case-insensitive)
+    fieldmap = {(k or "").strip().lower(): k for k in (reader.fieldnames or [])}
+    k_camp = fieldmap.get("campaign")
+    k_spend = fieldmap.get("spend")
+    k_impr = fieldmap.get("impressions")
+    if not k_camp:
+        raise HTTPException(status_code=502, detail="ไม่พบคอลัมน์ 'campaign' ในชีต")
+
+    def _ff(v):
+        try:
+            return float(str(v or "0").replace(",", ""))
+        except (TypeError, ValueError):
+            return 0.0
+
+    cells: dict = {}
+    brand_tot: dict = {}
+    adtype_tot: dict = {}
+    grand = {"spend": 0.0, "impr": 0.0}
+    n = 0
+    for row in reader:
+        camp = (row.get(k_camp) or "").strip()
+        if not camp:
+            continue
+        spend = _ff(row.get(k_spend)) if k_spend else 0.0
+        impr = _ff(row.get(k_impr)) if k_impr else 0.0
+        if spend == 0 and impr == 0:
+            continue
+        brand = _bench_brand(camp)
+        adtype = _bench_adtype(camp)
+        n += 1
+        for d in (cells.setdefault((brand, adtype), {"spend": 0.0, "impr": 0.0}),
+                  brand_tot.setdefault(brand, {"spend": 0.0, "impr": 0.0}),
+                  adtype_tot.setdefault(adtype, {"spend": 0.0, "impr": 0.0}),
+                  grand):
+            d["spend"] += spend
+            d["impr"] += impr
+
+    def _cpm(d):
+        return round(d["spend"] / d["impr"] * 1000, 2) if d["impr"] else None
+
+    def _agg(d):
+        return {"cpm": _cpm(d), "spend": round(d["spend"], 2), "impressions": int(d["impr"])}
+
+    brands = sorted(brand_tot, key=lambda b: brand_tot[b]["spend"], reverse=True)
+    adtypes = sorted(adtype_tot, key=lambda t: adtype_tot[t]["spend"], reverse=True)
+    matrix = {b: {t: _agg(cells[(b, t)]) for t in adtypes if (b, t) in cells} for b in brands}
+    return {
+        "row_count": n,
+        "brands": brands,
+        "adtypes": adtypes,
+        "matrix": matrix,
+        "brand_totals": {b: _agg(brand_tot[b]) for b in brands},
+        "adtype_totals": {t: _agg(adtype_tot[t]) for t in adtypes},
+        "grand": _agg(grand),
+    }
 
 
 # ===========================================================================
