@@ -407,8 +407,6 @@
       display: flex; flex-direction: column; overflow-y: auto;
     }
     .sup-panel-wrap.is-open .sup-panel { transform: translateX(0); }
-    .sup-panel.sup-panel-left { right: auto; left: 0; box-shadow: 8px 0 30px rgba(15,23,42,.2); transform: translateX(-100%); }
-    .sup-panel-wrap.is-open .sup-panel.sup-panel-left { transform: translateX(0); }
     .sup-panel-head { display: flex; justify-content: flex-end; padding: 12px 16px 0; }
     .sup-panel-close { width: 36px; height: 36px; border-radius: 8px; border: none; background: transparent; cursor: pointer; font-size: 17px; color: var(--text-muted); }
     .sup-panel-close:hover { background: var(--bg-soft); color: var(--text); }
@@ -1655,8 +1653,10 @@ function renderAudienceCards() {
       renderAudienceCards();
     });
   });
-  const db = $('aud-dist-btn');
-  if (db) db.onclick = openDemoDistPanel;
+  // ปุ่มดูการกระจายท้ายแถวกลุ่มอายุ (เฉพาะตาราง Demographic)
+  wrap.querySelectorAll('.aud-dist-row').forEach(btn => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); openDemoDistPanel(btn.dataset.distAge); });
+  });
 }
 function _audTableHtml(table, c, q) {
   if (!table) return '';
@@ -1694,8 +1694,10 @@ function _audTableHtml(table, c, q) {
     const ind = on ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
     return `<th data-sort="${k}" data-tbl="${escapeHtml(c.key)}" style="text-align:${align};cursor:pointer;user-select:none;white-space:nowrap;${on ? 'color:var(--primary)' : ''}" title="คลิกเพื่อจัดเรียง">${escapeHtml(l)}${ind}</th>`;
   };
-  const thead = `<thead><tr>${thBtn('label', c.col, 'left')}${_AUD_COLS.map(col => thBtn(col.k, col.l, 'right')).join('')}</tr></thead>`;
+  const hasDist = c.key === 'age';   // ปุ่มดูการกระจาย เฉพาะตาราง Demographic
+  const thead = `<thead><tr>${thBtn('label', c.col, 'left')}${_AUD_COLS.map(col => thBtn(col.k, col.l, 'right')).join('')}${hasDist ? '<th style="text-align:center;width:46px">📊</th>' : ''}</tr></thead>`;
   const cellTd = (col, m, x) => `<td class="tnum"${col.bold ? ' style="font-weight:600"' : ''}>${col.cell(m, x)}</td>`;
+  const distBtnTd = g => `<td style="text-align:center"><button class="aud-dist-row" data-dist-age="${escapeHtml(g.label)}" title="ดูการกระจาย CPM/CPV/CPE ของกลุ่มนี้" style="border:1px solid var(--border);background:var(--bg-card);border-radius:7px;cursor:pointer;font-size:12px;padding:3px 8px;line-height:1">📊</button></td>`;
   const rowsHtml = grpRows.map(g => {
     const gx = { isGroup: true, oneCur: g.oneCur, byCur: g.byCur };
     const grpRow = `
@@ -1705,14 +1707,14 @@ function _audTableHtml(table, c, q) {
           <span style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(c.pretty(g.label))}">${escapeHtml(c.pretty(g.label))}</span>
           <span style="font-size:10.5px;color:var(--text-soft);white-space:nowrap">· ${g.camps.length}</span>
         </span></td>
-        ${_AUD_COLS.map(col => cellTd(col, g.agg, gx)).join('')}
+        ${_AUD_COLS.map(col => cellTd(col, g.agg, gx)).join('')}${hasDist ? distBtnTd(g) : ''}
       </tr>`;
     const subRows = g.camps.map(cp => {
       const cx = { isGroup: false, currency: cp.currency };
       return `
       <tr class="aud-sub-row" data-grp-of="${g.gi}" style="display:${g.open ? '' : 'none'}">
         <td style="padding-left:32px;max-width:420px"><span style="color:var(--text-muted);display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;vertical-align:bottom" title="${escapeHtml(cp.campaign)}">${escapeHtml(cp.campaign)}</span></td>
-        ${_AUD_COLS.map(col => cellTd(col, cp, cx)).join('')}
+        ${_AUD_COLS.map(col => cellTd(col, cp, cx)).join('')}${hasDist ? '<td></td>' : ''}
       </tr>`;
     }).join('');
     return grpRow + subRows;
@@ -1721,17 +1723,14 @@ function _audTableHtml(table, c, q) {
   grpRows.forEach(g => Object.entries(g.byCur).forEach(([k, v]) => { gByCur[k] = (gByCur[k] || 0) + v; }));
   const gAgg = _adsAgg(grpRows.flatMap(g => g.camps));
   const gOne = Object.keys(gByCur).length === 1;
-  const totRow = `<tr class="ads-tot-row"><td>รวม</td>${_AUD_COLS.map(col => cellTd(col, gAgg, { isGroup: true, oneCur: gOne, byCur: gByCur })).join('')}</tr>`;
+  const totRow = `<tr class="ads-tot-row"><td>รวม</td>${_AUD_COLS.map(col => cellTd(col, gAgg, { isGroup: true, oneCur: gOne, byCur: gByCur })).join('')}${hasDist ? '<td></td>' : ''}</tr>`;
   const note = (table.truncated && !filtering) ? `<div style="font-size:10.5px;color:var(--text-soft);padding:8px 16px;border-top:1px solid var(--border)">* แสดง top ${table.shown} จาก ${table.total} (เรียงตาม spend)</div>` : '';
   const errNote = table.err ? `<div style="font-size:10.5px;color:#dc2626;padding:8px 16px;border-top:1px solid var(--border)">⚠️ ดึงไม่สำเร็จ: ${escapeHtml(String(table.err).slice(0, 80))}</div>` : '';
   return `
     <div class="card" style="display:block;margin-bottom:16px;padding:0;overflow:hidden">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:13px 16px;background:var(--bg-soft);border-bottom:1px solid var(--border)">
         <div style="font-size:15px;font-weight:700">${c.icon} ${escapeHtml(c.title)} <span style="font-size:12px;color:var(--text-muted);font-weight:500">· ${grpRows.length} รายการ</span></div>
-        <div style="display:flex;align-items:center;gap:10px">
-          ${c.key === 'age' ? `<button class="btn" id="aud-dist-btn" style="font-size:12px;padding:6px 12px" title="ดูการกระจายตัวของ CPM/CPV/CPE">📊 การกระจาย</button>` : ''}
-          <div style="font-size:15px;font-weight:800;color:var(--primary)">${_adsTotalTxt(gByCur)}</div>
-        </div>
+        <div style="font-size:15px;font-weight:800;color:var(--primary)">${_adsTotalTxt(gByCur)}</div>
       </div>
       <div style="overflow-x:auto">
         <table class="ads-table">${thead}<tbody>${rowsHtml}${totRow}</tbody></table>
@@ -1810,18 +1809,20 @@ function _distChart(values, fmt) {
     </div>`;
   return svg + stats;
 }
-function openDemoDistPanel() {
+function openDemoDistPanel(ageLabel) {
   document.querySelectorAll('.sup-panel-wrap').forEach(e => e.remove());
   const rows = (_audData && _audData.tables && _audData.tables.age && _audData.tables.age.rows) || [];
+  const grp = rows.find(r => String(r.label) === String(ageLabel));
+  const camps = (grp && grp.campaigns) || [];
   const vals = { cpm: [], cpv: [], cpe: [] };
-  rows.forEach(g => (g.campaigns || []).forEach(c => {
+  camps.forEach(c => {
     if (c.cpm != null) vals.cpm.push(c.cpm);
     if (c.cpv != null) vals.cpv.push(c.cpv);
     if (c.cpe != null) vals.cpe.push(c.cpe);
-  }));
+  });
   const section = (title, sub, arr, fmt) => `
     <div style="margin-bottom:20px">
-      <div style="font-size:13.5px;font-weight:700">${title} <span style="font-size:11px;color:var(--text-soft);font-weight:500">· ${arr.length} แคมเปญ×กลุ่มอายุ</span></div>
+      <div style="font-size:13.5px;font-weight:700">${title} <span style="font-size:11px;color:var(--text-soft);font-weight:500">· ${arr.length} แคมเปญ</span></div>
       <div style="font-size:11px;color:var(--text-soft);margin-bottom:8px">${sub}</div>
       <div style="border:1px solid var(--border);border-radius:12px;padding:12px 12px 14px">${_distChart(arr, fmt)}</div>
     </div>`;
@@ -1829,12 +1830,12 @@ function openDemoDistPanel() {
   wrap.className = 'sup-panel-wrap';
   wrap.innerHTML = `
     <div class="sup-panel-backdrop"></div>
-    <div class="sup-panel sup-panel-left" style="width:440px">
+    <div class="sup-panel" style="width:440px">
       <div class="sup-panel-head"><button class="sup-panel-close" title="ปิด">✕</button></div>
       <div class="sup-panel-body" style="padding:4px 22px 28px">
         <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">📊 การกระจายตัว (Distribution)</div>
-        <div style="font-size:16px;font-weight:800;margin:3px 0 4px">Demographic</div>
-        <div style="font-size:11.5px;color:var(--text-soft);margin-bottom:16px">การกระจายของค่าจากแต่ละแคมเปญ×กลุ่มอายุ · เส้นโค้ง = การกระจายแบบปกติ (fit ด้วย mean/SD)</div>
+        <div style="font-size:16px;font-weight:800;margin:3px 0 4px">กลุ่มอายุ ${escapeHtml(String(ageLabel || '—'))}</div>
+        <div style="font-size:11.5px;color:var(--text-soft);margin-bottom:16px">การกระจายของค่าจาก ${camps.length} แคมเปญในกลุ่มอายุนี้ · เส้นโค้ง = การกระจายแบบปกติ (fit ด้วย mean/SD)</div>
         ${section('CPM', 'Cost per 1,000 impressions', vals.cpm, _adsMoney)}
         ${section('CPV', 'Cost per video view', vals.cpv, _adsMoney4)}
         ${section('CPE', 'Cost per engagement', vals.cpe, _adsMoney4)}
