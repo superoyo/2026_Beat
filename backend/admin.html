@@ -1410,6 +1410,29 @@ function renderDashboardEmbed() {
 let _adsDays = 7;
 let _adsData = null;
 let _adsSearch = '';
+let _adsType = '__all__';   // v1.9.165 — filter ตาม ad type (objective)
+const _ADS_OBJ = {
+  OUTCOME_AWARENESS: 'Awareness', OUTCOME_ENGAGEMENT: 'Engagement', OUTCOME_SALES: 'Sales',
+  OUTCOME_TRAFFIC: 'Traffic', OUTCOME_LEADS: 'Leads', OUTCOME_APP_PROMOTION: 'App Promotion',
+  REACH: 'Reach', VIDEO_VIEWS: 'Video Views', LINK_CLICKS: 'Link Clicks', POST_ENGAGEMENT: 'Post Engagement',
+};
+function _adsTypeLabel(t) { return _ADS_OBJ[t] || t; }
+function _adsAllTypes() {
+  const set = new Set();
+  (_adsData && _adsData.platforms || []).forEach(p => (p.accounts || []).forEach(a => (a.campaigns || []).forEach(c => { if (c.ad_type) set.add(c.ad_type); })));
+  return Array.from(set).sort((a, b) => _adsTypeLabel(a).localeCompare(_adsTypeLabel(b)));
+}
+function _adsAgg(camps) {
+  let spend = 0, impr = 0, clk = 0, reach = 0;
+  camps.forEach(c => { spend += c.spend || 0; impr += c.impressions || 0; clk += c.clicks || 0; reach += c.reach || 0; });
+  return {
+    spend, impressions: impr, clicks: clk, reach,
+    ctr: impr ? +(clk / impr * 100).toFixed(2) : null,
+    cpc: clk ? +(spend / clk).toFixed(2) : null,
+    cpm: impr ? +(spend / impr * 1000).toFixed(2) : null,
+    frequency: reach ? +(impr / reach).toFixed(2) : null,
+  };
+}
 const _ADS_SRC = {
   facebook:   { icon: '📘', label: 'Meta Ads' },
   meta:       { icon: '📘', label: 'Meta Ads' },
@@ -1482,7 +1505,7 @@ async function renderAdsPage() {
     </div>
     <div id="ads-body"><div class="empty">กำลังโหลด…</div></div>`;
   const sel = $('ads-days');
-  if (sel) { sel.value = String(_adsDays); sel.onchange = () => { _adsDays = parseInt(sel.value, 10) || 7; _adsSearch = ''; loadAdsSpend(); }; }
+  if (sel) { sel.value = String(_adsDays); sel.onchange = () => { _adsDays = parseInt(sel.value, 10) || 7; _adsSearch = ''; _adsType = '__all__'; loadAdsSpend(); }; }
   const rb = $('ads-refresh');
   if (rb) rb.onclick = () => loadAdsSpend();
   loadAdsSpend();
@@ -1523,12 +1546,18 @@ function renderAdsBody() {
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
       <div style="font-size:12.5px;color:var(--text-muted)">📅 ${dateRange} · รวมทั้งหมด <strong style="color:var(--primary)">${_adsTotalTxt(grand)}</strong></div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="ads-type" style="padding:8px 12px;font-size:13px;border:1px solid var(--border);border-radius:9px;background:var(--bg-input);color:var(--text);cursor:pointer">
+          <option value="__all__">📂 ทุก Ad Type</option>
+          ${_adsAllTypes().map(t => `<option value="${escapeHtml(t)}" ${_adsType === t ? 'selected' : ''}>${escapeHtml(_adsTypeLabel(t))}</option>`).join('')}
+        </select>
         <input id="ads-search" type="text" value="${escapeHtml(_adsSearch)}" placeholder="🔍 ค้นหาบัญชี / แคมเปญ..." autocomplete="off"
-               style="padding:8px 12px;font-size:13px;border:1px solid var(--border);border-radius:9px;background:var(--bg-input);color:var(--text);min-width:220px" />
+               style="padding:8px 12px;font-size:13px;border:1px solid var(--border);border-radius:9px;background:var(--bg-input);color:var(--text);min-width:200px" />
         <button class="btn" id="ads-export" style="font-size:13px;padding:8px 14px">⬇ CSV</button>
       </div>
     </div>
     <div id="ads-cards"></div>`;
+  const ty = $('ads-type');
+  if (ty) ty.onchange = () => { _adsType = ty.value; renderAdsCards(); };
   const si = $('ads-search');
   if (si) {
     let _t;
@@ -1556,6 +1585,8 @@ function renderAdsCards() {
   const wrap = $('ads-cards');
   if (!wrap || !_adsData) return;
   const q = _adsSearch.trim().toLowerCase();
+  const tf = _adsType !== '__all__';
+  const filtering = q !== '' || tf;
   const thead = `<thead><tr>
     <th style="text-align:left">บัญชี / แคมเปญ</th>
     <th style="text-align:right">Spend</th>
@@ -1569,16 +1600,21 @@ function renderAdsCards() {
   </tr></thead>`;
   const cards = (_adsData.platforms || []).map(p => {
     const meta = _adsSrcMeta(p.source);
-    let accounts = p.accounts || [];
-    if (q) {
-      accounts = accounts.map(a => {
-        const accHit = (a.account_name || '').toLowerCase().includes(q);
-        const camps = accHit ? a.campaigns : (a.campaigns || []).filter(c => (c.campaign || '').toLowerCase().includes(q));
-        if (accHit || camps.length) return { ...a, campaigns: camps, _expand: !accHit };
-        return null;
-      }).filter(Boolean);
-    }
+    const accounts = (p.accounts || []).map(a => {
+      const accHit = !!q && (a.account_name || '').toLowerCase().includes(q);
+      const camps = (a.campaigns || []).filter(c => {
+        if (tf && c.ad_type !== _adsType) return false;        // filter ตาม ad type
+        if (!q || accHit) return true;
+        return (c.campaign || '').toLowerCase().includes(q);
+      });
+      if (camps.length === 0) return null;
+      // recompute account metrics จากแคมเปญที่ผ่าน filter
+      return { account_name: a.account_name, account_id: a.account_id, currency: a.currency, campaigns: camps, _expand: filtering, ..._adsAgg(camps) };
+    }).filter(Boolean);
     if (accounts.length === 0) return '';
+    const tbc = {};
+    accounts.forEach(a => { tbc[a.currency] = (tbc[a.currency] || 0) + a.spend; });
+    const pt = _adsAgg(accounts.flatMap(a => a.campaigns));
     const rows = accounts.map((a, ai) => {
       const camps = a.campaigns || [];
       const open = !!a._expand;
@@ -1595,21 +1631,20 @@ function renderAdsCards() {
         </tr>`;
       const campRows = camps.map(c => `
         <tr class="ads-camp-row" data-camp-of="${ai}" style="display:${open ? '' : 'none'}">
-          <td style="padding-left:32px;color:var(--text-muted);max-width:320px;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(c.campaign)}">${escapeHtml(c.campaign)}</td>
+          <td style="padding-left:32px;max-width:360px"><span style="display:inline-flex;align-items:center;gap:6px;max-width:100%"><span style="color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(c.campaign)}">${escapeHtml(c.campaign)}</span>${c.ad_type ? `<span style="flex-shrink:0;font-size:9px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--bg-hover);color:var(--text-soft)" title="Ad Type">${escapeHtml(_adsTypeLabel(c.ad_type))}</span>` : ''}</span></td>
           ${_adsMetricCells(c, a.currency)}
         </tr>`).join('');
       return accRow + campRows;
     }).join('');
-    const t = p.totals || {};
     const totRow = `
       <tr class="ads-tot-row">
         <td>รวมทั้งแพลตฟอร์ม</td>
-        <td class="tnum">${_adsTotalTxt(p.total_by_cur)}</td>
-        <td class="tnum">${t.impressions ? _adsInt(t.impressions) : _adsDash()}</td>
-        <td class="tnum">${t.reach ? _adsInt(t.reach) : _adsDash()}</td>
-        <td class="tnum">${t.frequency != null ? t.frequency : _adsDash()}</td>
-        <td class="tnum">${t.clicks ? _adsInt(t.clicks) : _adsDash()}</td>
-        <td class="tnum">${t.ctr != null ? t.ctr + '%' : _adsDash()}</td>
+        <td class="tnum">${_adsTotalTxt(tbc)}</td>
+        <td class="tnum">${pt.impressions ? _adsInt(pt.impressions) : _adsDash()}</td>
+        <td class="tnum">${pt.reach ? _adsInt(pt.reach) : _adsDash()}</td>
+        <td class="tnum">${pt.frequency != null ? pt.frequency : _adsDash()}</td>
+        <td class="tnum">${pt.clicks ? _adsInt(pt.clicks) : _adsDash()}</td>
+        <td class="tnum">${pt.ctr != null ? pt.ctr + '%' : _adsDash()}</td>
         <td class="tnum">${_adsDash()}</td>
         <td class="tnum">${_adsDash()}</td>
       </tr>`;
@@ -1617,7 +1652,7 @@ function renderAdsCards() {
       <div class="card" style="display:block;margin-bottom:16px;padding:0;overflow:hidden">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:13px 16px;background:var(--bg-soft);border-bottom:1px solid var(--border)">
           <div style="font-size:15px;font-weight:700">${meta.icon} ${escapeHtml(meta.label)} <span style="font-size:12px;color:var(--text-muted);font-weight:500">· ${accounts.length} บัญชี</span></div>
-          <div style="font-size:15px;font-weight:800;color:var(--primary)">${_adsTotalTxt(p.total_by_cur)}</div>
+          <div style="font-size:15px;font-weight:800;color:var(--primary)">${_adsTotalTxt(tbc)}</div>
         </div>
         <div style="overflow-x:auto">
           <table class="ads-table">${thead}<tbody>${rows}${totRow}</tbody></table>
@@ -1641,13 +1676,13 @@ function renderAdsCards() {
 function exportAdsCsv() {
   if (!_adsData || !_adsData.platforms) return;
   const esc = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-  const lines = [['Platform', 'Account', 'Account ID', 'Campaign', 'Spend', 'Currency', 'Impressions', 'Reach', 'Frequency', 'Clicks', 'CTR(%)', 'CPC', 'CPM'].join(',')];
+  const lines = [['Platform', 'Account', 'Account ID', 'Campaign', 'Ad Type', 'Spend', 'Currency', 'Impressions', 'Reach', 'Frequency', 'Clicks', 'CTR(%)', 'CPC', 'CPM'].join(',')];
   _adsData.platforms.forEach(p => {
     const label = _adsSrcMeta(p.source).label;
     (p.accounts || []).forEach(a => {
       (a.campaigns || []).forEach(c => {
         const nz = v => (v == null ? '' : v);
-        lines.push([label, a.account_name, a.account_id, c.campaign, c.spend, a.currency, c.impressions, c.reach, nz(c.frequency), c.clicks, nz(c.ctr), nz(c.cpc), nz(c.cpm)].map(esc).join(','));
+        lines.push([label, a.account_name, a.account_id, c.campaign, _adsTypeLabel(c.ad_type || ''), c.spend, a.currency, c.impressions, c.reach, nz(c.frequency), c.clicks, nz(c.ctr), nz(c.cpc), nz(c.cpm)].map(esc).join(','));
       });
     });
   });

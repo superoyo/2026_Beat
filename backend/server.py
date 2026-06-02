@@ -8357,7 +8357,7 @@ def ads_spend(days: int = 7, _sess: dict = Depends(_require_module("ads"))) -> d
         return raw.get("data", []) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
 
     try:
-        rows = _windsor("source,account_id,account_name,campaign,spend,impressions,clicks,reach,currency")
+        rows = _windsor("source,account_id,account_name,campaign,objective,ad_type,spend,impressions,clicks,reach,currency")
         trend_rows = _windsor("source,date,spend")
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:300] if hasattr(e, "read") else ""
@@ -8393,6 +8393,8 @@ def ads_spend(days: int = 7, _sess: dict = Depends(_require_module("ads"))) -> d
         acc_name = str(r.get("account_name") or acc_id or "(unknown)")
         cur = (str(r.get("currency") or "").strip()) or "—"
         campaign = (str(r.get("campaign") or "").strip()) or "(ไม่ระบุแคมเปญ)"
+        # v1.9.165 — ad type = objective (fallback ad_type สำหรับ tiktok)
+        ad_type = (str(r.get("objective") or "").strip()) or (str(r.get("ad_type") or "").strip()) or "(ไม่ระบุ)"
         spend, impr, clk, rch = _f(r.get("spend")), _f(r.get("impressions")), _f(r.get("clicks")), _f(r.get("reach"))
         p = platforms.setdefault(source, {"source": source, "accounts": {}, "total_by_cur": {}})
         key = acc_id or acc_name
@@ -8402,7 +8404,8 @@ def ads_spend(days: int = 7, _sess: dict = Depends(_require_module("ads"))) -> d
         a["impressions"] += impr
         a["clicks"] += clk
         a["reach"] += rch
-        c = a["campaigns"].setdefault(campaign, {"campaign": campaign, "spend": 0.0, "impressions": 0.0, "clicks": 0.0, "reach": 0.0})
+        c = a["campaigns"].setdefault(campaign, {"campaign": campaign, "ad_type": ad_type, "spend": 0.0, "impressions": 0.0, "clicks": 0.0, "reach": 0.0})
+        c["ad_type"] = ad_type
         c["spend"] += spend
         c["impressions"] += impr
         c["clicks"] += clk
@@ -8414,7 +8417,7 @@ def ads_spend(days: int = 7, _sess: dict = Depends(_require_module("ads"))) -> d
         acc_out = []
         for a in accounts:
             camps = sorted(
-                ({"campaign": c["campaign"], **_metrics(c["spend"], c["impressions"], c["clicks"], c["reach"])}
+                ({"campaign": c["campaign"], "ad_type": c.get("ad_type"), **_metrics(c["spend"], c["impressions"], c["clicks"], c["reach"])}
                  for c in a["campaigns"].values()),
                 key=lambda x: x["spend"], reverse=True,
             )

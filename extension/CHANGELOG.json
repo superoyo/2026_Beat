@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.165",
+      "date": "2026-06-01",
+      "title": "Ads: เพิ่ม filter ตาม Ad Type (objective)",
+      "summary": "หน้า Ads เพิ่ม dropdown กรองตาม Ad Type (วัตถุประสงค์แคมเปญ: Awareness/Engagement/Sales/Reach/Video Views ฯลฯ ดึงจาก objective ของ Windsor; tiktok ใช้ ad_type) เมื่อเลือกแล้วยอดรวม/บัญชี/แพลตฟอร์ม คำนวณใหม่ตามชนิดที่เลือก",
+      "changes": [
+        "Backend /api/ads-spend: เพิ่ม field objective/ad_type → campaign.ad_type",
+        "Frontend: dropdown 'ทุก Ad Type' + กรอง+recompute totals, badge ad type ต่อท้ายแคมเปญ, เพิ่มคอลัมน์ Ad Type ใน CSV"
+      ]
+    },
+    {
       "version": "1.9.164",
       "date": "2026-06-01",
       "title": "ย้ายเมนู Customer ขึ้นโซนบน (ใต้ Ads)",
