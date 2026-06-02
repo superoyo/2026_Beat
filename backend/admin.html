@@ -1761,7 +1761,7 @@ function exportAudienceCsv() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 // v1.9.185 — กราฟ histogram + เส้นโค้งปกติ (ระฆัง) + สถิติ min/max/mean/median/mode
-function _distChart(values, fmt) {
+function _distChart(values, fmt, weighted) {
   const vals = (values || []).filter(v => v != null && isFinite(v));
   if (vals.length < 3) return `<div class="empty" style="padding:18px;font-size:12px;text-align:center">— ข้อมูลไม่พอสำหรับกราฟ (${vals.length} จุด) —</div>`;
   const a = vals.slice().sort((x, y) => x - y), n = a.length;
@@ -1798,14 +1798,19 @@ function _distChart(values, fmt) {
   const axis = `<line x1="${padL}" y1="${padT + innerH}" x2="${W - padR}" y2="${padT + innerH}" stroke="var(--border)" stroke-width="1"/>
     <text x="${padL}" y="${H - 6}" font-size="9" fill="#8895ab">${fmt(min)}</text>
     <text x="${W - padR}" y="${H - 6}" font-size="9" fill="#8895ab" text-anchor="end">${fmt(max)}</text>`;
-  const svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:152px;display:block">${bars}${curve}${vline(mean, '#ef4444')}${vline(median, '#10b981')}${axis}</svg>`;
+  // เส้น "ค่าในตาราง (ถ่วงน้ำหนัก)" — สีหลัก เส้นทึบ (clamp ไว้ในกรอบกราฟ)
+  const hasW = (weighted != null && isFinite(weighted));
+  const wClamp = hasW ? Math.max(min, Math.min(max, weighted)) : null;
+  const wLine = hasW ? `<line x1="${X(wClamp).toFixed(1)}" y1="${padT}" x2="${X(wClamp).toFixed(1)}" y2="${padT + innerH}" stroke="var(--primary)" stroke-width="2.4"/>` : '';
+  const svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:152px;display:block">${bars}${curve}${vline(mean, '#ef4444')}${vline(median, '#10b981')}${wLine}${axis}</svg>`;
   const stat = (lbl, val, col) => `<div style="text-align:center"><div style="font-size:8.5px;color:var(--text-soft);text-transform:uppercase;letter-spacing:.3px">${lbl}</div><div style="font-size:12px;font-weight:700${col ? `;color:${col}` : ''}">${fmt(val)}</div></div>`;
   const stats = `
-    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:8px">
-      ${stat('Min', min)}${stat('Max', max)}${stat('Mean', mean, '#ef4444')}${stat('Median', median, '#10b981')}${stat('Mode', mode)}
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:5px;margin-top:8px">
+      ${stat('Min', min)}${stat('Max', max)}${stat('Mean', mean, '#ef4444')}${stat('Median', median, '#10b981')}${stat('Mode', mode)}${hasW ? stat('ตาราง', weighted, 'var(--primary)') : '<div></div>'}
     </div>
-    <div style="display:flex;gap:14px;justify-content:center;margin-top:7px;font-size:9.5px;color:var(--text-soft)">
-      <span><span style="color:#ef4444;font-weight:700">┊</span> mean</span><span><span style="color:#10b981;font-weight:700">┊</span> median</span><span>n = ${n}</span>
+    <div style="display:flex;gap:13px;justify-content:center;flex-wrap:wrap;margin-top:7px;font-size:9.5px;color:var(--text-soft)">
+      ${hasW ? '<span><span style="color:var(--primary);font-weight:700">▬</span> ค่าในตาราง (ถ่วงน้ำหนัก)</span>' : ''}
+      <span><span style="color:#ef4444;font-weight:700">┊</span> mean (เฉลี่ยอย่างง่าย)</span><span><span style="color:#10b981;font-weight:700">┊</span> median</span><span>n = ${n}</span>
     </div>`;
   return svg + stats;
 }
@@ -1820,11 +1825,14 @@ function openDemoDistPanel(ageLabel) {
     if (c.cpv != null) vals.cpv.push(c.cpv);
     if (c.cpe != null) vals.cpe.push(c.cpe);
   });
-  const section = (title, sub, arr, fmt) => `
+  const section = (title, sub, arr, fmt, weighted) => `
     <div style="margin-bottom:20px">
-      <div style="font-size:13.5px;font-weight:700">${title} <span style="font-size:11px;color:var(--text-soft);font-weight:500">· ${arr.length} แคมเปญ</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+        <div style="font-size:13.5px;font-weight:700">${title} <span style="font-size:11px;color:var(--text-soft);font-weight:500">· ${arr.length} แคมเปญ</span></div>
+        <div style="font-size:11px;color:var(--text-soft);white-space:nowrap">ในตาราง <b style="color:var(--primary);font-size:13px">${weighted != null ? fmt(weighted) : '—'}</b></div>
+      </div>
       <div style="font-size:11px;color:var(--text-soft);margin-bottom:8px">${sub}</div>
-      <div style="border:1px solid var(--border);border-radius:12px;padding:12px 12px 14px">${_distChart(arr, fmt)}</div>
+      <div style="border:1px solid var(--border);border-radius:12px;padding:12px 12px 14px">${_distChart(arr, fmt, weighted)}</div>
     </div>`;
   const wrap = document.createElement('div');
   wrap.className = 'sup-panel-wrap';
@@ -1835,10 +1843,13 @@ function openDemoDistPanel(ageLabel) {
       <div class="sup-panel-body" style="padding:4px 22px 28px">
         <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">📊 การกระจายตัว (Distribution)</div>
         <div style="font-size:16px;font-weight:800;margin:3px 0 4px">กลุ่มอายุ ${escapeHtml(String(ageLabel || '—'))}</div>
-        <div style="font-size:11.5px;color:var(--text-soft);margin-bottom:16px">การกระจายของค่าจาก ${camps.length} แคมเปญในกลุ่มอายุนี้ · เส้นโค้ง = การกระจายแบบปกติ (fit ด้วย mean/SD)</div>
-        ${section('CPM', 'Cost per 1,000 impressions', vals.cpm, _adsMoney)}
-        ${section('CPV', 'Cost per video view', vals.cpv, _adsMoney4)}
-        ${section('CPE', 'Cost per engagement', vals.cpe, _adsMoney4)}
+        <div style="font-size:11.5px;color:var(--text-soft);margin-bottom:10px">การกระจายของค่าจาก ${camps.length} แคมเปญในกลุ่มอายุนี้ · เส้นโค้ง = การกระจายแบบปกติ (fit ด้วย mean/SD)</div>
+        <div style="font-size:11px;color:var(--text-muted);background:var(--bg-soft);border:1px solid var(--border);border-radius:9px;padding:9px 11px;line-height:1.6;margin-bottom:18px">
+          💡 <b>"ค่าในตาราง"</b> เป็นค่า<b>ถ่วงน้ำหนัก</b>ด้วยปริมาณ (ค่าใช้จ่ายรวม ÷ impression/view/engagement รวม) — แคมเปญที่ยอดเยอะมีน้ำหนักมากกว่า จึงมัก<b>ต่าง</b>จาก <b>mean</b> (เฉลี่ยอย่างง่าย ที่ทุกแคมเปญน้ำหนักเท่ากัน) ในกราฟ
+        </div>
+        ${section('CPM', 'Cost per 1,000 impressions', vals.cpm, _adsMoney, grp && grp.cpm)}
+        ${section('CPV', 'Cost per video view', vals.cpv, _adsMoney4, grp && grp.cpv)}
+        ${section('CPE', 'Cost per engagement', vals.cpe, _adsMoney4, grp && grp.cpe)}
       </div>
     </div>`;
   document.body.appendChild(wrap);
