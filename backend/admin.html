@@ -639,6 +639,15 @@
     /* v1.9.140 — member actions overflow menu (⋮ เพิ่มเติม) */
     .m-menu-item:hover { background: var(--bg-soft); }
     .m-kebab:hover { background: var(--bg-hover); }
+    /* v1.9.161 — Ads metrics table */
+    .ads-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .ads-table th { padding: 8px 10px; font-size: 10.5px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; border-bottom: 1px solid var(--border); }
+    .ads-table td { padding: 8px 10px; border-top: 1px solid var(--border); white-space: nowrap; }
+    .ads-table .tnum { text-align: right; font-variant-numeric: tabular-nums; }
+    .ads-acc-row { cursor: pointer; }
+    .ads-acc-row:hover { background: var(--bg-hover); }
+    .ads-camp-row > td { background: var(--bg-soft); }
+    .ads-tot-row > td { font-weight: 700; background: var(--bg-soft); border-top: 2px solid var(--border); }
     /* v1.9.147 — toggle switch (Privacy) */
     .tgl { display: inline-flex; cursor: pointer; flex-shrink: 0; }
     .tgl-input { display: none; }
@@ -1527,13 +1536,37 @@ function renderAdsBody() {
   if (ex) ex.onclick = exportAdsCsv;
   renderAdsCards();
 }
+// v1.9.161 — metrics เป็นคอลัมน์ในตาราง
+function _adsDash() { return '<span style="color:var(--text-soft)">—</span>'; }
+function _adsMetricCells(m, cur) {
+  const d = _adsDash();
+  return `
+    <td class="tnum">${m.spend != null ? `${_adsMoney(m.spend)} <span style="color:var(--text-soft);font-size:10px;font-weight:400">${escapeHtml(cur || '')}</span>` : d}</td>
+    <td class="tnum">${m.impressions ? _adsInt(m.impressions) : d}</td>
+    <td class="tnum">${m.reach ? _adsInt(m.reach) : d}</td>
+    <td class="tnum">${m.frequency != null ? m.frequency : d}</td>
+    <td class="tnum">${m.clicks ? _adsInt(m.clicks) : d}</td>
+    <td class="tnum">${m.ctr != null ? m.ctr + '%' : d}</td>
+    <td class="tnum">${m.cpc != null ? _adsMoney(m.cpc) : d}</td>
+    <td class="tnum">${m.cpm != null ? _adsMoney(m.cpm) : d}</td>`;
+}
 function renderAdsCards() {
   const wrap = $('ads-cards');
   if (!wrap || !_adsData) return;
   const q = _adsSearch.trim().toLowerCase();
+  const thead = `<thead><tr>
+    <th style="text-align:left">บัญชี / แคมเปญ</th>
+    <th style="text-align:right">Spend</th>
+    <th style="text-align:right">Impr.</th>
+    <th style="text-align:right">Reach</th>
+    <th style="text-align:right">Freq.</th>
+    <th style="text-align:right">Clicks</th>
+    <th style="text-align:right">CTR</th>
+    <th style="text-align:right">CPC</th>
+    <th style="text-align:right">CPM</th>
+  </tr></thead>`;
   const cards = (_adsData.platforms || []).map(p => {
     const meta = _adsSrcMeta(p.source);
-    // filter accounts/campaigns by search
     let accounts = p.accounts || [];
     if (q) {
       accounts = accounts.map(a => {
@@ -1544,62 +1577,62 @@ function renderAdsCards() {
       }).filter(Boolean);
     }
     if (accounts.length === 0) return '';
-    const accBlocks = accounts.map(a => {
+    const rows = accounts.map((a, ai) => {
       const camps = a.campaigns || [];
-      const campRows = camps.length
-        ? camps.map(c => {
-            const mline = _adsMetricsLine(c);
-            return `
-            <div style="padding:7px 16px 7px 38px;border-top:1px solid var(--border)">
-              <div style="display:flex;justify-content:space-between;gap:12px;font-size:12.5px">
-                <span style="color:var(--text-muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(c.campaign)}">${escapeHtml(c.campaign)}</span>
-                <span style="white-space:nowrap;font-weight:600">${_adsMoney(c.spend)} <span style="color:var(--text-soft);font-size:10.5px;font-weight:400">${escapeHtml(a.currency)}</span></span>
-              </div>
-              ${mline ? `<div style="font-size:10.5px;color:var(--text-soft);margin-top:2px">${mline}</div>` : ''}
-            </div>`;
-          }).join('')
-        : '<div style="padding:8px 16px 8px 38px;font-size:12px;color:var(--text-muted)">— ไม่มีแคมเปญ —</div>';
-      const open = a._expand ? '' : 'none';
-      const caretRot = a._expand ? 'rotate(90deg)' : '';
-      const aMline = _adsMetricsLine(a);
-      return `
-        <div style="border-top:1px solid var(--border)">
-          <div class="ads-acc-head" style="padding:10px 14px;cursor:pointer">
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-              <span style="display:flex;align-items:center;gap:8px;min-width:0">
-                <span class="ads-caret" style="font-size:10px;color:var(--text-soft);transition:transform .15s;flex-shrink:0;transform:${caretRot}">▶</span>
-                <span style="font-size:13px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(a.account_name)}</span>
-                <span style="font-size:11px;color:var(--text-soft);white-space:nowrap;flex-shrink:0">· ${camps.length} แคมเปญ</span>
-              </span>
-              <span style="font-size:13px;font-weight:700;white-space:nowrap">${_adsMoney(a.spend)} <span style="color:var(--text-soft);font-weight:400;font-size:11px">${escapeHtml(a.currency)}</span></span>
-            </div>
-            ${aMline ? `<div style="font-size:10.5px;color:var(--text-soft);margin-top:3px;margin-left:18px">${aMline}</div>` : ''}
-          </div>
-          <div class="ads-camps" style="display:${open}">${campRows}</div>
-        </div>`;
+      const open = !!a._expand;
+      const accRow = `
+        <tr class="ads-acc-row" data-acc="${ai}">
+          <td>
+            <span style="display:inline-flex;align-items:center;gap:7px;max-width:300px">
+              <span class="ads-caret" style="font-size:9px;color:var(--text-soft);transition:transform .15s;transform:${open ? 'rotate(90deg)' : ''}">▶</span>
+              <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(a.account_name)}">${escapeHtml(a.account_name)}</span>
+              <span style="font-size:10.5px;color:var(--text-soft);white-space:nowrap">· ${camps.length}</span>
+            </span>
+          </td>
+          ${_adsMetricCells(a, a.currency)}
+        </tr>`;
+      const campRows = camps.map(c => `
+        <tr class="ads-camp-row" data-camp-of="${ai}" style="display:${open ? '' : 'none'}">
+          <td style="padding-left:32px;color:var(--text-muted);max-width:320px;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(c.campaign)}">${escapeHtml(c.campaign)}</td>
+          ${_adsMetricCells(c, a.currency)}
+        </tr>`).join('');
+      return accRow + campRows;
     }).join('');
     const t = p.totals || {};
-    const totLine = _adsMetricsLine({ impressions: t.impressions, reach: t.reach, frequency: t.frequency, clicks: t.clicks, ctr: t.ctr });
+    const totRow = `
+      <tr class="ads-tot-row">
+        <td>รวมทั้งแพลตฟอร์ม</td>
+        <td class="tnum">${_adsTotalTxt(p.total_by_cur)}</td>
+        <td class="tnum">${t.impressions ? _adsInt(t.impressions) : _adsDash()}</td>
+        <td class="tnum">${t.reach ? _adsInt(t.reach) : _adsDash()}</td>
+        <td class="tnum">${t.frequency != null ? t.frequency : _adsDash()}</td>
+        <td class="tnum">${t.clicks ? _adsInt(t.clicks) : _adsDash()}</td>
+        <td class="tnum">${t.ctr != null ? t.ctr + '%' : _adsDash()}</td>
+        <td class="tnum">${_adsDash()}</td>
+        <td class="tnum">${_adsDash()}</td>
+      </tr>`;
     return `
       <div class="card" style="display:block;margin-bottom:16px;padding:0;overflow:hidden">
-        <div style="padding:14px 16px;background:var(--bg-soft);border-bottom:1px solid var(--border)">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
-            <div style="font-size:15px;font-weight:700">${meta.icon} ${escapeHtml(meta.label)} <span style="font-size:12px;color:var(--text-muted);font-weight:500">· ${accounts.length} บัญชี</span></div>
-            <div style="font-size:15px;font-weight:800;color:var(--primary)">${_adsTotalTxt(p.total_by_cur)}</div>
-          </div>
-          ${totLine ? `<div style="font-size:11px;color:var(--text-soft);margin-top:5px">${totLine}</div>` : ''}
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:13px 16px;background:var(--bg-soft);border-bottom:1px solid var(--border)">
+          <div style="font-size:15px;font-weight:700">${meta.icon} ${escapeHtml(meta.label)} <span style="font-size:12px;color:var(--text-muted);font-weight:500">· ${accounts.length} บัญชี</span></div>
+          <div style="font-size:15px;font-weight:800;color:var(--primary)">${_adsTotalTxt(p.total_by_cur)}</div>
         </div>
-        <div>${accBlocks}</div>
+        <div style="overflow-x:auto">
+          <table class="ads-table">${thead}<tbody>${rows}${totRow}</tbody></table>
+        </div>
       </div>`;
   }).join('');
   wrap.innerHTML = cards || '<div class="empty" style="padding:24px;text-align:center;color:var(--text-muted)">— ไม่พบบัญชี/แคมเปญที่ตรงกับคำค้น —</div>';
-  wrap.querySelectorAll('.ads-acc-head').forEach(h => {
-    h.addEventListener('click', () => {
-      const camps = h.nextElementSibling;
-      const caret = h.querySelector('.ads-caret');
-      const isOpen = camps && camps.style.display !== 'none';
-      if (camps) camps.style.display = isOpen ? 'none' : '';
-      if (caret) caret.style.transform = isOpen ? '' : 'rotate(90deg)';
+  wrap.querySelectorAll('table.ads-table').forEach(tbl => {
+    tbl.querySelectorAll('.ads-acc-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const ai = row.dataset.acc;
+        const caret = row.querySelector('.ads-caret');
+        const camps = tbl.querySelectorAll(`.ads-camp-row[data-camp-of="${ai}"]`);
+        const isOpen = camps.length && camps[0].style.display !== 'none';
+        camps.forEach(cr => { cr.style.display = isOpen ? 'none' : ''; });
+        if (caret) caret.style.transform = isOpen ? '' : 'rotate(90deg)';
+      });
     });
   });
 }
