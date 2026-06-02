@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.148",
+      "date": "2026-06-01",
+      "title": "ลบเมนู My Team (หน้าเดี่ยว) — ย้ายแพลตฟอร์มที่ทีมใช้ ไปไว้ใน My Profile > Team",
+      "summary": "เอาเมนู My Team ออกจาก sidebar (nav + route + หน้า) แล้วเพิ่มส่วน 'แพลตฟอร์มที่ทีมใช้' ใต้รายชื่อสมาชิกในแท็บ My Profile > Team แทน (เหมือนหน้าเดิม)",
+      "changes": [
+        "ลบ nav 'My Team', route #/supervise และฟังก์ชัน renderSupervisePage",
+        "My Profile > Team: เพิ่มส่วน 'แพลตฟอร์มที่ทีมใช้' ใต้ photo grid (รวม unique เมื่อเลือกทั้งหมด, ตามทีมเมื่อเลือกแท็บทีม)",
+        "ยังคงคลิกสมาชิกเพื่อดู Profile/Device panel ได้เหมือนเดิม"
+      ]
+    },
+    {
       "version": "1.9.147",
       "date": "2026-06-01",
       "title": "เปลี่ยนเมนู 'บัญชีของฉัน' → My Profile + เพิ่มเมนูย่อย Privacy",

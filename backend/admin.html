@@ -1066,7 +1066,6 @@
         <!-- v1.9.122 — บัญชีของฉัน: direct link (โปรไฟล์/My Device/Extension/Check-in อยู่ในเมนูย่อยของหน้านี้แล้ว) -->
         <a href="#/account" data-route="account" data-label="My Profile"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><span class="nav-label">My Profile</span></a>
         <!-- v1.9.126 — Supervise: แสดงเฉพาะ member ที่ดูแลทีม (toggle ตอน load) -->
-        <a href="#/supervise" id="nav-supervise" data-route="supervise" data-label="My Team" style="display:none"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></span><span class="nav-label">My Team</span></a>
       </div>
 
       <!-- ภาพรวมระบบ (admin-only — ซ่อนทั้ง section สำหรับ member) -->
@@ -1266,7 +1265,6 @@ const routes = {
   'access-requests':  () => renderPeoplesPage('access-requests'),
   'extension':        renderExtensionPage,
   'account':          renderAccountPage,
-  'supervise':        renderSupervisePage,
 };
 
 function setActive(route) {
@@ -10940,52 +10938,7 @@ async function openAiProjectModal(proj) {
   }, 30);
 }
 
-// v1.9.126 — Supervise (member-facing): ดูข้อมูลทีมที่ตัวเอง supervise
-async function renderSupervisePage() {
-  $('main').innerHTML = `
-    <div class="page-head"><h2 class="page-title">🔭 My Team</h2></div>
-    <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px">ทีมที่คุณได้รับมอบหมายให้ดูแล — ดูสมาชิก + แพลตฟอร์มที่ทีมใช้</div>
-    <div id="sup-list"><div class="empty">กำลังโหลด…</div></div>
-  `;
-  let data;
-  try { data = await fetchJson('/api/member/supervised'); }
-  catch (e) { $('sup-list').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`; return; }
-  const teams = data.teams || [];
-  if (teams.length === 0) {
-    $('sup-list').innerHTML = `<div class="empty" style="padding:32px;text-align:center"><div style="font-size:42px;margin-bottom:8px">🔭</div><div style="font-weight:600;color:var(--text)">ยังไม่ได้รับมอบหมายให้ดูแลทีมใด</div><div style="font-size:13px;color:var(--text-muted);margin-top:4px">ติดต่อ admin เพื่อขอสิทธิ์ supervise</div></div>`;
-    return;
-  }
-  const avatar = (m, size = 34) => m.avatar_data
-    ? `<img src="${m.avatar_data}" alt="" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;border:1px solid var(--border);flex-shrink:0" />`
-    : `<div style="width:${size}px;height:${size}px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:13px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml((m.display_name || m.email || '?').trim().charAt(0).toUpperCase())}</div>`;
-  $('sup-list').innerHTML = teams.map(t => `
-    <div class="card" style="display:block;margin-bottom:16px">
-      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px">
-        <h3 style="margin:0;font-size:16px;font-weight:700">👨‍👩‍👧 ${escapeHtml(t.name)}</h3>
-        <span style="font-size:12px;color:var(--text-muted)">${t.members.length} สมาชิก · ${t.sites.length} แพลตฟอร์ม</span>
-      </div>
-      ${t.description ? `<div style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px">${escapeHtml(t.description)}</div>` : ''}
-      <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">สมาชิก</div>
-      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
-        ${t.members.length === 0 ? '<div style="font-size:12.5px;color:var(--text-muted);font-style:italic">— ไม่มีสมาชิก —</div>' : t.members.map(m => `
-          <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border:1px solid var(--border);border-radius:8px">
-            ${avatar(m)}
-            <div style="flex:1;min-width:0">
-              <div style="font-weight:600;font-size:13px">${escapeHtml(m.display_name || '(ไม่ได้ตั้งชื่อ)')}</div>
-              <div style="font-size:11.5px;color:var(--text-muted)">${escapeHtml(m.email || m.phone || '—')}</div>
-            </div>
-          </div>`).join('')}
-      </div>
-      <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">แพลตฟอร์มที่ทีมใช้</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px">
-        ${t.sites.length === 0 ? '<div style="font-size:12.5px;color:var(--text-muted);font-style:italic">— ไม่มีแพลตฟอร์ม —</div>' : t.sites.map(s => `
-          <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--bg-soft);border:1px solid var(--border);font-size:12px;font-weight:500">
-            ${s.logo_data ? `<img src="${s.logo_data}" style="width:16px;height:16px;border-radius:3px;object-fit:contain" />` : '🔗'} ${escapeHtml(s.name)}
-          </span>`).join('')}
-      </div>
-    </div>
-  `).join('');
-}
+// v1.9.148 — หน้า My Team (renderSupervisePage) ถูกลบออก — ย้ายไป My Profile > Team tab แทน
 
 // v1.9.129 — คลิกคนใน Team → เปิด panel ขวา แสดง Profile + Device (M365 style)
 async function openSupervisedMemberPanel(memberId, memberName) {
@@ -13431,32 +13384,46 @@ async function renderMemberAccountPage() {
   function renderTeamSupGrid() {
     const grid = $('m-team-grid');
     if (!grid) return;
-    let members;
+    let members, sites;
     if (_teamSupActive === '__all__') {
       const byId = new Map();
       _teamSupTeams.forEach(t => t.members.forEach(m => { if (!byId.has(m.id)) byId.set(m.id, m); }));
       members = Array.from(byId.values());
+      const sById = new Map();
+      _teamSupTeams.forEach(t => (t.sites || []).forEach(s => { if (!sById.has(s.id)) sById.set(s.id, s); }));
+      sites = Array.from(sById.values());
     } else {
       const t = _teamSupTeams.find(x => String(x.id) === _teamSupActive);
       members = t ? t.members : [];
+      sites = t ? (t.sites || []) : [];
     }
-    if (members.length === 0) {
-      grid.innerHTML = '<div class="empty" style="padding:24px;text-align:center;color:var(--text-muted)">— ไม่มีสมาชิกในทีมนี้ —</div>';
-      return;
-    }
-    grid.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px">` +
-      members.map(m => {
-        const initial = (m.display_name || m.email || '?').trim().charAt(0).toUpperCase();
-        const photo = m.avatar_data
-          ? `<img src="${m.avatar_data}" alt="" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;display:block" />`
-          : `<div style="width:100%;aspect-ratio:1;border-radius:12px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:38px;display:flex;align-items:center;justify-content:center">${escapeHtml(initial)}</div>`;
-        return `
-          <div class="sup-member-card" data-sup-member="${m.id}" data-sup-name="${escapeHtml(m.display_name || m.email || '')}" style="display:flex;flex-direction:column;gap:7px;cursor:pointer;border-radius:12px;padding:4px;margin:-4px;transition:background .12s" title="ดูข้อมูล Profile / Device">
-            ${photo}
-            <div style="font-weight:600;font-size:13.5px;line-height:1.3">${escapeHtml(m.display_name || '(ไม่ได้ตั้งชื่อ)')}</div>
-            <div style="font-size:11.5px;color:var(--text-muted);margin-top:-4px">${m.phone ? '📞 ' + escapeHtml(m.phone) : ''}</div>
-          </div>`;
-      }).join('') + `</div>`;
+    const memberGrid = members.length === 0
+      ? '<div class="empty" style="padding:24px;text-align:center;color:var(--text-muted)">— ไม่มีสมาชิกในทีมนี้ —</div>'
+      : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px">` +
+        members.map(m => {
+          const initial = (m.display_name || m.email || '?').trim().charAt(0).toUpperCase();
+          const photo = m.avatar_data
+            ? `<img src="${m.avatar_data}" alt="" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;display:block" />`
+            : `<div style="width:100%;aspect-ratio:1;border-radius:12px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:38px;display:flex;align-items:center;justify-content:center">${escapeHtml(initial)}</div>`;
+          return `
+            <div class="sup-member-card" data-sup-member="${m.id}" data-sup-name="${escapeHtml(m.display_name || m.email || '')}" style="display:flex;flex-direction:column;gap:7px;cursor:pointer;border-radius:12px;padding:4px;margin:-4px;transition:background .12s" title="ดูข้อมูล Profile / Device">
+              ${photo}
+              <div style="font-weight:600;font-size:13.5px;line-height:1.3">${escapeHtml(m.display_name || '(ไม่ได้ตั้งชื่อ)')}</div>
+              <div style="font-size:11.5px;color:var(--text-muted);margin-top:-4px">${m.phone ? '📞 ' + escapeHtml(m.phone) : ''}</div>
+            </div>`;
+        }).join('') + `</div>`;
+    // v1.9.148 — แพลตฟอร์มที่ทีมใช้ (ย้ายมาจากหน้า My Team เดิม)
+    const platHtml = `
+      <div style="margin-top:22px;border-top:1px solid var(--border);padding-top:16px">
+        <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">แพลตฟอร์มที่ทีมใช้ <span style="color:var(--text-soft)">${sites.length}</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${sites.length === 0 ? '<div style="font-size:12.5px;color:var(--text-muted);font-style:italic">— ไม่มีแพลตฟอร์ม —</div>' : sites.map(s => `
+            <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--bg-soft);border:1px solid var(--border);font-size:12px;font-weight:500">
+              ${s.logo_data ? `<img src="${s.logo_data}" style="width:16px;height:16px;border-radius:3px;object-fit:contain" />` : '🔗'} ${escapeHtml(s.name)}
+            </span>`).join('')}
+        </div>
+      </div>`;
+    grid.innerHTML = memberGrid + platHtml;
     grid.querySelectorAll('.sup-member-card').forEach(c => {
       c.addEventListener('mouseenter', () => c.style.background = 'var(--bg-soft)');
       c.addEventListener('mouseleave', () => c.style.background = 'transparent');
@@ -14685,14 +14652,6 @@ function attachSidebarHandlers() {
     setInterval(refreshAccessRequestBadge, 60_000);
   }
 
-  // v1.9.126 — แสดงเมนู Supervise ถ้า member ดูแลทีม ≥1
-  try {
-    const me = await fetch('/api/member/me', { credentials: 'same-origin' }).then(r => r.json());
-    if (me && me.logged_in && me.member && (me.member.supervised_count || 0) > 0) {
-      const navSup = $('nav-supervise');
-      if (navSup) navSup.style.display = '';
-    }
-  } catch {}
 })();
 </script>
 </body>
