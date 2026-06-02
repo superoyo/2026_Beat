@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.162",
+      "date": "2026-06-01",
+      "title": "เพิ่ม IAM ใน Setting — กำหนดสิทธิ์ Module (Ads/Customer/Platform) ต่อบุคคล/ทีม/ทั้งหมด",
+      "summary": "เมนูใหม่ Setting > IAM (admin) กำหนดได้ว่าแต่ละ Module เปิดให้ใครเข้า — ทุกคน หรือ กำหนดเอง (เลือกรายบุคคล/ทีม) แล้ว nav ของพนักงานจะแสดงเมนูตามสิทธิ์ที่ได้รับ (admin เห็นทุก module)",
+      "changes": [
+        "Backend: tables iam_module_config/members/teams + seed (platform=ทุกคน, customer/ads=restricted) + GET/PUT /api/iam/modules + modules ใน /api/member/me",
+        "Frontend: Setting > IAM (โหมด ทุกคน/กำหนดเอง + checkbox ทีม + ค้นหา-เลือกรายบุคคล), nav กรองตาม module, navigate guard",
+        "Ads endpoint รองรับ member ที่ได้รับสิทธิ์ (_require_module) · Platform ใช้ได้อยู่แล้ว · Customer ยังต้องเปิด endpoint เพิ่มถ้าจะให้ non-admin ใช้เต็มรูปแบบ"
+      ]
+    },
+    {
       "version": "1.9.161",
       "date": "2026-06-01",
       "title": "Ads: แสดง metrics เป็นคอลัมน์ในตาราง (แทนบรรทัดข้อความ)",

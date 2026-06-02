@@ -283,6 +283,22 @@ def init_db() -> None:
                 updated_at     TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_ai_projects_dept ON ai_projects(department);
+            -- v1.9.162: IAM — กำหนดสิทธิ์เข้าถึง module (Ads/Customer/Platform) ต่อบุคคล/ทีม/ทั้งหมด
+            CREATE TABLE IF NOT EXISTS iam_module_config (
+                module_key TEXT PRIMARY KEY,            -- 'ads' | 'customer' | 'platform'
+                mode       TEXT NOT NULL DEFAULT 'restricted',  -- 'all' | 'restricted'
+                updated_at TEXT
+            );
+            CREATE TABLE IF NOT EXISTS iam_module_members (
+                module_key TEXT NOT NULL,
+                member_id  INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+                PRIMARY KEY (module_key, member_id)
+            );
+            CREATE TABLE IF NOT EXISTS iam_module_teams (
+                module_key TEXT NOT NULL,
+                team_id    INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+                PRIMARY KEY (module_key, team_id)
+            );
             CREATE TABLE IF NOT EXISTS team_sites (
                 team_id     INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
                 site_id     INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
@@ -687,6 +703,13 @@ def init_db() -> None:
             conn.execute(
                 "INSERT OR IGNORE INTO skill_categories(key, icon, label, sort_order, created_at) VALUES (?,?,?,?,?)",
                 (k, ic, lb, i, _now),
+            )
+
+        # v1.9.162 — seed IAM module config (platform=ทุกคน, customer/ads=restricted ตามเดิม)
+        for _mk, _mode in [("platform", "all"), ("customer", "restricted"), ("ads", "restricted")]:
+            conn.execute(
+                "INSERT OR IGNORE INTO iam_module_config(module_key, mode, updated_at) VALUES (?,?,?)",
+                (_mk, _mode, _now),
             )
 
         # ---- emergency reset (ถ้า user ตั้ง env เอง)
@@ -7521,6 +7544,8 @@ def member_me(
             (row["id"],),
         ).fetchone()
         member_profile["supervised_count"] = sup["n"] if sup else 0
+        # v1.9.162 — module ที่เข้าถึงได้ (สำหรับกรอง nav)
+        member_profile["modules"] = _member_accessible_modules(conn, row["id"], bool(member_profile.get("is_admin")))
     return {"logged_in": True, "member": member_profile}
 
 
@@ -8289,11 +8314,31 @@ def dashboard_stats(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
     }
 
 
+# v1.9.162 — dependency: อนุญาต admin หรือ member ที่ได้รับสิทธิ์ module นี้
+# (เรียก _member_accessible_modules ตอน request — นิยามไว้ใน IAM block ด้านล่าง)
+def _require_module(module_key: str):
+    def _dep(fct_session: Optional[str] = Cookie(default=None),
+             fct_member_session: Optional[str] = Cookie(default=None)) -> dict[str, Any]:
+        if get_session(fct_session):
+            return {"role": "admin", "member_id": None}
+        msess = get_member_session(fct_member_session)
+        if msess:
+            mid = msess["member_id"]
+            with db_conn() as conn:
+                row = conn.execute("SELECT is_admin FROM members WHERE id = ?", (mid,)).fetchone()
+                is_admin = bool(row["is_admin"]) if row else False
+                mods = _member_accessible_modules(conn, mid, is_admin)
+            if module_key in mods:
+                return {"role": "admin" if is_admin else "member", "member_id": mid}
+        raise HTTPException(status_code=403, detail="คุณไม่มีสิทธิ์เข้าถึงเมนูนี้")
+    return _dep
+
+
 # ===========================================================================
 # v1.9.157 — Ads spend (ดึงจาก Windsor.ai — 7 วันย้อนหลัง แยกตาม platform & ad account)
 # ===========================================================================
 @app.get("/api/ads-spend")
-def ads_spend(days: int = 7, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+def ads_spend(days: int = 7, _sess: dict = Depends(_require_module("ads"))) -> dict[str, Any]:
     if not WINDSOR_API_KEY:
         raise HTTPException(status_code=503,
                             detail="ยังไม่ได้ตั้งค่า WINDSOR_API_KEY ใน environment — ตั้งค่าบน Railway ก่อนใช้งาน")
@@ -8415,6 +8460,99 @@ def ads_spend(days: int = 7, _sess: dict = Depends(require_admin)) -> dict[str, 
     }
 
     return {"date_from": date_from, "date_to": date_to, "days": days, "platforms": out, "trend": trend}
+
+
+# ===========================================================================
+# v1.9.162 — IAM: กำหนดสิทธิ์เข้าถึง module ต่อบุคคล/ทีม/ทั้งหมด
+# ===========================================================================
+IAM_MODULES = [
+    {"key": "platform", "label": "Platform", "icon": "🚀", "desc": "เมนู Platforms"},
+    {"key": "customer", "label": "Customer", "icon": "🌐", "desc": "เมนู Customer (Calendar / Websites / Services)"},
+    {"key": "ads",      "label": "Ads",      "icon": "💰", "desc": "เมนู Ads (ยอดใช้จ่ายค่าโฆษณา)"},
+]
+IAM_MODULE_KEYS = {m["key"] for m in IAM_MODULES}
+
+
+def _member_accessible_modules(conn, member_id: int, is_admin: bool) -> list[str]:
+    """v1.9.162 — module ที่ member นี้เข้าถึงได้ (admin เห็นทุก module)"""
+    if is_admin:
+        return [m["key"] for m in IAM_MODULES]
+    team_ids = [r["team_id"] for r in conn.execute(
+        "SELECT team_id FROM team_members WHERE member_id = ?", (member_id,)
+    ).fetchall()]
+    out = []
+    for m in IAM_MODULES:
+        mk = m["key"]
+        cfg = conn.execute("SELECT mode FROM iam_module_config WHERE module_key = ?", (mk,)).fetchone()
+        mode = cfg["mode"] if cfg else "restricted"
+        if mode == "all":
+            out.append(mk)
+            continue
+        if conn.execute("SELECT 1 FROM iam_module_members WHERE module_key = ? AND member_id = ?",
+                        (mk, member_id)).fetchone():
+            out.append(mk)
+            continue
+        if team_ids:
+            pl = ",".join("?" * len(team_ids))
+            if conn.execute(f"SELECT 1 FROM iam_module_teams WHERE module_key = ? AND team_id IN ({pl})",
+                            [mk] + team_ids).fetchone():
+                out.append(mk)
+    return out
+
+
+@app.get("/api/iam/modules")
+def iam_get_modules(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    with db_conn() as conn:
+        out = []
+        for m in IAM_MODULES:
+            mk = m["key"]
+            cfg = conn.execute("SELECT mode FROM iam_module_config WHERE module_key = ?", (mk,)).fetchone()
+            mode = cfg["mode"] if cfg else "restricted"
+            mems = conn.execute(
+                "SELECT mm.id, mm.display_name, mm.email, mm.phone "
+                "FROM iam_module_members im JOIN members mm ON mm.id = im.member_id "
+                "WHERE im.module_key = ? ORDER BY mm.display_name COLLATE NOCASE", (mk,)
+            ).fetchall()
+            teams = conn.execute(
+                "SELECT t.id, t.name FROM iam_module_teams it JOIN teams t ON t.id = it.team_id "
+                "WHERE it.module_key = ? ORDER BY t.name COLLATE NOCASE", (mk,)
+            ).fetchall()
+
+            def _nm(r):
+                ph = r["phone"]
+                return r["display_name"] or r["email"] or (None if (ph and str(ph).startswith("email:")) else ph) or f"member#{r['id']}"
+            out.append({
+                "key": mk, "label": m["label"], "icon": m["icon"], "desc": m["desc"], "mode": mode,
+                "members": [{"id": r["id"], "name": _nm(r)} for r in mems],
+                "teams": [dict(t) for t in teams],
+            })
+    return {"modules": out}
+
+
+class IamModuleIn(BaseModel):
+    mode: str = Field("restricted", pattern="^(all|restricted)$")
+    member_ids: list[int] = Field(default_factory=list)
+    team_ids: list[int] = Field(default_factory=list)
+
+
+@app.put("/api/iam/modules/{module_key}")
+def iam_set_module(module_key: str, payload: IamModuleIn, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    if module_key not in IAM_MODULE_KEYS:
+        raise HTTPException(status_code=404, detail="ไม่พบ module")
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        conn.execute("INSERT OR REPLACE INTO iam_module_config(module_key, mode, updated_at) VALUES (?,?,?)",
+                     (module_key, payload.mode, now))
+        conn.execute("DELETE FROM iam_module_members WHERE module_key = ?", (module_key,))
+        conn.execute("DELETE FROM iam_module_teams WHERE module_key = ?", (module_key,))
+        if payload.mode == "restricted":
+            for mid in set(payload.member_ids):
+                conn.execute("INSERT OR IGNORE INTO iam_module_members(module_key, member_id) VALUES (?,?)",
+                             (module_key, mid))
+            for tid in set(payload.team_ids):
+                conn.execute("INSERT OR IGNORE INTO iam_module_teams(module_key, team_id) VALUES (?,?)",
+                             (module_key, tid))
+    return {"ok": True}
 
 
 # ===========================================================================

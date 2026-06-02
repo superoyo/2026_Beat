@@ -1258,10 +1258,13 @@ function _extractErrDetail(j) {
 }
 
 // admin-only routes — member ห้ามเข้า (bounce ไป default)
-const ADMIN_ONLY_ROUTES = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads']);
+const ADMIN_ONLY_ROUTES = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads']);
 // menu items ที่ซ่อนใน sidebar สำหรับ member
 // (dashboard เห็นได้ทุกบทบาท — ใช้เป็นหน้าแรกของ member ด้วย)
-const HIDE_FROM_MEMBER_NAV = new Set(['security', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads']);
+const HIDE_FROM_MEMBER_NAV = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads']);
+// v1.9.162 — IAM: route → module ที่ต้องมีสิทธิ์ (member ที่ถูก grant ถึงเข้าได้)
+const ROUTE_MODULE = { platforms: 'platform', ads: 'ads', calendar: 'customer', domains: 'customer', websites: 'customer', 'services-config': 'customer', 'domains-config': 'customer' };
+let currentModules = new Set();   // module ที่ผู้ใช้ปัจจุบันเข้าถึงได้ (member)
 
 // ---------- routing ----------
 const routes = {
@@ -1279,6 +1282,7 @@ const routes = {
   'financial-documents': () => renderDeviceSoftwarePage('financial-documents'),
   'logs':             () => renderSettingPage('logs'),
   'security':         () => renderSettingPage('security'),
+  'iam':              () => renderSettingPage('iam'),
   'ads':              renderAdsPage,
   'my-device':        renderMyDevicePage,
   'domains-config':   renderDomainsConfigPage,
@@ -1359,10 +1363,15 @@ async function navigate() {
   const parts = hash.split('/');
   const route = parts[0];
 
-  // Member ห้ามเข้า admin-only routes → bounce ไป dashboard
-  if (currentRole === 'member' && (ADMIN_ONLY_ROUTES.has(route) || HIDE_FROM_MEMBER_NAV.has(route))) {
-    location.hash = '#/dashboard';
-    return;
+  // Member: เช็คสิทธิ์ — route ที่ผูก module ต้องได้รับสิทธิ์ก่อน; route admin-only อื่น ๆ ห้ามเข้า
+  if (currentRole === 'member') {
+    const reqMod = ROUTE_MODULE[route];
+    if (reqMod) {
+      if (!currentModules.has(reqMod)) { location.hash = '#/dashboard'; return; }
+    } else if (ADMIN_ONLY_ROUTES.has(route) || HIDE_FROM_MEMBER_NAV.has(route)) {
+      location.hash = '#/dashboard';
+      return;
+    }
   }
 
   // ออกจากหน้า extension → หยุด polling status
@@ -2905,6 +2914,113 @@ function showAddCredModal(siteId) {
     await bindCredFormDynamic();
     await loadCredAccessIntoModal(null);   // ADD = no cred yet
   }, 0);
+}
+
+// ============== v1.9.162 — IAM (สิทธิ์เข้าถึง module) ==============
+async function renderIamPage() {
+  const root = _subMain();
+  root.innerHTML = '<div class="empty">กำลังโหลด…</div>';
+  let data;
+  try { data = await fetchJson('/api/iam/modules'); }
+  catch (e) { root.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`; return; }
+  const mods = data.modules || [];
+  root.innerHTML = `
+    <div class="card" style="display:block;margin-bottom:14px;background:var(--bg-soft)">
+      <div style="font-size:13px;color:var(--text-muted);line-height:1.7">🔐 <strong>IAM</strong> — กำหนดว่าแต่ละ Module (เมนู) เปิดให้พนักงานคนไหนเข้าได้ — เลือก <strong>ทุกคน</strong> หรือ <strong>กำหนดเอง</strong> (รายบุคคล/ทีม) · admin เห็นทุก module เสมอ</div>
+    </div>
+    ${mods.map(m => {
+      const summary = m.mode === 'all'
+        ? '<span style="color:var(--green);font-weight:600">👥 ทุกคน</span>'
+        : `<span style="color:var(--text-muted)">🎯 กำหนดเอง — ${m.members.length} คน · ${m.teams.length} ทีม</span>`;
+      const chips = m.mode === 'all' ? '' : `
+        <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:10px">
+          ${m.teams.map(t => `<span style="font-size:11px;padding:2px 9px;border-radius:999px;background:rgba(37,99,235,.10);color:var(--primary)">👥 ${escapeHtml(t.name)}</span>`).join('')}
+          ${m.members.map(mm => `<span style="font-size:11px;padding:2px 9px;border-radius:999px;background:var(--bg-soft);border:1px solid var(--border)">👤 ${escapeHtml(mm.name)}</span>`).join('')}
+          ${(m.members.length === 0 && m.teams.length === 0) ? '<span style="font-size:11.5px;color:var(--text-soft);font-style:italic">— ยังไม่ได้กำหนดใคร (เห็นเฉพาะ admin) —</span>' : ''}
+        </div>`;
+      return `
+        <div class="card" style="display:block;margin-bottom:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+            <div style="min-width:0">
+              <div style="font-size:15px;font-weight:700">${m.icon} ${escapeHtml(m.label)}</div>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:2px">${escapeHtml(m.desc)} · ${summary}</div>
+            </div>
+            <button class="btn" data-iam-cfg="${m.key}" style="font-size:13px;padding:8px 14px">⚙️ ตั้งค่า</button>
+          </div>${chips}
+        </div>`;
+    }).join('')}`;
+  root.querySelectorAll('[data-iam-cfg]').forEach(b => b.addEventListener('click', () => configIamModule(mods.find(x => x.key === b.dataset.iamCfg))));
+}
+async function configIamModule(mod) {
+  if (!mod) return;
+  const [teams, memberOpts] = await Promise.all([_loadAiprojTeams(), _loadSkillMemberOpts()]);
+  const selMembers = new Set(mod.members.map(x => x.id));
+  const selTeams = new Set(mod.teams.map(x => x.id));
+  let mode = mod.mode;
+  showModal({
+    title: `🔐 ตั้งค่าสิทธิ์ — ${mod.label}`, size: 'wide',
+    body: `
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;gap:8px">
+          <button type="button" class="iam-mode-btn" data-mode="all" style="flex:1;padding:11px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg-card);cursor:pointer;font-family:inherit;font-weight:600;font-size:13px">👥 ทุกคน</button>
+          <button type="button" class="iam-mode-btn" data-mode="restricted" style="flex:1;padding:11px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg-card);cursor:pointer;font-family:inherit;font-weight:600;font-size:13px">🎯 กำหนดเอง</button>
+        </div>
+        <div id="iam-restricted" style="display:none;flex-direction:column;gap:14px">
+          <div>
+            <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:7px">ทีม (ทุกคนในทีมเห็นได้)</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;max-height:150px;overflow-y:auto">
+              ${teams.map(t => `<label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;padding:6px 11px;border:1px solid var(--border);border-radius:8px;cursor:pointer"><input type="checkbox" class="iam-team" value="${t.id}" ${selTeams.has(t.id) ? 'checked' : ''} style="margin:0"/> ${escapeHtml(t.name)}</label>`).join('') || '<span style="font-size:12px;color:var(--text-muted)">— ไม่มีทีม —</span>'}
+            </div>
+          </div>
+          <div>
+            <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:7px">รายบุคคล</div>
+            <input type="text" id="iam-mem-search" placeholder="🔍 ค้นหาชื่อ / ทีม..." autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:8px;box-sizing:border-box" />
+            <div id="iam-members" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:4px"></div>
+          </div>
+        </div>
+      </div>`,
+    onSubmit: async () => {
+      await fetchJson(`/api/iam/modules/${mod.key}`, { method: 'PUT', body: JSON.stringify({
+        mode,
+        member_ids: mode === 'restricted' ? [...selMembers] : [],
+        team_ids: mode === 'restricted' ? [...selTeams] : [],
+      })});
+      showSavedToast('✓ บันทึกสิทธิ์แล้ว');
+      renderIamPage();
+    },
+  });
+  setTimeout(() => {
+    const restrictedBox = document.getElementById('iam-restricted');
+    const setMode = (m) => {
+      mode = m;
+      document.querySelectorAll('.iam-mode-btn').forEach(b => {
+        const on = b.dataset.mode === m;
+        b.style.borderColor = on ? 'var(--primary)' : 'var(--border)';
+        b.style.background = on ? 'var(--primary-soft)' : 'var(--bg-card)';
+        b.style.color = on ? 'var(--primary-dark)' : 'var(--text)';
+      });
+      if (restrictedBox) restrictedBox.style.display = m === 'restricted' ? 'flex' : 'none';
+    };
+    document.querySelectorAll('.iam-mode-btn').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+    setMode(mode);
+    document.querySelectorAll('.iam-team').forEach(cb => cb.addEventListener('change', () => {
+      const id = parseInt(cb.value, 10);
+      if (cb.checked) selTeams.add(id); else selTeams.delete(id);
+    }));
+    const memBox = document.getElementById('iam-members');
+    const renderMembers = (q) => {
+      q = (q || '').toLowerCase().trim();
+      const list = memberOpts.filter(m => !q || (m.name || '').toLowerCase().includes(q) || (m.team || '').toLowerCase().includes(q));
+      memBox.innerHTML = list.map(m => `<label style="display:flex;align-items:center;gap:9px;padding:6px 9px;border-radius:6px;cursor:pointer;font-size:13px"><input type="checkbox" class="iam-mem" value="${m.id}" ${selMembers.has(m.id) ? 'checked' : ''} style="margin:0"/> <span>${escapeHtml(m.name)}${m.team ? ` <span style="font-size:11px;color:var(--text-soft)">· ${escapeHtml(m.team)}</span>` : ''}</span></label>`).join('') || '<div style="padding:12px;font-size:12px;color:var(--text-muted);text-align:center">ไม่พบรายชื่อ</div>';
+      memBox.querySelectorAll('.iam-mem').forEach(cb => cb.addEventListener('change', () => {
+        const id = parseInt(cb.value, 10);
+        if (cb.checked) selMembers.add(id); else selMembers.delete(id);
+      }));
+    };
+    renderMembers('');
+    const ms = document.getElementById('iam-mem-search');
+    if (ms) ms.addEventListener('input', e => renderMembers(e.target.value));
+  }, 30);
 }
 
 async function renderSecurityPage() {
@@ -10525,6 +10641,7 @@ function renderSettingPage(active, arg) {
   return renderSubmenuPage({ title: '⚙️ Setting', active: active || 'logs', arg, items: [
     { route: 'logs',     ico: '📜', label: 'Logs',    render: () => renderLogsPage() },
     { route: 'security', ico: '🔑', label: 'API Key', render: () => renderSecurityPage() },
+    { route: 'iam',      ico: '🔐', label: 'IAM',     render: () => renderIamPage() },
   ]});
 }
 
@@ -14817,7 +14934,7 @@ async function detectActiveSession() {
   try {
     const a = await fetch('/api/admin/state', { credentials: 'same-origin' }).then(r => r.json());
     if (a.logged_in) {
-      return { role: 'admin', label: a.username, logoutPath: '/api/admin/logout', isSuper: true };
+      return { role: 'admin', label: a.username, logoutPath: '/api/admin/logout', isSuper: true, modules: ['platform', 'customer', 'ads'] };
     }
   } catch {}
   // member — เช็ค is_admin → upgrade เป็น admin
@@ -14827,7 +14944,7 @@ async function detectActiveSession() {
       const md = m.member;
       const display = md.display_name || md.email || md.phone;
       const role = md.is_admin ? 'admin' : 'member';
-      return { role, label: display, logoutPath: '/api/member/logout', isSuper: false, memberId: md.id, avatar: md.avatar_data };
+      return { role, label: display, logoutPath: '/api/member/logout', isSuper: false, memberId: md.id, avatar: md.avatar_data, modules: md.modules || [] };
     }
   } catch {}
   return null;
@@ -14986,15 +15103,23 @@ function attachSidebarHandlers() {
   currentLogoutPath = session.logoutPath;
   currentIsSuper = !!session.isSuper;
   currentAvatar = session.avatar || null;
+  currentModules = new Set(session.modules || []);
 
-  // ซ่อน admin-only ทั้ง section + items ถ้าเป็น member
+  // v1.9.162 — member: ซ่อนเมนูตามสิทธิ์ (module ที่ได้รับ + admin-only ที่ห้าม)
   if (currentRole === 'member') {
-    document.querySelectorAll('.nav-section[data-admin-section]').forEach(s => {
-      s.style.display = 'none';
-    });
-    // เผื่อ items แต่ละตัวที่ admin-only แต่ดันอยู่ใน section ทั่วไป
     document.querySelectorAll('.nav a[data-route]').forEach(a => {
-      if (HIDE_FROM_MEMBER_NAV.has(a.dataset.route)) a.style.display = 'none';
+      const route = a.dataset.route;
+      const reqMod = ROUTE_MODULE[route];
+      let show;
+      if (reqMod) show = currentModules.has(reqMod);            // Platform/Customer/Ads → ตามสิทธิ์ module
+      else if (HIDE_FROM_MEMBER_NAV.has(route) || ADMIN_ONLY_ROUTES.has(route)) show = false;  // admin-only อื่น ๆ
+      else show = true;                                          // dashboard / my profile
+      a.style.display = show ? '' : 'none';
+    });
+    // section admin-only: แสดงเฉพาะถ้ามี item ที่เห็นได้ข้างใน
+    document.querySelectorAll('.nav-section[data-admin-section]').forEach(s => {
+      const anyVisible = Array.from(s.querySelectorAll('a[data-route]')).some(a => a.style.display !== 'none');
+      s.style.display = anyVisible ? '' : 'none';
     });
   }
 
