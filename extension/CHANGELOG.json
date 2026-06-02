@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.182",
+      "date": "2026-06-02",
+      "title": "Audience Report: คลิกหัวคอลัมน์เพื่อจัดเรียง (sort)",
+      "summary": "แต่ละตาราง (Demographic/Placement/Region) คลิกหัวคอลัมน์ measurement เพื่อจัดเรียงได้ คลิกซ้ำสลับ asc/desc แยกอิสระต่อตาราง พร้อมลูกศร ▲▼",
+      "changes": [
+        "คลิก CPM/Spend/Impr/Reach/Freq/Clicks/CTR/CPC หรือชื่อกลุ่ม → จัดเรียง",
+        "คลิกซ้ำคอลัมน์เดิม = สลับทิศ, ค่า null ไปท้ายเสมอ",
+        "sort แยกต่อตาราง (state _audSort)"
+      ]
+    },
+    {
       "version": "1.9.181",
       "date": "2026-06-02",
       "title": "Audience Report: เพิ่มตาราง Placement และ Region",

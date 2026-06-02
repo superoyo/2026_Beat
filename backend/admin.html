@@ -1418,6 +1418,7 @@ let _benchData = null;      // v1.9.170 — cache benchmark (ใช้ใน sli
 let _benchMode = 'brand';   // v1.9.176 — 'brand' | 'category'
 let _audData = null;        // v1.9.180 — Audience Report (age breakdown)
 let _audSearch = '';
+let _audSort = {};          // v1.9.182 — sort ต่อตาราง { age:{col,dir}, placement:{...}, region:{...} }
 // v1.9.170 — แยก brand/adtype จากชื่อ campaign (มิเรอร์ logic backend benchmark)
 const _BENCH_ADTYPES = ['Video Thruplay', 'Video Views', 'Page Likes', 'Page Like', 'CPAS', 'Reach', 'Engagement', 'Traffic', 'Awareness', 'Messages', 'Message', 'Conversions', 'Conversion', 'Purchases', 'Purchase', 'Leads', 'Lead'];
 function _benchBrandOf(camp) {
@@ -1628,6 +1629,14 @@ function renderAudienceCards() {
       });
     });
   });
+  // คลิกหัวคอลัมน์ → จัดเรียงตาราง (สลับ asc/desc)
+  wrap.querySelectorAll('th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const tbl = th.dataset.tbl, col = th.dataset.sort, cur = _audSort[tbl];
+      _audSort[tbl] = { col, dir: (cur && cur.col === col) ? (cur.dir === 'asc' ? 'desc' : 'asc') : (col === 'label' ? 'asc' : 'desc') };
+      renderAudienceCards();
+    });
+  });
 }
 function _audTableHtml(table, c, q) {
   if (!table) return '';
@@ -1640,17 +1649,35 @@ function _audTableHtml(table, c, q) {
     return { label: g.label, camps, byCur, agg: _adsAgg(camps), oneCur: Object.keys(byCur).length === 1, open: filtering, gi };
   }).filter(Boolean);
   if (grpRows.length === 0) return '';   // ตารางนี้ไม่มี match → ซ่อน
-  const thead = `<thead><tr>
-    <th style="text-align:left">${escapeHtml(c.col)} / แคมเปญ</th>
-    <th style="text-align:right">CPM</th>
-    <th style="text-align:right">Spend</th>
-    <th style="text-align:right">Impr.</th>
-    <th style="text-align:right">Reach</th>
-    <th style="text-align:right">Freq.</th>
-    <th style="text-align:right">Clicks</th>
-    <th style="text-align:right">CTR</th>
-    <th style="text-align:right">CPC</th>
-  </tr></thead>`;
+  // ---- จัดเรียงตามคอลัมน์ที่คลิก (ถ้ายังไม่คลิก = ลำดับจาก backend) ----
+  const sort = _audSort[c.key];
+  const _sv = {
+    label: g => g.label,
+    spend: g => Object.values(g.byCur).reduce((s, v) => s + v, 0),
+    cpm: g => g.agg.cpm, impressions: g => g.agg.impressions, reach: g => g.agg.reach,
+    frequency: g => g.agg.frequency, clicks: g => g.agg.clicks, ctr: g => g.agg.ctr, cpc: g => g.agg.cpc,
+  };
+  if (sort && _sv[sort.col]) {
+    const dir = sort.dir === 'asc' ? 1 : -1, get = _sv[sort.col];
+    grpRows.sort((a, b) => {
+      if (sort.col === 'label') return dir * String(c.pretty(get(a))).localeCompare(String(c.pretty(get(b))), 'th', { numeric: true });
+      const va = get(a), vb = get(b);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;   // null ไปท้ายเสมอ
+      if (vb == null) return -1;
+      return dir * (va - vb);
+    });
+  }
+  const COLS = [
+    { k: 'label', l: c.col, a: 'left' }, { k: 'cpm', l: 'CPM' }, { k: 'spend', l: 'Spend' },
+    { k: 'impressions', l: 'Impr.' }, { k: 'reach', l: 'Reach' }, { k: 'frequency', l: 'Freq.' },
+    { k: 'clicks', l: 'Clicks' }, { k: 'ctr', l: 'CTR' }, { k: 'cpc', l: 'CPC' },
+  ];
+  const thead = `<thead><tr>${COLS.map(col => {
+    const on = sort && sort.col === col.k;
+    const ind = on ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+    return `<th data-sort="${col.k}" data-tbl="${escapeHtml(c.key)}" style="text-align:${col.a || 'right'};cursor:pointer;user-select:none;white-space:nowrap;${on ? 'color:var(--primary)' : ''}" title="คลิกเพื่อจัดเรียง">${escapeHtml(col.l)}${ind}</th>`;
+  }).join('')}</tr></thead>`;
   const rowsHtml = grpRows.map(g => {
     const m = g.agg;
     const grpRow = `
