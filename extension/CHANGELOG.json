@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.150",
+      "date": "2026-06-01",
+      "title": "Peoples > Members: แถวเหลือแค่ข้อมูล คลิกทั้งแถวเปิด panel จัดเป็น tab",
+      "summary": "เอาปุ่ม action ทั้งหมดออกจากแถว Members (เหลือแค่ข้อมูล) คลิกตรงไหนก็ได้ในแถว → เปิด slide-out panel จากขวา จัดเป็น 2 แท็บ: ข้อมูล (โปรไฟล์ + สถิติ) และ จัดการ (ปุ่ม action จัดกลุ่ม)",
+      "changes": [
+        "แถว: เอาคอลัมน์การกระทำ + ปุ่มแก้ไขทีม + ลิงก์ชื่อ(สถิติ) ออก — เหลือ Member/ทีม/Extension/สถานะ คลิกได้ทั้งแถว",
+        "Panel tab 'ข้อมูล': avatar+ชื่อ+badge, เบอร์/อีเมล/login ล่าสุด/Extension/ทีม/วิธี login + ปุ่มดูสถิติ",
+        "Panel tab 'จัดการ': จัดกลุ่ม การเข้าถึง&ทีม / บัญชี / อันตราย (Site Access, Supervise, แก้ไขทีม, Hardware, Reset PW, Make Admin, Wazzup, Merge, Disable/Enable, ลบ)",
+        "ใช้ handleMemberAction เดิม, ปิดด้วย backdrop/✕/Esc, คลิก action ปิด panel ให้ modal แสดงเต็ม"
+      ]
+    },
+    {
       "version": "1.9.149",
       "date": "2026-06-01",
       "title": "Peoples > Members: เมนู ⋮ เพิ่มเติม เปลี่ยนเป็น slide-out panel จากขวา",

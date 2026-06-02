@@ -11382,11 +11382,10 @@ function renderMembersTable(members) {
       <table class="members-table">
         <thead>
           <tr>
-            <th style="width:30%">Member</th>
-            <th style="width:21%">ทีม</th>
-            <th style="width:14%">Extension</th>
-            <th style="width:15%">สถานะ</th>
-            <th style="width:20%;text-align:right">การกระทำ</th>
+            <th style="width:40%">Member</th>
+            <th style="width:26%">ทีม</th>
+            <th style="width:16%">Extension</th>
+            <th style="width:18%">สถานะ</th>
           </tr>
         </thead>
         <tbody id="m-tbody"></tbody>
@@ -11437,12 +11436,7 @@ function renderMembersTable(members) {
       <div style="display:flex;gap:11px;align-items:flex-start">
         <div style="width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:15px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(initial)}</div>
         <div style="flex:1;min-width:0;overflow:hidden">
-          <button class="m-name-link" data-act="stats" data-id="${m.id}" data-name="${safeName}"
-                  title="คลิกดูสถิติการใช้ platform"
-                  style="background:none;border:none;padding:0;cursor:pointer;font-family:inherit;text-align:left;font-weight:600;font-size:14px;line-height:1.3;margin-bottom:3px;color:var(--text);transition:color .12s">
-            ${escapeHtml(m.display_name || '(ไม่ได้ตั้งชื่อ)')}
-            <span style="color:var(--text-muted);font-size:11px;font-weight:400;margin-left:4px">📊</span>
-          </button>
+          <div style="font-weight:600;font-size:14px;line-height:1.3;margin-bottom:3px;color:var(--text)">${escapeHtml(m.display_name || '(ไม่ได้ตั้งชื่อ)')}</div>
           ${emailLine}
           ${phoneLine}
           ${lastLine}
@@ -11458,13 +11452,7 @@ function renderMembersTable(members) {
         ).join('')
       : '<span style="color:var(--text-muted);font-size:12px;font-style:italic">— ยังไม่มีทีม —</span>';
     const teamsCell = `
-      <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-start">
-        <div style="display:flex;flex-wrap:wrap;gap:4px;line-height:1.4">${teamChips}</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn" data-act="edit-teams" data-id="${m.id}" data-name="${safeName}"
-                  style="font-size:11px;padding:3px 9px;color:var(--text-muted)" title="แก้ไขทีมที่สังกัด">✏️ แก้ไขทีม</button>
-        </div>
-      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;line-height:1.4;align-items:flex-start">${teamChips}</div>
     `;
 
     // === Status cell (3 badges stacked vertically) ===
@@ -11501,49 +11489,20 @@ function renderMembersTable(members) {
       `;
     }
 
-    // === Actions cell — v1.9.140: คงปุ่มหลัก 3 ปุ่ม + เมนู ⋮ เพิ่มเติม (ที่เหลือ) ===
-    const wazTitle = m.has_wazzup_photo
-      ? 'ดึงรูป profile จาก Wazzup'
-      : (m.wazzup_emp_code ? `ดึงรูปจาก empCode: ${m.wazzup_emp_code}` : 'ป้อน empCode → ดึงรูปจาก Wazzup');
-    const mItem = 'display:flex;align-items:center;gap:9px;width:100%;padding:9px 12px;border:none;background:none;text-align:left;font-size:13px;cursor:pointer;border-radius:7px;color:var(--text);font-family:inherit';
-    // ปุ่มที่ย้ายเข้าเมนู (ซ่อนไว้ใน source — clone ตอนเปิดเมนู)
-    const overflowSrc = `
-      <div class="m-overflow" data-id="${m.id}" style="display:none">
-        ${currentIsSuper ? `<button class="m-menu-item" data-act="role" data-id="${m.id}" data-current="${m.is_admin ? 1 : 0}" data-name="${safeName}" style="${mItem}${m.is_admin ? ';color:var(--critical)' : ''}">${m.is_admin ? '↓ ถอดสิทธิ์ Admin' : '↑ แต่งตั้งเป็น Admin'}</button>` : ''}
-        <button class="m-menu-item" data-act="supervise" data-id="${m.id}" data-name="${safeName}" style="${mItem}">🔭 Supervise (เลือกทีมที่ดูแล)</button>
-        <button class="m-menu-item" data-act="hardware" data-id="${m.id}" data-name="${safeName}" style="${mItem}">🖥️ Hardware ที่ดูแล</button>
-        <button class="m-menu-item" data-act="merge" data-id="${m.id}" data-name="${safeName}" style="${mItem}">🧬 Merge บัญชี</button>
-        <button class="m-menu-item" data-act="wazzup-avatar" data-id="${m.id}" data-name="${safeName}" data-emp="${escapeHtml(m.wazzup_emp_code || '')}" title="${wazTitle}" style="${mItem}">🏢 ดึงรูปจาก Wazzup</button>
-        <div style="height:1px;background:var(--border);margin:5px 8px"></div>
-        <button class="m-menu-item" data-act="delete" data-id="${m.id}" data-name="${safeName}" style="${mItem};color:var(--critical)">🗑 ลบสมาชิก</button>
-      </div>`;
-    const actionsCell = `
-      <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">
-        <button class="btn" data-act="sites" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px" title="ดูและแก้สิทธิ์เข้าถึง site">🌐 Site Access</button>
-        <button class="btn" data-act="reset" data-id="${m.id}" data-name="${safeName}" style="font-size:11.5px;padding:5px 10px">🔑 Reset PW</button>
-        <button class="btn ${m.enabled ? 'danger' : ''}" data-act="toggle" data-id="${m.id}" data-enabled="${m.enabled ? 1 : 0}" style="font-size:11.5px;padding:5px 10px">${m.enabled ? '⛔ Disable' : '✓ Enable'}</button>
-        <button class="btn m-kebab" data-id="${m.id}" style="font-size:11.5px;padding:5px 12px;color:var(--text-muted)" title="ตัวเลือกเพิ่มเติม">⋮ เพิ่มเติม</button>
-        ${overflowSrc}
-      </div>
-    `;
-
+    // v1.9.150 — row has no buttons; click row -> slide-out panel (tabs)
     return `
-      <tr data-id="${m.id}">
+      <tr data-id="${m.id}" class="m-row-click" style="cursor:pointer">
         <td>${identityCell}</td>
         <td>${teamsCell}</td>
         <td>${extensionCell}</td>
         <td>${statusCell}</td>
-        <td style="text-align:right">${actionsCell}</td>
       </tr>
     `;
   }).join('');
 
-  tbody.querySelectorAll('button[data-act]').forEach(btn => {
-    btn.addEventListener('click', () => handleMemberAction(btn));
-  });
-  // v1.9.140 — ปุ่ม ⋮ เพิ่มเติม → เปิดเมนู overflow
-  tbody.querySelectorAll('.m-kebab').forEach(k => {
-    k.addEventListener('click', (e) => { e.stopPropagation(); openMemberMenu(k); });
+  const _mById = new Map(members.map(m => [String(m.id), m]));
+  tbody.querySelectorAll('tr[data-id]').forEach(tr => {
+    tr.addEventListener('click', () => { const m = _mById.get(tr.dataset.id); if (m) openMemberPanel(m); });
   });
 }
 
@@ -11564,46 +11523,98 @@ function closeMemberMenu() {
   _memberMenu = null;
   setTimeout(() => { try { wrap.remove(); } catch {} }, 280);   // รอ transition จบ
 }
-function openMemberMenu(kebab) {
+// v1.9.150 — คลิกแถว member → slide-out panel จัดเป็น tab (ข้อมูล / จัดการ)
+function openMemberPanel(m) {
   _removeMemberMenu();
-  const src = document.querySelector(`.m-overflow[data-id="${kebab.dataset.id}"]`);
-  if (!src) return;
-  const nameEl = src.querySelector('[data-name]');
-  const memberName = nameEl ? (nameEl.dataset.name || '') : '';
+  const name = m.display_name || m.email || m.phone || '—';
+  const safeName = escapeHtml(m.display_name || m.email || m.phone || '');
+  const initial = (name || '?').trim().charAt(0).toUpperCase();
+  const av = m.avatar_data
+    ? `<img src="${m.avatar_data}" alt="" style="width:64px;height:64px;border-radius:14px;object-fit:cover;flex-shrink:0" />`
+    : `<div style="width:64px;height:64px;border-radius:14px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:26px;display:flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(initial)}</div>`;
+  const pill = (bg, fg, txt) => `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:${bg};color:${fg}">${txt}</span>`;
+  const roleBadge = m.is_admin ? pill('linear-gradient(135deg,rgba(37,99,235,.15),rgba(124,58,237,.15))', 'var(--primary-dark)', '👑 Admin') : pill('var(--bg-soft)', 'var(--text-muted)', 'Member');
+  const pwBadge = m.has_password ? pill('rgba(16,185,129,.10)', 'var(--green)', '🔐 มี pw') : pill('rgba(245,158,11,.10)', '#92400e', '⚠ ไม่มี pw');
+  const enabledBadge = m.enabled ? pill('rgba(16,185,129,.10)', 'var(--green)', '✓ ใช้งาน') : pill('rgba(220,38,38,.10)', 'var(--critical)', '⛔ ระงับ');
+  const methodMap = {
+    phone:    { icon: '📱', bg: 'rgba(37,99,235,.10)',  fg: 'var(--primary)' },
+    email_pw: { icon: '🔑', bg: 'rgba(16,185,129,.10)', fg: 'var(--green)' },
+    wazzup:   { icon: '🏢', bg: 'rgba(245,158,11,.12)', fg: '#92400e' },
+  };
+  const loginChips = (m.login_methods || []).map(it => { const mm = methodMap[it.kind]; if (!mm) return ''; return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:600;background:${mm.bg};color:${mm.fg}">${mm.icon} ${escapeHtml(it.label || '')}</span>`; }).join('') || '<span style="color:var(--text-muted)">—</span>';
+  const teamChips = (m.teams && m.teams.length) ? m.teams.map(t => `<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:500;background:rgba(37,99,235,.10);color:var(--primary);border:1px solid rgba(37,99,235,.20)">${escapeHtml(t.name)}</span>`).join('') : '<span style="color:var(--text-muted);font-style:italic">— ยังไม่มีทีม —</span>';
+  const ext = m.extension_version ? `🧩 v${escapeHtml(m.extension_version)}${m.extension_last_used_at ? ' · ใช้ล่าสุด ' + escapeHtml(fmtRelativeTh(m.extension_last_used_at)) : ''}` : 'ยังไม่เคยใช้';
+  const lastLogin = m.last_login_at ? fmtMemberDate(m.last_login_at) : 'ยังไม่เคยเข้าระบบ';
+
+  const infoPane = `
+    <div style="display:grid;grid-template-columns:118px 1fr;gap:11px 14px;font-size:13.5px">
+      <div style="color:var(--text-muted)">เบอร์มือถือ</div><div>${m.phone ? '📞 ' + escapeHtml(m.phone) : '—'}</div>
+      <div style="color:var(--text-muted)">อีเมล</div><div style="word-break:break-all">${m.email ? escapeHtml(m.email) : '—'}</div>
+      <div style="color:var(--text-muted)">เข้าระบบล่าสุด</div><div>${escapeHtml(lastLogin)}</div>
+      <div style="color:var(--text-muted)">Extension</div><div>${ext}</div>
+      <div style="color:var(--text-muted)">ทีม</div><div style="display:flex;flex-wrap:wrap;gap:4px">${teamChips}</div>
+      <div style="color:var(--text-muted)">วิธี login</div><div style="display:flex;flex-wrap:wrap;gap:4px">${loginChips}</div>
+    </div>
+    <button id="mp-stats-btn" class="btn" style="margin-top:18px;font-size:13px;padding:9px 14px">📊 ดูสถิติการใช้ Platform</button>`;
+
+  const aStyle = (danger) => `display:flex;align-items:center;gap:10px;width:100%;padding:12px 14px;border:1px solid var(--border);background:var(--bg-card);text-align:left;font-size:13.5px;cursor:pointer;border-radius:9px;color:${danger ? 'var(--critical)' : 'var(--text)'};font-family:inherit`;
+  const aBtn = (act, label, extra, danger) => `<button class="m-act-btn" data-act="${act}" data-id="${m.id}" data-name="${safeName}" ${extra || ''} style="${aStyle(danger)}">${label}</button>`;
+  const secHead = (t) => `<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin:4px 0 8px">${t}</div>`;
+  const wazTitle = m.has_wazzup_photo ? 'ดึงรูป profile จาก Wazzup' : (m.wazzup_emp_code ? ('ดึงรูปจาก empCode: ' + m.wazzup_emp_code) : 'ป้อน empCode → ดึงรูปจาก Wazzup');
+  const managePane = `
+    ${secHead('การเข้าถึง &amp; ทีม')}
+    <div style="display:flex;flex-direction:column;gap:7px;margin-bottom:16px">
+      ${aBtn('sites', '🌐 Site Access')}
+      ${aBtn('supervise', '🔭 Supervise (เลือกทีมที่ดูแล)')}
+      ${aBtn('edit-teams', '✏️ แก้ไขทีมที่สังกัด')}
+      ${aBtn('hardware', '🖥️ Hardware ที่ดูแล')}
+    </div>
+    ${secHead('บัญชี')}
+    <div style="display:flex;flex-direction:column;gap:7px;margin-bottom:16px">
+      ${aBtn('reset', '🔑 Reset PW')}
+      ${currentIsSuper ? aBtn('role', (m.is_admin ? '↓ ถอดสิทธิ์ Admin' : '↑ แต่งตั้งเป็น Admin'), `data-current="${m.is_admin ? 1 : 0}"`, m.is_admin) : ''}
+      ${aBtn('wazzup-avatar', '🏢 ดึงรูปจาก Wazzup', `data-emp="${escapeHtml(m.wazzup_emp_code || '')}" title="${wazTitle}"`)}
+      ${aBtn('merge', '🧬 Merge บัญชี')}
+      ${aBtn('toggle', (m.enabled ? '⛔ Disable (ระงับ)' : '✓ Enable (เปิดใช้)'), `data-enabled="${m.enabled ? 1 : 0}"`, m.enabled)}
+    </div>
+    ${secHead('อันตราย')}
+    <div>${aBtn('delete', '🗑 ลบสมาชิก', '', true)}</div>`;
+
   const wrap = document.createElement('div');
   wrap.className = 'sup-panel-wrap';
   wrap.innerHTML = `
     <div class="sup-panel-backdrop"></div>
-    <div class="sup-panel" style="width:360px">
-      <div class="sup-panel-head" style="justify-content:space-between;align-items:center;padding:18px 20px 8px">
+    <div class="sup-panel" style="width:420px">
+      <div class="sup-panel-head"><button class="sup-panel-close" title="ปิด">✕</button></div>
+      <div style="padding:0 24px 12px;display:flex;align-items:center;gap:14px">
+        ${av}
         <div style="min-width:0">
-          <div style="font-size:10.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">ตัวเลือกเพิ่มเติม</div>
-          <div style="font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(memberName || '—')}</div>
+          <div style="font-size:18px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(name)}</div>
+          <div style="font-size:12.5px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(m.email || m.phone || '')}</div>
+          <div style="margin-top:6px;display:flex;gap:5px;flex-wrap:wrap">${roleBadge}${pwBadge}${enabledBadge}</div>
         </div>
-        <button class="sup-panel-close" title="ปิด">✕</button>
       </div>
-      <div class="sup-panel-body" style="padding:8px 14px 24px">
-        <div id="member-act-list" style="display:flex;flex-direction:column;gap:2px"></div>
+      <div style="display:flex;gap:20px;border-bottom:1px solid var(--border);padding:4px 24px 0">
+        <button class="mp-tab" data-mp-tab="info" style="padding:8px 2px;border:none;background:none;border-bottom:2px solid var(--primary);cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;color:var(--primary)">ข้อมูล</button>
+        <button class="mp-tab" data-mp-tab="manage" style="padding:8px 2px;border:none;background:none;border-bottom:2px solid transparent;cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;color:var(--text-muted)">จัดการ</button>
+      </div>
+      <div class="sup-panel-body" style="padding:18px 24px 28px">
+        <div data-mp-pane="info">${infoPane}</div>
+        <div data-mp-pane="manage" style="display:none">${managePane}</div>
       </div>
     </div>`;
   document.body.appendChild(wrap);
-  const list = wrap.querySelector('#member-act-list');
-  Array.from(src.children).forEach(b => {
-    if (b.tagName === 'BUTTON' && b.dataset.act) {
-      const c = b.cloneNode(true);
-      c.style.cssText += ';padding:13px 14px;font-size:14px;border-radius:9px';
-      c.addEventListener('mouseenter', () => { c.style.background = 'var(--bg-soft)'; });
-      c.addEventListener('mouseleave', () => { c.style.background = 'none'; });
-      c.addEventListener('click', (e) => {
-        e.stopPropagation();
-        _removeMemberMenu();          // ปิดทันที เพื่อให้ modal ของ action แสดงเต็ม
-        handleMemberAction(c);
-      });
-      list.appendChild(c);
-    } else {
-      list.appendChild(b.cloneNode(true));   // เส้นคั่น
-    }
+  wrap.querySelectorAll('.mp-tab').forEach(t => t.addEventListener('click', () => {
+    wrap.querySelectorAll('.mp-tab').forEach(x => { const on = x === t; x.style.color = on ? 'var(--primary)' : 'var(--text-muted)'; x.style.borderBottomColor = on ? 'var(--primary)' : 'transparent'; });
+    wrap.querySelectorAll('[data-mp-pane]').forEach(p => p.style.display = p.dataset.mpPane === t.dataset.mpTab ? '' : 'none');
+  }));
+  wrap.querySelectorAll('.m-act-btn').forEach(b => {
+    b.addEventListener('mouseenter', () => { b.style.background = 'var(--bg-soft)'; });
+    b.addEventListener('mouseleave', () => { b.style.background = 'var(--bg-card)'; });
+    b.addEventListener('click', (e) => { e.stopPropagation(); _removeMemberMenu(); handleMemberAction(b); });
   });
+  const stB = wrap.querySelector('#mp-stats-btn');
+  if (stB) stB.addEventListener('click', () => { _removeMemberMenu(); showMemberStatsModal(m.id, name); });
   requestAnimationFrame(() => wrap.classList.add('is-open'));
   wrap.querySelector('.sup-panel-backdrop').addEventListener('click', closeMemberMenu);
   wrap.querySelector('.sup-panel-close').addEventListener('click', closeMemberMenu);
