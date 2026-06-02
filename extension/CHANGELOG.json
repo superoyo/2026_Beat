@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.172",
+      "date": "2026-06-01",
+      "title": "Ads Report panel: เพิ่มข้อมูล Audience/Targeting ของแคมเปญ",
+      "summary": "พาเนล (คลิกแคมเปญใน Report) เพิ่มส่วน Audience/Targeting — อายุ/เพศ/Placement/Region (แถบ % ตาม spend) + Ad Set & การตั้งค่า (optimization goal/destination) ดึงจาก Windsor breakdown",
+      "changes": [
+        "Backend GET /api/ads-campaign-targeting: ดึง breakdown age/gender/platform_position/region/adset พร้อมกัน (parallel) กรองตามแคมเปญ",
+        "Frontend: section Targeting ในพาเนล (bar % ต่อ breakdown + การ์ด ad set)",
+        "หมายเหตุข้อจำกัด: ส่วนใหญ่มีเฉพาะ Meta, interest ดึงไม่ได้ (Windsor timeout), อาจช้าเพราะหลาย breakdown"
+      ]
+    },
+    {
       "version": "1.9.171",
       "date": "2026-06-01",
       "title": "Ads Report: ย้าย CPM ไปคอลัมน์แรก",

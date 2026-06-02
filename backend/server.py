@@ -8336,6 +8336,17 @@ def _require_module(module_key: str):
     return _dep
 
 
+# v1.9.172 — ดึง Windsor "all" connector (JSON) แบบ module-level (ใช้ซ้ำ)
+def _windsor_get(fields: str, date_from: str, date_to: str, timeout: int = 40) -> list:
+    from urllib.parse import urlencode as _urlencode
+    qs = _urlencode({"api_key": WINDSOR_API_KEY, "date_from": date_from, "date_to": date_to,
+                     "fields": fields, "_renderer": "json"})
+    req = urllib.request.Request(f"{WINDSOR_BASE_URL}/all?{qs}", headers={"Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        raw = _json.loads(resp.read().decode("utf-8", errors="replace"))
+    return raw.get("data", []) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
+
+
 # ===========================================================================
 # v1.9.157 — Ads spend (ดึงจาก Windsor.ai — 7 วันย้อนหลัง แยกตาม platform & ad account)
 # ===========================================================================
@@ -8600,6 +8611,98 @@ def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
         "brand_totals": {b: _agg(brand_tot[b]) for b in brands},
         "adtype_totals": {t: _agg(adtype_tot[t]) for t in adtypes},
         "grand": _agg(grand),
+    }
+
+
+# ===========================================================================
+# v1.9.172 — Ads: targeting/audience ของแคมเปญ (ดึง breakdown หลายตัวจาก Windsor)
+# ===========================================================================
+@app.get("/api/ads-campaign-targeting")
+def ads_campaign_targeting(campaign: str, days: int = 30, _sess: dict = Depends(_require_module("ads"))) -> dict[str, Any]:
+    if not WINDSOR_API_KEY:
+        raise HTTPException(status_code=503, detail="ยังไม่ได้ตั้งค่า WINDSOR_API_KEY")
+    days = max(1, min(int(days or 30), 90))
+    today = utc_now().date()
+    date_to = today.isoformat()
+    date_from = (today - timedelta(days=days - 1)).isoformat()
+    camp_l = (campaign or "").strip().lower()
+    if not camp_l:
+        raise HTTPException(status_code=400, detail="ต้องระบุ campaign")
+
+    def _f(v):
+        try:
+            return float(v or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    # แต่ละ breakdown ดึงแยก (Meta ไม่ยอมรวมหลาย breakdown ในคิวรีเดียว)
+    queries = {
+        "age": "campaign,age,spend",
+        "gender": "campaign,gender,spend",
+        "placement": "campaign,platform_position,spend",
+        "region": "campaign,region,spend",
+        "adset": "campaign,adset_name,adsset_optimization_goal,adset_destination_type,spend",
+    }
+    import concurrent.futures as _cf
+    results: dict[str, list] = {}
+    with _cf.ThreadPoolExecutor(max_workers=5) as ex:
+        futs = {k: ex.submit(_windsor_get, q, date_from, date_to, 40) for k, q in queries.items()}
+        for k, fu in futs.items():
+            try:
+                results[k] = fu.result()
+            except Exception:
+                results[k] = []
+
+    def _norm_age(v):
+        v = str(v or "").strip()
+        return v.replace("AGE_", "").replace("_", "-").replace(" to ", "-") or "(ไม่ระบุ)"
+
+    def _norm_gender(v):
+        v = str(v or "").strip().lower()
+        return {"male": "ชาย", "female": "หญิง", "unknown": "ไม่ระบุ", "none": "ไม่ระบุ", "": "ไม่ระบุ"}.get(v, v)
+
+    def _agg(rows, key, norm=lambda x: (str(x or "").strip() or "(ไม่ระบุ)")):
+        out: dict[str, float] = {}
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            if (str(r.get("campaign") or "").strip().lower()) != camp_l:
+                continue
+            out[norm(r.get(key))] = out.get(norm(r.get(key)), 0.0) + _f(r.get("spend"))
+        return sorted(({"label": k, "spend": round(v, 2)} for k, v in out.items() if v > 0),
+                      key=lambda x: x["spend"], reverse=True)
+
+    age = _agg(results.get("age", []), "age", _norm_age)
+    gender = _agg(results.get("gender", []), "gender", _norm_gender)
+    placement = _agg(results.get("placement", []), "platform_position")
+    region = _agg(results.get("region", []), "region")[:12]
+    # ad sets + settings
+    adsets: dict[str, Any] = {}
+    for r in results.get("adset", []):
+        if not isinstance(r, dict):
+            continue
+        if (str(r.get("campaign") or "").strip().lower()) != camp_l:
+            continue
+        nm = (str(r.get("adset_name") or "").strip()) or "(ไม่ระบุ)"
+        a = adsets.setdefault(nm, {"name": nm, "spend": 0.0, "optimization": set(), "destination": set()})
+        a["spend"] += _f(r.get("spend"))
+        og = str(r.get("adsset_optimization_goal") or "").strip()
+        if og:
+            a["optimization"].add(og)
+        de = str(r.get("adset_destination_type") or "").strip()
+        if de and de.upper() != "UNDEFINED":
+            a["destination"].add(de)
+    adset_list = sorted(
+        ({"name": a["name"], "spend": round(a["spend"], 2),
+          "optimization": sorted(a["optimization"]), "destination": sorted(a["destination"])}
+         for a in adsets.values()),
+        key=lambda x: x["spend"], reverse=True,
+    )
+    return {
+        "campaign": campaign,
+        "age": age, "gender": gender, "placement": placement, "region": region,
+        "adsets": adset_list,
+        "found": bool(age or gender or placement or adset_list),
     }
 
 

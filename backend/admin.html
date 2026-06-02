@@ -1655,7 +1655,52 @@ async function openBenchmarkPanel(campaign, ownCpm) {
     ${cell ? statBox(`Benchmark — ${escapeHtml(brand)} × ${escapeHtml(adtype)}`, cell, true)
            : '<div class="empty" style="padding:18px;text-align:center;font-size:12.5px">— ไม่มีข้อมูล benchmark สำหรับ brand × ad type นี้ในชีต —</div>'}
     ${statBox(`Brand: ${escapeHtml(brand)} (รวมทุก Ad Type)`, bt, false)}
-    ${statBox(`Ad Type: ${escapeHtml(adtype)} (รวมทุก Brand)`, at, false)}`;
+    ${statBox(`Ad Type: ${escapeHtml(adtype)} (รวมทุก Brand)`, at, false)}
+    <div style="border-top:1px solid var(--border);margin-top:6px;padding-top:16px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px">🎯 Audience / Targeting</div>
+      <div id="bench-targeting"><div class="empty" style="padding:14px;font-size:12.5px">⏳ กำลังดึงข้อมูล targeting… (อาจช้าสักครู่)</div></div>
+    </div>`;
+  // โหลด targeting (หลาย breakdown — ช้า) แล้วเติมด้านล่าง
+  try {
+    const tg = await fetchJson(`/api/ads-campaign-targeting?campaign=${encodeURIComponent(campaign)}&days=${_adsDays}`);
+    const tbox = wrap.querySelector('#bench-targeting');
+    if (!tbox) return;
+    if (!tg.found) { tbox.innerHTML = '<div class="empty" style="padding:14px;font-size:12px">— ไม่พบข้อมูล targeting (ส่วนใหญ่มีเฉพาะ Meta · ช่วงเวลานี้อาจไม่มีแคมเปญนี้) —</div>'; return; }
+    const pretty = s => (s || '').replace(/_/g, ' ');
+    let html = '';
+    html += _adsTgtBars('อายุ (Age)', tg.age, 8);
+    html += _adsTgtBars('เพศ (Gender)', tg.gender, 5);
+    html += _adsTgtBars('Placement', tg.placement, 8, pretty);
+    html += _adsTgtBars('พื้นที่ (Region)', tg.region, 8);
+    if (tg.adsets && tg.adsets.length) {
+      html += `<div style="margin-bottom:4px"><div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:9px">Ad Set &amp; การตั้งค่า (${tg.adsets.length})</div>${
+        tg.adsets.slice(0, 15).map(a => `<div style="border:1px solid var(--border);border-radius:9px;padding:9px 11px;margin-bottom:7px">
+          <div style="font-size:12.5px;font-weight:600;word-break:break-word">${escapeHtml(a.name)}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:${a.optimization.length || a.destination.length ? '6px' : '0'}">
+            ${a.optimization.map(o => `<span style="font-size:10px;padding:1px 8px;border-radius:999px;background:rgba(37,99,235,.10);color:var(--primary);font-weight:600">🎯 ${escapeHtml(o)}</span>`).join('')}
+            ${a.destination.map(dd => `<span style="font-size:10px;padding:1px 8px;border-radius:999px;background:var(--bg-soft);border:1px solid var(--border)">📍 ${escapeHtml(dd)}</span>`).join('')}
+          </div>
+        </div>`).join('')}</div>`;
+    }
+    tbox.innerHTML = html || '<div class="empty" style="padding:14px;font-size:12px">— ไม่มีข้อมูล —</div>';
+  } catch (e) {
+    const tbox = wrap.querySelector('#bench-targeting');
+    if (tbox) tbox.innerHTML = `<div class="empty" style="padding:14px;font-size:12px">โหลด targeting ไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+  }
+}
+// v1.9.172 — bar list สำหรับ targeting breakdown (label + แถบ spend %)
+function _adsTgtBars(title, items, limit, labelFn) {
+  if (!items || !items.length) return '';
+  const total = items.reduce((s, i) => s + (i.spend || 0), 0) || 1;
+  const lf = labelFn || (x => x);
+  const rows = items.slice(0, limit || 8).map(it => {
+    const pct = it.spend / total * 100;
+    return `<div style="margin-bottom:7px">
+      <div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;margin-bottom:3px"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(lf(it.label))}</span><span style="color:var(--text-muted);white-space:nowrap">${pct.toFixed(0)}%</span></div>
+      <div style="height:6px;border-radius:999px;background:var(--bg-soft);overflow:hidden"><div style="height:100%;width:${pct.toFixed(1)}%;background:var(--primary)"></div></div>
+    </div>`;
+  }).join('');
+  return `<div style="margin-bottom:18px"><div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:9px">${title}</div>${rows}</div>`;
 }
 async function loadAdsSpend() {
   const body = $('ads-body');
