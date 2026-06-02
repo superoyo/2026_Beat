@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.179",
+      "date": "2026-06-02",
+      "title": "Benchmark panel: รายการ Ads แบบแนวยาว อ่านง่าย + พาเนลกว้างขึ้น",
+      "summary": "พาเนล (คลิกช่อง Benchmark) กว้างขึ้นเป็น min(820px,95vw) และจัดรายการแคมเปญเป็นแนวยาวแบบตาราง: หัวตารางครั้งเดียว (CPM/Spend/Impr/Reach/Freq/CPP) + เลขตรงคอลัมน์ อ่านง่ายขึ้น",
+      "changes": [
+        "พาเนลกว้างขึ้น min(820px,95vw)",
+        "รายการ Ads เป็นแถวเต็มความกว้าง: ลำดับ + ชื่อแคมเปญ (flex) + คอลัมน์ metric จัดชิดขวา",
+        "หัวตารางแสดงครั้งเดียว ค่าตรงคอลัมน์ทุกแถว, badge ต่ำสุด/สูงสุดคงเดิม"
+      ]
+    },
+    {
       "version": "1.9.178",
       "date": "2026-06-02",
       "title": "Benchmark: เพิ่มหมวดให้ LSO / Hajiko / Hashi / Pulza",

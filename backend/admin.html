@@ -1664,24 +1664,28 @@ async function openBenchCellPanel(rowKey, adtype) {
   const fi = v => v == null ? '—' : Number(v).toLocaleString('th-TH');
   const cpms = rows.map(r => r.cpm).filter(v => v != null);
   const minC = cpms.length ? Math.min(...cpms) : null, maxC = cpms.length ? Math.max(...cpms) : null;
-  const met = (val, lbl) => `<span style="white-space:nowrap"><b>${val}</b> <span style="color:var(--text-soft);font-size:10px">${lbl}</span></span>`;
-  const cards = rows.map(r => {
+  // ---- รายการแบบแนวยาว (table-like): หัวตารางครั้งเดียว + ค่าตรงคอลัมน์ ----
+  const vcol = (val, hi) => `<div style="min-width:60px;text-align:right;font-weight:${hi ? '800' : '600'};font-size:${hi ? '14px' : '12.5px'};${hi ? 'color:var(--primary)' : ''};line-height:1.2">${val}</div>`;
+  const hcol = lbl => `<div style="min-width:60px;text-align:right;font-size:9px;color:var(--text-soft);text-transform:uppercase;letter-spacing:.4px">${lbl}</div>`;
+  const listHead = `<div style="display:flex;gap:14px;align-items:center;padding:0 6px 8px">
+    <div style="width:22px;flex-shrink:0"></div>
+    <div style="flex:1;min-width:0;font-size:9px;color:var(--text-soft);text-transform:uppercase;letter-spacing:.4px">แคมเปญ</div>
+    <div style="display:flex;gap:14px;flex-shrink:0">${['CPM', 'Spend', 'Impr', 'Reach', 'Freq', 'CPP'].map(hcol).join('')}</div>
+  </div>`;
+  const cards = rows.map((r, i) => {
     const isMin = r.cpm != null && r.cpm === minC, isMax = r.cpm != null && r.cpm === maxC;
-    const badge = isMin ? `<span style="font-size:9.5px;padding:1px 7px;border-radius:999px;background:rgba(22,163,74,.12);color:#16a34a;font-weight:700;white-space:nowrap">▼ ต่ำสุด</span>`
-      : isMax ? `<span style="font-size:9.5px;padding:1px 7px;border-radius:999px;background:rgba(220,38,38,.12);color:#dc2626;font-weight:700;white-space:nowrap">▲ สูงสุด</span>` : '';
-    return `<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px">
-      <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
-        <div style="font-size:11.5px;font-weight:600;word-break:break-word;line-height:1.4;flex:1">${escapeHtml(r.campaign)}</div>
-        ${badge}
+    const badge = isMin ? `<span style="font-size:9px;padding:1px 7px;border-radius:999px;background:rgba(22,163,74,.12);color:#16a34a;font-weight:700;white-space:nowrap">▼ ต่ำสุด</span>`
+      : isMax ? `<span style="font-size:9px;padding:1px 7px;border-radius:999px;background:rgba(220,38,38,.12);color:#dc2626;font-weight:700;white-space:nowrap">▲ สูงสุด</span>` : '';
+    return `<div style="display:flex;gap:14px;align-items:center;padding:11px 6px;border-top:1px solid var(--border)">
+      <div style="width:22px;flex-shrink:0;text-align:right;font-size:11px;color:var(--text-soft);font-weight:600">${i + 1}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;gap:7px;align-items:flex-start;flex-wrap:wrap">
+          <span style="font-size:12px;font-weight:600;line-height:1.45;word-break:break-word">${escapeHtml(r.campaign)}</span>${badge}
+        </div>
+        ${(r.objective || r.source) ? `<div style="font-size:10px;color:var(--text-soft);margin-top:3px">${escapeHtml(r.objective || '')}${r.source ? ' · ' + escapeHtml(r.source) : ''}</div>` : ''}
       </div>
-      ${(r.objective || r.source) ? `<div style="font-size:10px;color:var(--text-soft);margin-top:2px">${escapeHtml(r.objective || '')}${r.source ? ' · ' + escapeHtml(r.source) : ''}</div>` : ''}
-      <div style="display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;font-size:11.5px;align-items:baseline">
-        <span style="white-space:nowrap"><b style="color:var(--primary);font-size:15px">${f2(r.cpm)}</b> <span style="color:var(--text-soft);font-size:10px">CPM</span></span>
-        ${met(_adsMoney(r.spend), 'spend')}
-        ${met(fi(r.impressions), 'impr')}
-        ${met(fi(r.reach), 'reach')}
-        ${met(r.frequency != null ? f2(r.frequency) : '—', 'freq')}
-        ${met(f2(r.cpp), 'CPP')}
+      <div style="display:flex;gap:14px;align-items:center;flex-shrink:0">
+        ${vcol(f2(r.cpm), true)}${vcol(_adsMoney(r.spend))}${vcol(fi(r.impressions))}${vcol(fi(r.reach))}${vcol(r.frequency != null ? f2(r.frequency) : '—')}${vcol(f2(r.cpp))}
       </div>
     </div>`;
   }).join('');
@@ -1689,7 +1693,7 @@ async function openBenchCellPanel(rowKey, adtype) {
   wrap.className = 'sup-panel-wrap';
   wrap.innerHTML = `
     <div class="sup-panel-backdrop"></div>
-    <div class="sup-panel" style="width:460px">
+    <div class="sup-panel" style="width:min(820px,95vw)">
       <div class="sup-panel-head"><button class="sup-panel-close" title="ปิด">✕</button></div>
       <div class="sup-panel-body" style="padding:4px 22px 28px">
         <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">📈 Benchmark CPM · ${escapeHtml(sub)}</div>
@@ -1699,7 +1703,7 @@ async function openBenchCellPanel(rowKey, adtype) {
           <div style="font-size:12.5px;color:var(--text-muted);margin-top:5px">ช่วง ${f2(stat.min)} – ${f2(stat.max)} · จาก <b>${stat.n}</b> แคมเปญ · spend ${_adsMoney(stat.spend)}</div>
         </div>` : ''}
         <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:9px">รายแคมเปญที่ประกอบเป็นค่านี้ (${rows.length})</div>
-        ${cards || '<div class="empty" style="padding:16px;font-size:12px">— ไม่มีรายการ —</div>'}
+        ${rows.length ? listHead + cards : '<div class="empty" style="padding:16px;font-size:12px">— ไม่มีรายการ —</div>'}
       </div>
     </div>`;
   document.body.appendChild(wrap);
