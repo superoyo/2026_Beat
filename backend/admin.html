@@ -1577,18 +1577,25 @@ async function loadAudience() {
   }
   renderAudienceBody();
 }
+// v1.9.181 — 3 ตาราง: Demographic (age) / Placement / Region
+const _AUD_TABLES = [
+  { key: 'age',       title: 'Demographic — กลุ่มอายุ', icon: '👤', col: 'กลุ่มอายุ', pretty: s => s },
+  { key: 'placement', title: 'Placement',               icon: '📍', col: 'Placement', pretty: s => (s || '').replace(/_/g, ' ') },
+  { key: 'region',    title: 'Region',                  icon: '🗺️', col: 'ภูมิภาค',  pretty: s => s },
+];
 function renderAudienceBody() {
   const body = $('aud-body');
   if (!body || !_audData) return;
-  const ages = _audData.ages || [];
+  const tables = _audData.tables || {};
   const dateRange = `${escapeHtml(_audData.date_from)} → ${escapeHtml(_audData.date_to)}`;
-  if (ages.length === 0) {
-    body.innerHTML = `<div class="empty" style="padding:30px;text-align:center">— ไม่มีข้อมูลกลุ่มอายุในช่วง ${dateRange} (age breakdown มีเฉพาะ Meta) —</div>`;
+  const anyRows = _AUD_TABLES.some(t => tables[t.key] && (tables[t.key].rows || []).length);
+  if (!anyRows) {
+    body.innerHTML = `<div class="empty" style="padding:30px;text-align:center">— ไม่มีข้อมูลในช่วง ${dateRange} (breakdown มีเฉพาะ Meta) —</div>`;
     return;
   }
   body.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
-      <div style="font-size:12.5px;color:var(--text-muted)">📅 ${dateRange} · 👥 แยกตามกลุ่มอายุ (Meta) · รวม <strong style="color:var(--primary)">${_adsTotalTxt(_audData.total_by_cur)}</strong></div>
+      <div style="font-size:12.5px;color:var(--text-muted)">📅 ${dateRange} · 👥 Audience (Meta) · รวม <strong style="color:var(--primary)">${_adsTotalTxt(_audData.total_by_cur)}</strong></div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <input id="aud-search" type="text" value="${escapeHtml(_audSearch)}" placeholder="🔍 ค้นหาแคมเปญ..." autocomplete="off"
                style="padding:8px 12px;font-size:13px;border:1px solid var(--border);border-radius:9px;background:var(--bg-input);color:var(--text);min-width:200px" />
@@ -1606,9 +1613,35 @@ function renderAudienceCards() {
   const wrap = $('aud-cards');
   if (!wrap || !_audData) return;
   const q = _audSearch.trim().toLowerCase();
+  const tables = _audData.tables || {};
+  const html = _AUD_TABLES.map(c => _audTableHtml(tables[c.key], c, q)).join('');
+  wrap.innerHTML = html || '<div class="empty" style="padding:24px;text-align:center;color:var(--text-muted)">— ไม่พบแคมเปญที่ตรงกับคำค้น —</div>';
+  wrap.querySelectorAll('table.ads-table').forEach(tbl => {
+    tbl.querySelectorAll('.aud-grp-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const gi = row.dataset.grp;
+        const caret = row.querySelector('.aud-caret');
+        const subs = tbl.querySelectorAll(`.aud-sub-row[data-grp-of="${gi}"]`);
+        const isOpen = subs.length && subs[0].style.display !== 'none';
+        subs.forEach(s => { s.style.display = isOpen ? 'none' : ''; });
+        if (caret) caret.style.transform = isOpen ? '' : 'rotate(90deg)';
+      });
+    });
+  });
+}
+function _audTableHtml(table, c, q) {
+  if (!table) return '';
   const filtering = q !== '';
+  const grpRows = (table.rows || []).map((g, gi) => {
+    const camps = (g.campaigns || []).filter(cp => !q || (cp.campaign || '').toLowerCase().includes(q));
+    if (camps.length === 0) return null;
+    const byCur = {};
+    camps.forEach(cp => { byCur[cp.currency] = (byCur[cp.currency] || 0) + (cp.spend || 0); });
+    return { label: g.label, camps, byCur, agg: _adsAgg(camps), oneCur: Object.keys(byCur).length === 1, open: filtering, gi };
+  }).filter(Boolean);
+  if (grpRows.length === 0) return '';   // ตารางนี้ไม่มี match → ซ่อน
   const thead = `<thead><tr>
-    <th style="text-align:left">กลุ่มอายุ / แคมเปญ</th>
+    <th style="text-align:left">${escapeHtml(c.col)} / แคมเปญ</th>
     <th style="text-align:right">CPM</th>
     <th style="text-align:right">Spend</th>
     <th style="text-align:right">Impr.</th>
@@ -1618,49 +1651,38 @@ function renderAudienceCards() {
     <th style="text-align:right">CTR</th>
     <th style="text-align:right">CPC</th>
   </tr></thead>`;
-  const ageRows = (_audData.ages || []).map((a, ai) => {
-    const camps = (a.campaigns || []).filter(c => !q || (c.campaign || '').toLowerCase().includes(q));
-    if (camps.length === 0) return null;
-    const byCur = {};
-    camps.forEach(c => { byCur[c.currency] = (byCur[c.currency] || 0) + (c.spend || 0); });
-    return { age: a.age, camps, byCur, agg: _adsAgg(camps), oneCur: Object.keys(byCur).length === 1, open: filtering, ai };
-  }).filter(Boolean);
-  if (ageRows.length === 0) {
-    wrap.innerHTML = '<div class="empty" style="padding:24px;text-align:center;color:var(--text-muted)">— ไม่พบแคมเปญที่ตรงกับคำค้น —</div>';
-    return;
-  }
-  const rowsHtml = ageRows.map(a => {
-    const m = a.agg;
-    const ageRow = `
-      <tr class="aud-age-row" data-age="${a.ai}" style="cursor:pointer">
-        <td><span style="display:inline-flex;align-items:center;gap:7px">
-          <span class="aud-caret" style="font-size:9px;color:var(--text-soft);transition:transform .15s;transform:${a.open ? 'rotate(90deg)' : ''}">▶</span>
-          <span style="font-weight:700">${escapeHtml(a.age)}</span>
-          <span style="font-size:10.5px;color:var(--text-soft)">· ${a.camps.length}</span>
+  const rowsHtml = grpRows.map(g => {
+    const m = g.agg;
+    const grpRow = `
+      <tr class="aud-grp-row" data-grp="${g.gi}" style="cursor:pointer">
+        <td><span style="display:inline-flex;align-items:center;gap:7px;max-width:340px">
+          <span class="aud-caret" style="font-size:9px;color:var(--text-soft);transition:transform .15s;transform:${g.open ? 'rotate(90deg)' : ''}">▶</span>
+          <span style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(c.pretty(g.label))}">${escapeHtml(c.pretty(g.label))}</span>
+          <span style="font-size:10.5px;color:var(--text-soft);white-space:nowrap">· ${g.camps.length}</span>
         </span></td>
-        <td class="tnum" style="font-weight:600">${a.oneCur && m.cpm != null ? _adsMoney(m.cpm) : _adsDash()}</td>
-        <td class="tnum">${_adsTotalTxt(a.byCur)}</td>
+        <td class="tnum" style="font-weight:600">${g.oneCur && m.cpm != null ? _adsMoney(m.cpm) : _adsDash()}</td>
+        <td class="tnum">${_adsTotalTxt(g.byCur)}</td>
         <td class="tnum">${m.impressions ? _adsInt(m.impressions) : _adsDash()}</td>
         <td class="tnum">${m.reach ? _adsInt(m.reach) : _adsDash()}</td>
         <td class="tnum">${m.frequency != null ? m.frequency : _adsDash()}</td>
         <td class="tnum">${m.clicks ? _adsInt(m.clicks) : _adsDash()}</td>
         <td class="tnum">${m.ctr != null ? m.ctr + '%' : _adsDash()}</td>
-        <td class="tnum">${a.oneCur && m.cpc != null ? _adsMoney(m.cpc) : _adsDash()}</td>
+        <td class="tnum">${g.oneCur && m.cpc != null ? _adsMoney(m.cpc) : _adsDash()}</td>
       </tr>`;
-    const campRows = a.camps.map(c => `
-      <tr class="aud-camp-row" data-camp-of="${a.ai}" style="display:${a.open ? '' : 'none'}">
-        <td style="padding-left:32px;max-width:420px"><span style="color:var(--text-muted);display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;vertical-align:bottom" title="${escapeHtml(c.campaign)}">${escapeHtml(c.campaign)}</span></td>
-        ${_adsMetricCells(c, c.currency)}
+    const subRows = g.camps.map(cp => `
+      <tr class="aud-sub-row" data-grp-of="${g.gi}" style="display:${g.open ? '' : 'none'}">
+        <td style="padding-left:32px;max-width:420px"><span style="color:var(--text-muted);display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;vertical-align:bottom" title="${escapeHtml(cp.campaign)}">${escapeHtml(cp.campaign)}</span></td>
+        ${_adsMetricCells(cp, cp.currency)}
       </tr>`).join('');
-    return ageRow + campRows;
+    return grpRow + subRows;
   }).join('');
   const gByCur = {};
-  ageRows.forEach(a => Object.entries(a.byCur).forEach(([k, v]) => { gByCur[k] = (gByCur[k] || 0) + v; }));
-  const gAgg = _adsAgg(ageRows.flatMap(a => a.camps));
+  grpRows.forEach(g => Object.entries(g.byCur).forEach(([k, v]) => { gByCur[k] = (gByCur[k] || 0) + v; }));
+  const gAgg = _adsAgg(grpRows.flatMap(g => g.camps));
   const gOne = Object.keys(gByCur).length === 1;
   const totRow = `
     <tr class="ads-tot-row">
-      <td>รวมทุกกลุ่มอายุ</td>
+      <td>รวม</td>
       <td class="tnum">${gOne && gAgg.cpm != null ? _adsMoney(gAgg.cpm) : _adsDash()}</td>
       <td class="tnum">${_adsTotalTxt(gByCur)}</td>
       <td class="tnum">${gAgg.impressions ? _adsInt(gAgg.impressions) : _adsDash()}</td>
@@ -1670,36 +1692,32 @@ function renderAudienceCards() {
       <td class="tnum">${gAgg.ctr != null ? gAgg.ctr + '%' : _adsDash()}</td>
       <td class="tnum">${gOne && gAgg.cpc != null ? _adsMoney(gAgg.cpc) : _adsDash()}</td>
     </tr>`;
-  wrap.innerHTML = `
+  const note = (table.truncated && !filtering) ? `<div style="font-size:10.5px;color:var(--text-soft);padding:8px 16px;border-top:1px solid var(--border)">* แสดง top ${table.shown} จาก ${table.total} (เรียงตาม spend)</div>` : '';
+  const errNote = table.err ? `<div style="font-size:10.5px;color:#dc2626;padding:8px 16px;border-top:1px solid var(--border)">⚠️ ดึงไม่สำเร็จ: ${escapeHtml(String(table.err).slice(0, 80))}</div>` : '';
+  return `
     <div class="card" style="display:block;margin-bottom:16px;padding:0;overflow:hidden">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:13px 16px;background:var(--bg-soft);border-bottom:1px solid var(--border)">
-        <div style="font-size:15px;font-weight:700">👥 Audience · <span style="font-size:12px;color:var(--text-muted);font-weight:500">${ageRows.length} กลุ่มอายุ (Meta)</span></div>
+        <div style="font-size:15px;font-weight:700">${c.icon} ${escapeHtml(c.title)} <span style="font-size:12px;color:var(--text-muted);font-weight:500">· ${grpRows.length} รายการ</span></div>
         <div style="font-size:15px;font-weight:800;color:var(--primary)">${_adsTotalTxt(gByCur)}</div>
       </div>
       <div style="overflow-x:auto">
         <table class="ads-table">${thead}<tbody>${rowsHtml}${totRow}</tbody></table>
       </div>
+      ${note}${errNote}
     </div>`;
-  const tbl = wrap.querySelector('table.ads-table');
-  if (tbl) tbl.querySelectorAll('.aud-age-row').forEach(row => {
-    row.addEventListener('click', () => {
-      const ai = row.dataset.age;
-      const caret = row.querySelector('.aud-caret');
-      const camps = tbl.querySelectorAll(`.aud-camp-row[data-camp-of="${ai}"]`);
-      const isOpen = camps.length && camps[0].style.display !== 'none';
-      camps.forEach(cr => { cr.style.display = isOpen ? 'none' : ''; });
-      if (caret) caret.style.transform = isOpen ? '' : 'rotate(90deg)';
-    });
-  });
 }
 function exportAudienceCsv() {
-  if (!_audData || !_audData.ages) return;
+  if (!_audData || !_audData.tables) return;
   const esc = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
   const nz = v => (v == null ? '' : v);
-  const lines = [['Age Group', 'Campaign', 'Spend', 'Currency', 'Impressions', 'Reach', 'Frequency', 'Clicks', 'CTR(%)', 'CPC', 'CPM'].join(',')];
-  _audData.ages.forEach(a => {
-    (a.campaigns || []).forEach(c => {
-      lines.push([a.age, c.campaign, c.spend, c.currency, c.impressions, c.reach, nz(c.frequency), c.clicks, nz(c.ctr), nz(c.cpc), nz(c.cpm)].map(esc).join(','));
+  const lines = [['Breakdown', 'Value', 'Campaign', 'Spend', 'Currency', 'Impressions', 'Reach', 'Frequency', 'Clicks', 'CTR(%)', 'CPC', 'CPM'].join(',')];
+  _AUD_TABLES.forEach(cfg => {
+    const t = _audData.tables[cfg.key];
+    if (!t) return;
+    (t.rows || []).forEach(g => {
+      (g.campaigns || []).forEach(c => {
+        lines.push([cfg.title, cfg.pretty(g.label), c.campaign, c.spend, c.currency, c.impressions, c.reach, nz(c.frequency), c.clicks, nz(c.ctr), nz(c.cpc), nz(c.cpm)].map(esc).join(','));
+      });
     });
   });
   const csv = '﻿' + lines.join('\n');

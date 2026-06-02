@@ -8820,14 +8820,31 @@ def ads_audience(days: int = 7, _sess: dict = Depends(_require_module("ads"))) -
     today = utc_now().date()
     date_to = today.isoformat()
     date_from = (today - timedelta(days=days - 1)).isoformat()
-    # age breakdown ใช้ได้เฉพาะ connector "facebook" (Meta) — connector "all" รวม twitter ซึ่ง reject age
-    try:
-        rows = _windsor_get("campaign,age,spend,impressions,clicks,reach,currency", date_from, date_to, 60, "facebook")
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")[:200] if hasattr(e, "read") else ""
-        raise HTTPException(status_code=502, detail=f"ดึง Windsor ไม่สำเร็จ (HTTP {e.code}) {body}")
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"ดึง Windsor ไม่สำเร็จ: {e}")
+
+    # ทุก breakdown ใช้ connector "facebook" (Meta) เพื่อให้ยอดรวมตรงกันทุกตาราง
+    # (connector "all" รวม twitter ซึ่ง reject age/gender → HTTP 500)
+    dims = {"age": "age", "placement": "platform_position", "region": "region"}
+    import concurrent.futures as _cf
+    raw: dict[str, list] = {}
+    errs: dict[str, str] = {}
+
+    def _fetch(field):
+        return _windsor_get(f"campaign,{field},spend,impressions,clicks,reach,currency", date_from, date_to, 60, "facebook")
+
+    with _cf.ThreadPoolExecutor(max_workers=3) as ex:
+        futs = {k: ex.submit(_fetch, f) for k, f in dims.items()}
+        for k, fu in futs.items():
+            try:
+                raw[k] = fu.result()
+            except urllib.error.HTTPError as e:
+                raw[k] = []
+                body = e.read().decode("utf-8", errors="replace")[:200] if hasattr(e, "read") else ""
+                errs[k] = f"HTTP {e.code} {body}"
+            except Exception as e:
+                raw[k] = []
+                errs[k] = str(e)[:200]
+    if errs.get("age") and not raw.get("age") and not raw.get("placement") and not raw.get("region"):
+        raise HTTPException(status_code=502, detail=f"ดึง Windsor ไม่สำเร็จ: {errs['age']}")
 
     def _f(v):
         try:
@@ -8839,6 +8856,9 @@ def ads_audience(days: int = 7, _sess: dict = Depends(_require_module("ads"))) -
         v = str(v or "").strip()
         v = v.replace("AGE_", "").replace("_", "-").replace(" to ", "-")
         return v or "(ไม่ระบุ)"
+
+    def _norm_plain(v):
+        return (str(v or "").strip()) or "(ไม่ระบุ)"
 
     def _metrics(spend: float, impr: float, clk: float, reach: float) -> dict[str, Any]:
         return {
@@ -8852,52 +8872,73 @@ def ads_audience(days: int = 7, _sess: dict = Depends(_require_module("ads"))) -
             "frequency": round(impr / reach, 2) if reach else None,
         }
 
-    ages: dict[str, Any] = {}
-    for r in rows:
-        if not isinstance(r, dict):
-            continue
-        age = _norm_age(r.get("age"))
-        camp = (str(r.get("campaign") or "").strip()) or "(ไม่ระบุแคมเปญ)"
-        cur = (str(r.get("currency") or "").strip()) or "—"
-        sp, im, ck, rc = _f(r.get("spend")), _f(r.get("impressions")), _f(r.get("clicks")), _f(r.get("reach"))
-        a = ages.setdefault(age, {"age": age, "campaigns": {}, "by_cur": {}, "impressions": 0.0, "clicks": 0.0, "reach": 0.0})
-        a["by_cur"][cur] = a["by_cur"].get(cur, 0.0) + sp
-        a["impressions"] += im
-        a["clicks"] += ck
-        a["reach"] += rc
-        c = a["campaigns"].setdefault(camp, {"campaign": camp, "currency": cur, "spend": 0.0, "impressions": 0.0, "clicks": 0.0, "reach": 0.0})
-        c["spend"] += sp
-        c["impressions"] += im
-        c["clicks"] += ck
-        c["reach"] += rc
-
     _AGE_ORDER = {"13-17": 0, "18-24": 1, "25-34": 2, "35-44": 3, "45-54": 4, "55-64": 5, "65+": 6}
-    out_ages = []
-    grand_cur: dict[str, float] = {}
-    for age in sorted(ages, key=lambda a: (_AGE_ORDER.get(a, 90), a)):
-        a = ages[age]
-        camps = sorted(
-            ({"campaign": c["campaign"], "currency": c["currency"],
-              **_metrics(c["spend"], c["impressions"], c["clicks"], c["reach"])}
-             for c in a["campaigns"].values()),
-            key=lambda x: x["spend"], reverse=True,
-        )
-        tot_spend = sum(a["by_cur"].values())
-        out_ages.append({
-            "age": age,
-            "total_by_cur": {k: round(v, 2) for k, v in a["by_cur"].items()},
-            **_metrics(tot_spend, a["impressions"], a["clicks"], a["reach"]),
-            "campaigns": camps,
-        })
-        for k, v in a["by_cur"].items():
-            grand_cur[k] = grand_cur.get(k, 0.0) + v
+
+    def _build(rows, field, norm, order, limit=None):
+        groups: dict[str, Any] = {}
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            key = norm(r.get(field))
+            camp = (str(r.get("campaign") or "").strip()) or "(ไม่ระบุแคมเปญ)"
+            cur = (str(r.get("currency") or "").strip()) or "—"
+            sp, im, ck, rc = _f(r.get("spend")), _f(r.get("impressions")), _f(r.get("clicks")), _f(r.get("reach"))
+            g = groups.setdefault(key, {"label": key, "campaigns": {}, "by_cur": {}, "impressions": 0.0, "clicks": 0.0, "reach": 0.0})
+            g["by_cur"][cur] = g["by_cur"].get(cur, 0.0) + sp
+            g["impressions"] += im
+            g["clicks"] += ck
+            g["reach"] += rc
+            c = g["campaigns"].setdefault(camp, {"campaign": camp, "currency": cur, "spend": 0.0, "impressions": 0.0, "clicks": 0.0, "reach": 0.0})
+            c["spend"] += sp
+            c["impressions"] += im
+            c["clicks"] += ck
+            c["reach"] += rc
+        if order == "age":
+            keys = sorted(groups, key=lambda k: (_AGE_ORDER.get(k, 90), k))
+        else:
+            keys = sorted(groups, key=lambda k: sum(groups[k]["by_cur"].values()), reverse=True)
+        tbc: dict[str, float] = {}
+        for g in groups.values():
+            for cur, v in g["by_cur"].items():
+                tbc[cur] = tbc.get(cur, 0.0) + v
+        total_n = len(keys)
+        truncated = bool(limit and total_n > limit)
+        if limit:
+            keys = keys[:limit]
+        out_rows = []
+        for key in keys:
+            g = groups[key]
+            camps = sorted(
+                ({"campaign": c["campaign"], "currency": c["currency"],
+                  **_metrics(c["spend"], c["impressions"], c["clicks"], c["reach"])}
+                 for c in g["campaigns"].values()),
+                key=lambda x: x["spend"], reverse=True,
+            )
+            out_rows.append({
+                "label": key,
+                "total_by_cur": {k: round(v, 2) for k, v in g["by_cur"].items()},
+                **_metrics(sum(g["by_cur"].values()), g["impressions"], g["clicks"], g["reach"]),
+                "campaigns": camps,
+            })
+        return {
+            "rows": out_rows,
+            "total_by_cur": {k: round(v, 2) for k, v in tbc.items()},
+            "shown": len(out_rows),
+            "total": total_n,
+            "truncated": truncated,
+            "err": errs.get(field) or None,
+        }
+
+    t_age = _build(raw.get("age", []), "age", _norm_age, "age")
+    t_place = _build(raw.get("placement", []), "platform_position", _norm_plain, "spend")
+    t_region = _build(raw.get("region", []), "region", _norm_plain, "spend", limit=40)
 
     return {
         "days": days,
         "date_from": date_from,
         "date_to": date_to,
-        "ages": out_ages,
-        "total_by_cur": {k: round(v, 2) for k, v in grand_cur.items()},
+        "total_by_cur": t_age["total_by_cur"] or t_place["total_by_cur"] or t_region["total_by_cur"],
+        "tables": {"age": t_age, "placement": t_place, "region": t_region},
     }
 
 
