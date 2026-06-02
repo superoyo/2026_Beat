@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.155",
+      "date": "2026-06-01",
+      "title": "Device & Software: จัดกลุ่ม submenu (Software / Hardware / Document)",
+      "summary": "เมนูย่อยของ Device & Software แบ่งเป็นหมวด — Software (Int. Platforms Config), Hardware (Personal Computer / คอมส่วนกลาง / Device / Network), Document (Financial Document) มีหัวข้อหมวดคั่นให้ดูง่าย",
+      "changes": [
+        "renderSubmenuPage รองรับ field group → แสดง .acc-menu-group header",
+        "Device & Software: ใส่ group ให้แต่ละเมนูตามหมวด + CSS หัวข้อหมวด"
+      ]
+    },
+    {
       "version": "1.9.154",
       "date": "2026-06-01",
       "title": "Dashboard: ไอคอนการ์ดสรุป เป็นสไตล์ทองเงา (glossy gold) บนพื้นขาว",

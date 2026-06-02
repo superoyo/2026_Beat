@@ -386,6 +386,13 @@
       background: var(--primary-soft); color: var(--primary-dark);
       font-weight: 600; border-color: rgba(37,99,235,.20);
     }
+    /* v1.9.155 — group header ใน submenu */
+    .acc-menu-group {
+      font-size: 11px; font-weight: 700; color: var(--text-soft);
+      text-transform: uppercase; letter-spacing: .06em;
+      padding: 12px 14px 5px; margin-top: 2px;
+    }
+    .acc-menu-group:first-child { margin-top: 0; padding-top: 4px; }
     .acc-detail { flex: 1; min-width: 0; }
 
     /* v1.9.129 — Supervised member detail: right slide-out panel (M365 style) */
@@ -10212,10 +10219,17 @@ async function loadLogsList() {
 function _subMain() { return document.getElementById('sub-detail') || $('main'); }
 async function renderSubmenuPage(cfg) {
   const link = (it) => `<a href="#/${it.route}" class="acc-menu-item${it.route === cfg.active ? ' active' : ''}" style="text-decoration:none"><span class="acc-menu-ico">${it.ico}</span> ${it.label}</a>`;
+  // v1.9.155 — รองรับ group header (ใส่ field group ใน item)
+  const menuHtml = cfg.items.map((it, i) => {
+    const prev = cfg.items[i - 1];
+    const header = (it.group && (!prev || prev.group !== it.group))
+      ? `<div class="acc-menu-group">${escapeHtml(it.group)}</div>` : '';
+    return header + link(it);
+  }).join('');
   $('main').innerHTML = `
     <div class="page-head"><h2 class="page-title">${cfg.title}</h2></div>
     <div class="acc-layout">
-      <div class="acc-menu">${cfg.items.map(link).join('')}</div>
+      <div class="acc-menu">${menuHtml}</div>
       <div class="acc-detail"><div id="sub-detail"><div class="empty">กำลังโหลด…</div></div></div>
     </div>`;
   const active = cfg.items.find(it => it.route === cfg.active) || cfg.items[0];
@@ -10230,12 +10244,12 @@ function renderCustomerPage(active, arg) {
 }
 function renderDeviceSoftwarePage(active, arg) {
   return renderSubmenuPage({ title: '🖥️ Device & Software', active: active || 'sites', arg, items: [
-    { route: 'sites',                  ico: '🛠',  label: 'Int. Platforms Config', render: (a) => a ? renderSiteDetail(a) : renderSitesList() },
-    { route: 'hardware-pc',            ico: '💻',  label: 'Personal Computer',     render: () => renderHardwarePage('pc') },
-    { route: 'hardware-pc-unassigned', ico: '📦',  label: 'คอมส่วนกลาง',           render: () => renderHardwareUnassignedPcsPage() },
-    { route: 'hardware-device',        ico: '📱',  label: 'Device',                render: () => renderHardwarePage('device') },
-    { route: 'hardware-network',       ico: '📡',  label: 'Network',               render: () => renderHardwarePage('network') },
-    { route: 'financial-documents',    ico: '💰',  label: 'Financial Document',    render: () => renderFinancialDocumentsPage() },
+    { group: 'Software',  route: 'sites',                  ico: '🛠',  label: 'Int. Platforms Config', render: (a) => a ? renderSiteDetail(a) : renderSitesList() },
+    { group: 'Hardware',  route: 'hardware-pc',            ico: '💻',  label: 'Personal Computer',     render: () => renderHardwarePage('pc') },
+    { group: 'Hardware',  route: 'hardware-pc-unassigned', ico: '📦',  label: 'คอมส่วนกลาง',           render: () => renderHardwareUnassignedPcsPage() },
+    { group: 'Hardware',  route: 'hardware-device',        ico: '📱',  label: 'Device',                render: () => renderHardwarePage('device') },
+    { group: 'Hardware',  route: 'hardware-network',       ico: '📡',  label: 'Network',               render: () => renderHardwarePage('network') },
+    { group: 'Document',  route: 'financial-documents',    ico: '💰',  label: 'Financial Document',    render: () => renderFinancialDocumentsPage() },
   ]});
 }
 function renderSettingPage(active, arg) {
