@@ -647,6 +647,7 @@
     .ads-acc-row { cursor: pointer; }
     .ads-acc-row:hover { background: var(--bg-hover); }
     .ads-camp-row > td { background: var(--bg-soft); }
+    .ads-camp-row[data-bench-camp]:hover > td { background: var(--bg-hover); }
     .ads-tot-row > td { font-weight: 700; background: var(--bg-soft); border-top: 2px solid var(--border); }
     /* v1.9.147 — toggle switch (Privacy) */
     .tgl { display: inline-flex; cursor: pointer; flex-shrink: 0; }
@@ -1412,6 +1413,21 @@ let _adsDays = 7;
 let _adsData = null;
 let _adsSearch = '';
 let _adsType = '__all__';   // v1.9.165 — filter ตาม ad type (objective)
+let _benchData = null;      // v1.9.170 — cache benchmark (ใช้ใน slide-out จาก Report)
+// v1.9.170 — แยก brand/adtype จากชื่อ campaign (มิเรอร์ logic backend benchmark)
+const _BENCH_ADTYPES = ['Video Thruplay', 'Video Views', 'Page Likes', 'Page Like', 'CPAS', 'Reach', 'Engagement', 'Traffic', 'Awareness', 'Messages', 'Message', 'Conversions', 'Conversion', 'Purchases', 'Purchase', 'Leads', 'Lead'];
+function _benchBrandOf(camp) {
+  const i = (camp || '').indexOf(']');
+  if (i < 0) return '(ไม่ระบุ)';
+  const rest = camp.slice(i + 1).replace(/^[\s\-–—​ ]+/, '');
+  const tok = (rest.split(/\s+/)[0] || '').replace(/^[.,:]+|[.,:]+$/g, '');
+  return tok || '(ไม่ระบุ)';
+}
+function _benchAdTypeOf(camp) {
+  const low = (camp || '').toLowerCase();
+  for (const t of _BENCH_ADTYPES) if (low.includes(t.toLowerCase())) return t;
+  return '(ไม่ระบุ)';
+}
 const _ADS_OBJ = {
   OUTCOME_AWARENESS: 'Awareness', OUTCOME_ENGAGEMENT: 'Engagement', OUTCOME_SALES: 'Sales',
   OUTCOME_TRAFFIC: 'Traffic', OUTCOME_LEADS: 'Leads', OUTCOME_APP_PROMOTION: 'App Promotion',
@@ -1545,6 +1561,7 @@ async function loadBenchmark() {
   let d;
   try { d = await fetchJson('/api/ads-benchmark'); }
   catch (e) { body.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`; return; }
+  _benchData = d;
   const brands = d.brands || [], adtypes = d.adtypes || [];
   if (brands.length === 0) { body.innerHTML = '<div class="empty">— ไม่มีข้อมูลในชีต —</div>'; return; }
   // ช่วง avg CPM ของ cell สำหรับ heatmap
@@ -1580,6 +1597,65 @@ async function loadBenchmark() {
     <div class="card" style="display:block;padding:0;overflow-x:auto">
       <table class="ads-table" style="min-width:max-content">${head}<tbody>${rows}${foot}</tbody></table>
     </div>`;
+}
+// v1.9.170 — คลิกแคมเปญใน Report → slide-out แสดง benchmark ของ Brand × Ad Type นั้น
+async function openBenchmarkPanel(campaign, ownCpm) {
+  document.querySelectorAll('.sup-panel-wrap').forEach(e => e.remove());
+  const brand = _benchBrandOf(campaign), adtype = _benchAdTypeOf(campaign);
+  const wrap = document.createElement('div');
+  wrap.className = 'sup-panel-wrap';
+  wrap.innerHTML = `
+    <div class="sup-panel-backdrop"></div>
+    <div class="sup-panel" style="width:420px">
+      <div class="sup-panel-head"><button class="sup-panel-close" title="ปิด">✕</button></div>
+      <div class="sup-panel-body" style="padding:4px 24px 28px">
+        <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">📈 Benchmark CPM</div>
+        <div style="font-size:14.5px;font-weight:700;margin:3px 0 10px;line-height:1.35;word-break:break-word">${escapeHtml(campaign)}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+          <span style="font-size:12px;padding:3px 11px;border-radius:999px;background:rgba(37,99,235,.10);color:var(--primary);font-weight:600">🏷️ ${escapeHtml(brand)}</span>
+          <span style="font-size:12px;padding:3px 11px;border-radius:999px;background:var(--bg-soft);border:1px solid var(--border);font-weight:600">📊 ${escapeHtml(adtype)}</span>
+        </div>
+        <div id="bench-panel-body"><div class="empty">กำลังโหลด benchmark…</div></div>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  requestAnimationFrame(() => wrap.classList.add('is-open'));
+  const close = () => { wrap.classList.remove('is-open'); document.removeEventListener('keydown', onKey); setTimeout(() => wrap.remove(), 260); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  wrap.querySelector('.sup-panel-backdrop').addEventListener('click', close);
+  wrap.querySelector('.sup-panel-close').addEventListener('click', close);
+  const pbody = wrap.querySelector('#bench-panel-body');
+  try { if (!_benchData) _benchData = await fetchJson('/api/ads-benchmark'); }
+  catch (e) { pbody.innerHTML = `<div class="empty">โหลด benchmark ไม่สำเร็จ: ${escapeHtml(e.message)}</div>`; return; }
+  const f2 = v => v == null ? '—' : Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const cell = (_benchData.matrix[brand] || {})[adtype];
+  const bt = _benchData.brand_totals[brand];
+  const at = _benchData.adtype_totals[adtype];
+  const statBox = (title, c, hi) => c ? `
+    <div style="border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px;${hi ? 'border-color:var(--primary);background:var(--primary-soft)' : ''}">
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">${title}</div>
+      <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:27px;font-weight:800;color:var(--primary)">${f2(c.avg)}</span><span style="font-size:12px;color:var(--text-muted)">avg CPM</span></div>
+      <div style="font-size:12.5px;color:var(--text-muted);margin-top:5px">ช่วง ${f2(c.min)} – ${f2(c.max)} · จาก ${c.n} แคมเปญ</div>
+    </div>` : '';
+  let cmp = '';
+  if (ownCpm != null && cell && cell.avg != null) {
+    const diff = ((ownCpm - cell.avg) / cell.avg) * 100;
+    const better = diff <= 0;
+    cmp = `<div style="padding:13px 15px;border-radius:11px;background:${better ? 'rgba(16,185,129,.10)' : 'rgba(220,38,38,.08)'};margin-bottom:14px">
+      <div style="font-size:12px;color:var(--text-muted)">CPM ของแคมเปญนี้ (Report)</div>
+      <div style="font-size:22px;font-weight:800;color:${better ? 'var(--green)' : 'var(--critical)'}">${f2(ownCpm)}</div>
+      <div style="font-size:12px;font-weight:600;color:${better ? 'var(--green)' : 'var(--critical)'};margin-top:2px">${better ? '▼ ต่ำกว่า' : '▲ สูงกว่า'} ค่าเฉลี่ย benchmark ${Math.abs(diff).toFixed(0)}% ${better ? '· ดีกว่ามาตรฐาน' : '· แพงกว่ามาตรฐาน'}</div>
+    </div>`;
+  } else if (ownCpm != null) {
+    cmp = `<div style="padding:13px 15px;border-radius:11px;background:var(--bg-soft);margin-bottom:14px"><div style="font-size:12px;color:var(--text-muted)">CPM ของแคมเปญนี้ (Report)</div><div style="font-size:22px;font-weight:800">${f2(ownCpm)}</div></div>`;
+  }
+  pbody.innerHTML = `
+    ${cmp}
+    ${cell ? statBox(`Benchmark — ${escapeHtml(brand)} × ${escapeHtml(adtype)}`, cell, true)
+           : '<div class="empty" style="padding:18px;text-align:center;font-size:12.5px">— ไม่มีข้อมูล benchmark สำหรับ brand × ad type นี้ในชีต —</div>'}
+    ${statBox(`Brand: ${escapeHtml(brand)} (รวมทุก Ad Type)`, bt, false)}
+    ${statBox(`Ad Type: ${escapeHtml(adtype)} (รวมทุก Brand)`, at, false)}`;
 }
 async function loadAdsSpend() {
   const body = $('ads-body');
@@ -1701,8 +1777,8 @@ function renderAdsCards() {
           ${_adsMetricCells(a, a.currency)}
         </tr>`;
       const campRows = camps.map(c => `
-        <tr class="ads-camp-row" data-camp-of="${ai}" style="display:${open ? '' : 'none'}">
-          <td style="padding-left:32px;max-width:380px"><span style="display:inline-flex;align-items:center;gap:6px;max-width:100%"><span style="color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(c.campaign)}">${escapeHtml(c.campaign)}</span>${c.ad_format && _ADS_FMT_ICON[c.ad_format] ? `<span style="flex-shrink:0" title="${escapeHtml(_adsFmtLabel(c.ad_format))}">${_ADS_FMT_ICON[c.ad_format]}</span>` : ''}${c.ad_type ? `<span style="flex-shrink:0;font-size:9px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--bg-hover);color:var(--text-soft)" title="Objective">${escapeHtml(_adsTypeLabel(c.ad_type))}</span>` : ''}</span></td>
+        <tr class="ads-camp-row" data-camp-of="${ai}" data-bench-camp="${escapeHtml(c.campaign)}" data-bench-cpm="${c.cpm == null ? '' : c.cpm}" style="display:${open ? '' : 'none'};cursor:pointer" title="คลิกดู Benchmark">
+          <td style="padding-left:32px;max-width:380px"><span style="display:inline-flex;align-items:center;gap:6px;max-width:100%"><span style="color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(c.campaign)}</span>${c.ad_format && _ADS_FMT_ICON[c.ad_format] ? `<span style="flex-shrink:0" title="${escapeHtml(_adsFmtLabel(c.ad_format))}">${_ADS_FMT_ICON[c.ad_format]}</span>` : ''}${c.ad_type ? `<span style="flex-shrink:0;font-size:9px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--bg-hover);color:var(--text-soft)" title="Objective">${escapeHtml(_adsTypeLabel(c.ad_type))}</span>` : ''}<span style="flex-shrink:0;color:var(--text-soft);font-size:10px">📈</span></span></td>
           ${_adsMetricCells(c, a.currency)}
         </tr>`).join('');
       return accRow + campRows;
@@ -1740,6 +1816,14 @@ function renderAdsCards() {
         const isOpen = camps.length && camps[0].style.display !== 'none';
         camps.forEach(cr => { cr.style.display = isOpen ? 'none' : ''; });
         if (caret) caret.style.transform = isOpen ? '' : 'rotate(90deg)';
+      });
+    });
+    // v1.9.170 — คลิกแถวแคมเปญ → slide-out benchmark
+    tbl.querySelectorAll('.ads-camp-row[data-bench-camp]').forEach(row => {
+      row.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const cpm = row.dataset.benchCpm === '' ? null : parseFloat(row.dataset.benchCpm);
+        openBenchmarkPanel(row.dataset.benchCamp, cpm);
       });
     });
   });

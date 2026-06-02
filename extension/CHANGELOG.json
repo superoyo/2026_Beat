@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.170",
+      "date": "2026-06-01",
+      "title": "Ads Report: คลิกแคมเปญ → slide-out แสดง Benchmark ของ Brand×AdType นั้น",
+      "summary": "ในหน้า Report กางบัญชีแล้วคลิกที่บรรทัดแคมเปญ จะมีพาเนลเลื่อนจากขวา แสดง Benchmark CPM (avg/min/max) เฉพาะ Brand + Ad Type ที่ตรงกับแคมเปญนั้น พร้อมเทียบ CPM ของแคมเปญกับค่าเฉลี่ย",
+      "changes": [
+        "Frontend: แถวแคมเปญใน Report คลิกได้ → openBenchmarkPanel (slide-out .sup-panel)",
+        "แยก brand/adtype จากชื่อแคมเปญ (มิเรอร์ logic backend) → lookup matrix benchmark",
+        "แสดง CPM แคมเปญ vs avg benchmark (ต่ำกว่า=ดี/เขียว) + benchmark ของ brand รวม + adtype รวม",
+        "cache _benchData (โหลด on-demand)"
+      ]
+    },
+    {
       "version": "1.9.169",
       "date": "2026-06-01",
       "title": "Ads Benchmark: แสดง Average CPM + ช่วง min–max (เอา CPP ออก)",
