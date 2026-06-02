@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.174",
+      "date": "2026-06-02",
+      "title": "Ads targeting: แก้ age/gender ขึ้นแล้ว (ดึงจาก connector facebook)",
+      "summary": "สาเหตุ age/gender ไม่ขึ้น = connector all รวม Twitter ซึ่ง reject breakdown age/gender → HTTP 500 ทั้งคิวรี แก้โดยดึง age/gender/adset จาก connector facebook (Meta-only), placement/region ยังใช้ all",
+      "changes": [
+        "_windsor_get รองรับพารามิเตอร์ connector",
+        "age/gender/adset → connector 'facebook' (เลี่ยง Twitter BadRequest)",
+        "placement/region → connector 'all' (รองรับทุกแพลตฟอร์ม)"
+      ]
+    },
+    {
       "version": "1.9.173",
       "date": "2026-06-02",
       "title": "Ads targeting: fix age/gender + diagnostic",

@@ -8337,11 +8337,11 @@ def _require_module(module_key: str):
 
 
 # v1.9.172 — ดึง Windsor "all" connector (JSON) แบบ module-level (ใช้ซ้ำ)
-def _windsor_get(fields: str, date_from: str, date_to: str, timeout: int = 40) -> list:
+def _windsor_get(fields: str, date_from: str, date_to: str, timeout: int = 40, connector: str = "all") -> list:
     from urllib.parse import urlencode as _urlencode
     qs = _urlencode({"api_key": WINDSOR_API_KEY, "date_from": date_from, "date_to": date_to,
                      "fields": fields, "_renderer": "json"})
-    req = urllib.request.Request(f"{WINDSOR_BASE_URL}/all?{qs}", headers={"Accept": "application/json"})
+    req = urllib.request.Request(f"{WINDSOR_BASE_URL}/{connector}?{qs}", headers={"Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         raw = _json.loads(resp.read().decode("utf-8", errors="replace"))
     return raw.get("data", []) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
@@ -8641,18 +8641,19 @@ def ads_campaign_targeting(campaign: str, days: int = 30, _sess: dict = Depends(
             return 0.0
 
     # แต่ละ breakdown ดึงแยก (Meta ไม่ยอมรวมหลาย breakdown ในคิวรีเดียว)
+    # age/gender → connector "facebook" เท่านั้น (connector "all" รวม twitter ซึ่ง reject age/gender → HTTP 500 ทั้งคิวรี)
     queries = {
-        "age": "campaign,age,spend",
-        "gender": "campaign,gender,spend",
-        "placement": "campaign,platform_position,spend",
-        "region": "campaign,region,spend",
-        "adset": "campaign,adset_name,adsset_optimization_goal,adset_destination_type,spend",
+        "age": ("campaign,age,spend", "facebook"),
+        "gender": ("campaign,gender,spend", "facebook"),
+        "placement": ("campaign,platform_position,spend", "all"),
+        "region": ("campaign,region,spend", "all"),
+        "adset": ("campaign,adset_name,adsset_optimization_goal,adset_destination_type,spend", "facebook"),
     }
     import concurrent.futures as _cf
     results: dict[str, list] = {}
     errs: dict[str, str] = {}
     with _cf.ThreadPoolExecutor(max_workers=5) as ex:
-        futs = {k: ex.submit(_windsor_get, q, date_from, date_to, 45) for k, q in queries.items()}
+        futs = {k: ex.submit(_windsor_get, q, date_from, date_to, 45, conn) for k, (q, conn) in queries.items()}
         for k, fu in futs.items():
             try:
                 results[k] = fu.result()
