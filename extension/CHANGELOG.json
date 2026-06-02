@@ -2,6 +2,15 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.163",
+      "date": "2026-06-01",
+      "title": "ย้ายเมนู Ads ขึ้นโซนบน (ใต้ Platforms)",
+      "summary": "ย้ายเมนู Ads จากหมวด 'ภาพรวมระบบ' ขึ้นไปโซนบนต่อจาก Platforms — ยังกรองตามสิทธิ์ IAM เหมือนเดิม (admin เห็นเสมอ, member เห็นถ้าได้รับสิทธิ์ module ads)",
+      "changes": [
+        "ย้าย nav item Ads ไปไว้ section บนสุด (ใต้ Platforms)"
+      ]
+    },
+    {
       "version": "1.9.162",
       "date": "2026-06-01",
       "title": "เพิ่ม IAM ใน Setting — กำหนดสิทธิ์ Module (Ads/Customer/Platform) ต่อบุคคล/ทีม/ทั้งหมด",
