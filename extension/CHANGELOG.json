@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.169",
+      "date": "2026-06-01",
+      "title": "Ads Benchmark: แสดง Average CPM + ช่วง min–max (เอา CPP ออก)",
+      "summary": "ตาราง Benchmark แต่ละช่อง (Brand × Ad Type) แสดง Average CPM (ตัวใหญ่) + min–max CPM (ตัวเล็กล่าง) คำนวณจาก cpm รายแคมเปญในชีต (avg/min/max), heatmap ตาม avg",
+      "changes": [
+        "Backend /api/ads-benchmark: เก็บ list cpm ต่อ Brand×AdType → avg/min/max (เอา cpp/weighted ออก)",
+        "Frontend: cell แสดง avg CPM + min–max, tooltip บอกจำนวนแคมเปญ"
+      ]
+    },
+    {
       "version": "1.9.168",
       "date": "2026-06-01",
       "title": "Ads Benchmark: เพิ่ม CPP คู่กับ CPM ในทุกช่อง",

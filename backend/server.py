@@ -8538,7 +8538,7 @@ def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
     k_camp = fieldmap.get("campaign")
     k_spend = fieldmap.get("spend")
     k_impr = fieldmap.get("impressions")
-    k_reach = fieldmap.get("reach")
+    k_cpm = fieldmap.get("cpm")
     if not k_camp:
         raise HTTPException(status_code=502, detail="ไม่พบคอลัมน์ 'campaign' ในชีต")
 
@@ -8549,7 +8549,7 @@ def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
             return 0.0
 
     def _newd():
-        return {"spend": 0.0, "impr": 0.0, "reach": 0.0}
+        return {"spend": 0.0, "cpms": []}
 
     cells: dict = {}
     brand_tot: dict = {}
@@ -8562,7 +8562,10 @@ def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
             continue
         spend = _ff(row.get(k_spend)) if k_spend else 0.0
         impr = _ff(row.get(k_impr)) if k_impr else 0.0
-        rch = _ff(row.get(k_reach)) if k_reach else 0.0
+        # CPM ต่อแคมเปญ: ใช้คอลัมน์ cpm ถ้ามี ไม่งั้นคำนวณจาก spend/impr
+        cpm_v = _ff(row.get(k_cpm)) if k_cpm else 0.0
+        if cpm_v <= 0 and impr > 0:
+            cpm_v = spend / impr * 1000
         if spend == 0 and impr == 0:
             continue
         brand = _bench_brand(camp)
@@ -8573,16 +8576,17 @@ def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
                   adtype_tot.setdefault(adtype, _newd()),
                   grand):
             d["spend"] += spend
-            d["impr"] += impr
-            d["reach"] += rch
+            if cpm_v > 0:
+                d["cpms"].append(cpm_v)
 
     def _agg(d):
+        cs = d["cpms"]
         return {
-            "cpm": round(d["spend"] / d["impr"] * 1000, 2) if d["impr"] else None,
-            "cpp": round(d["spend"] / d["reach"] * 1000, 2) if d["reach"] else None,
+            "avg": round(sum(cs) / len(cs), 2) if cs else None,
+            "min": round(min(cs), 2) if cs else None,
+            "max": round(max(cs), 2) if cs else None,
+            "n": len(cs),
             "spend": round(d["spend"], 2),
-            "impressions": int(d["impr"]),
-            "reach": int(d["reach"]),
         }
 
     brands = sorted(brand_tot, key=lambda b: brand_tot[b]["spend"], reverse=True)
