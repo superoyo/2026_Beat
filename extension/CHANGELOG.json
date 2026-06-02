@@ -2,6 +2,15 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.164",
+      "date": "2026-06-01",
+      "title": "ย้ายเมนู Customer ขึ้นโซนบน (ใต้ Ads)",
+      "summary": "ย้ายเมนู Customer จากหมวด 'ภาพรวมระบบ' ขึ้นไปโซนบนต่อจาก Ads — ยังกรองตามสิทธิ์ IAM (admin เห็นเสมอ, member เห็นถ้าได้รับสิทธิ์ module customer)",
+      "changes": [
+        "ย้าย nav item Customer ไป section บนสุด (ใต้ Ads)"
+      ]
+    },
+    {
       "version": "1.9.163",
       "date": "2026-06-01",
       "title": "ย้ายเมนู Ads ขึ้นโซนบน (ใต้ Platforms)",
