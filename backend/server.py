@@ -8550,6 +8550,11 @@ def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
     k_spend = fieldmap.get("spend")
     k_impr = fieldmap.get("impressions")
     k_cpm = fieldmap.get("cpm")
+    k_obj = fieldmap.get("objective")
+    k_src = fieldmap.get("source")
+    k_reach = fieldmap.get("reach")
+    k_freq = fieldmap.get("frequency")
+    k_cpp = fieldmap.get("cpp")
     if not k_camp:
         raise HTTPException(status_code=502, detail="ไม่พบคอลัมน์ 'campaign' ในชีต")
 
@@ -8565,6 +8570,7 @@ def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
     cells: dict = {}
     brand_tot: dict = {}
     adtype_tot: dict = {}
+    details: dict = {}   # brand -> adtype -> [รายแคมเปญ]
     grand = _newd()
     n = 0
     for row in reader:
@@ -8589,6 +8595,17 @@ def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
             d["spend"] += spend
             if cpm_v > 0:
                 d["cpms"].append(cpm_v)
+        details.setdefault(brand, {}).setdefault(adtype, []).append({
+            "campaign": camp,
+            "objective": (row.get(k_obj) or "").strip() if k_obj else "",
+            "source": (row.get(k_src) or "").strip() if k_src else "",
+            "spend": round(spend, 2),
+            "impressions": int(round(impr)),
+            "reach": int(round(_ff(row.get(k_reach)))) if k_reach else None,
+            "frequency": round(_ff(row.get(k_freq)), 3) if k_freq else None,
+            "cpm": round(cpm_v, 2) if cpm_v > 0 else None,
+            "cpp": round(_ff(row.get(k_cpp)), 2) if k_cpp else None,
+        })
 
     def _agg(d):
         cs = d["cpms"]
@@ -8603,6 +8620,10 @@ def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
     brands = sorted(brand_tot, key=lambda b: brand_tot[b]["spend"], reverse=True)
     adtypes = sorted(adtype_tot, key=lambda t: adtype_tot[t]["spend"], reverse=True)
     matrix = {b: {t: _agg(cells[(b, t)]) for t in adtypes if (b, t) in cells} for b in brands}
+    # เรียงรายแคมเปญในแต่ละ cell ตาม spend มาก→น้อย
+    for b in details:
+        for t in details[b]:
+            details[b][t].sort(key=lambda x: x["spend"], reverse=True)
     return {
         "row_count": n,
         "brands": brands,
@@ -8611,6 +8632,7 @@ def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
         "brand_totals": {b: _agg(brand_tot[b]) for b in brands},
         "adtype_totals": {t: _agg(adtype_tot[t]) for t in adtypes},
         "grand": _agg(grand),
+        "details": details,
     }
 
 
