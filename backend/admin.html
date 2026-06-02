@@ -11548,46 +11548,68 @@ function renderMembersTable(members) {
 }
 
 // v1.9.140 — เมนู overflow ของ member (⋮ เพิ่มเติม) — render ลง body กัน table clip
+// v1.9.149 — เมนู ⋮ เพิ่มเติม → slide-out panel จากด้านขวา (ใช้สไตล์ .sup-panel)
 let _memberMenu = null;
-function closeMemberMenu() {
+function _removeMemberMenu() {
   if (!_memberMenu) return;
-  _memberMenu.menu.remove();
-  _memberMenu.backdrop.remove();
-  window.removeEventListener('scroll', _memberMenu.onDismiss, true);
-  window.removeEventListener('resize', _memberMenu.onDismiss);
   document.removeEventListener('keydown', _memberMenu.onKey);
+  try { _memberMenu.wrap.remove(); } catch {}
   _memberMenu = null;
 }
+function closeMemberMenu() {
+  if (!_memberMenu) return;
+  const wrap = _memberMenu.wrap, onKey = _memberMenu.onKey;
+  wrap.classList.remove('is-open');
+  document.removeEventListener('keydown', onKey);
+  _memberMenu = null;
+  setTimeout(() => { try { wrap.remove(); } catch {} }, 280);   // รอ transition จบ
+}
 function openMemberMenu(kebab) {
-  closeMemberMenu();
+  _removeMemberMenu();
   const src = document.querySelector(`.m-overflow[data-id="${kebab.dataset.id}"]`);
   if (!src) return;
-  const backdrop = document.createElement('div');
-  backdrop.style.cssText = 'position:fixed;inset:0;z-index:1400';
-  backdrop.addEventListener('click', closeMemberMenu);
-  document.body.appendChild(backdrop);
-  const menu = document.createElement('div');
-  menu.className = 'm-act-menu';
-  menu.style.cssText = 'position:fixed;z-index:1401;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,.18);padding:6px;min-width:210px;max-height:80vh;overflow-y:auto';
-  src.querySelectorAll('button[data-act]').forEach(b => {
-    const c = b.cloneNode(true);
-    c.addEventListener('click', (e) => { e.stopPropagation(); handleMemberAction(c); closeMemberMenu(); });
-    menu.appendChild(c);
+  const nameEl = src.querySelector('[data-name]');
+  const memberName = nameEl ? (nameEl.dataset.name || '') : '';
+  const wrap = document.createElement('div');
+  wrap.className = 'sup-panel-wrap';
+  wrap.innerHTML = `
+    <div class="sup-panel-backdrop"></div>
+    <div class="sup-panel" style="width:360px">
+      <div class="sup-panel-head" style="justify-content:space-between;align-items:center;padding:18px 20px 8px">
+        <div style="min-width:0">
+          <div style="font-size:10.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">ตัวเลือกเพิ่มเติม</div>
+          <div style="font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(memberName || '—')}</div>
+        </div>
+        <button class="sup-panel-close" title="ปิด">✕</button>
+      </div>
+      <div class="sup-panel-body" style="padding:8px 14px 24px">
+        <div id="member-act-list" style="display:flex;flex-direction:column;gap:2px"></div>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const list = wrap.querySelector('#member-act-list');
+  Array.from(src.children).forEach(b => {
+    if (b.tagName === 'BUTTON' && b.dataset.act) {
+      const c = b.cloneNode(true);
+      c.style.cssText += ';padding:13px 14px;font-size:14px;border-radius:9px';
+      c.addEventListener('mouseenter', () => { c.style.background = 'var(--bg-soft)'; });
+      c.addEventListener('mouseleave', () => { c.style.background = 'none'; });
+      c.addEventListener('click', (e) => {
+        e.stopPropagation();
+        _removeMemberMenu();          // ปิดทันที เพื่อให้ modal ของ action แสดงเต็ม
+        handleMemberAction(c);
+      });
+      list.appendChild(c);
+    } else {
+      list.appendChild(b.cloneNode(true));   // เส้นคั่น
+    }
   });
-  document.body.appendChild(menu);
-  // วางใต้ปุ่ม ชิดขวา; ถ้าล้นล่างให้พลิกขึ้น
-  const r = kebab.getBoundingClientRect();
-  let left = Math.max(8, r.right - menu.offsetWidth);
-  let top = r.bottom + 6;
-  if (top + menu.offsetHeight > window.innerHeight - 8) top = Math.max(8, r.top - menu.offsetHeight - 6);
-  menu.style.left = left + 'px';
-  menu.style.top = top + 'px';
-  const onDismiss = () => closeMemberMenu();
+  requestAnimationFrame(() => wrap.classList.add('is-open'));
+  wrap.querySelector('.sup-panel-backdrop').addEventListener('click', closeMemberMenu);
+  wrap.querySelector('.sup-panel-close').addEventListener('click', closeMemberMenu);
   const onKey = (e) => { if (e.key === 'Escape') closeMemberMenu(); };
-  window.addEventListener('scroll', onDismiss, true);
-  window.addEventListener('resize', onDismiss);
   document.addEventListener('keydown', onKey);
-  _memberMenu = { menu, backdrop, onDismiss, onKey };
+  _memberMenu = { wrap, onKey };
 }
 
 // === Modal: member usage stats (platform clicks) ===

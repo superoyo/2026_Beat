@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.149",
+      "date": "2026-06-01",
+      "title": "Peoples > Members: เมนู ⋮ เพิ่มเติม เปลี่ยนเป็น slide-out panel จากขวา",
+      "summary": "กดปุ่ม ⋮ เพิ่มเติม ในรายชื่อ Members จากเดิมเป็น dropdown popup เปลี่ยนเป็นพาเนลเลื่อนออกมาจากด้านขวา (สไตล์เดียวกับ panel ดูข้อมูลสมาชิก) แสดงชื่อ member + รายการ action เป็น list",
+      "changes": [
+        "openMemberMenu: ใช้ .sup-panel slide-out (กว้าง 360px) แทน dropdown ลอย",
+        "หัวพาเนลแสดงชื่อ member, action เป็น list item ใหญ่ขึ้น + hover",
+        "ปิดด้วยคลิก backdrop / ปุ่ม ✕ / Esc; คลิก action ปิดทันทีให้ modal แสดงเต็ม"
+      ]
+    },
+    {
       "version": "1.9.148",
       "date": "2026-06-01",
       "title": "ลบเมนู My Team (หน้าเดี่ยว) — ย้ายแพลตฟอร์มที่ทีมใช้ ไปไว้ใน My Profile > Team",
