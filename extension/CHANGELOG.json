@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.190",
+      "date": "2026-06-02",
+      "title": "Ads Report: เพิ่มคอลัมน์ CPV (ต่อจาก CPM) + ระบายสีเทียบ benchmark",
+      "summary": "หน้า Report เพิ่มคอลัมน์ CPV ถัดจาก CPM ระบายสี capsule เทียบ benchmark เช่นเดียวกับ CPM (เขียว/เหลือง/แดง)",
+      "changes": [
+        "Backend ads-spend: ดึง actions_video_view → views + cpv ต่อแคมเปญ/บัญชี (connector all ปลอดภัย)",
+        "Backend ads-benchmark: คำนวณ CPV benchmark ต่อ Brand×AdType (จากคอลัมน์ cost_per_action_type_video_view) ใส่ใน cell.cpv",
+        "Frontend: คอลัมน์ CPV + _benchCapsule ใช้ร่วม CPM/CPV, _benchCpvAvgFor, CSV เพิ่ม Views/CPV"
+      ]
+    },
+    {
       "version": "1.9.189",
       "date": "2026-06-02",
       "title": "Ads Report: ระบายสี CPM เทียบ Benchmark (เขียว/เหลือง/แดง)",

@@ -8386,7 +8386,7 @@ def ads_spend(days: int = 7, date_from: str | None = None, date_to: str | None =
         return raw.get("data", []) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
 
     try:
-        rows = _windsor("source,account_id,account_name,campaign,objective,ad_type,ad_format,object_type,effective_instagram_media__media_type,spend,impressions,clicks,reach,currency")
+        rows = _windsor("source,account_id,account_name,campaign,objective,ad_type,ad_format,object_type,effective_instagram_media__media_type,spend,impressions,clicks,reach,currency,actions_video_view")
         trend_rows = _windsor("source,date,spend")
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:300] if hasattr(e, "read") else ""
@@ -8415,15 +8415,17 @@ def ads_spend(days: int = 7, date_from: str | None = None, date_to: str | None =
         if ot == "VIDEO": return "video"
         return "other"
 
-    def _metrics(spend: float, impr: float, clk: float, reach: float) -> dict[str, Any]:
+    def _metrics(spend: float, impr: float, clk: float, reach: float, views: float = 0.0) -> dict[str, Any]:
         return {
             "spend": round(spend, 2),
             "impressions": int(round(impr)),
             "clicks": int(round(clk)),
             "reach": int(round(reach)),
+            "views": int(round(views)),
             "ctr": round(clk / impr * 100, 2) if impr else None,
             "cpc": round(spend / clk, 2) if clk else None,
             "cpm": round(spend / impr * 1000, 2) if impr else None,
+            "cpv": round(spend / views, 4) if views else None,
             "frequency": round(impr / reach, 2) if reach else None,
         }
 
@@ -8440,20 +8442,23 @@ def ads_spend(days: int = 7, date_from: str | None = None, date_to: str | None =
         # v1.9.165 — ad type = objective (fallback ad_type สำหรับ tiktok)
         ad_type = (str(r.get("objective") or "").strip()) or (str(r.get("ad_type") or "").strip()) or "(ไม่ระบุ)"
         spend, impr, clk, rch = _f(r.get("spend")), _f(r.get("impressions")), _f(r.get("clicks")), _f(r.get("reach"))
+        vws = _f(r.get("actions_video_view"))
         p = platforms.setdefault(source, {"source": source, "accounts": {}, "total_by_cur": {}})
         key = acc_id or acc_name
         a = p["accounts"].setdefault(key, {"account_id": acc_id, "account_name": acc_name, "currency": cur,
-                                           "spend": 0.0, "impressions": 0.0, "clicks": 0.0, "reach": 0.0, "campaigns": {}})
+                                           "spend": 0.0, "impressions": 0.0, "clicks": 0.0, "reach": 0.0, "views": 0.0, "campaigns": {}})
         a["spend"] += spend
         a["impressions"] += impr
         a["clicks"] += clk
         a["reach"] += rch
-        c = a["campaigns"].setdefault(campaign, {"campaign": campaign, "ad_type": ad_type, "spend": 0.0, "impressions": 0.0, "clicks": 0.0, "reach": 0.0, "_fmt": {}})
+        a["views"] += vws
+        c = a["campaigns"].setdefault(campaign, {"campaign": campaign, "ad_type": ad_type, "spend": 0.0, "impressions": 0.0, "clicks": 0.0, "reach": 0.0, "views": 0.0, "_fmt": {}})
         c["ad_type"] = ad_type
         c["spend"] += spend
         c["impressions"] += impr
         c["clicks"] += clk
         c["reach"] += rch
+        c["views"] += vws
         # v1.9.166 — เก็บ spend ต่อ ad format เพื่อหา format หลักของแคมเปญ
         c["_fmt"][_norm_fmt(r)] = c["_fmt"].get(_norm_fmt(r), 0.0) + spend
         p["total_by_cur"][cur] = p["total_by_cur"].get(cur, 0.0) + spend
@@ -8469,12 +8474,12 @@ def ads_spend(days: int = 7, date_from: str | None = None, date_to: str | None =
                 return max(pick, key=pick.get) if pick else "other"
             camps = sorted(
                 ({"campaign": c["campaign"], "ad_type": c.get("ad_type"), "ad_format": _dom_fmt(c),
-                  **_metrics(c["spend"], c["impressions"], c["clicks"], c["reach"])}
+                  **_metrics(c["spend"], c["impressions"], c["clicks"], c["reach"], c.get("views", 0.0))}
                  for c in a["campaigns"].values()),
                 key=lambda x: x["spend"], reverse=True,
             )
             acc_out.append({"account_id": a["account_id"], "account_name": a["account_name"], "currency": a["currency"],
-                            **_metrics(a["spend"], a["impressions"], a["clicks"], a["reach"]), "campaigns": camps})
+                            **_metrics(a["spend"], a["impressions"], a["clicks"], a["reach"], a.get("views", 0.0)), "campaigns": camps})
         # platform-level totals (สรุปรวมต่อแพลตฟอร์ม — ไม่ขึ้นกับสกุลเงิน)
         t_impr = sum(a["impressions"] for a in acc_out)
         t_clk = sum(a["clicks"] for a in acc_out)
@@ -8603,6 +8608,7 @@ def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
     k_reach = fieldmap.get("reach")
     k_freq = fieldmap.get("frequency")
     k_cpp = fieldmap.get("cpp")
+    k_cpv = fieldmap.get("cost_per_action_type_video_view")   # CPV ต่อแถว
     if not k_camp:
         raise HTTPException(status_code=502, detail="ไม่พบคอลัมน์ 'campaign' ในชีต")
 
@@ -8613,7 +8619,7 @@ def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
             return 0.0
 
     def _newd():
-        return {"spend": 0.0, "cpms": []}
+        return {"spend": 0.0, "cpms": [], "cpvs": []}
 
     # ---- อ่านทุกแถวเป็น record ก่อน แล้วค่อยสรุปได้ทั้งแบบ brand และ category ----
     recs: list = []
@@ -8628,6 +8634,7 @@ def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
             cpm_v = spend / impr * 1000
         if spend == 0 and impr == 0:
             continue
+        cpv_v = _ff(row.get(k_cpv)) if k_cpv else 0.0
         brand = _bench_brand(camp)
         recs.append({
             "brand": brand,
@@ -8635,6 +8642,7 @@ def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
             "adtype": _bench_adtype(camp),
             "spend": spend,
             "cpm": cpm_v,
+            "cpv": cpv_v,
             "detail": {
                 "campaign": camp,
                 "objective": (row.get(k_obj) or "").strip() if k_obj else "",
@@ -8644,6 +8652,7 @@ def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
                 "reach": int(round(_ff(row.get(k_reach)))) if k_reach else None,
                 "frequency": round(_ff(row.get(k_freq)), 3) if k_freq else None,
                 "cpm": round(cpm_v, 2) if cpm_v > 0 else None,
+                "cpv": round(cpv_v, 4) if cpv_v > 0 else None,
                 "cpp": round(_ff(row.get(k_cpp)), 2) if k_cpp else None,
             },
         })
@@ -8651,12 +8660,19 @@ def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
 
     def _agg(d):
         cs = d["cpms"]
+        vs = d["cpvs"]
         return {
             "avg": round(sum(cs) / len(cs), 2) if cs else None,
             "min": round(min(cs), 2) if cs else None,
             "max": round(max(cs), 2) if cs else None,
             "n": len(cs),
             "spend": round(d["spend"], 2),
+            "cpv": {
+                "avg": round(sum(vs) / len(vs), 4) if vs else None,
+                "min": round(min(vs), 4) if vs else None,
+                "max": round(max(vs), 4) if vs else None,
+                "n": len(vs),
+            },
         }
 
     def _build_view(group_key: str) -> dict:
@@ -8666,7 +8682,7 @@ def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
         details: dict = {}
         grand = _newd()
         for r in recs:
-            g, t, spend, cpm_v = r[group_key], r["adtype"], r["spend"], r["cpm"]
+            g, t, spend, cpm_v, cpv_v = r[group_key], r["adtype"], r["spend"], r["cpm"], r["cpv"]
             for d in (cells.setdefault((g, t), _newd()),
                       gtot.setdefault(g, _newd()),
                       atot.setdefault(t, _newd()),
@@ -8674,6 +8690,8 @@ def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
                 d["spend"] += spend
                 if cpm_v > 0:
                     d["cpms"].append(cpm_v)
+                if cpv_v > 0:
+                    d["cpvs"].append(cpv_v)
             details.setdefault(g, {}).setdefault(t, []).append(r["detail"])
         groups = sorted(gtot, key=lambda x: gtot[x]["spend"], reverse=True)
         adtypes = sorted(atot, key=lambda x: atot[x]["spend"], reverse=True)

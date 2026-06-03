@@ -1442,6 +1442,13 @@ function _benchAvgFor(campaign) {
   const cell = _benchData.matrix[b] && _benchData.matrix[b][t];
   return (cell && cell.avg != null) ? cell.avg : null;
 }
+// v1.9.190 — benchmark avg CPV (brand × adtype) ของแคมเปญ
+function _benchCpvAvgFor(campaign) {
+  if (!_benchData || !_benchData.matrix) return null;
+  const b = _benchBrandOf(campaign), t = _benchAdTypeOf(campaign);
+  const cell = _benchData.matrix[b] && _benchData.matrix[b][t];
+  return (cell && cell.cpv && cell.cpv.avg != null) ? cell.cpv.avg : null;
+}
 const _ADS_OBJ = {
   OUTCOME_AWARENESS: 'Awareness', OUTCOME_ENGAGEMENT: 'Engagement', OUTCOME_SALES: 'Sales',
   OUTCOME_TRAFFIC: 'Traffic', OUTCOME_LEADS: 'Leads', OUTCOME_APP_PROMOTION: 'App Promotion',
@@ -2223,7 +2230,7 @@ function renderAdsBody() {
     ${_adsTrendSvg(_adsData.trend)}
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
       <div style="font-size:12.5px;color:var(--text-muted)">📅 ${dateRange} · รวมทั้งหมด <strong style="color:var(--primary)">${_adsTotalTxt(grand)}</strong>
-        <span style="margin-left:6px;font-size:10.5px;white-space:nowrap">CPM vs benchmark:
+        <span style="margin-left:6px;font-size:10.5px;white-space:nowrap">CPM/CPV vs benchmark:
           <span style="padding:0 6px;border-radius:999px;background:rgba(22,163,74,.14);color:#16a34a;font-weight:700">ต่ำ</span>
           <span style="padding:0 6px;border-radius:999px;background:rgba(245,158,11,.18);color:#b45309;font-weight:700">+เล็กน้อย</span>
           <span style="padding:0 6px;border-radius:999px;background:rgba(220,38,38,.14);color:#dc2626;font-weight:700">สูง</span>
@@ -2253,23 +2260,24 @@ function renderAdsBody() {
 }
 // v1.9.161 — metrics เป็นคอลัมน์ในตาราง
 function _adsDash() { return '<span style="color:var(--text-soft)">—</span>'; }
-// v1.9.189 — เทียบ CPM กับ benchmark → capsule สี (เขียว/เหลือง/แดง)
-function _cpmBenchCell(cpm, benchAvg) {
-  if (cpm == null) return _adsDash();
-  if (benchAvg == null || !(benchAvg > 0)) return _adsMoney(cpm);
-  const ratio = cpm / benchAvg;
+// v1.9.189/190 — เทียบค่ากับ benchmark → capsule สี (เขียว/เหลือง/แดง)
+function _benchCapsule(val, benchAvg, fmt) {
+  if (val == null) return _adsDash();
+  if (benchAvg == null || !(benchAvg > 0)) return fmt(val);
+  const ratio = val / benchAvg;
   let bg, fg, tip;
   if (ratio <= 1.0) { bg = 'rgba(22,163,74,.14)'; fg = '#16a34a'; tip = 'ต่ำกว่า/เท่า benchmark'; }
   else if (ratio <= 1.10) { bg = 'rgba(245,158,11,.18)'; fg = '#b45309'; tip = 'สูงกว่า benchmark เล็กน้อย'; }
   else { bg = 'rgba(220,38,38,.14)'; fg = '#dc2626'; tip = 'สูงกว่า benchmark'; }
   const pct = Math.round((ratio - 1) * 100);
   const sign = pct > 0 ? '+' : '';
-  return `<span style="display:inline-block;padding:1px 9px;border-radius:999px;background:${bg};color:${fg};font-weight:700" title="benchmark ${_adsMoney(benchAvg)} · ${tip} (${sign}${pct}%)">${_adsMoney(cpm)}</span>`;
+  return `<span style="display:inline-block;padding:1px 9px;border-radius:999px;background:${bg};color:${fg};font-weight:700" title="benchmark ${fmt(benchAvg)} · ${tip} (${sign}${pct}%)">${fmt(val)}</span>`;
 }
-function _adsMetricCells(m, cur, benchAvg) {
+function _adsMetricCells(m, cur, benchAvg, benchCpvAvg) {
   const d = _adsDash();
   return `
-    <td class="tnum" style="font-weight:600">${m.cpm != null ? _cpmBenchCell(m.cpm, benchAvg) : d}</td>
+    <td class="tnum" style="font-weight:600">${m.cpm != null ? _benchCapsule(m.cpm, benchAvg, _adsMoney) : d}</td>
+    <td class="tnum" style="font-weight:600">${m.cpv != null ? _benchCapsule(m.cpv, benchCpvAvg, _adsMoney4) : d}</td>
     <td class="tnum">${m.spend != null ? `${_adsMoney(m.spend)} <span style="color:var(--text-soft);font-size:10px;font-weight:400">${escapeHtml(cur || '')}</span>` : d}</td>
     <td class="tnum">${m.impressions ? _adsInt(m.impressions) : d}</td>
     <td class="tnum">${m.reach ? _adsInt(m.reach) : d}</td>
@@ -2287,6 +2295,7 @@ function renderAdsCards() {
   const thead = `<thead><tr>
     <th style="text-align:left">บัญชี / แคมเปญ</th>
     <th style="text-align:right">CPM</th>
+    <th style="text-align:right">CPV</th>
     <th style="text-align:right">Spend</th>
     <th style="text-align:right">Impr.</th>
     <th style="text-align:right">Reach</th>
@@ -2329,7 +2338,7 @@ function renderAdsCards() {
       const campRows = camps.map(c => `
         <tr class="ads-camp-row" data-camp-of="${ai}" data-bench-camp="${escapeHtml(c.campaign)}" data-bench-cpm="${c.cpm == null ? '' : c.cpm}" style="display:${open ? '' : 'none'};cursor:pointer" title="คลิกดู Benchmark">
           <td style="padding-left:32px;max-width:380px"><span style="display:inline-flex;align-items:center;gap:6px;max-width:100%"><span style="color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(c.campaign)}</span>${c.ad_format && _ADS_FMT_ICON[c.ad_format] ? `<span style="flex-shrink:0" title="${escapeHtml(_adsFmtLabel(c.ad_format))}">${_ADS_FMT_ICON[c.ad_format]}</span>` : ''}${c.ad_type ? `<span style="flex-shrink:0;font-size:9px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--bg-hover);color:var(--text-soft)" title="Objective">${escapeHtml(_adsTypeLabel(c.ad_type))}</span>` : ''}<span style="flex-shrink:0;color:var(--text-soft);font-size:10px">📈</span></span></td>
-          ${_adsMetricCells(c, a.currency, _benchAvgFor(c.campaign))}
+          ${_adsMetricCells(c, a.currency, _benchAvgFor(c.campaign), _benchCpvAvgFor(c.campaign))}
         </tr>`).join('');
       return accRow + campRows;
     }).join('');
@@ -2338,6 +2347,7 @@ function renderAdsCards() {
       <tr class="ads-tot-row">
         <td>รวมทั้งแพลตฟอร์ม</td>
         <td class="tnum">${oneCur && pt.cpm != null ? _adsMoney(pt.cpm) : _adsDash()}</td>
+        <td class="tnum">${oneCur && pt.cpv != null ? _adsMoney4(pt.cpv) : _adsDash()}</td>
         <td class="tnum">${_adsTotalTxt(tbc)}</td>
         <td class="tnum">${pt.impressions ? _adsInt(pt.impressions) : _adsDash()}</td>
         <td class="tnum">${pt.reach ? _adsInt(pt.reach) : _adsDash()}</td>
@@ -2382,13 +2392,13 @@ function renderAdsCards() {
 function exportAdsCsv() {
   if (!_adsData || !_adsData.platforms) return;
   const esc = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-  const lines = [['Platform', 'Account', 'Account ID', 'Campaign', 'Objective', 'Ad Format', 'Spend', 'Currency', 'Impressions', 'Reach', 'Frequency', 'Clicks', 'CTR(%)', 'CPC', 'CPM'].join(',')];
+  const lines = [['Platform', 'Account', 'Account ID', 'Campaign', 'Objective', 'Ad Format', 'Spend', 'Currency', 'Impressions', 'Reach', 'Frequency', 'Clicks', 'CTR(%)', 'CPC', 'CPM', 'Views', 'CPV'].join(',')];
   _adsData.platforms.forEach(p => {
     const label = _adsSrcMeta(p.source).label;
     (p.accounts || []).forEach(a => {
       (a.campaigns || []).forEach(c => {
         const nz = v => (v == null ? '' : v);
-        lines.push([label, a.account_name, a.account_id, c.campaign, _adsTypeLabel(c.ad_type || ''), _adsFmtLabel(c.ad_format || 'other'), c.spend, a.currency, c.impressions, c.reach, nz(c.frequency), c.clicks, nz(c.ctr), nz(c.cpc), nz(c.cpm)].map(esc).join(','));
+        lines.push([label, a.account_name, a.account_id, c.campaign, _adsTypeLabel(c.ad_type || ''), _adsFmtLabel(c.ad_format || 'other'), c.spend, a.currency, c.impressions, c.reach, nz(c.frequency), c.clicks, nz(c.ctr), nz(c.cpc), nz(c.cpm), nz(c.views), nz(c.cpv)].map(esc).join(','));
       });
     });
   });
