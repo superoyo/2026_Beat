@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.189",
+      "date": "2026-06-02",
+      "title": "Ads Report: ระบายสี CPM เทียบ Benchmark (เขียว/เหลือง/แดง)",
+      "summary": "ช่อง CPM ของแต่ละแคมเปญในหน้า Report ทำเป็น capsule สีตามการเทียบกับ benchmark (brand×adtype): เขียว=ต่ำกว่า/เท่า, เหลืองอ่อน=สูงกว่าเล็กน้อย(<+10%), แดง=สูงกว่ามาก",
+      "changes": [
+        "_cpmBenchCell: capsule สีตาม ratio CPM/benchmark + tooltip (%/benchmark)",
+        "โหลด benchmark พื้นหลังในหน้า Report แล้ว re-render สีเมื่อพร้อม",
+        "legend สีในแถบสรุป"
+      ]
+    },
+    {
       "version": "1.9.188",
       "date": "2026-06-02",
       "title": "Ads Report: เพิ่ม preset วันนี้ + เลือกช่วงวันแบบปฏิทิน",
