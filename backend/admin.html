@@ -2081,6 +2081,43 @@ async function openBenchCellPanel(rowKey, adtype) {
   wrap.querySelector('.sup-panel-close').addEventListener('click', close);
 }
 // v1.9.170 — คลิกแคมเปญใน Report → slide-out แสดง benchmark ของ Brand × Ad Type นั้น
+// v1.9.192 — Box Plot สำหรับการกระจายตัวของค่า (min/Q1/median/Q3/max) + จุดค่าแคมเปญนี้
+function _quantile(sorted, q) {
+  const n = sorted.length;
+  if (n === 1) return sorted[0];
+  const pos = (n - 1) * q, lo = Math.floor(pos), hi = Math.ceil(pos);
+  return lo === hi ? sorted[lo] : sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
+function _benchBoxPlot(values, fmt, ownVal) {
+  const vals = (values || []).filter(v => v != null && isFinite(v) && v > 0).sort((a, b) => a - b);
+  const n = vals.length;
+  if (n < 2) return '';
+  const q1 = _quantile(vals, 0.25), med = _quantile(vals, 0.5), q3 = _quantile(vals, 0.75);
+  const dmin = vals[0], dmax = vals[n - 1];
+  let lo = dmin, hi = dmax;
+  if (ownVal != null && isFinite(ownVal)) { lo = Math.min(lo, ownVal); hi = Math.max(hi, ownVal); }
+  const pad = ((hi - lo) || 1) * 0.08; lo -= pad; hi += pad;
+  const W = 360, H = 78, padL = 10, padR = 10, cy = 30, boxH = 24;
+  const innerW = W - padL - padR, span = (hi - lo) || 1;
+  const X = v => padL + (v - lo) / span * innerW;
+  const top = cy - boxH / 2, bot = cy + boxH / 2;
+  const whisk = `<line x1="${X(dmin).toFixed(1)}" y1="${cy}" x2="${X(q1).toFixed(1)}" y2="${cy}" stroke="var(--text-soft)" stroke-width="1.5"/>
+    <line x1="${X(q3).toFixed(1)}" y1="${cy}" x2="${X(dmax).toFixed(1)}" y2="${cy}" stroke="var(--text-soft)" stroke-width="1.5"/>
+    <line x1="${X(dmin).toFixed(1)}" y1="${cy - 7}" x2="${X(dmin).toFixed(1)}" y2="${cy + 7}" stroke="var(--text-soft)" stroke-width="1.5"/>
+    <line x1="${X(dmax).toFixed(1)}" y1="${cy - 7}" x2="${X(dmax).toFixed(1)}" y2="${cy + 7}" stroke="var(--text-soft)" stroke-width="1.5"/>`;
+  const box = `<rect x="${X(q1).toFixed(1)}" y="${top}" width="${Math.max(1, X(q3) - X(q1)).toFixed(1)}" height="${boxH}" fill="rgba(37,99,235,.12)" stroke="var(--primary)" stroke-width="1.5" rx="3"/>
+    <line x1="${X(med).toFixed(1)}" y1="${top}" x2="${X(med).toFixed(1)}" y2="${bot}" stroke="var(--primary)" stroke-width="2.4"/>`;
+  let own = '';
+  if (ownVal != null && isFinite(ownVal)) {
+    own = `<line x1="${X(ownVal).toFixed(1)}" y1="${top - 9}" x2="${X(ownVal).toFixed(1)}" y2="${bot + 6}" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="3 2"/>
+      <circle cx="${X(ownVal).toFixed(1)}" cy="${cy}" r="4" fill="#dc2626"/>
+      <text x="${X(ownVal).toFixed(1)}" y="${top - 12}" font-size="9" fill="#dc2626" text-anchor="middle" font-weight="700">${fmt(ownVal)}</text>`;
+  }
+  const svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block">${whisk}${box}${own}</svg>`;
+  const sc = (l, v) => `<div style="text-align:center"><div style="font-size:8px;color:var(--text-soft);text-transform:uppercase;letter-spacing:.3px">${l}</div><div style="font-size:11px;font-weight:700">${fmt(v)}</div></div>`;
+  const stats = `<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:2px">${sc('Min', dmin)}${sc('Q1', q1)}${sc('Median', med)}${sc('Q3', q3)}${sc('Max', dmax)}</div>`;
+  return svg + stats;
+}
 async function openBenchmarkPanel(campaign, ownVal, metric) {
   metric = metric || 'cpm';
   const isCpv = metric === 'cpv';
@@ -2127,6 +2164,15 @@ async function openBenchmarkPanel(campaign, ownVal, metric) {
       <div style="font-size:12.5px;color:var(--text-muted);margin-top:5px">ช่วง ${fmt(c.min)} – ${fmt(c.max)} · จาก ${c.n} แคมเปญ</div>
     </div>` : '';
   const hasCell = cell && cell.avg != null;
+  // Box Plot — การกระจายของค่าในชีต (brand × adtype) + จุดค่าแคมเปญนี้
+  const det = (_benchData.details && _benchData.details[brand] && _benchData.details[brand][adtype]) || [];
+  const detVals = det.map(x => x[metric]).filter(v => v != null && v > 0);
+  const boxHtml = _benchBoxPlot(detVals, fmt, ownVal);
+  const boxBlock = boxHtml ? `<div style="border:1px solid var(--border);border-radius:12px;padding:12px 12px 10px;margin-bottom:14px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+      <div style="font-size:11.5px;font-weight:700;color:var(--text-muted)">การกระจายตัว ${mLabel} (Box Plot)</div>
+      <div style="font-size:9.5px;color:var(--text-soft)"><span style="color:#dc2626">●</span> แคมเปญนี้ · ${detVals.length} จุด</div>
+    </div>${boxHtml}</div>` : '';
   let cmp = '';
   if (ownVal != null && hasCell) {
     const diff = ((ownVal - cell.avg) / cell.avg) * 100;
@@ -2140,6 +2186,7 @@ async function openBenchmarkPanel(campaign, ownVal, metric) {
     cmp = `<div style="padding:13px 15px;border-radius:11px;background:var(--bg-soft);margin-bottom:14px"><div style="font-size:12px;color:var(--text-muted)">${mLabel} ของแคมเปญนี้ (Report)</div><div style="font-size:22px;font-weight:800">${fmt(ownVal)}</div></div>`;
   }
   pbody.innerHTML = `
+    ${boxBlock}
     ${cmp}
     ${hasCell ? statBox(`Benchmark — ${escapeHtml(brand)} × ${escapeHtml(adtype)}`, cell, true)
            : `<div class="empty" style="padding:18px;text-align:center;font-size:12.5px">— ไม่มีข้อมูล benchmark ${mLabel} สำหรับ brand × ad type นี้ —</div>`}

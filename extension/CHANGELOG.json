@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.192",
+      "date": "2026-06-02",
+      "title": "Benchmark panel: เพิ่ม Box Plot การกระจายตัว (CPM/CPV) ด้านบนสุด",
+      "summary": "พาเนล Benchmark (คลิก CPM/CPV ในหน้า Report) เพิ่ม Box Plot ด้านบนสุด แสดง min/Q1/median/Q3/max ของค่าในชีต (brand×adtype) พร้อมจุดแดงบอกตำแหน่งค่าแคมเปญนี้",
+      "changes": [
+        "_benchBoxPlot + _quantile: วาด box plot (กล่อง+หนวด+median) จาก details",
+        "จุดแดงประ = ค่าแคมเปญนี้ เทียบกับการกระจาย + สถิติ Min/Q1/Median/Q3/Max",
+        "แสดงทั้งโหมด CPM และ CPV"
+      ]
+    },
+    {
       "version": "1.9.191",
       "date": "2026-06-02",
       "title": "Ads Report: คลิกค่า CPM → Benchmark CPM, คลิกค่า CPV → Benchmark CPV",
