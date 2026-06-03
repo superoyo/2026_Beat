@@ -1411,6 +1411,8 @@ function renderDashboardEmbed() {
 
 // ============== v1.9.157 — Ads (ยอดใช้จ่ายค่าโฆษณา จาก Windsor) ==============
 let _adsDays = 7;
+let _adsFrom = '';          // v1.9.188 — ช่วงวันแบบกำหนดเอง (ปฏิทิน)
+let _adsTo = '';
 let _adsData = null;
 let _adsSearch = '';
 let _adsType = '__all__';   // v1.9.165 — filter ตาม ad type (objective)
@@ -1529,18 +1531,45 @@ function renderAdsSection(active) {
   ]});
 }
 async function renderAdsReport() {
+  const isCustom = !!(_adsFrom && _adsTo);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const inStyle = 'padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:9px;background:var(--bg-input);color:var(--text)';
   _subMain().innerHTML = `
     <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:14px">
       <select id="ads-days" style="padding:8px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:9px;background:var(--bg-input);color:var(--text);cursor:pointer">
+        <option value="1">วันนี้</option>
         <option value="7">7 วันล่าสุด</option>
         <option value="14">14 วันล่าสุด</option>
         <option value="30">30 วันล่าสุด</option>
+        <option value="custom">📅 กำหนดเอง…</option>
       </select>
+      <span id="ads-range" style="display:${isCustom ? 'inline-flex' : 'none'};align-items:center;gap:6px">
+        <input type="date" id="ads-from" max="${todayStr}" value="${escapeHtml(_adsFrom || todayStr)}" style="${inStyle}">
+        <span style="color:var(--text-soft)">–</span>
+        <input type="date" id="ads-to" max="${todayStr}" value="${escapeHtml(_adsTo || todayStr)}" style="${inStyle}">
+        <button class="btn" id="ads-apply" style="font-size:13px;padding:7px 13px">ใช้</button>
+      </span>
       <button class="btn" id="ads-refresh" style="font-size:13px;padding:8px 14px">🔄 รีเฟรช</button>
     </div>
     <div id="ads-body"><div class="empty">กำลังโหลด…</div></div>`;
-  const sel = $('ads-days');
-  if (sel) { sel.value = String(_adsDays); sel.onchange = () => { _adsDays = parseInt(sel.value, 10) || 7; _adsSearch = ''; _adsType = '__all__'; loadAdsSpend(); }; }
+  const sel = $('ads-days'), range = $('ads-range');
+  if (sel) {
+    sel.value = isCustom ? 'custom' : String(_adsDays);
+    sel.onchange = () => {
+      if (sel.value === 'custom') { if (range) range.style.display = 'inline-flex'; return; }
+      if (range) range.style.display = 'none';
+      _adsFrom = ''; _adsTo = ''; _adsDays = parseInt(sel.value, 10) || 7;
+      _adsSearch = ''; _adsType = '__all__'; loadAdsSpend();
+    };
+  }
+  const apply = $('ads-apply');
+  if (apply) apply.onclick = () => {
+    const f = $('ads-from'), t = $('ads-to');
+    if (!f || !t || !f.value || !t.value) { alert('เลือกวันเริ่มและวันสิ้นสุด'); return; }
+    _adsFrom = f.value > t.value ? t.value : f.value;
+    _adsTo = f.value > t.value ? f.value : t.value;
+    _adsSearch = ''; _adsType = '__all__'; loadAdsSpend();
+  };
   const rb = $('ads-refresh');
   if (rb) rb.onclick = () => loadAdsSpend();
   loadAdsSpend();
@@ -2151,7 +2180,8 @@ async function loadAdsSpend() {
   const body = $('ads-body');
   if (!body) return;
   body.innerHTML = '<div class="empty">⏳ กำลังดึงข้อมูลจาก Windsor… (อาจใช้เวลาสักครู่)</div>';
-  try { _adsData = await fetchJson(`/api/ads-spend?days=${_adsDays}`); }
+  const qs = (_adsFrom && _adsTo) ? `date_from=${encodeURIComponent(_adsFrom)}&date_to=${encodeURIComponent(_adsTo)}` : `days=${_adsDays}`;
+  try { _adsData = await fetchJson(`/api/ads-spend?${qs}`); }
   catch (e) {
     const msg = e.message || '';
     if (/WINDSOR_API_KEY/.test(msg)) {

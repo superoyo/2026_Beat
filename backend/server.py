@@ -8351,14 +8351,30 @@ def _windsor_get(fields: str, date_from: str, date_to: str, timeout: int = 40, c
 # v1.9.157 — Ads spend (ดึงจาก Windsor.ai — 7 วันย้อนหลัง แยกตาม platform & ad account)
 # ===========================================================================
 @app.get("/api/ads-spend")
-def ads_spend(days: int = 7, _sess: dict = Depends(_require_module("ads"))) -> dict[str, Any]:
+def ads_spend(days: int = 7, date_from: str | None = None, date_to: str | None = None,
+              _sess: dict = Depends(_require_module("ads"))) -> dict[str, Any]:
     if not WINDSOR_API_KEY:
         raise HTTPException(status_code=503,
                             detail="ยังไม่ได้ตั้งค่า WINDSOR_API_KEY ใน environment — ตั้งค่าบน Railway ก่อนใช้งาน")
-    days = max(1, min(int(days or 7), 90))
     today = utc_now().date()
-    date_to = today.isoformat()
-    date_from = (today - timedelta(days=days - 1)).isoformat()
+
+    def _parse_d(s):
+        try:
+            return datetime.strptime((s or "").strip(), "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            return None
+
+    df, dt = _parse_d(date_from), _parse_d(date_to)
+    if df and dt:
+        if df > dt:
+            df, dt = dt, df
+        if (dt - df).days > 92:                 # จำกัดช่วงไม่เกิน ~3 เดือน
+            df = dt - timedelta(days=92)
+        date_from, date_to = df.isoformat(), dt.isoformat()
+    else:
+        days = max(1, min(int(days or 7), 90))
+        date_to = today.isoformat()
+        date_from = (today - timedelta(days=days - 1)).isoformat()
     from urllib.parse import urlencode as _urlencode
 
     def _windsor(fields: str) -> list:

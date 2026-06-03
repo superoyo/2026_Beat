@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.188",
+      "date": "2026-06-02",
+      "title": "Ads Report: เพิ่ม preset วันนี้ + เลือกช่วงวันแบบปฏิทิน",
+      "summary": "ตัวเลือกช่วงเวลาในหน้า Report เพิ่ม 'วันนี้' และ 'กำหนดเอง…' (เลือกวันเริ่ม-สิ้นสุดจากปฏิทิน) backend รองรับ date_from/date_to (จำกัดช่วงไม่เกิน ~92 วัน)",
+      "changes": [
+        "Backend /api/ads-spend: รับ date_from & date_to (override days)",
+        "Frontend: dropdown เพิ่ม 'วันนี้' (1 วัน) + 'กำหนดเอง…' เปิด date picker เริ่ม-สิ้นสุด",
+        "ปุ่ม ใช้ เพื่อโหลดช่วงที่เลือก"
+      ]
+    },
+    {
       "version": "1.9.187",
       "date": "2026-06-02",
       "title": "กราฟการกระจาย: แสดงค่าในตาราง (ถ่วงน้ำหนัก) เทียบกับ mean",
