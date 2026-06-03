@@ -2081,7 +2081,10 @@ async function openBenchCellPanel(rowKey, adtype) {
   wrap.querySelector('.sup-panel-close').addEventListener('click', close);
 }
 // v1.9.170 — คลิกแคมเปญใน Report → slide-out แสดง benchmark ของ Brand × Ad Type นั้น
-async function openBenchmarkPanel(campaign, ownCpm) {
+async function openBenchmarkPanel(campaign, ownVal, metric) {
+  metric = metric || 'cpm';
+  const isCpv = metric === 'cpv';
+  const mLabel = isCpv ? 'CPV' : 'CPM';
   document.querySelectorAll('.sup-panel-wrap').forEach(e => e.remove());
   const brand = _benchBrandOf(campaign), adtype = _benchAdTypeOf(campaign);
   const wrap = document.createElement('div');
@@ -2091,7 +2094,7 @@ async function openBenchmarkPanel(campaign, ownCpm) {
     <div class="sup-panel" style="width:420px">
       <div class="sup-panel-head"><button class="sup-panel-close" title="ปิด">✕</button></div>
       <div class="sup-panel-body" style="padding:4px 24px 28px">
-        <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">📈 Benchmark CPM</div>
+        <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">📈 Benchmark ${mLabel}</div>
         <div style="font-size:14.5px;font-weight:700;margin:3px 0 10px;line-height:1.35;word-break:break-word">${escapeHtml(campaign)}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
           <span style="font-size:12px;padding:3px 11px;border-radius:999px;background:rgba(37,99,235,.10);color:var(--primary);font-weight:600">🏷️ ${escapeHtml(brand)}</span>
@@ -2110,32 +2113,36 @@ async function openBenchmarkPanel(campaign, ownCpm) {
   const pbody = wrap.querySelector('#bench-panel-body');
   try { if (!_benchData) _benchData = await fetchJson('/api/ads-benchmark'); }
   catch (e) { pbody.innerHTML = `<div class="empty">โหลด benchmark ไม่สำเร็จ: ${escapeHtml(e.message)}</div>`; return; }
-  const f2 = v => v == null ? '—' : Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const cell = (_benchData.matrix[brand] || {})[adtype];
-  const bt = _benchData.brand_totals[brand];
-  const at = _benchData.adtype_totals[adtype];
-  const statBox = (title, c, hi) => c ? `
+  const fmt = isCpv
+    ? (v => v == null ? '—' : Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 4 }))
+    : (v => v == null ? '—' : Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  const pick = c => !c ? null : (isCpv ? c.cpv : c);   // CPV stats อยู่ใน c.cpv
+  const cell = pick((_benchData.matrix[brand] || {})[adtype]);
+  const bt = pick(_benchData.brand_totals[brand]);
+  const at = pick(_benchData.adtype_totals[adtype]);
+  const statBox = (title, c, hi) => (c && c.avg != null) ? `
     <div style="border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px;${hi ? 'border-color:var(--primary);background:var(--primary-soft)' : ''}">
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">${title}</div>
-      <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:27px;font-weight:800;color:var(--primary)">${f2(c.avg)}</span><span style="font-size:12px;color:var(--text-muted)">avg CPM</span></div>
-      <div style="font-size:12.5px;color:var(--text-muted);margin-top:5px">ช่วง ${f2(c.min)} – ${f2(c.max)} · จาก ${c.n} แคมเปญ</div>
+      <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:27px;font-weight:800;color:var(--primary)">${fmt(c.avg)}</span><span style="font-size:12px;color:var(--text-muted)">avg ${mLabel}</span></div>
+      <div style="font-size:12.5px;color:var(--text-muted);margin-top:5px">ช่วง ${fmt(c.min)} – ${fmt(c.max)} · จาก ${c.n} แคมเปญ</div>
     </div>` : '';
+  const hasCell = cell && cell.avg != null;
   let cmp = '';
-  if (ownCpm != null && cell && cell.avg != null) {
-    const diff = ((ownCpm - cell.avg) / cell.avg) * 100;
+  if (ownVal != null && hasCell) {
+    const diff = ((ownVal - cell.avg) / cell.avg) * 100;
     const better = diff <= 0;
     cmp = `<div style="padding:13px 15px;border-radius:11px;background:${better ? 'rgba(16,185,129,.10)' : 'rgba(220,38,38,.08)'};margin-bottom:14px">
-      <div style="font-size:12px;color:var(--text-muted)">CPM ของแคมเปญนี้ (Report)</div>
-      <div style="font-size:22px;font-weight:800;color:${better ? 'var(--green)' : 'var(--critical)'}">${f2(ownCpm)}</div>
+      <div style="font-size:12px;color:var(--text-muted)">${mLabel} ของแคมเปญนี้ (Report)</div>
+      <div style="font-size:22px;font-weight:800;color:${better ? 'var(--green)' : 'var(--critical)'}">${fmt(ownVal)}</div>
       <div style="font-size:12px;font-weight:600;color:${better ? 'var(--green)' : 'var(--critical)'};margin-top:2px">${better ? '▼ ต่ำกว่า' : '▲ สูงกว่า'} ค่าเฉลี่ย benchmark ${Math.abs(diff).toFixed(0)}% ${better ? '· ดีกว่ามาตรฐาน' : '· แพงกว่ามาตรฐาน'}</div>
     </div>`;
-  } else if (ownCpm != null) {
-    cmp = `<div style="padding:13px 15px;border-radius:11px;background:var(--bg-soft);margin-bottom:14px"><div style="font-size:12px;color:var(--text-muted)">CPM ของแคมเปญนี้ (Report)</div><div style="font-size:22px;font-weight:800">${f2(ownCpm)}</div></div>`;
+  } else if (ownVal != null) {
+    cmp = `<div style="padding:13px 15px;border-radius:11px;background:var(--bg-soft);margin-bottom:14px"><div style="font-size:12px;color:var(--text-muted)">${mLabel} ของแคมเปญนี้ (Report)</div><div style="font-size:22px;font-weight:800">${fmt(ownVal)}</div></div>`;
   }
   pbody.innerHTML = `
     ${cmp}
-    ${cell ? statBox(`Benchmark — ${escapeHtml(brand)} × ${escapeHtml(adtype)}`, cell, true)
-           : '<div class="empty" style="padding:18px;text-align:center;font-size:12.5px">— ไม่มีข้อมูล benchmark สำหรับ brand × ad type นี้ในชีต —</div>'}
+    ${hasCell ? statBox(`Benchmark — ${escapeHtml(brand)} × ${escapeHtml(adtype)}`, cell, true)
+           : `<div class="empty" style="padding:18px;text-align:center;font-size:12.5px">— ไม่มีข้อมูล benchmark ${mLabel} สำหรับ brand × ad type นี้ —</div>`}
     ${statBox(`Brand: ${escapeHtml(brand)} (รวมทุก Ad Type)`, bt, false)}
     ${statBox(`Ad Type: ${escapeHtml(adtype)} (รวมทุก Brand)`, at, false)}
     <div style="border-top:1px solid var(--border);margin-top:6px;padding-top:16px">
@@ -2273,11 +2280,13 @@ function _benchCapsule(val, benchAvg, fmt) {
   const sign = pct > 0 ? '+' : '';
   return `<span style="display:inline-block;padding:1px 9px;border-radius:999px;background:${bg};color:${fg};font-weight:700" title="benchmark ${fmt(benchAvg)} · ${tip} (${sign}${pct}%)">${fmt(val)}</span>`;
 }
-function _adsMetricCells(m, cur, benchAvg, benchCpvAvg) {
+function _adsMetricCells(m, cur, benchAvg, benchCpvAvg, clickable) {
   const d = _adsDash();
+  const cpmAttr = clickable ? ` class="tnum bench-cell" data-bench-metric="cpm" data-bench-val="${m.cpm == null ? '' : m.cpm}" style="font-weight:600;cursor:pointer" title="คลิกดู Benchmark CPM"` : ' class="tnum" style="font-weight:600"';
+  const cpvAttr = clickable ? ` class="tnum bench-cell" data-bench-metric="cpv" data-bench-val="${m.cpv == null ? '' : m.cpv}" style="font-weight:600;cursor:pointer" title="คลิกดู Benchmark CPV"` : ' class="tnum" style="font-weight:600"';
   return `
-    <td class="tnum" style="font-weight:600">${m.cpm != null ? _benchCapsule(m.cpm, benchAvg, _adsMoney) : d}</td>
-    <td class="tnum" style="font-weight:600">${m.cpv != null ? _benchCapsule(m.cpv, benchCpvAvg, _adsMoney4) : d}</td>
+    <td${cpmAttr}>${m.cpm != null ? _benchCapsule(m.cpm, benchAvg, _adsMoney) : d}</td>
+    <td${cpvAttr}>${m.cpv != null ? _benchCapsule(m.cpv, benchCpvAvg, _adsMoney4) : d}</td>
     <td class="tnum">${m.spend != null ? `${_adsMoney(m.spend)} <span style="color:var(--text-soft);font-size:10px;font-weight:400">${escapeHtml(cur || '')}</span>` : d}</td>
     <td class="tnum">${m.impressions ? _adsInt(m.impressions) : d}</td>
     <td class="tnum">${m.reach ? _adsInt(m.reach) : d}</td>
@@ -2336,9 +2345,9 @@ function renderAdsCards() {
           ${_adsMetricCells(a, a.currency)}
         </tr>`;
       const campRows = camps.map(c => `
-        <tr class="ads-camp-row" data-camp-of="${ai}" data-bench-camp="${escapeHtml(c.campaign)}" data-bench-cpm="${c.cpm == null ? '' : c.cpm}" style="display:${open ? '' : 'none'};cursor:pointer" title="คลิกดู Benchmark">
-          <td style="padding-left:32px;max-width:380px"><span style="display:inline-flex;align-items:center;gap:6px;max-width:100%"><span style="color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(c.campaign)}</span>${c.ad_format && _ADS_FMT_ICON[c.ad_format] ? `<span style="flex-shrink:0" title="${escapeHtml(_adsFmtLabel(c.ad_format))}">${_ADS_FMT_ICON[c.ad_format]}</span>` : ''}${c.ad_type ? `<span style="flex-shrink:0;font-size:9px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--bg-hover);color:var(--text-soft)" title="Objective">${escapeHtml(_adsTypeLabel(c.ad_type))}</span>` : ''}<span style="flex-shrink:0;color:var(--text-soft);font-size:10px">📈</span></span></td>
-          ${_adsMetricCells(c, a.currency, _benchAvgFor(c.campaign), _benchCpvAvgFor(c.campaign))}
+        <tr class="ads-camp-row" data-camp-of="${ai}" data-bench-camp="${escapeHtml(c.campaign)}" style="display:${open ? '' : 'none'}">
+          <td style="padding-left:32px;max-width:380px"><span style="display:inline-flex;align-items:center;gap:6px;max-width:100%"><span style="color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(c.campaign)}</span>${c.ad_format && _ADS_FMT_ICON[c.ad_format] ? `<span style="flex-shrink:0" title="${escapeHtml(_adsFmtLabel(c.ad_format))}">${_ADS_FMT_ICON[c.ad_format]}</span>` : ''}${c.ad_type ? `<span style="flex-shrink:0;font-size:9px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--bg-hover);color:var(--text-soft)" title="Objective">${escapeHtml(_adsTypeLabel(c.ad_type))}</span>` : ''}</span></td>
+          ${_adsMetricCells(c, a.currency, _benchAvgFor(c.campaign), _benchCpvAvgFor(c.campaign), true)}
         </tr>`).join('');
       return accRow + campRows;
     }).join('');
@@ -2379,12 +2388,14 @@ function renderAdsCards() {
         if (caret) caret.style.transform = isOpen ? '' : 'rotate(90deg)';
       });
     });
-    // v1.9.170 — คลิกแถวแคมเปญ → slide-out benchmark
-    tbl.querySelectorAll('.ads-camp-row[data-bench-camp]').forEach(row => {
-      row.addEventListener('click', (e) => {
+    // v1.9.191 — คลิกที่ค่า CPM → Benchmark CPM, คลิกที่ค่า CPV → Benchmark CPV
+    tbl.querySelectorAll('.bench-cell').forEach(cell => {
+      cell.addEventListener('click', (e) => {
         e.stopPropagation();
-        const cpm = row.dataset.benchCpm === '' ? null : parseFloat(row.dataset.benchCpm);
-        openBenchmarkPanel(row.dataset.benchCamp, cpm);
+        const row = cell.closest('.ads-camp-row');
+        if (!row) return;
+        const val = cell.dataset.benchVal === '' ? null : parseFloat(cell.dataset.benchVal);
+        openBenchmarkPanel(row.dataset.benchCamp, val, cell.dataset.benchMetric);
       });
     });
   });
