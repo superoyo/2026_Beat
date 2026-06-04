@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.195",
+      "date": "2026-06-02",
+      "title": "Benchmark box plot: capsule ชื่อค่า + hover/คลิกชี้ตำแหน่ง",
+      "summary": "เหนือแต่ละ box plot แสดง capsule ชื่อแบรนด์/category เรียงแนวนอน — hover เพื่อขีดชี้ตำแหน่งค่านั้นใน box plot (เปลี่ยนตามที่ชี้), คลิกปักหมุดค้างไว้, คลิกซ้ำยกเลิก",
+      "changes": [
+        "_benchInteractiveBox: capsule (.bp-chip) + marker เส้น/จุด/label ใน svg",
+        "_bpHover/_bpLeave/_bpClick: hover = ชี้สด, pin = ค้าง, คลิกซ้ำ = ยกเลิก",
+        "CSS .bp-chip (hover ม่วง, pinned ม่วงเข้ม)"
+      ]
+    },
+    {
       "version": "1.9.194",
       "date": "2026-06-02",
       "title": "Benchmark: เพิ่ม Box Plot ต่อ Ad Type ด้านบน (3 ต่อแถว)",

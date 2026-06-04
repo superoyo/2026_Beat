@@ -407,6 +407,9 @@
       display: flex; flex-direction: column; overflow-y: auto;
     }
     .sup-panel-wrap.is-open .sup-panel { transform: translateX(0); }
+    .bp-chip { font-size: 9.5px; padding: 1px 7px; border-radius: 999px; background: var(--bg-soft); border: 1px solid var(--border); cursor: pointer; white-space: nowrap; user-select: none; line-height: 1.6; transition: background .12s, color .12s, border-color .12s; }
+    .bp-chip:hover { background: rgba(124,58,237,.15); border-color: #7c3aed; color: #7c3aed; }
+    .bp-chip.is-pinned { background: #7c3aed; border-color: #7c3aed; color: #fff; font-weight: 700; }
     .sup-panel-head { display: flex; justify-content: flex-end; padding: 12px 16px 0; }
     .sup-panel-close { width: 36px; height: 36px; border-radius: 8px; border: none; background: transparent; cursor: pointer; font-size: 17px; color: var(--text-muted); }
     .sup-panel-close:hover { background: var(--bg-soft); color: var(--text); }
@@ -1999,16 +2002,11 @@ function renderBenchTable() {
     ${adtypes.map(t => mcell(v.adtype_totals[t], false, '', t)).join('')}
     ${mcell(v.grand, false)}
   </tr>`;
-  // v1.9.194 — box plot ต่อ Ad Type (จุดข้อมูล = ค่า CPM ของแต่ละ brand/category)
+  // v1.9.194/195 — box plot ต่อ Ad Type (จุดข้อมูล = CPM ของแต่ละ brand/category) + capsule interactive
   const dimLabel = isBrand ? 'แบรนด์' : 'category';
   const boxCards = adtypes.map(t => {
-    const vals = rows0.map(r => { const c = v.matrix[r] && v.matrix[r][t]; return (c && c.avg != null) ? c.avg : null; }).filter(x => x != null);
-    const box = _benchBoxPlot(vals, f2, null, null);
-    return `<div style="border:1px solid var(--border);border-radius:12px;padding:11px 12px;min-width:0">
-      <div style="font-size:12.5px;font-weight:700;line-height:1.3">${escapeHtml(t)}</div>
-      <div style="font-size:9.5px;color:var(--text-soft);margin-bottom:5px">CPM จาก ${vals.length} ${dimLabel}</div>
-      ${box || '<div class="empty" style="padding:16px;font-size:11px;text-align:center">— ข้อมูลไม่พอ —</div>'}
-    </div>`;
+    const pairs = rows0.map(r => { const c = v.matrix[r] && v.matrix[r][t]; return (c && c.avg != null) ? { label: r, value: c.avg } : null; }).filter(Boolean);
+    return _benchInteractiveBox(t, dimLabel, pairs, f2);
   }).join('');
   const boxplots = `<div style="margin-bottom:18px">
     <div style="font-size:12.5px;font-weight:700;margin-bottom:9px">📦 การกระจาย CPM ต่อ Ad Type <span style="font-weight:400;color:var(--text-soft);font-size:11px">· box plot ของแต่ละ ${dimLabel} (${adtypes.length} Ad Type)</span></div>
@@ -2025,6 +2023,12 @@ function renderBenchTable() {
     if (!td) return;
     openBenchCellPanel(td.dataset.benchR || null, td.dataset.benchT || null);
   };
+  // capsule ของ box plot — hover ชี้ตำแหน่ง, คลิกปักหมุด/ยกเลิก
+  body.querySelectorAll('.bp-chip').forEach(chip => {
+    chip.addEventListener('mouseenter', () => _bpHover(chip));
+    chip.addEventListener('mouseleave', () => _bpLeave(chip));
+    chip.addEventListener('click', (e) => { e.stopPropagation(); _bpClick(chip); });
+  });
 }
 // v1.9.175/176 — คลิกช่องใน Benchmark matrix → slide-out แสดงรายแคมเปญ (ที่มาของ CPM)
 async function openBenchCellPanel(rowKey, adtype) {
@@ -2138,6 +2142,64 @@ function _benchBoxPlot(values, fmt, ownVal, benchAvg) {
   const sc = (l, v) => `<div style="text-align:center"><div style="font-size:8px;color:var(--text-soft);text-transform:uppercase;letter-spacing:.3px">${l}</div><div style="font-size:11px;font-weight:700">${fmt(v)}</div></div>`;
   const stats = `<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:2px">${sc('Min', dmin)}${sc('Q1', q1)}${sc('Median', med)}${sc('Q3', q3)}${sc('Max', dmax)}</div>`;
   return svg + stats;
+}
+// v1.9.195 — box plot แบบ interactive: capsule ชื่อค่า + hover/คลิกเพื่อชี้ตำแหน่งใน box plot
+function _benchInteractiveBox(title, dimLabel, pairs, fmt) {
+  const chips = pairs.map(p => `<span class="bp-chip" data-v="${p.value}" data-fmt="${escapeHtml(fmt(p.value))}" title="${escapeHtml(p.label)}: ${escapeHtml(fmt(p.value))}">${escapeHtml(p.label)}</span>`).join('');
+  const head = `<div style="font-size:12.5px;font-weight:700;line-height:1.3">${escapeHtml(title)}</div>
+    <div style="font-size:9.5px;color:var(--text-soft);margin-bottom:5px">CPM จาก ${pairs.length} ${dimLabel} · hover/คลิก capsule เพื่อชี้ตำแหน่ง</div>
+    <div class="bp-chips" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:8px">${chips}</div>`;
+  const vals = pairs.map(p => p.value).filter(v => v != null && isFinite(v) && v > 0).sort((a, b) => a - b);
+  const n = vals.length;
+  if (n < 2) {
+    return `<div class="bp-card" style="border:1px solid var(--border);border-radius:12px;padding:11px 12px;min-width:0">${head}<div class="empty" style="padding:14px;font-size:11px;text-align:center">— ข้อมูลไม่พอสำหรับ box plot —</div></div>`;
+  }
+  const q1 = _quantile(vals, 0.25), med = _quantile(vals, 0.5), q3 = _quantile(vals, 0.75);
+  const dmin = vals[0], dmax = vals[n - 1];
+  const pad = ((dmax - dmin) || 1) * 0.08, lo = dmin - pad, hi = dmax + pad, span = (hi - lo) || 1;
+  const W = 360, H = 86, padL = 10, innerW = W - padL - 10, cy = 36, boxH = 22, top = cy - boxH / 2, bot = cy + boxH / 2;
+  const X = v => padL + (v - lo) / span * innerW;
+  const whisk = `<line x1="${X(dmin).toFixed(1)}" y1="${cy}" x2="${X(q1).toFixed(1)}" y2="${cy}" stroke="#94a3b8" stroke-width="1.4"/>
+    <line x1="${X(q3).toFixed(1)}" y1="${cy}" x2="${X(dmax).toFixed(1)}" y2="${cy}" stroke="#94a3b8" stroke-width="1.4"/>
+    <line x1="${X(dmin).toFixed(1)}" y1="${cy - 6}" x2="${X(dmin).toFixed(1)}" y2="${cy + 6}" stroke="#94a3b8" stroke-width="1.4"/>
+    <line x1="${X(dmax).toFixed(1)}" y1="${cy - 6}" x2="${X(dmax).toFixed(1)}" y2="${cy + 6}" stroke="#94a3b8" stroke-width="1.4"/>`;
+  const box = `<rect x="${X(q1).toFixed(1)}" y="${top}" width="${Math.max(1, X(q3) - X(q1)).toFixed(1)}" height="${boxH}" fill="rgba(100,116,139,.10)" stroke="#94a3b8" stroke-width="1.4" rx="3"/>
+    <line x1="${X(med).toFixed(1)}" y1="${top}" x2="${X(med).toFixed(1)}" y2="${bot}" stroke="#64748b" stroke-width="1.8"/>`;
+  const marker = `<line class="bp-marker" x1="0" x2="0" y1="${top - 11}" y2="${bot + 4}" stroke="#7c3aed" stroke-width="2" style="display:none"/>
+    <circle class="bp-marker-dot" cx="0" cy="${cy}" r="3.6" fill="#7c3aed" style="display:none"/>
+    <text class="bp-marker-label" x="0" y="${top - 14}" font-size="9" fill="#7c3aed" text-anchor="middle" font-weight="700" style="display:none"></text>`;
+  const svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block">${whisk}${box}${marker}</svg>`;
+  const sc = (l, vv) => `<div style="text-align:center"><div style="font-size:8px;color:var(--text-soft);text-transform:uppercase;letter-spacing:.3px">${l}</div><div style="font-size:10.5px;font-weight:700">${fmt(vv)}</div></div>`;
+  const stats = `<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:2px">${sc('Min', dmin)}${sc('Q1', q1)}${sc('Median', med)}${sc('Q3', q3)}${sc('Max', dmax)}</div>`;
+  return `<div class="bp-card" data-lo="${lo}" data-span="${span}" style="border:1px solid var(--border);border-radius:12px;padding:11px 12px;min-width:0">${head}${svg}${stats}</div>`;
+}
+function _bpPlace(card, vStr, fmtStr) {
+  const lo = parseFloat(card.dataset.lo), span = parseFloat(card.dataset.span) || 1;
+  const padL = 10, innerW = 340;
+  let x = padL + (parseFloat(vStr) - lo) / span * innerW;
+  x = Math.max(padL, Math.min(padL + innerW, x));
+  const m = card.querySelector('.bp-marker'), dot = card.querySelector('.bp-marker-dot'), lbl = card.querySelector('.bp-marker-label');
+  if (m) { m.setAttribute('x1', x.toFixed(1)); m.setAttribute('x2', x.toFixed(1)); m.style.display = ''; }
+  if (dot) { dot.setAttribute('cx', x.toFixed(1)); dot.style.display = ''; }
+  if (lbl) { lbl.setAttribute('x', x.toFixed(1)); lbl.textContent = fmtStr; lbl.style.display = ''; }
+}
+function _bpHide(card) {
+  ['.bp-marker', '.bp-marker-dot', '.bp-marker-label'].forEach(s => { const e = card.querySelector(s); if (e) e.style.display = 'none'; });
+}
+function _bpHover(chip) {
+  const card = chip.closest('.bp-card'); if (card) _bpPlace(card, chip.dataset.v, chip.dataset.fmt);
+}
+function _bpLeave(chip) {
+  const card = chip.closest('.bp-card'); if (!card) return;
+  const pinned = card.querySelector('.bp-chip.is-pinned');
+  if (pinned) _bpPlace(card, pinned.dataset.v, pinned.dataset.fmt); else _bpHide(card);
+}
+function _bpClick(chip) {
+  const card = chip.closest('.bp-card'); if (!card) return;
+  const wasPinned = chip.classList.contains('is-pinned');
+  card.querySelectorAll('.bp-chip.is-pinned').forEach(c => c.classList.remove('is-pinned'));
+  if (wasPinned) { _bpHide(card); }
+  else { chip.classList.add('is-pinned'); _bpPlace(card, chip.dataset.v, chip.dataset.fmt); }
 }
 async function openBenchmarkPanel(campaign, ownVal, metric) {
   metric = metric || 'cpm';
