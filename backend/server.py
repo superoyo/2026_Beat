@@ -4628,6 +4628,9 @@ WINDSOR_API_KEY = os.environ.get("WINDSOR_API_KEY", "").strip()
 WINDSOR_BASE_URL = os.environ.get("WINDSOR_BASE_URL", "https://connectors.windsor.ai").rstrip("/")
 # v1.9.167 — Ads Benchmark: Google Sheet (public) ที่ดึง CPM benchmark — tab แรก
 ADS_BENCHMARK_SHEET_ID = os.environ.get("ADS_BENCHMARK_SHEET_ID", "1V2dx573u9NcbAdwYOABo4HpqcuOMTJNme2iay-i4fFw")
+# v1.9.198 — Ads Campaign: Google Sheet (public) รายการแคมเปญ — sheet แรก (ตั้ง GID ได้ถ้าอยู่แท็บอื่น)
+ADS_CAMPAIGN_SHEET_ID = os.environ.get("ADS_CAMPAIGN_SHEET_ID", "1-vvUJGRIJywisb3n3hrH7p8Lv8IGvIUqgnlrkt4MhKA")
+ADS_CAMPAIGN_SHEET_GID = os.environ.get("ADS_CAMPAIGN_SHEET_GID", "").strip()
 
 
 class WazzupLoginIn(BaseModel):
@@ -8723,6 +8726,132 @@ def ads_benchmark(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
         "adtype_totals": brand_view["adtype_totals"],
         "grand": brand_view["grand"],
         "details": brand_view["details"],
+    }
+
+
+# ===========================================================================
+# v1.9.198 — Ads Campaign: รายการแคมเปญจาก Google Sheet (sheet แรก)
+# ===========================================================================
+_CAMP_MONTHS = {m: i for i, m in enumerate(
+    ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
+
+
+def _camp_parse_date(s: str):
+    """แปลงวันที่หลายรูปแบบ → ISO (YYYY-MM-DD) | None"""
+    s = (s or "").strip()
+    if not s:
+        return None
+    import re as _re
+    # 1 May 26 / 01 May 2026 / 1 May'26
+    m = _re.match(r"^(\d{1,2})\s*[-/ ]?\s*([A-Za-z]{3,})[\s'`]*?(\d{2,4})$", s)
+    if m:
+        d, mon, y = m.group(1), m.group(2)[:3].lower(), m.group(3)
+        if mon in _CAMP_MONTHS:
+            yr = int(y); yr = yr + 2000 if yr < 100 else yr
+            try:
+                return f"{yr:04d}-{_CAMP_MONTHS[mon]:02d}-{int(d):02d}"
+            except ValueError:
+                return None
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y", "%m/%d/%Y", "%m/%d/%y", "%d-%m-%Y", "%d %b %Y", "%d %B %Y", "%b %d, %Y", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(s, fmt).date().isoformat()
+        except ValueError:
+            continue
+    return None
+
+
+def _camp_period_range(period: str, start_iso, end_iso):
+    """หา start/end ISO จาก period text (เช่น '1 May 26 - 31 May 26') หรือใช้ start/end ที่ parse มาแล้ว"""
+    if start_iso and end_iso:
+        return start_iso, end_iso
+    import re as _re
+    txt = period or ""
+    # ตัดวงเล็บเหลี่ยมออก
+    txt = txt.replace("[", " ").replace("]", " ")
+    parts = _re.split(r"\s*(?:-|–|—|to|ถึง)\s*", txt)
+    if len(parts) >= 2:
+        a, b = _camp_parse_date(parts[0]), _camp_parse_date(parts[-1])
+        return start_iso or a, end_iso or b
+    d = _camp_parse_date(txt)
+    return start_iso or d, end_iso or d
+
+
+@app.get("/api/ads-campaigns")
+def ads_campaigns(_sess: dict = Depends(_require_module("ads"))) -> dict[str, Any]:
+    qs = f"export?format=csv" + (f"&gid={ADS_CAMPAIGN_SHEET_GID}" if ADS_CAMPAIGN_SHEET_GID else "")
+    url = f"https://docs.google.com/spreadsheets/d/{ADS_CAMPAIGN_SHEET_ID}/{qs}"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "text/csv,*/*"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"ดึง Google Sheet ไม่สำเร็จ (HTTP {e.code}) — ตรวจว่าแชร์เป็น 'ทุกคนที่มีลิงก์ดูได้'")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ดึง Google Sheet ไม่สำเร็จ: {e}")
+    if raw.lstrip()[:14].lower().startswith("<!doctype") or "<html" in raw[:200].lower():
+        raise HTTPException(status_code=502, detail="ชีตยังไม่เปิดสาธารณะ — แชร์เป็น 'ทุกคนที่มีลิงก์ดูได้' ก่อน")
+
+    import csv as _csv
+    import io as _io
+    reader = _csv.DictReader(_io.StringIO(raw))
+    cols = [c for c in (reader.fieldnames or []) if c is not None]
+    fm = {(c or "").strip().lower(): c for c in cols}
+
+    def _find(*cands):
+        for cand in cands:
+            for low, orig in fm.items():
+                if low == cand:
+                    return orig
+        for cand in cands:               # contains
+            for low, orig in fm.items():
+                if cand in low:
+                    return orig
+        return None
+
+    k_name = _find("campaign name", "campaign", "name", "ชื่อแคมเปญ", "ชื่อ")
+    k_period = _find("period", "duration", "ระยะเวลา", "ช่วงเวลา")
+    k_budget = _find("budget", "งบ", "งบประมาณ", "amount")
+    k_obj = _find("objective", "วัตถุประสงค์", "obj", "goal")
+    k_start = _find("start date", "start", "from", "วันเริ่ม", "เริ่ม")
+    k_end = _find("end date", "end", "to", "วันสิ้นสุด", "สิ้นสุด")
+
+    out = []
+    objectives = set()
+    for row in reader:
+        fields = {(c or "").strip(): (row.get(c) or "").strip() for c in cols}
+        name = (row.get(k_name) or "").strip() if k_name else ""
+        if not name and not any(fields.values()):
+            continue
+        period = (row.get(k_period) or "").strip() if k_period else ""
+        s_iso = _camp_parse_date(row.get(k_start)) if k_start else None
+        e_iso = _camp_parse_date(row.get(k_end)) if k_end else None
+        s_iso, e_iso = _camp_period_range(period, s_iso, e_iso)
+        if not period:
+            if s_iso and e_iso:
+                period = f"{s_iso} – {e_iso}"
+            elif s_iso:
+                period = s_iso
+        budget = (row.get(k_budget) or "").strip() if k_budget else ""
+        obj = (row.get(k_obj) or "").strip() if k_obj else ""
+        if obj:
+            objectives.add(obj)
+        out.append({
+            "name": name or "(ไม่ระบุชื่อ)",
+            "period": period,
+            "budget": budget,
+            "objective": obj,
+            "start": s_iso,
+            "end": e_iso,
+            "fields": fields,
+        })
+
+    return {
+        "columns": [c.strip() for c in cols],
+        "count": len(out),
+        "campaigns": out,
+        "objectives": sorted(objectives),
+        "mapped": {"name": k_name, "period": k_period, "budget": k_budget,
+                   "objective": k_obj, "start": k_start, "end": k_end},
     }
 
 

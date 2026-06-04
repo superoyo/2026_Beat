@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.198",
+      "date": "2026-06-02",
+      "title": "Ads: เพิ่มเมนูย่อย Campaign (ดึงจาก Google Sheet)",
+      "summary": "หน้าใหม่ Ads > Campaign ดึงรายการแคมเปญจาก Google Sheet (sheet แรก) แสดงตาราง Campaign Name / Period / Budget + filter วันที่/Objective + ค้นหา คลิกแถวเปิดสไลด์ขวาดูรายละเอียดทุกคอลัมน์",
+      "changes": [
+        "Backend GET /api/ads-campaigns: อ่านชีต (ENV ADS_CAMPAIGN_SHEET_ID/GID), detect คอลัมน์ยืดหยุ่น, parse วันที่หลายรูปแบบ",
+        "Frontend: ตาราง + filter date/objective/search + สไลด์ขวาแสดงทุก field",
+        "ต้องแชร์ชีตเป็น 'ทุกคนที่มีลิงก์ดูได้' ก่อนใช้งาน"
+      ]
+    },
+    {
       "version": "1.9.197",
       "date": "2026-06-02",
       "title": "Benchmark box plot: ลดความสูงกราฟเหลือ ~70%",

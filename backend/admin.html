@@ -1084,7 +1084,7 @@
         <a href="#/dashboard" data-route="dashboard" data-label="Dashboard"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></span><span class="nav-label">Dashboard</span></a>
         <a href="#/platforms" data-route="platforms" data-label="Platforms"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></span><span class="nav-label">Platforms</span></a>
         <!-- v1.9.163/167 — Ads (submenu: Report + Benchmark) -->
-        <a href="#/ads" data-route="ads" data-route-extra="ads-benchmark,ads-audience" data-label="Ads"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg></span><span class="nav-label">Ads</span></a>
+        <a href="#/ads" data-route="ads" data-route-extra="ads-benchmark,ads-audience,ads-campaigns" data-label="Ads"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg></span><span class="nav-label">Ads</span></a>
         <!-- v1.9.164 — Customer: ย้ายขึ้นโซนบน (กรองตามสิทธิ์ IAM อยู่แล้ว) -->
         <a href="#/calendar" data-route="calendar" data-route-extra="domains,websites,services-config" data-label="Customer"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span><span class="nav-label">Customer</span></a>
         <!-- v1.9.122 — บัญชีของฉัน: direct link (โปรไฟล์/My Device/Extension/Check-in อยู่ในเมนูย่อยของหน้านี้แล้ว) -->
@@ -1255,12 +1255,12 @@ function _extractErrDetail(j) {
 }
 
 // admin-only routes — member ห้ามเข้า (bounce ไป default)
-const ADMIN_ONLY_ROUTES = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads', 'ads-benchmark', 'ads-audience']);
+const ADMIN_ONLY_ROUTES = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads', 'ads-benchmark', 'ads-audience', 'ads-campaigns']);
 // menu items ที่ซ่อนใน sidebar สำหรับ member
 // (dashboard เห็นได้ทุกบทบาท — ใช้เป็นหน้าแรกของ member ด้วย)
-const HIDE_FROM_MEMBER_NAV = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads', 'ads-benchmark', 'ads-audience']);
+const HIDE_FROM_MEMBER_NAV = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads', 'ads-benchmark', 'ads-audience', 'ads-campaigns']);
 // v1.9.162 — IAM: route → module ที่ต้องมีสิทธิ์ (member ที่ถูก grant ถึงเข้าได้)
-const ROUTE_MODULE = { platforms: 'platform', ads: 'ads', 'ads-benchmark': 'ads', 'ads-audience': 'ads', calendar: 'customer', domains: 'customer', websites: 'customer', 'services-config': 'customer', 'domains-config': 'customer' };
+const ROUTE_MODULE = { platforms: 'platform', ads: 'ads', 'ads-benchmark': 'ads', 'ads-audience': 'ads', 'ads-campaigns': 'ads', calendar: 'customer', domains: 'customer', websites: 'customer', 'services-config': 'customer', 'domains-config': 'customer' };
 let currentModules = new Set();   // module ที่ผู้ใช้ปัจจุบันเข้าถึงได้ (member)
 
 // ---------- routing ----------
@@ -1283,6 +1283,7 @@ const routes = {
   'ads':              () => renderAdsSection('ads'),
   'ads-benchmark':    () => renderAdsSection('ads-benchmark'),
   'ads-audience':     () => renderAdsSection('ads-audience'),
+  'ads-campaigns':    () => renderAdsSection('ads-campaigns'),
   'my-device':        renderMyDevicePage,
   'domains-config':   renderDomainsConfigPage,
   'members':          () => renderPeoplesPage('members'),
@@ -1424,6 +1425,12 @@ let _benchMode = 'brand';   // v1.9.176 — 'brand' | 'category'
 let _audData = null;        // v1.9.180 — Audience Report (age breakdown)
 let _audSearch = '';
 let _audSort = {};          // v1.9.182 — sort ต่อตาราง { age:{col,dir}, placement:{...}, region:{...} }
+let _campData = null;       // v1.9.198 — Ads Campaign (Google Sheet)
+let _campObj = '__all__';
+let _campFrom = '';
+let _campTo = '';
+let _campSearch = '';
+let _campFiltered = [];
 // v1.9.170 — แยก brand/adtype จากชื่อ campaign (มิเรอร์ logic backend benchmark)
 const _BENCH_ADTYPES = ['Video Thruplay', 'Video Views', 'Page Likes', 'Page Like', 'CPAS', 'Reach', 'Engagement', 'Traffic', 'Awareness', 'Messages', 'Message', 'Conversions', 'Conversion', 'Purchases', 'Purchase', 'Leads', 'Lead'];
 function _benchBrandOf(camp) {
@@ -1544,6 +1551,7 @@ function renderAdsSection(active) {
   return renderSubmenuPage({ title: '💰 Ads', active: active || 'ads', items: [
     { route: 'ads',           ico: '📊', label: 'Report',          render: () => renderAdsReport() },
     { route: 'ads-audience',  ico: '👥', label: 'Audience Report', render: () => renderAdsAudience() },
+    { route: 'ads-campaigns', ico: '📋', label: 'Campaign',         render: () => renderAdsCampaigns() },
     { route: 'ads-benchmark', ico: '📈', label: 'Benchmark',       render: () => renderAdsBenchmark() },
   ]});
 }
@@ -1902,6 +1910,141 @@ function openDemoDistPanel(ageLabel) {
   requestAnimationFrame(() => wrap.classList.add('is-open'));
   const close = () => { wrap.classList.remove('is-open'); document.removeEventListener('keydown', onKey); setTimeout(() => wrap.remove(), 260); };
   const onKey = e => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  wrap.querySelector('.sup-panel-backdrop').addEventListener('click', close);
+  wrap.querySelector('.sup-panel-close').addEventListener('click', close);
+}
+// ===== Campaign (รายการแคมเปญจาก Google Sheet) =====
+async function renderAdsCampaigns() {
+  _subMain().innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <button class="btn" id="camp-refresh" style="font-size:13px;padding:8px 14px">🔄 รีเฟรช</button>
+    </div>
+    <div id="camp-body"><div class="empty">กำลังโหลด…</div></div>`;
+  const rb = $('camp-refresh');
+  if (rb) rb.onclick = () => loadCampaigns();
+  loadCampaigns();
+}
+async function loadCampaigns() {
+  const body = $('camp-body');
+  if (!body) return;
+  body.innerHTML = '<div class="empty">⏳ กำลังดึงจาก Google Sheet…</div>';
+  try { _campData = await fetchJson('/api/ads-campaigns'); }
+  catch (e) {
+    const msg = e.message || '';
+    if (/แชร์|สาธารณะ|HTTP 502/.test(msg)) {
+      body.innerHTML = `<div class="card" style="display:block;border-color:rgba(245,158,11,.4);background:rgba(245,158,11,.06)">
+        <div style="font-size:15px;font-weight:700;margin-bottom:8px">⚠️ อ่าน Google Sheet ไม่ได้</div>
+        <div style="font-size:13.5px;color:var(--text-muted);line-height:1.7">${escapeHtml(msg)}<br>เปิดชีต → <strong>Share</strong> → <strong>Anyone with the link</strong> → <strong>Viewer</strong></div></div>`;
+      return;
+    }
+    body.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(msg)}</div>`;
+    return;
+  }
+  renderCampaignsBody();
+}
+function renderCampaignsBody() {
+  const body = $('camp-body');
+  if (!body || !_campData) return;
+  const all = _campData.campaigns || [];
+  if (all.length === 0) {
+    body.innerHTML = '<div class="empty" style="padding:30px;text-align:center">— ไม่มีรายการแคมเปญในชีต —</div>';
+    return;
+  }
+  const objs = _campData.objectives || [];
+  const inStyle = 'padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:9px;background:var(--bg-input);color:var(--text)';
+  body.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <span style="font-size:12px;color:var(--text-soft)">📅 ช่วงเวลา</span>
+      <input type="date" id="camp-from" value="${escapeHtml(_campFrom)}" style="${inStyle}">
+      <span style="color:var(--text-soft)">–</span>
+      <input type="date" id="camp-to" value="${escapeHtml(_campTo)}" style="${inStyle}">
+      <select id="camp-obj" style="${inStyle};cursor:pointer">
+        <option value="__all__">🎯 ทุก Objective</option>
+        ${objs.map(o => `<option value="${escapeHtml(o)}" ${_campObj === o ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}
+      </select>
+      <input id="camp-search" type="text" value="${escapeHtml(_campSearch)}" placeholder="🔍 ค้นหาแคมเปญ..." autocomplete="off" style="${inStyle};min-width:180px">
+      <button class="btn" id="camp-clear" style="font-size:12.5px;padding:7px 12px">ล้าง</button>
+    </div>
+    <div id="camp-cards"></div>`;
+  const f = $('camp-from'), t = $('camp-to'), ob = $('camp-obj'), si = $('camp-search'), cl = $('camp-clear');
+  if (f) f.onchange = () => { _campFrom = f.value; renderCampaignsTable(); };
+  if (t) t.onchange = () => { _campTo = t.value; renderCampaignsTable(); };
+  if (ob) ob.onchange = () => { _campObj = ob.value; renderCampaignsTable(); };
+  if (si) { let _tm; si.addEventListener('input', e => { clearTimeout(_tm); const val = e.target.value; _tm = setTimeout(() => { _campSearch = val; renderCampaignsTable(); }, 220); }); }
+  if (cl) cl.onclick = () => { _campFrom = ''; _campTo = ''; _campObj = '__all__'; _campSearch = ''; renderCampaignsBody(); };
+  renderCampaignsTable();
+}
+function _campInRange(c, from, to) {
+  if (!from && !to) return true;
+  if (!c.start && !c.end) return true;   // ไม่มีวันที่ → ไม่กรองออก
+  const s = c.start || c.end, e = c.end || c.start;
+  if (from && e < from) return false;
+  if (to && s > to) return false;
+  return true;
+}
+function renderCampaignsTable() {
+  const wrap = $('camp-cards');
+  if (!wrap || !_campData) return;
+  const q = _campSearch.trim().toLowerCase();
+  _campFiltered = (_campData.campaigns || []).filter(c =>
+    (_campObj === '__all__' || c.objective === _campObj) &&
+    _campInRange(c, _campFrom, _campTo) &&
+    (!q || (c.name || '').toLowerCase().includes(q))
+  );
+  if (_campFiltered.length === 0) {
+    wrap.innerHTML = '<div class="empty" style="padding:24px;text-align:center;color:var(--text-muted)">— ไม่พบแคมเปญที่ตรงกับตัวกรอง —</div>';
+    return;
+  }
+  const rows = _campFiltered.map((c, i) => `
+    <tr class="camp-row" data-idx="${i}" style="cursor:pointer">
+      <td>
+        <div style="font-weight:600">${escapeHtml(c.name)}</div>
+        ${c.objective ? `<div style="font-size:10px;color:var(--text-soft);margin-top:1px">🎯 ${escapeHtml(c.objective)}</div>` : ''}
+      </td>
+      <td style="white-space:nowrap;color:var(--text-muted)">${escapeHtml(c.period || '—')}</td>
+      <td class="tnum" style="font-weight:600">${escapeHtml(c.budget || '—')}</td>
+    </tr>`).join('');
+  wrap.innerHTML = `
+    <div style="font-size:11.5px;color:var(--text-soft);margin-bottom:8px">${_campFiltered.length} / ${(_campData.campaigns || []).length} แคมเปญ · 👆 คลิกเพื่อดูรายละเอียด</div>
+    <div class="card" style="display:block;padding:0;overflow-x:auto">
+      <table class="ads-table" style="min-width:max-content">
+        <thead><tr><th style="text-align:left">Campaign Name</th><th style="text-align:left">Period</th><th style="text-align:right">Budget</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  wrap.querySelectorAll('.camp-row').forEach(row => {
+    row.addEventListener('click', () => { const c = _campFiltered[parseInt(row.dataset.idx, 10)]; if (c) openCampaignPanel(c); });
+  });
+}
+function openCampaignPanel(c) {
+  document.querySelectorAll('.sup-panel-wrap').forEach(e => e.remove());
+  const fieldsHtml = Object.entries(c.fields || {}).filter(([k, val]) => k && String(val).trim() !== '').map(([k, val]) => `
+    <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+      <div style="font-size:11px;color:var(--text-muted);min-width:130px;max-width:130px;flex-shrink:0;word-break:break-word">${escapeHtml(k)}</div>
+      <div style="font-size:12.5px;word-break:break-word;line-height:1.5">${escapeHtml(String(val))}</div>
+    </div>`).join('');
+  const chip = (icon, txt) => txt ? `<span style="font-size:12px;padding:3px 11px;border-radius:999px;background:var(--bg-soft);border:1px solid var(--border);font-weight:600">${icon} ${escapeHtml(txt)}</span>` : '';
+  const wrap = document.createElement('div');
+  wrap.className = 'sup-panel-wrap';
+  wrap.innerHTML = `
+    <div class="sup-panel-backdrop"></div>
+    <div class="sup-panel" style="width:460px">
+      <div class="sup-panel-head"><button class="sup-panel-close" title="ปิด">✕</button></div>
+      <div class="sup-panel-body" style="padding:4px 24px 28px">
+        <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">📋 Campaign</div>
+        <div style="font-size:15.5px;font-weight:800;margin:3px 0 10px;line-height:1.35;word-break:break-word">${escapeHtml(c.name)}</div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:18px">
+          ${chip('🎯', c.objective)}${chip('📅', c.period)}${chip('💰', c.budget)}
+        </div>
+        <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">ข้อมูลทั้งหมด</div>
+        ${fieldsHtml || '<div class="empty" style="padding:14px;font-size:12px">— ไม่มีข้อมูล —</div>'}
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  requestAnimationFrame(() => wrap.classList.add('is-open'));
+  const close = () => { wrap.classList.remove('is-open'); document.removeEventListener('keydown', onKey); setTimeout(() => wrap.remove(), 260); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKey);
   wrap.querySelector('.sup-panel-backdrop').addEventListener('click', close);
   wrap.querySelector('.sup-panel-close').addEventListener('click', close);
