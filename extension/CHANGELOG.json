@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.205",
+      "date": "2026-06-02",
+      "title": "Campaign panel: หลาย ads แสดงเป็นคอลัมน์ละ ad (ตารางเทียบ)",
+      "summary": "พาเนลกลุ่ม campaign เปลี่ยนจากการ์ดบน-ล่าง เป็นตารางเทียบ — แถว = field, คอลัมน์ = แต่ละ ad, ไฮไลต์ field ที่ค่าต่างกันระหว่าง ads, พาเนลกว้างขึ้นเมื่อมีหลาย ad",
+      "changes": [
+        "matrix: field rows × ad columns (sticky field column, scroll แนวนอน)",
+        "หัวคอลัมน์ = Material Name + budget, ไฮไลต์เหลือง field ที่ต่างกัน",
+        "panel width min(840px,96vw) เมื่อ ads>1"
+      ]
+    },
+    {
       "version": "1.9.204",
       "date": "2026-06-02",
       "title": "Ads Campaign Gantt: ยุบตาม Project Code → ขยายดู Objective",

@@ -2193,26 +2193,34 @@ function _renderGantt(wrap) {
 function openCampaignGroupPanel(g, o) {
   document.querySelectorAll('.sup-panel-wrap').forEach(e => e.remove());
   const ads = o ? o.ads : g.ads;
-  const chip = (icon, txt) => txt ? `<span style="font-size:12px;padding:3px 11px;border-radius:999px;background:var(--bg-soft);border:1px solid var(--border);font-weight:600">${icon} ${escapeHtml(txt)}</span>` : '';
-  const adCards = ads.map(c => {
-    const fieldsHtml = Object.entries(c.fields || {}).filter(([k, val]) => k && String(val).trim() !== '').map(([k, val]) => `
-      <div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
-        <div style="font-size:10.5px;color:var(--text-muted);min-width:118px;max-width:118px;flex-shrink:0;word-break:break-word">${escapeHtml(k)}</div>
-        <div style="font-size:12px;word-break:break-word;line-height:1.5">${escapeHtml(String(val))}</div>
-      </div>`).join('');
-    return `<div style="border:1px solid var(--border);border-radius:11px;padding:12px;margin-bottom:10px">
-      <div style="font-size:12px;font-weight:700;word-break:break-word;margin-bottom:5px">${escapeHtml(c.name)}</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:${fieldsHtml ? '8px' : '0'}">
-        ${chip('📅', c.period)}${chip('💰', c.budget)}
-      </div>
-      ${fieldsHtml}
-    </div>`;
+  const multi = ads.length > 1;
+  // ตารางเทียบ: แถว = field, คอลัมน์ = ad (1 คอลัมน์ต่อ 1 ad) — ไฮไลต์ field ที่ต่างกัน
+  const matCol = (_campData.columns || []).find(c => c.toLowerCase().includes('material name'));
+  const cols = (_campData.columns || []).filter(col => ads.some(a => String((a.fields || {})[col] || '').trim() !== ''));
+  const adHead = ads.map((a, i) => {
+    const lbl = (matCol && a.fields[matCol]) ? a.fields[matCol] : ('Ad ' + (i + 1));
+    return `<th style="text-align:left;padding:8px 9px;border-bottom:2px solid var(--border);min-width:135px;max-width:185px;vertical-align:bottom;background:var(--bg-card)" title="${escapeHtml(a.name)}">
+      <div style="font-size:11px;font-weight:700;white-space:normal;word-break:break-word;line-height:1.3">${escapeHtml(lbl)}</div>
+      ${a.budget ? `<div style="font-size:9.5px;color:var(--text-soft);font-weight:600;margin-top:2px">💰 ${escapeHtml(a.budget)}</div>` : ''}
+    </th>`;
   }).join('');
+  const bodyRows = cols.map(col => {
+    const vals = ads.map(a => String((a.fields || {})[col] || '').trim());
+    const diff = multi && vals.some(v => v !== vals[0]);
+    const cells = vals.map(v => `<td style="padding:6px 9px;font-size:11.5px;border-bottom:1px solid var(--border);word-break:break-word;vertical-align:top;line-height:1.5${diff ? ';background:rgba(245,158,11,.10)' : ''}">${escapeHtml(v || '—')}</td>`).join('');
+    return `<tr><td style="padding:6px 9px;font-size:10.5px;color:var(--text-muted);border-bottom:1px solid var(--border);position:sticky;left:0;background:var(--bg-soft);white-space:nowrap;z-index:1;font-weight:${diff ? '700' : '400'}">${escapeHtml(col)}</td>${cells}</tr>`;
+  }).join('');
+  const matrix = cols.length ? `<div style="overflow-x:auto;border:1px solid var(--border);border-radius:11px">
+    <table style="border-collapse:collapse;width:100%;min-width:max-content">
+      <thead><tr><th style="text-align:left;padding:8px 9px;font-size:10px;color:var(--text-muted);border-bottom:2px solid var(--border);position:sticky;left:0;background:var(--bg-soft);z-index:2;white-space:nowrap">Field \\ Ad</th>${adHead}</tr></thead>
+      <tbody>${bodyRows}</tbody>
+    </table>
+  </div>${multi ? '<div style="font-size:10px;color:var(--text-soft);margin-top:7px">🟡 = field ที่ค่าต่างกันระหว่าง ads</div>' : ''}` : '<div class="empty" style="padding:14px;font-size:12px">— ไม่มีข้อมูล —</div>';
   const wrap = document.createElement('div');
   wrap.className = 'sup-panel-wrap';
   wrap.innerHTML = `
     <div class="sup-panel-backdrop"></div>
-    <div class="sup-panel" style="width:480px">
+    <div class="sup-panel" style="width:${multi ? 'min(840px,96vw)' : '480px'}">
       <div class="sup-panel-head"><button class="sup-panel-close" title="ปิด">✕</button></div>
       <div class="sup-panel-body" style="padding:4px 22px 28px">
         <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">📋 ${escapeHtml(g.code)}</div>
@@ -2221,7 +2229,7 @@ function openCampaignGroupPanel(g, o) {
           ${o ? `<span style="font-size:12px;padding:3px 11px;border-radius:999px;background:${_campObjColor(o.objective)};color:#fff;font-weight:700">🎯 ${escapeHtml(o.objective)}</span>` : ''}
           <span style="font-size:12px;padding:3px 11px;border-radius:999px;background:var(--bg-soft);border:1px solid var(--border);font-weight:600">${ads.length} ads</span>
         </div>
-        ${adCards}
+        ${matrix}
       </div>
     </div>`;
   document.body.appendChild(wrap);
