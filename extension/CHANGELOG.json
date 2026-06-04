@@ -2,6 +2,15 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.197",
+      "date": "2026-06-02",
+      "title": "Benchmark box plot: ลดความสูงกราฟเหลือ ~70%",
+      "summary": "box plot ต่อ Ad Type ในหน้า Benchmark ลดความสูง SVG จาก 86 เหลือ 60 (~70%) ปรับ geometry แนวตั้ง (กล่อง/หนวด/median/marker) ส่วนแนวนอนคงเดิม",
+      "changes": [
+        "H 86→60, cy 36→30, boxH 22→16"
+      ]
+    },
+    {
       "version": "1.9.196",
       "date": "2026-06-02",
       "title": "Benchmark box plot: capsule รวมด้านบน → ชี้ทุกกราฟพร้อมกัน",

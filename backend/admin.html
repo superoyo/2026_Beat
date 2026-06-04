@@ -2161,7 +2161,7 @@ function _benchBoxCard(title, dimLabel, pairs, fmt) {
   const q1 = _quantile(vals, 0.25), med = _quantile(vals, 0.5), q3 = _quantile(vals, 0.75);
   const dmin = vals[0], dmax = vals[n - 1];
   const pad = ((dmax - dmin) || 1) * 0.08, lo = dmin - pad, hi = dmax + pad, span = (hi - lo) || 1;
-  const W = 360, H = 86, padL = 10, innerW = W - padL - 10, cy = 36, boxH = 22, top = cy - boxH / 2, bot = cy + boxH / 2;
+  const W = 360, H = 60, padL = 10, innerW = W - padL - 10, cy = 30, boxH = 16, top = cy - boxH / 2, bot = cy + boxH / 2;
   const X = v => padL + (v - lo) / span * innerW;
   const whisk = `<line x1="${X(dmin).toFixed(1)}" y1="${cy}" x2="${X(q1).toFixed(1)}" y2="${cy}" stroke="#94a3b8" stroke-width="1.4"/>
     <line x1="${X(q3).toFixed(1)}" y1="${cy}" x2="${X(dmax).toFixed(1)}" y2="${cy}" stroke="#94a3b8" stroke-width="1.4"/>
