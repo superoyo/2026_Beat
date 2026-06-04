@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.201",
+      "date": "2026-06-02",
+      "title": "Ads Campaign: filter เป็นเดือน + วันที่เด่นขึ้น + เรียงล่าสุดบน",
+      "summary": "เปลี่ยน filter ช่วงเวลาเป็นตัวเลือกเดือน (input month), แสดงวันที่ในตารางให้เด่น (start สีหลักตัวหนา + end ใต้), เรียงแคมเปญตามวันที่ล่าสุดอยู่บนสุด",
+      "changes": [
+        "filter เดือน (YYYY-MM) → แปลงเป็นช่วงต้นเดือน–ปลายเดือน",
+        "คอลัมน์ Period เด่นขึ้น: 📅 start (ตัวหนา/สีหลัก) + ถึง end",
+        "เรียง start desc (ล่าสุดบนสุด, ไม่มีวันที่ไปท้าย) + backend ส่ง start_txt/end_txt"
+      ]
+    },
+    {
       "version": "1.9.200",
       "date": "2026-06-02",
       "title": "Ads Campaign: เปลี่ยนเป็นชีตใหม่ (public) + Period แสดงแบบเดิม",

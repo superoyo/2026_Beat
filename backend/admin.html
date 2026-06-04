@@ -1955,10 +1955,10 @@ function renderCampaignsBody() {
   const inStyle = 'padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:9px;background:var(--bg-input);color:var(--text)';
   body.innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-      <span style="font-size:12px;color:var(--text-soft)">📅 ช่วงเวลา</span>
-      <input type="date" id="camp-from" value="${escapeHtml(_campFrom)}" style="${inStyle}">
+      <span style="font-size:12px;color:var(--text-soft)">📅 เดือน</span>
+      <input type="month" id="camp-from" value="${escapeHtml(_campFrom)}" title="เดือนเริ่ม" style="${inStyle}">
       <span style="color:var(--text-soft)">–</span>
-      <input type="date" id="camp-to" value="${escapeHtml(_campTo)}" style="${inStyle}">
+      <input type="month" id="camp-to" value="${escapeHtml(_campTo)}" title="เดือนสิ้นสุด" style="${inStyle}">
       <select id="camp-obj" style="${inStyle};cursor:pointer">
         <option value="__all__">🎯 ทุก Objective</option>
         ${objs.map(o => `<option value="${escapeHtml(o)}" ${_campObj === o ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}
@@ -1987,24 +1987,34 @@ function renderCampaignsTable() {
   const wrap = $('camp-cards');
   if (!wrap || !_campData) return;
   const q = _campSearch.trim().toLowerCase();
+  // filter เดือน: แปลงเป็นช่วงวันที่ (ต้นเดือน – ปลายเดือน)
+  const fromD = _campFrom ? _campFrom + '-01' : '';
+  const toD = _campTo ? _campTo + '-31' : '';
   _campFiltered = (_campData.campaigns || []).filter(c =>
     (_campObj === '__all__' || c.objective === _campObj) &&
-    _campInRange(c, _campFrom, _campTo) &&
+    _campInRange(c, fromD, toD) &&
     (!q || (c.name || '').toLowerCase().includes(q))
   );
+  // เรียงวันที่ล่าสุดอยู่บนสุด (start desc) — ไม่มีวันที่ไปท้าย
+  _campFiltered.sort((a, b) => (b.start || '').localeCompare(a.start || ''));
   if (_campFiltered.length === 0) {
     wrap.innerHTML = '<div class="empty" style="padding:24px;text-align:center;color:var(--text-muted)">— ไม่พบแคมเปญที่ตรงกับตัวกรอง —</div>';
     return;
   }
-  const rows = _campFiltered.map((c, i) => `
+  const rows = _campFiltered.map((c, i) => {
+    const dateCell = c.start_txt
+      ? `<div style="font-weight:700;font-size:13px;color:var(--primary);white-space:nowrap">📅 ${escapeHtml(c.start_txt)}</div>${c.end_txt ? `<div style="font-size:10.5px;color:var(--text-soft);white-space:nowrap">ถึง ${escapeHtml(c.end_txt)}</div>` : ''}`
+      : `<div style="font-weight:600;white-space:nowrap">${escapeHtml(c.period || '—')}</div>`;
+    return `
     <tr class="camp-row" data-idx="${i}" style="cursor:pointer">
       <td>
         <div style="font-weight:600">${escapeHtml(c.name)}</div>
         ${c.objective ? `<div style="font-size:10px;color:var(--text-soft);margin-top:1px">🎯 ${escapeHtml(c.objective)}</div>` : ''}
       </td>
-      <td style="white-space:nowrap;color:var(--text-muted)">${escapeHtml(c.period || '—')}</td>
+      <td>${dateCell}</td>
       <td class="tnum" style="font-weight:600">${escapeHtml(c.budget || '—')}</td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
   wrap.innerHTML = `
     <div style="font-size:11.5px;color:var(--text-soft);margin-bottom:8px">${_campFiltered.length} / ${(_campData.campaigns || []).length} แคมเปญ · 👆 คลิกเพื่อดูรายละเอียด</div>
     <div class="card" style="display:block;padding:0;overflow-x:auto">

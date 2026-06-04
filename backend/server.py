@@ -8851,6 +8851,8 @@ def ads_campaigns(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
             "objective": obj,
             "start": s_iso,
             "end": e_iso,
+            "start_txt": raw_start,
+            "end_txt": raw_end,
             "fields": fields,
         })
 
