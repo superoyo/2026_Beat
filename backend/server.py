@@ -4631,6 +4631,8 @@ ADS_BENCHMARK_SHEET_ID = os.environ.get("ADS_BENCHMARK_SHEET_ID", "1V2dx573u9Ncb
 # v1.9.198 — Ads Campaign: Google Sheet (public) รายการแคมเปญ — sheet แรก (ตั้ง GID ได้ถ้าอยู่แท็บอื่น)
 ADS_CAMPAIGN_SHEET_ID = os.environ.get("ADS_CAMPAIGN_SHEET_ID", "1-vvUJGRIJywisb3n3hrH7p8Lv8IGvIUqgnlrkt4MhKA")
 ADS_CAMPAIGN_SHEET_GID = os.environ.get("ADS_CAMPAIGN_SHEET_GID", "").strip()
+# v1.9.199 — ทางเลือกสำรองสำหรับชีตที่องค์กรล็อกการแชร์: ใช้ลิงก์ "เผยแพร่ไปยังเว็บ" (Publish to web → CSV)
+ADS_CAMPAIGN_CSV_URL = os.environ.get("ADS_CAMPAIGN_CSV_URL", "").strip()
 
 
 class WazzupLoginIn(BaseModel):
@@ -8778,14 +8780,17 @@ def _camp_period_range(period: str, start_iso, end_iso):
 
 @app.get("/api/ads-campaigns")
 def ads_campaigns(_sess: dict = Depends(_require_module("ads"))) -> dict[str, Any]:
-    qs = f"export?format=csv" + (f"&gid={ADS_CAMPAIGN_SHEET_GID}" if ADS_CAMPAIGN_SHEET_GID else "")
-    url = f"https://docs.google.com/spreadsheets/d/{ADS_CAMPAIGN_SHEET_ID}/{qs}"
+    if ADS_CAMPAIGN_CSV_URL:
+        url = ADS_CAMPAIGN_CSV_URL                       # ลิงก์ Publish-to-web (CSV) ตรง ๆ
+    else:
+        qs = "export?format=csv" + (f"&gid={ADS_CAMPAIGN_SHEET_GID}" if ADS_CAMPAIGN_SHEET_GID else "")
+        url = f"https://docs.google.com/spreadsheets/d/{ADS_CAMPAIGN_SHEET_ID}/{qs}"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "text/csv,*/*"})
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"ดึง Google Sheet ไม่สำเร็จ (HTTP {e.code}) — ตรวจว่าแชร์เป็น 'ทุกคนที่มีลิงก์ดูได้'")
+        raise HTTPException(status_code=502, detail=f"ดึง Google Sheet ไม่สำเร็จ (HTTP {e.code}) — ชีตยังเข้าถึงสาธารณะไม่ได้ (องค์กรอาจล็อกการแชร์) ลองใช้ 'เผยแพร่ไปยังเว็บ' แล้วตั้ง ADS_CAMPAIGN_CSV_URL")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"ดึง Google Sheet ไม่สำเร็จ: {e}")
     if raw.lstrip()[:14].lower().startswith("<!doctype") or "<html" in raw[:200].lower():

@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.199",
+      "date": "2026-06-02",
+      "title": "Ads Campaign: รองรับลิงก์ Publish-to-web (เลี่ยงองค์กรล็อกการแชร์)",
+      "summary": "เพิ่ม env ADS_CAMPAIGN_CSV_URL ใช้ลิงก์ 'เผยแพร่ไปยังเว็บ (CSV)' ตรง ๆ สำหรับชีตที่องค์กรล็อกการแชร์ออกนอกองค์กร (HTTP 401)",
+      "changes": [
+        "ถ้าตั้ง ADS_CAMPAIGN_CSV_URL ใช้ลิงก์นั้นแทนการสร้างจาก sheet id",
+        "ปรับข้อความ error ให้แนะนำ Publish-to-web"
+      ]
+    },
+    {
       "version": "1.9.198",
       "date": "2026-06-02",
       "title": "Ads: เพิ่มเมนูย่อย Campaign (ดึงจาก Google Sheet)",
