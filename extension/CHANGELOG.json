@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.202",
+      "date": "2026-06-02",
+      "title": "Ads Campaign: เพิ่มมุมมอง Gantt chart",
+      "summary": "เปลี่ยนการแสดงแคมเปญเป็น Gantt chart — แต่ละแคมเปญเป็นแท่งบนแกนเวลา ความกว้าง = ช่วง start→end สีตาม Objective คลิกดูรายละเอียด มี toggle สลับ Gantt/ตาราง",
+      "changes": [
+        "_renderGantt: คอลัมน์ชื่อ (sticky) + ไทม์ไลน์เลื่อนแนวนอน + แกนเดือน/เส้น grid",
+        "แท่ง = start→end (px ต่อวัน), สีตาม objective, tooltip ชื่อ/period/budget",
+        "toggle 📊 Gantt / 📋 ตาราง (default Gantt), แคมเปญไม่มีวันที่ไม่แสดงใน Gantt"
+      ]
+    },
+    {
       "version": "1.9.201",
       "date": "2026-06-02",
       "title": "Ads Campaign: filter เป็นเดือน + วันที่เด่นขึ้น + เรียงล่าสุดบน",

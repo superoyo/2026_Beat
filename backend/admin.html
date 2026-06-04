@@ -1431,6 +1431,14 @@ let _campFrom = '';
 let _campTo = '';
 let _campSearch = '';
 let _campFiltered = [];
+let _campView = 'gantt';    // v1.9.202 — 'gantt' | 'table'
+const _CAMP_OBJ_COLORS = {
+  'Video Views': '#2563eb', 'Video Thruplay': '#0891b2', 'Reach': '#10b981',
+  'Engagement': '#f59e0b', 'CPAS': '#8b5cf6', 'Conversions': '#ef4444',
+  'Traffic': '#06b6d4', 'Awareness': '#ec4899', 'Message': '#14b8a6',
+  'Page Like': '#a855f7', 'Lead Gen': '#f97316',
+};
+function _campObjColor(o) { return _CAMP_OBJ_COLORS[o] || '#64748b'; }
 // v1.9.170 — แยก brand/adtype จากชื่อ campaign (มิเรอร์ logic backend benchmark)
 const _BENCH_ADTYPES = ['Video Thruplay', 'Video Views', 'Page Likes', 'Page Like', 'CPAS', 'Reach', 'Engagement', 'Traffic', 'Awareness', 'Messages', 'Message', 'Conversions', 'Conversion', 'Purchases', 'Purchase', 'Leads', 'Lead'];
 function _benchBrandOf(camp) {
@@ -1963,8 +1971,12 @@ function renderCampaignsBody() {
         <option value="__all__">🎯 ทุก Objective</option>
         ${objs.map(o => `<option value="${escapeHtml(o)}" ${_campObj === o ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}
       </select>
-      <input id="camp-search" type="text" value="${escapeHtml(_campSearch)}" placeholder="🔍 ค้นหาแคมเปญ..." autocomplete="off" style="${inStyle};min-width:180px">
+      <input id="camp-search" type="text" value="${escapeHtml(_campSearch)}" placeholder="🔍 ค้นหาแคมเปญ..." autocomplete="off" style="${inStyle};min-width:170px">
       <button class="btn" id="camp-clear" style="font-size:12.5px;padding:7px 12px">ล้าง</button>
+      <div style="display:inline-flex;border:1px solid var(--border);border-radius:9px;overflow:hidden;margin-left:auto">
+        <button class="camp-view-btn" data-view="gantt" style="border:0;padding:7px 13px;font-size:12.5px;cursor:pointer">📊 Gantt</button>
+        <button class="camp-view-btn" data-view="table" style="border:0;padding:7px 13px;font-size:12.5px;cursor:pointer">📋 ตาราง</button>
+      </div>
     </div>
     <div id="camp-cards"></div>`;
   const f = $('camp-from'), t = $('camp-to'), ob = $('camp-obj'), si = $('camp-search'), cl = $('camp-clear');
@@ -1973,6 +1985,13 @@ function renderCampaignsBody() {
   if (ob) ob.onchange = () => { _campObj = ob.value; renderCampaignsTable(); };
   if (si) { let _tm; si.addEventListener('input', e => { clearTimeout(_tm); const val = e.target.value; _tm = setTimeout(() => { _campSearch = val; renderCampaignsTable(); }, 220); }); }
   if (cl) cl.onclick = () => { _campFrom = ''; _campTo = ''; _campObj = '__all__'; _campSearch = ''; renderCampaignsBody(); };
+  _subMain().querySelectorAll('.camp-view-btn').forEach(b => {
+    const on = b.dataset.view === _campView;
+    b.style.background = on ? 'var(--primary)' : 'var(--bg-card)';
+    b.style.color = on ? '#fff' : 'var(--text-muted)';
+    b.style.fontWeight = on ? '700' : '500';
+    b.onclick = () => { if (_campView !== b.dataset.view) { _campView = b.dataset.view; renderCampaignsBody(); } };
+  });
   renderCampaignsTable();
 }
 function _campInRange(c, from, to) {
@@ -2001,6 +2020,7 @@ function renderCampaignsTable() {
     wrap.innerHTML = '<div class="empty" style="padding:24px;text-align:center;color:var(--text-muted)">— ไม่พบแคมเปญที่ตรงกับตัวกรอง —</div>';
     return;
   }
+  if (_campView === 'gantt') { _renderGantt(wrap); return; }
   const rows = _campFiltered.map((c, i) => {
     const dateCell = c.start_txt
       ? `<div style="font-weight:700;font-size:13px;color:var(--primary);white-space:nowrap">📅 ${escapeHtml(c.start_txt)}</div>${c.end_txt ? `<div style="font-size:10.5px;color:var(--text-soft);white-space:nowrap">ถึง ${escapeHtml(c.end_txt)}</div>` : ''}`
@@ -2025,6 +2045,69 @@ function renderCampaignsTable() {
     </div>`;
   wrap.querySelectorAll('.camp-row').forEach(row => {
     row.addEventListener('click', () => { const c = _campFiltered[parseInt(row.dataset.idx, 10)]; if (c) openCampaignPanel(c); });
+  });
+}
+// v1.9.202 — Gantt chart: แต่ละแคมเปญเป็นแท่ง (start→end) บนแกนเวลา
+function _renderGantt(wrap) {
+  const dated = _campFiltered.filter(c => c.start && c.end);
+  const undated = _campFiltered.length - dated.length;
+  if (dated.length === 0) {
+    wrap.innerHTML = `<div class="empty" style="padding:24px;text-align:center;color:var(--text-muted)">— ไม่มีแคมเปญที่มีวันที่สำหรับ Gantt ${undated ? `(${undated} รายการไม่มีวันที่)` : ''} —</div>`;
+    return;
+  }
+  const DAY = 86400000;
+  const dayOf = iso => Math.round(Date.parse(iso + 'T00:00:00Z') / DAY);
+  let minD = Infinity, maxD = -Infinity;
+  dated.forEach(c => { const s = dayOf(c.start), e = dayOf(c.end); if (s < minD) minD = s; if (e > maxD) maxD = e; });
+  // ขยายขอบเป็นต้นเดือน–ปลายเดือน
+  const dMin = new Date(minD * DAY), dMax = new Date(maxD * DAY);
+  minD = Math.round(Date.UTC(dMin.getUTCFullYear(), dMin.getUTCMonth(), 1) / DAY);
+  maxD = Math.round(Date.UTC(dMax.getUTCFullYear(), dMax.getUTCMonth() + 1, 0) / DAY);
+  const totalDays = Math.max(maxD - minD + 1, 1);
+  const PX = 2.6, labelW = 230, rowH = 26, headH = 26;
+  const tlW = Math.max(Math.round(totalDays * PX), 360);
+  const MN = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  const ticks = [];
+  let cur = minD;
+  while (cur <= maxD) {
+    const dt = new Date(cur * DAY);
+    ticks.push({ left: (cur - minD) * PX, label: `${MN[dt.getUTCMonth()]} ${String(dt.getUTCFullYear()).slice(2)}` });
+    cur = Math.round(Date.UTC(dt.getUTCMonth() === 11 ? dt.getUTCFullYear() + 1 : dt.getUTCFullYear(), (dt.getUTCMonth() + 1) % 12, 1) / DAY);
+  }
+  const gridlines = ticks.map(t => `<div style="position:absolute;top:0;bottom:0;left:${t.left.toFixed(1)}px;width:1px;background:var(--border);opacity:.55"></div>`).join('');
+  const axis = ticks.map(t => `<div style="position:absolute;left:${(t.left + 3).toFixed(1)}px;top:6px;font-size:9.5px;color:var(--text-soft);white-space:nowrap">${t.label}</div>`).join('');
+  const labelRows = dated.map((c, i) => `<div class="gantt-row" data-idx="${i}" style="height:${rowH}px;display:flex;align-items:center;padding:0 8px;border-bottom:1px solid var(--border);cursor:pointer;overflow:hidden">
+    <span style="width:9px;height:9px;border-radius:2px;background:${_campObjColor(c.objective)};flex-shrink:0;margin-right:6px"></span>
+    <span style="font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</span>
+  </div>`).join('');
+  const barRows = dated.map((c, i) => {
+    const s = dayOf(c.start) - minD, e = dayOf(c.end) - minD;
+    const left = s * PX, w = Math.max((e - s + 1) * PX, 4);
+    const tip = `${c.name}\n${c.period}\n💰 ${c.budget || '-'} · 🎯 ${c.objective || '-'}`;
+    return `<div class="gantt-row" data-idx="${i}" style="height:${rowH}px;position:relative;border-bottom:1px solid var(--border);cursor:pointer">
+      <div style="position:absolute;left:${left.toFixed(1)}px;width:${w.toFixed(1)}px;top:5px;height:16px;background:${_campObjColor(c.objective)};border-radius:8px;z-index:1;box-shadow:0 1px 2px rgba(0,0,0,.14);display:flex;align-items:center;overflow:hidden;padding:0 6px" title="${escapeHtml(tip)}">
+        <span style="font-size:8.5px;color:#fff;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(c.objective || '')}</span>
+      </div>
+    </div>`;
+  }).join('');
+  wrap.innerHTML = `
+    <div style="font-size:11.5px;color:var(--text-soft);margin-bottom:8px">${dated.length} แคมเปญ (Gantt)${undated ? ` · ${undated} ไม่มีวันที่ (ไม่แสดง)` : ''} · 👆 คลิกเพื่อดูรายละเอียด · สี = Objective</div>
+    <div class="card" style="display:block;padding:0;overflow:hidden">
+      <div style="display:flex">
+        <div style="width:${labelW}px;flex-shrink:0;border-right:2px solid var(--border)">
+          <div style="height:${headH}px;border-bottom:1px solid var(--border);background:var(--bg-soft);display:flex;align-items:center;padding:0 8px;font-size:10px;font-weight:700;color:var(--text-muted)">Campaign (${dated.length})</div>
+          ${labelRows}
+        </div>
+        <div style="flex:1;overflow-x:auto">
+          <div style="width:${tlW}px;position:relative">
+            <div style="height:${headH}px;border-bottom:1px solid var(--border);background:var(--bg-soft);position:relative">${axis}</div>
+            <div style="position:relative">${gridlines}${barRows}</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  wrap.querySelectorAll('.gantt-row').forEach(row => {
+    row.addEventListener('click', () => { const c = dated[parseInt(row.dataset.idx, 10)]; if (c) openCampaignPanel(c); });
   });
 }
 function openCampaignPanel(c) {
