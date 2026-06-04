@@ -1427,6 +1427,7 @@ let _audSearch = '';
 let _audSort = {};          // v1.9.182 — sort ต่อตาราง { age:{col,dir}, placement:{...}, region:{...} }
 let _campData = null;       // v1.9.198 — Ads Campaign (Google Sheet)
 let _campObj = '__all__';
+let _campBid = '__all__';   // v1.9.203 — filter ตามคนที่ทำหน้าที่ Bid
 let _campFrom = '';
 let _campTo = '';
 let _campSearch = '';
@@ -1967,6 +1968,10 @@ function renderCampaignsBody() {
       <input type="month" id="camp-from" value="${escapeHtml(_campFrom)}" title="เดือนเริ่ม" style="${inStyle}">
       <span style="color:var(--text-soft)">–</span>
       <input type="month" id="camp-to" value="${escapeHtml(_campTo)}" title="เดือนสิ้นสุด" style="${inStyle}">
+      <select id="camp-bid" style="${inStyle};cursor:pointer">
+        <option value="__all__">🙋 ทุกคน (Bid.)</option>
+        ${(_campData.bids || []).map(b => `<option value="${escapeHtml(b)}" ${_campBid === b ? 'selected' : ''}>${escapeHtml(b)}</option>`).join('')}
+      </select>
       <select id="camp-obj" style="${inStyle};cursor:pointer">
         <option value="__all__">🎯 ทุก Objective</option>
         ${objs.map(o => `<option value="${escapeHtml(o)}" ${_campObj === o ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}
@@ -1979,12 +1984,13 @@ function renderCampaignsBody() {
       </div>
     </div>
     <div id="camp-cards"></div>`;
-  const f = $('camp-from'), t = $('camp-to'), ob = $('camp-obj'), si = $('camp-search'), cl = $('camp-clear');
+  const f = $('camp-from'), t = $('camp-to'), ob = $('camp-obj'), bd = $('camp-bid'), si = $('camp-search'), cl = $('camp-clear');
   if (f) f.onchange = () => { _campFrom = f.value; renderCampaignsTable(); };
   if (t) t.onchange = () => { _campTo = t.value; renderCampaignsTable(); };
   if (ob) ob.onchange = () => { _campObj = ob.value; renderCampaignsTable(); };
+  if (bd) bd.onchange = () => { _campBid = bd.value; renderCampaignsTable(); };
   if (si) { let _tm; si.addEventListener('input', e => { clearTimeout(_tm); const val = e.target.value; _tm = setTimeout(() => { _campSearch = val; renderCampaignsTable(); }, 220); }); }
-  if (cl) cl.onclick = () => { _campFrom = ''; _campTo = ''; _campObj = '__all__'; _campSearch = ''; renderCampaignsBody(); };
+  if (cl) cl.onclick = () => { _campFrom = ''; _campTo = ''; _campObj = '__all__'; _campBid = '__all__'; _campSearch = ''; renderCampaignsBody(); };
   _subMain().querySelectorAll('.camp-view-btn').forEach(b => {
     const on = b.dataset.view === _campView;
     b.style.background = on ? 'var(--primary)' : 'var(--bg-card)';
@@ -2011,6 +2017,7 @@ function renderCampaignsTable() {
   const toD = _campTo ? _campTo + '-31' : '';
   _campFiltered = (_campData.campaigns || []).filter(c =>
     (_campObj === '__all__' || c.objective === _campObj) &&
+    (_campBid === '__all__' || c.bid === _campBid) &&
     _campInRange(c, fromD, toD) &&
     (!q || (c.name || '').toLowerCase().includes(q))
   );

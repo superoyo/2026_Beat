@@ -8819,9 +8819,11 @@ def ads_campaigns(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
     k_obj = _find("objective", "วัตถุประสงค์", "obj", "goal")
     k_start = _find("start date", "start", "from", "วันเริ่ม", "เริ่ม")
     k_end = _find("end date", "end", "to", "วันสิ้นสุด", "สิ้นสุด")
+    k_bid = _find("bid.", "bid", "bidder", "ผู้บิด", "คนบิด")
 
     out = []
     objectives = set()
+    bids = set()
     for row in reader:
         fields = {(c or "").strip(): (row.get(c) or "").strip() for c in cols}
         name = (row.get(k_name) or "").strip() if k_name else ""
@@ -8842,13 +8844,17 @@ def ads_campaigns(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
                 period = f"{s_iso} – {e_iso}"
         budget = (row.get(k_budget) or "").strip() if k_budget else ""
         obj = (row.get(k_obj) or "").strip() if k_obj else ""
+        bid = (row.get(k_bid) or "").strip() if k_bid else ""
         if obj:
             objectives.add(obj)
+        if bid:
+            bids.add(bid)
         out.append({
             "name": name or "(ไม่ระบุชื่อ)",
             "period": period,
             "budget": budget,
             "objective": obj,
+            "bid": bid,
             "start": s_iso,
             "end": e_iso,
             "start_txt": raw_start,
@@ -8861,8 +8867,9 @@ def ads_campaigns(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
         "count": len(out),
         "campaigns": out,
         "objectives": sorted(objectives),
+        "bids": sorted(bids),
         "mapped": {"name": k_name, "period": k_period, "budget": k_budget,
-                   "objective": k_obj, "start": k_start, "end": k_end},
+                   "objective": k_obj, "start": k_start, "end": k_end, "bid": k_bid},
     }
 
 
