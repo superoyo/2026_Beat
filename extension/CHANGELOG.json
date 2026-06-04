@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.204",
+      "date": "2026-06-02",
+      "title": "Ads Campaign Gantt: ยุบตาม Project Code → ขยายดู Objective",
+      "summary": "Gantt จัดลำดับชั้น: Project Code 1 บรรทัด (แท่งรวมช่วงทั้งโปรเจกต์) กด + ขยายเห็น Objective ภายใน (objective เดียวกันยุบเป็น 1 แท่ง พร้อมจำนวน ads) คลิก Objective เปิดสไลด์แสดงรายละเอียด ads ทุกตัวในกลุ่ม",
+      "changes": [
+        "Backend: ส่ง project_code / project_name ต่อแคมเปญ",
+        "Frontend: group by project → objective, แถวขยาย/ยุบ (state _campExpanded)",
+        "แท่ง project = เทา (ช่วงรวม), แท่ง objective = สีตาม objective + จำนวน ads",
+        "openCampaignGroupPanel: แสดง ads ทุกตัวในกลุ่ม (config ต่างกัน) + budget รวม"
+      ]
+    },
+    {
       "version": "1.9.203",
       "date": "2026-06-02",
       "title": "Ads Campaign: เพิ่ม filter Bid. (เลือกตามคนที่ทำหน้าที่ Bid)",

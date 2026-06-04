@@ -8820,6 +8820,8 @@ def ads_campaigns(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
     k_start = _find("start date", "start", "from", "วันเริ่ม", "เริ่ม")
     k_end = _find("end date", "end", "to", "วันสิ้นสุด", "สิ้นสุด")
     k_bid = _find("bid.", "bid", "bidder", "ผู้บิด", "คนบิด")
+    k_pcode = _find("project code", "project_code", "projectcode", "code", "รหัสโปรเจกต์")
+    k_pname = _find("project name", "project_name", "projectname", "โปรเจกต์")
 
     out = []
     objectives = set()
@@ -8855,6 +8857,8 @@ def ads_campaigns(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
             "budget": budget,
             "objective": obj,
             "bid": bid,
+            "project_code": (row.get(k_pcode) or "").strip() if k_pcode else "",
+            "project_name": (row.get(k_pname) or "").strip() if k_pname else "",
             "start": s_iso,
             "end": e_iso,
             "start_txt": raw_start,
@@ -8868,8 +8872,8 @@ def ads_campaigns(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
         "campaigns": out,
         "objectives": sorted(objectives),
         "bids": sorted(bids),
-        "mapped": {"name": k_name, "period": k_period, "budget": k_budget,
-                   "objective": k_obj, "start": k_start, "end": k_end, "bid": k_bid},
+        "mapped": {"name": k_name, "period": k_period, "budget": k_budget, "objective": k_obj,
+                   "start": k_start, "end": k_end, "bid": k_bid, "project_code": k_pcode, "project_name": k_pname},
     }
 
 

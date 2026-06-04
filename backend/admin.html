@@ -1433,6 +1433,36 @@ let _campTo = '';
 let _campSearch = '';
 let _campFiltered = [];
 let _campView = 'gantt';    // v1.9.202 — 'gantt' | 'table'
+let _campExpanded = new Set(); // v1.9.204 — project codes ที่ขยายใน Gantt
+function _campSpan(ads) {
+  let s = null, e = null;
+  ads.forEach(a => { if (a.start && (!s || a.start < s)) s = a.start; if (a.end && (!e || a.end > e)) e = a.end; });
+  return { start: s, end: e };
+}
+function _campBudgetNum(b) { const n = parseFloat(String(b || '').replace(/[^0-9.]/g, '')); return isFinite(n) ? n : 0; }
+function _campGroupProjects(list) {
+  const map = new Map();
+  list.forEach((c, idx) => {
+    const code = (c.project_code || '').trim();
+    const key = code || ('__none_' + idx);
+    if (!map.has(key)) map.set(key, { key, code: code || '(ไม่มีรหัส)', name: c.project_name || '', ads: [], objMap: new Map() });
+    const g = map.get(key);
+    g.ads.push(c);
+    if (!g.name && c.project_name) g.name = c.project_name;
+    const ob = c.objective || '(ไม่ระบุ)';
+    if (!g.objMap.has(ob)) g.objMap.set(ob, { objective: ob, ads: [] });
+    g.objMap.get(ob).ads.push(c);
+  });
+  const res = [];
+  map.forEach(g => {
+    const sp = _campSpan(g.ads);
+    const objectives = [];
+    g.objMap.forEach(o => { const s = _campSpan(o.ads); objectives.push({ objective: o.objective, ads: o.ads, start: s.start, end: s.end }); });
+    objectives.sort((a, b) => (b.start || '').localeCompare(a.start || ''));
+    res.push({ key: g.key, code: g.code, name: g.name, ads: g.ads, objectives, start: sp.start, end: sp.end });
+  });
+  return res;
+}
 const _CAMP_OBJ_COLORS = {
   'Video Views': '#2563eb', 'Video Thruplay': '#0891b2', 'Reach': '#10b981',
   'Engagement': '#f59e0b', 'CPAS': '#8b5cf6', 'Conversions': '#ef4444',
@@ -2054,24 +2084,24 @@ function renderCampaignsTable() {
     row.addEventListener('click', () => { const c = _campFiltered[parseInt(row.dataset.idx, 10)]; if (c) openCampaignPanel(c); });
   });
 }
-// v1.9.202 — Gantt chart: แต่ละแคมเปญเป็นแท่ง (start→end) บนแกนเวลา
+// v1.9.204 — Gantt: ยุบตาม Project Code → กด + ขยายเห็น Objective (objective เดียวกันยุบเป็น 1 แท่ง)
 function _renderGantt(wrap) {
-  const dated = _campFiltered.filter(c => c.start && c.end);
-  const undated = _campFiltered.length - dated.length;
-  if (dated.length === 0) {
-    wrap.innerHTML = `<div class="empty" style="padding:24px;text-align:center;color:var(--text-muted)">— ไม่มีแคมเปญที่มีวันที่สำหรับ Gantt ${undated ? `(${undated} รายการไม่มีวันที่)` : ''} —</div>`;
+  const allGroups = _campGroupProjects(_campFiltered);
+  const groups = allGroups.filter(g => g.start && g.end).sort((a, b) => (b.start || '').localeCompare(a.start || ''));
+  const undatedG = allGroups.length - groups.length;
+  if (groups.length === 0) {
+    wrap.innerHTML = `<div class="empty" style="padding:24px;text-align:center;color:var(--text-muted)">— ไม่มีโปรเจกต์ที่มีวันที่สำหรับ Gantt —</div>`;
     return;
   }
   const DAY = 86400000;
   const dayOf = iso => Math.round(Date.parse(iso + 'T00:00:00Z') / DAY);
   let minD = Infinity, maxD = -Infinity;
-  dated.forEach(c => { const s = dayOf(c.start), e = dayOf(c.end); if (s < minD) minD = s; if (e > maxD) maxD = e; });
-  // ขยายขอบเป็นต้นเดือน–ปลายเดือน
+  groups.forEach(g => { const s = dayOf(g.start), e = dayOf(g.end); if (s < minD) minD = s; if (e > maxD) maxD = e; });
   const dMin = new Date(minD * DAY), dMax = new Date(maxD * DAY);
   minD = Math.round(Date.UTC(dMin.getUTCFullYear(), dMin.getUTCMonth(), 1) / DAY);
   maxD = Math.round(Date.UTC(dMax.getUTCFullYear(), dMax.getUTCMonth() + 1, 0) / DAY);
   const totalDays = Math.max(maxD - minD + 1, 1);
-  const PX = 2.6, labelW = 230, rowH = 26, headH = 26;
+  const PX = 2.6, labelW = 250, rowH = 26, headH = 26;
   const tlW = Math.max(Math.round(totalDays * PX), 360);
   const MN = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
   const ticks = [];
@@ -2083,26 +2113,59 @@ function _renderGantt(wrap) {
   }
   const gridlines = ticks.map(t => `<div style="position:absolute;top:0;bottom:0;left:${t.left.toFixed(1)}px;width:1px;background:var(--border);opacity:.55"></div>`).join('');
   const axis = ticks.map(t => `<div style="position:absolute;left:${(t.left + 3).toFixed(1)}px;top:6px;font-size:9.5px;color:var(--text-soft);white-space:nowrap">${t.label}</div>`).join('');
-  const labelRows = dated.map((c, i) => `<div class="gantt-row" data-idx="${i}" style="height:${rowH}px;display:flex;align-items:center;padding:0 8px;border-bottom:1px solid var(--border);cursor:pointer;overflow:hidden">
-    <span style="width:9px;height:9px;border-radius:2px;background:${_campObjColor(c.objective)};flex-shrink:0;margin-right:6px"></span>
-    <span style="font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</span>
-  </div>`).join('');
-  const barRows = dated.map((c, i) => {
-    const s = dayOf(c.start) - minD, e = dayOf(c.end) - minD;
+  const money = n => n ? n.toLocaleString('th-TH') : '';
+  // สร้างแถวที่มองเห็น (project + objective ที่ขยาย)
+  const vis = [];
+  groups.forEach((g, gi) => {
+    vis.push({ kind: 'proj', gi });
+    if (_campExpanded.has(g.key)) {
+      g.objectives.filter(o => o.start && o.end).forEach((o, oi) => vis.push({ kind: 'obj', gi, oi }));
+    }
+  });
+  const labelRows = vis.map(v => {
+    const g = groups[v.gi];
+    if (v.kind === 'proj') {
+      const open = _campExpanded.has(g.key);
+      const bsum = g.ads.reduce((s, a) => s + _campBudgetNum(a.budget), 0);
+      return `<div class="gantt-row" data-k="proj" data-gi="${v.gi}" style="height:${rowH}px;display:flex;align-items:center;gap:5px;padding:0 8px;border-bottom:1px solid var(--border);cursor:pointer;background:var(--bg-soft);overflow:hidden">
+        <span style="width:15px;flex-shrink:0;text-align:center;font-weight:700;color:var(--primary)">${open ? '−' : '+'}</span>
+        <span style="font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(g.code + ' ' + g.name)}">${escapeHtml(g.code)} <span style="font-weight:400;color:var(--text-soft)">${escapeHtml(g.name)}</span></span>
+        <span style="font-size:9px;color:var(--text-soft);flex-shrink:0">· ${g.objectives.length} obj${bsum ? ' · 💰' + money(bsum) : ''}</span>
+      </div>`;
+    }
+    const o = g.objectives[v.oi];
+    const bsum = o.ads.reduce((s, a) => s + _campBudgetNum(a.budget), 0);
+    return `<div class="gantt-row" data-k="obj" data-gi="${v.gi}" data-oi="${v.oi}" style="height:${rowH}px;display:flex;align-items:center;gap:6px;padding:0 8px 0 26px;border-bottom:1px solid var(--border);cursor:pointer;overflow:hidden">
+      <span style="width:9px;height:9px;border-radius:2px;background:${_campObjColor(o.objective)};flex-shrink:0"></span>
+      <span style="font-size:11px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(o.objective)}</span>
+      <span style="font-size:9px;color:var(--text-soft);flex-shrink:0">· ${o.ads.length} ads${bsum ? ' · 💰' + money(bsum) : ''}</span>
+    </div>`;
+  }).join('');
+  const barRows = vis.map(v => {
+    const g = groups[v.gi];
+    if (v.kind === 'proj') {
+      const s = dayOf(g.start) - minD, e = dayOf(g.end) - minD;
+      const left = s * PX, w = Math.max((e - s + 1) * PX, 4);
+      return `<div class="gantt-row" data-k="proj" data-gi="${v.gi}" style="height:${rowH}px;position:relative;border-bottom:1px solid var(--border);cursor:pointer;background:var(--bg-soft)">
+        <div style="position:absolute;left:${left.toFixed(1)}px;width:${w.toFixed(1)}px;top:6px;height:14px;background:#94a3b8;border-radius:7px;z-index:1;opacity:.9" title="${escapeHtml(g.code)} · ${escapeHtml(g.start)} → ${escapeHtml(g.end)} · ${g.objectives.length} objectives, ${g.ads.length} ads"></div>
+      </div>`;
+    }
+    const o = g.objectives[v.oi];
+    const s = dayOf(o.start) - minD, e = dayOf(o.end) - minD;
     const left = s * PX, w = Math.max((e - s + 1) * PX, 4);
-    const tip = `${c.name}\n${c.period}\n💰 ${c.budget || '-'} · 🎯 ${c.objective || '-'}`;
-    return `<div class="gantt-row" data-idx="${i}" style="height:${rowH}px;position:relative;border-bottom:1px solid var(--border);cursor:pointer">
-      <div style="position:absolute;left:${left.toFixed(1)}px;width:${w.toFixed(1)}px;top:5px;height:16px;background:${_campObjColor(c.objective)};border-radius:8px;z-index:1;box-shadow:0 1px 2px rgba(0,0,0,.14);display:flex;align-items:center;overflow:hidden;padding:0 6px" title="${escapeHtml(tip)}">
-        <span style="font-size:8.5px;color:#fff;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(c.objective || '')}</span>
+    const tip = `${g.code} · ${o.objective}\n${o.start} → ${o.end}\n${o.ads.length} ads`;
+    return `<div class="gantt-row" data-k="obj" data-gi="${v.gi}" data-oi="${v.oi}" style="height:${rowH}px;position:relative;border-bottom:1px solid var(--border);cursor:pointer">
+      <div style="position:absolute;left:${left.toFixed(1)}px;width:${w.toFixed(1)}px;top:5px;height:16px;background:${_campObjColor(o.objective)};border-radius:8px;z-index:1;box-shadow:0 1px 2px rgba(0,0,0,.14);display:flex;align-items:center;overflow:hidden;padding:0 6px" title="${escapeHtml(tip)}">
+        <span style="font-size:8.5px;color:#fff;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(o.objective)}${o.ads.length > 1 ? ' (' + o.ads.length + ')' : ''}</span>
       </div>
     </div>`;
   }).join('');
   wrap.innerHTML = `
-    <div style="font-size:11.5px;color:var(--text-soft);margin-bottom:8px">${dated.length} แคมเปญ (Gantt)${undated ? ` · ${undated} ไม่มีวันที่ (ไม่แสดง)` : ''} · 👆 คลิกเพื่อดูรายละเอียด · สี = Objective</div>
+    <div style="font-size:11.5px;color:var(--text-soft);margin-bottom:8px">${groups.length} โปรเจกต์${undatedG ? ` · ${undatedG} ไม่มีวันที่ (ไม่แสดง)` : ''} · 👆 กด <b>+</b> เพื่อขยายดู Objective · คลิก Objective ดูรายละเอียด ads · สี = Objective</div>
     <div class="card" style="display:block;padding:0;overflow:hidden">
       <div style="display:flex">
         <div style="width:${labelW}px;flex-shrink:0;border-right:2px solid var(--border)">
-          <div style="height:${headH}px;border-bottom:1px solid var(--border);background:var(--bg-soft);display:flex;align-items:center;padding:0 8px;font-size:10px;font-weight:700;color:var(--text-muted)">Campaign (${dated.length})</div>
+          <div style="height:${headH}px;border-bottom:1px solid var(--border);background:var(--bg-soft);display:flex;align-items:center;padding:0 8px;font-size:10px;font-weight:700;color:var(--text-muted)">Project / Objective</div>
           ${labelRows}
         </div>
         <div style="flex:1;overflow-x:auto">
@@ -2114,8 +2177,60 @@ function _renderGantt(wrap) {
       </div>
     </div>`;
   wrap.querySelectorAll('.gantt-row').forEach(row => {
-    row.addEventListener('click', () => { const c = dated[parseInt(row.dataset.idx, 10)]; if (c) openCampaignPanel(c); });
+    row.addEventListener('click', () => {
+      const g = groups[parseInt(row.dataset.gi, 10)];
+      if (!g) return;
+      if (row.dataset.k === 'proj') {
+        if (_campExpanded.has(g.key)) _campExpanded.delete(g.key); else _campExpanded.add(g.key);
+        _renderGantt(wrap);
+      } else {
+        const o = g.objectives[parseInt(row.dataset.oi, 10)];
+        if (o) openCampaignGroupPanel(g, o);
+      }
+    });
   });
+}
+function openCampaignGroupPanel(g, o) {
+  document.querySelectorAll('.sup-panel-wrap').forEach(e => e.remove());
+  const ads = o ? o.ads : g.ads;
+  const chip = (icon, txt) => txt ? `<span style="font-size:12px;padding:3px 11px;border-radius:999px;background:var(--bg-soft);border:1px solid var(--border);font-weight:600">${icon} ${escapeHtml(txt)}</span>` : '';
+  const adCards = ads.map(c => {
+    const fieldsHtml = Object.entries(c.fields || {}).filter(([k, val]) => k && String(val).trim() !== '').map(([k, val]) => `
+      <div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
+        <div style="font-size:10.5px;color:var(--text-muted);min-width:118px;max-width:118px;flex-shrink:0;word-break:break-word">${escapeHtml(k)}</div>
+        <div style="font-size:12px;word-break:break-word;line-height:1.5">${escapeHtml(String(val))}</div>
+      </div>`).join('');
+    return `<div style="border:1px solid var(--border);border-radius:11px;padding:12px;margin-bottom:10px">
+      <div style="font-size:12px;font-weight:700;word-break:break-word;margin-bottom:5px">${escapeHtml(c.name)}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:${fieldsHtml ? '8px' : '0'}">
+        ${chip('📅', c.period)}${chip('💰', c.budget)}
+      </div>
+      ${fieldsHtml}
+    </div>`;
+  }).join('');
+  const wrap = document.createElement('div');
+  wrap.className = 'sup-panel-wrap';
+  wrap.innerHTML = `
+    <div class="sup-panel-backdrop"></div>
+    <div class="sup-panel" style="width:480px">
+      <div class="sup-panel-head"><button class="sup-panel-close" title="ปิด">✕</button></div>
+      <div class="sup-panel-body" style="padding:4px 22px 28px">
+        <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">📋 ${escapeHtml(g.code)}</div>
+        <div style="font-size:15px;font-weight:800;margin:3px 0 8px;line-height:1.35;word-break:break-word">${escapeHtml(g.name || g.code)}</div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px">
+          ${o ? `<span style="font-size:12px;padding:3px 11px;border-radius:999px;background:${_campObjColor(o.objective)};color:#fff;font-weight:700">🎯 ${escapeHtml(o.objective)}</span>` : ''}
+          <span style="font-size:12px;padding:3px 11px;border-radius:999px;background:var(--bg-soft);border:1px solid var(--border);font-weight:600">${ads.length} ads</span>
+        </div>
+        ${adCards}
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  requestAnimationFrame(() => wrap.classList.add('is-open'));
+  const close = () => { wrap.classList.remove('is-open'); document.removeEventListener('keydown', onKey); setTimeout(() => wrap.remove(), 260); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  wrap.querySelector('.sup-panel-backdrop').addEventListener('click', close);
+  wrap.querySelector('.sup-panel-close').addEventListener('click', close);
 }
 function openCampaignPanel(c) {
   document.querySelectorAll('.sup-panel-wrap').forEach(e => e.remove());
