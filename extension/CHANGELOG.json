@@ -2,6 +2,15 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.206",
+      "date": "2026-06-02",
+      "title": "Campaign panel: คอลัมน์ ad กว้างคงที่ 200px + scroll แนวนอน",
+      "summary": "ตารางเทียบ ads ใช้ table-layout:fixed คอลัมน์ละ 200px (field col 120px) ถ้ารวมเกินความกว้างพาเนล จะ scroll แนวนอน",
+      "changes": [
+        "table-layout:fixed, ad column = 200px, field column = 120px, width = 120 + 200×ads"
+      ]
+    },
+    {
       "version": "1.9.205",
       "date": "2026-06-02",
       "title": "Campaign panel: หลาย ads แสดงเป็นคอลัมน์ละ ad (ตารางเทียบ)",

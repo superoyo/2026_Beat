@@ -2199,7 +2199,7 @@ function openCampaignGroupPanel(g, o) {
   const cols = (_campData.columns || []).filter(col => ads.some(a => String((a.fields || {})[col] || '').trim() !== ''));
   const adHead = ads.map((a, i) => {
     const lbl = (matCol && a.fields[matCol]) ? a.fields[matCol] : ('Ad ' + (i + 1));
-    return `<th style="text-align:left;padding:8px 9px;border-bottom:2px solid var(--border);min-width:135px;max-width:185px;vertical-align:bottom;background:var(--bg-card)" title="${escapeHtml(a.name)}">
+    return `<th style="text-align:left;padding:8px 9px;border-bottom:2px solid var(--border);width:200px;min-width:200px;max-width:200px;vertical-align:bottom;background:var(--bg-card)" title="${escapeHtml(a.name)}">
       <div style="font-size:11px;font-weight:700;white-space:normal;word-break:break-word;line-height:1.3">${escapeHtml(lbl)}</div>
       ${a.budget ? `<div style="font-size:9.5px;color:var(--text-soft);font-weight:600;margin-top:2px">💰 ${escapeHtml(a.budget)}</div>` : ''}
     </th>`;
@@ -2210,9 +2210,10 @@ function openCampaignGroupPanel(g, o) {
     const cells = vals.map(v => `<td style="padding:6px 9px;font-size:11.5px;border-bottom:1px solid var(--border);word-break:break-word;vertical-align:top;line-height:1.5${diff ? ';background:rgba(245,158,11,.10)' : ''}">${escapeHtml(v || '—')}</td>`).join('');
     return `<tr><td style="padding:6px 9px;font-size:10.5px;color:var(--text-muted);border-bottom:1px solid var(--border);position:sticky;left:0;background:var(--bg-soft);white-space:nowrap;z-index:1;font-weight:${diff ? '700' : '400'}">${escapeHtml(col)}</td>${cells}</tr>`;
   }).join('');
+  const tableW = 120 + ads.length * 200;
   const matrix = cols.length ? `<div style="overflow-x:auto;border:1px solid var(--border);border-radius:11px">
-    <table style="border-collapse:collapse;width:100%;min-width:max-content">
-      <thead><tr><th style="text-align:left;padding:8px 9px;font-size:10px;color:var(--text-muted);border-bottom:2px solid var(--border);position:sticky;left:0;background:var(--bg-soft);z-index:2;white-space:nowrap">Field \\ Ad</th>${adHead}</tr></thead>
+    <table style="border-collapse:collapse;table-layout:fixed;width:${tableW}px">
+      <thead><tr><th style="text-align:left;padding:8px 9px;font-size:10px;color:var(--text-muted);border-bottom:2px solid var(--border);position:sticky;left:0;background:var(--bg-soft);z-index:2;white-space:nowrap;width:120px">Field \\ Ad</th>${adHead}</tr></thead>
       <tbody>${bodyRows}</tbody>
     </table>
   </div>${multi ? '<div style="font-size:10px;color:var(--text-soft);margin-top:7px">🟡 = field ที่ค่าต่างกันระหว่าง ads</div>' : ''}` : '<div class="empty" style="padding:14px;font-size:12px">— ไม่มีข้อมูล —</div>';
