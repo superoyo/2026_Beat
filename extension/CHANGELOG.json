@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.200",
+      "date": "2026-06-02",
+      "title": "Ads Campaign: เปลี่ยนเป็นชีตใหม่ (public) + Period แสดงแบบเดิม",
+      "summary": "ใช้ Google Sheet ใหม่ที่เปิด public แล้ว (651 แคมเปญ) — map คอลัมน์ Campaign name/Start date/End date/Budget/Objective อัตโนมัติ, Period แสดงเป็นข้อความเดิม (เช่น 1 Aug 24 – 30 Nov 24)",
+      "changes": [
+        "default ADS_CAMPAIGN_SHEET_ID = ชีตใหม่",
+        "Period ใช้ข้อความ start–end เดิมแทน ISO (ยังคง parse ISO ไว้กรองวันที่)",
+        "Objective filter มี 11 แบบ (Video Views/CPAS/Reach/...)"
+      ]
+    },
+    {
       "version": "1.9.199",
       "date": "2026-06-02",
       "title": "Ads Campaign: รองรับลิงก์ Publish-to-web (เลี่ยงองค์กรล็อกการแชร์)",

@@ -4629,7 +4629,7 @@ WINDSOR_BASE_URL = os.environ.get("WINDSOR_BASE_URL", "https://connectors.windso
 # v1.9.167 — Ads Benchmark: Google Sheet (public) ที่ดึง CPM benchmark — tab แรก
 ADS_BENCHMARK_SHEET_ID = os.environ.get("ADS_BENCHMARK_SHEET_ID", "1V2dx573u9NcbAdwYOABo4HpqcuOMTJNme2iay-i4fFw")
 # v1.9.198 — Ads Campaign: Google Sheet (public) รายการแคมเปญ — sheet แรก (ตั้ง GID ได้ถ้าอยู่แท็บอื่น)
-ADS_CAMPAIGN_SHEET_ID = os.environ.get("ADS_CAMPAIGN_SHEET_ID", "1-vvUJGRIJywisb3n3hrH7p8Lv8IGvIUqgnlrkt4MhKA")
+ADS_CAMPAIGN_SHEET_ID = os.environ.get("ADS_CAMPAIGN_SHEET_ID", "17gjfbjCv5Ap7Isx5gdLW5E8kwjBEy5QmJcycquOl31E")
 ADS_CAMPAIGN_SHEET_GID = os.environ.get("ADS_CAMPAIGN_SHEET_GID", "").strip()
 # v1.9.199 — ทางเลือกสำรองสำหรับชีตที่องค์กรล็อกการแชร์: ใช้ลิงก์ "เผยแพร่ไปยังเว็บ" (Publish to web → CSV)
 ADS_CAMPAIGN_CSV_URL = os.environ.get("ADS_CAMPAIGN_CSV_URL", "").strip()
@@ -8828,14 +8828,18 @@ def ads_campaigns(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
         if not name and not any(fields.values()):
             continue
         period = (row.get(k_period) or "").strip() if k_period else ""
-        s_iso = _camp_parse_date(row.get(k_start)) if k_start else None
-        e_iso = _camp_parse_date(row.get(k_end)) if k_end else None
+        raw_start = (row.get(k_start) or "").strip() if k_start else ""
+        raw_end = (row.get(k_end) or "").strip() if k_end else ""
+        s_iso = _camp_parse_date(raw_start) or None
+        e_iso = _camp_parse_date(raw_end) or None
         s_iso, e_iso = _camp_period_range(period, s_iso, e_iso)
-        if not period:
-            if s_iso and e_iso:
+        if not period:                                    # ไม่มีคอลัมน์ period → ใช้ start–end (ข้อความเดิม)
+            if raw_start and raw_end:
+                period = f"{raw_start} – {raw_end}"
+            elif raw_start or raw_end:
+                period = raw_start or raw_end
+            elif s_iso and e_iso:
                 period = f"{s_iso} – {e_iso}"
-            elif s_iso:
-                period = s_iso
         budget = (row.get(k_budget) or "").strip() if k_budget else ""
         obj = (row.get(k_obj) or "").strip() if k_obj else ""
         if obj:
