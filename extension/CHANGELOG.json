@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.194",
+      "date": "2026-06-02",
+      "title": "Benchmark: เพิ่ม Box Plot ต่อ Ad Type ด้านบน (3 ต่อแถว)",
+      "summary": "หน้า Benchmark ด้านบนแสดง box plot หนึ่งกราฟต่อ Ad Type — จุดข้อมูลคือค่า CPM ของแต่ละ brand (โหมด Brand) หรือแต่ละ category (โหมด Category) จัด 3 กราฟต่อแถว เปลี่ยนตาม toggle",
+      "changes": [
+        "box plot ต่อ Ad Type ใช้ค่า cell.avg ของแต่ละ row (brand/category)",
+        "grid 3 คอลัมน์, อัปเดตตามโหมด Brand/Category",
+        "reuse _benchBoxPlot (min/Q1/median/Q3/max)"
+      ]
+    },
+    {
       "version": "1.9.193",
       "date": "2026-06-02",
       "title": "Box Plot: เพิ่มเส้นค่า benchmark (avg) เทียบกับค่าแคมเปญ",
