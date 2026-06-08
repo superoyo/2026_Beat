@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.216",
+      "date": "2026-06-08",
+      "title": "แก้อาการ “กดบันทึกแล้วค้าง” — modal มี loading + SQLite WAL",
+      "summary": "ปุ่มบันทึกใน modal ทุกตัวแสดง “กำลังบันทึก…” + กันกดซ้ำ (เดิมไม่มี feedback เลยดูเหมือนค้าง) · เปิด SQLite WAL + busy_timeout 15s ลดอาการ write ติด lock กับ read",
+      "changes": [
+        "showModal: ปุ่ม OK disable + ข้อความ ‘กำลังบันทึก…’ ระหว่าง onSubmit, คืนสภาพเมื่อ error, กันดับเบิลคลิก",
+        "db_conn(): PRAGMA journal_mode=WAL + synchronous=NORMAL (ครั้งเดียว) + busy_timeout=15000 ทุก connection + fallback ถ้า FS ไม่รองรับ"
+      ]
+    },
+    {
       "version": "1.9.215",
       "date": "2026-06-08",
       "title": "IAM — เพิ่มสิทธิ์เมนู TV (กำหนดคน/ทีมที่เห็นและเข้าได้)",

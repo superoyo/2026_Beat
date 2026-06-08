@@ -16459,15 +16459,22 @@ function showModal({ title, body, onSubmit, size }) {
   const close = () => bg.remove();
   bg.querySelector('#m-cancel').addEventListener('click', close);
   bg.addEventListener('click', e => { if (e.target === bg) close(); });
-  bg.querySelector('#m-ok').addEventListener('click', async () => {
+  bg.querySelector('#m-ok').addEventListener('click', async (ev) => {
+    const okBtn = ev.currentTarget;
     const errEl = bg.querySelector('#m-err');
+    if (okBtn.disabled) return;                 // กันกดซ้ำระหว่างบันทึก
     errEl.style.display = 'none';
+    const orig = okBtn.textContent;
+    okBtn.disabled = true; okBtn.style.opacity = '0.65'; okBtn.style.cursor = 'wait';
+    okBtn.textContent = 'กำลังบันทึก…';
     try {
       await onSubmit();
       close();
     } catch (e) {
       errEl.textContent = e.message;
       errEl.style.display = '';
+      okBtn.disabled = false; okBtn.style.opacity = ''; okBtn.style.cursor = '';
+      okBtn.textContent = orig;
     }
   });
 }

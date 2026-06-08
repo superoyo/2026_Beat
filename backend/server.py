@@ -106,11 +106,24 @@ ADMIN_RESET_ON_BOOT = os.environ.get("ADMIN_RESET_ON_BOOT", "").lower() in ("1",
 # ---------------------------------------------------------------------------
 # Database helpers
 # ---------------------------------------------------------------------------
+_SQLITE_PRAGMA_DONE = False
+
+
 @contextmanager
 def db_conn() -> Iterator[sqlite3.Connection]:
-    """Yield a SQLite connection with row-factory enabled."""
-    conn = sqlite3.connect(DB_PATH)
+    """Yield a SQLite connection (WAL + busy_timeout เพื่อลด lock contention / กันบันทึกค้าง)."""
+    global _SQLITE_PRAGMA_DONE
+    conn = sqlite3.connect(DB_PATH, timeout=15)
     conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA busy_timeout=15000")   # รอ lock ได้สูงสุด 15s (แทน 5s default)
+        if not _SQLITE_PRAGMA_DONE:
+            # WAL: reader/writer ไม่บล็อกกัน (ตั้งครั้งเดียวก็ persistent ทั้ง DB)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            _SQLITE_PRAGMA_DONE = True
+    except sqlite3.Error:
+        pass
     try:
         yield conn
         conn.commit()
