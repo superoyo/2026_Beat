@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.213",
+      "date": "2026-06-02",
+      "title": "เมนู TV › Scheduling — ฝัง TV Ad Monitor ผ่าน Beat SSO (auto-login)",
+      "summary": "เมนูใหม่ TV › Scheduling ฝัง iframe หน้า /spotmon ของ TV Ad Monitor โดย Beat ออก id_token (first-party) ให้ผู้ใช้ปัจจุบัน → iframe auto-login ไม่ต้อง login ซ้ำ",
+      "changes": [
+        "Backend GET /api/sso/embed-token (Beat mint id_token ให้ user ปัจจุบันสำหรับ SSO client) + /api/tv-config",
+        "ENV TV_MONITOR_BASE_URL / TV_MONITOR_CLIENT_ID",
+        "Frontend: เมนู TV (top nav) + renderTvScheduling (iframe /spotmon?embed=1&beat_token=...) + เตือน mixed-content ถ้า base เป็น http"
+      ]
+    },
+    {
       "version": "1.9.212",
       "date": "2026-06-02",
       "title": "SSO Clients: ปุ่มคัดลอกสเปคให้ Claude Code (ระบบอื่น)",

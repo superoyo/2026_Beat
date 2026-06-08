@@ -1087,6 +1087,8 @@
         <a href="#/ads" data-route="ads" data-route-extra="ads-benchmark,ads-audience,ads-campaigns" data-label="Ads"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg></span><span class="nav-label">Ads</span></a>
         <!-- v1.9.164 — Customer: ย้ายขึ้นโซนบน (กรองตามสิทธิ์ IAM อยู่แล้ว) -->
         <a href="#/calendar" data-route="calendar" data-route-extra="domains,websites,services-config" data-label="Customer"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span><span class="nav-label">Customer</span></a>
+        <!-- v1.9.213 — TV Ad Monitor (embed scheduling) -->
+        <a href="#/tv" data-route="tv" data-route-extra="tv-scheduling" data-label="TV"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="13" rx="2"/><polyline points="8 3 12 7 16 3"/></svg></span><span class="nav-label">TV</span></a>
         <!-- v1.9.122 — บัญชีของฉัน: direct link (โปรไฟล์/My Device/Extension/Check-in อยู่ในเมนูย่อยของหน้านี้แล้ว) -->
         <a href="#/account" data-route="account" data-label="My Profile"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><span class="nav-label">My Profile</span></a>
         <!-- v1.9.126 — Supervise: แสดงเฉพาะ member ที่ดูแลทีม (toggle ตอน load) -->
@@ -1285,6 +1287,8 @@ const routes = {
   'ads-benchmark':    () => renderAdsSection('ads-benchmark'),
   'ads-audience':     () => renderAdsSection('ads-audience'),
   'ads-campaigns':    () => renderAdsSection('ads-campaigns'),
+  'tv':               () => renderTvSection('tv-scheduling'),
+  'tv-scheduling':    () => renderTvSection('tv-scheduling'),
   'my-device':        renderMyDevicePage,
   'domains-config':   renderDomainsConfigPage,
   'members':          () => renderPeoplesPage('members'),
@@ -1953,6 +1957,32 @@ function openDemoDistPanel(ageLabel) {
   document.addEventListener('keydown', onKey);
   wrap.querySelector('.sup-panel-backdrop').addEventListener('click', close);
   wrap.querySelector('.sup-panel-close').addEventListener('click', close);
+}
+// ===== TV Ad Monitor (embed iframe ผ่าน Beat SSO) =====
+function renderTvSection(active) {
+  return renderSubmenuPage({ title: '📺 TV', active: active || 'tv-scheduling', items: [
+    { route: 'tv-scheduling', ico: '🗓️', label: 'Scheduling', render: () => renderTvScheduling() },
+  ]});
+}
+async function renderTvScheduling() {
+  const root = _subMain();
+  if (!root) return;
+  root.innerHTML = '<div class="empty">กำลังเชื่อมต่อ TV Monitor…</div>';
+  let cfg, tok;
+  try {
+    cfg = await fetchJson('/api/tv-config');
+    tok = (await fetchJson('/api/sso/embed-token?client_id=' + encodeURIComponent(cfg.client_id))).id_token;
+  } catch (e) {
+    const need404 = /404/.test(e.message || '');
+    root.innerHTML = `<div class="empty" style="padding:24px;text-align:center;line-height:1.7">เชื่อม TV Monitor ไม่สำเร็จ: ${escapeHtml(e.message || '')}${need404 ? '<br><span style="font-size:12px;color:var(--text-soft)">ต้องสร้าง SSO client ใน Setting › SSO ให้ client_id ตรงกับ TV_MONITOR_CLIENT_ID ก่อน</span>' : ''}</div>`;
+    return;
+  }
+  const src = `${cfg.base}/spotmon?embed=1&beat_token=${encodeURIComponent(tok)}`;
+  const mixed = cfg.base.startsWith('http://') && location.protocol === 'https:';
+  root.innerHTML = `
+    ${mixed ? `<div style="font-size:11.5px;color:#b45309;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:9px;padding:9px 12px;margin-bottom:10px">⚠️ TV Monitor base เป็น <code>http://</code> แต่หน้านี้ <code>https://</code> — เบราว์เซอร์จะบล็อก iframe (mixed content) · ตั้ง <code>TV_MONITOR_BASE_URL</code> เป็น https บน Railway · base ปัจจุบัน: ${escapeHtml(cfg.base)}</div>` : ''}
+    <iframe src="${escapeHtml(src)}" title="TV Spot Monitoring" referrerpolicy="no-referrer" allow="fullscreen"
+            style="width:100%;height:calc(100vh - 190px);min-height:520px;border:1px solid var(--border);border-radius:12px;background:#fff;display:block"></iframe>`;
 }
 // ===== Claude RateLimit (Platform tab) =====
 let _clrlSub = 'dashboard';

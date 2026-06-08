@@ -4712,6 +4712,9 @@ CLAUDE_RL_INGEST_TOKEN = os.environ.get("CLAUDE_RL_INGEST_TOKEN", "").strip()
 SSO_ISSUER = os.environ.get("SSO_ISSUER", "https://beat.datafirst.id").rstrip("/")
 SSO_ID_TOKEN_TTL = int(os.environ.get("SSO_ID_TOKEN_TTL", "3600"))   # อายุ id_token (วินาที)
 SSO_CODE_TTL = 120                                                    # อายุ authorization code (วินาที)
+# v1.9.213 — TV Ad Monitor: ฝัง iframe หน้า scheduling (auto-login ด้วย Beat id_token)
+TV_MONITOR_BASE_URL = os.environ.get("TV_MONITOR_BASE_URL", "http://10.22.50.65:5050").rstrip("/")
+TV_MONITOR_CLIENT_ID = os.environ.get("TV_MONITOR_CLIENT_ID", "beat_f5fe57cd90ad9852").strip()
 
 
 def _sso_b64u(b: bytes) -> str:
@@ -9488,6 +9491,29 @@ def sso_delete_client(cid_id: int, _sess: dict = Depends(require_super_admin)) -
     with db_conn() as conn:
         conn.execute("DELETE FROM sso_clients WHERE id = ?", (cid_id,))
     return {"ok": True}
+
+
+@app.get("/api/sso/embed-token")
+def sso_embed_token(client_id: str = "",
+                    fct_session: Optional[str] = Cookie(default=None),
+                    fct_member_session: Optional[str] = Cookie(default=None)) -> dict[str, Any]:
+    """v1.9.213 — Beat ออก id_token ให้ผู้ใช้ปัจจุบัน เพื่อ auto-login ระบบที่ฝัง iframe (first-party)"""
+    ident = _sso_current_identity(fct_session, fct_member_session)
+    if not ident:
+        raise HTTPException(status_code=401, detail="ยังไม่ได้เข้าสู่ระบบ")
+    cid = (client_id or TV_MONITOR_CLIENT_ID).strip()
+    client = _sso_get_client(cid)
+    if not client or not client["enabled"]:
+        raise HTTPException(status_code=404, detail="ไม่พบ SSO client — สร้างใน Setting › SSO ก่อน")
+    now = int(utc_now().timestamp())
+    claims = {"iss": SSO_ISSUER, "sub": ident["sub"], "aud": cid, "iat": now, "exp": now + SSO_ID_TOKEN_TTL,
+              "name": ident["name"], "email": ident["email"], "role": ident["role"]}
+    return {"id_token": _sso_jwt_encode(claims, client["client_secret"]), "expires_in": SSO_ID_TOKEN_TTL}
+
+
+@app.get("/api/tv-config")
+def tv_config(_sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    return {"base": TV_MONITOR_BASE_URL, "client_id": TV_MONITOR_CLIENT_ID}
 
 
 # ===========================================================================
