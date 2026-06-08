@@ -680,6 +680,46 @@ def init_db() -> None:
         except Exception:
             pass
 
+        # ---- 3.9 v1.9.207 — Claude RateLimit tables
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS claude_accounts (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                label          TEXT    NOT NULL,
+                storage_state  TEXT,                       -- encrypted (fe:/b64:)
+                session_status TEXT    DEFAULT 'no_session', -- healthy | expired | no_session
+                created_at     TEXT    NOT NULL,
+                updated_at     TEXT    NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS claude_usage_snapshots (
+                id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id           INTEGER NOT NULL,
+                session_pct          REAL,
+                session_reset_at     TEXT,
+                weekly_pct           REAL,
+                weekly_reset_at      TEXT,
+                weekly_opus_pct      REAL,
+                weekly_opus_reset_at TEXT,
+                raw_json             TEXT,
+                status               TEXT,                 -- ok | full | expired | error
+                checked_at           TEXT    NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_clrl_snap ON claude_usage_snapshots(account_id, checked_at);
+            CREATE TABLE IF NOT EXISTS claude_ratelimit_settings (
+                id            INTEGER PRIMARY KEY CHECK (id = 1),
+                check_cron    TEXT,
+                alert_config  TEXT,                        -- json {webhook_url,line_token,line_to,quiet_start,quiet_end}
+                threshold_pct REAL    DEFAULT 90,
+                updated_at    TEXT
+            );
+            """
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO claude_ratelimit_settings(id, check_cron, alert_config, threshold_pct, updated_at) "
+            "VALUES (1, '0 * * * *', '{}', 90, ?)",
+            (utc_now().isoformat(),),
+        )
+
         # ---- 4. seed config defaults
         for key, value in DEFAULT_CONFIG.items():
             conn.execute(
@@ -4633,6 +4673,69 @@ ADS_CAMPAIGN_SHEET_ID = os.environ.get("ADS_CAMPAIGN_SHEET_ID", "17gjfbjCv5Ap7Is
 ADS_CAMPAIGN_SHEET_GID = os.environ.get("ADS_CAMPAIGN_SHEET_GID", "").strip()
 # v1.9.199 — ทางเลือกสำรองสำหรับชีตที่องค์กรล็อกการแชร์: ใช้ลิงก์ "เผยแพร่ไปยังเว็บ" (Publish to web → CSV)
 ADS_CAMPAIGN_CSV_URL = os.environ.get("ADS_CAMPAIGN_CSV_URL", "").strip()
+
+# ===========================================================================
+# v1.9.207 — Claude RateLimit: เข้ารหัส storageState (session credential)
+#   key: env CLAUDE_RL_KEY (Fernet base64 key) — ถ้าไม่ตั้ง จะ gen แล้วเก็บไฟล์ข้าง DB (Railway Volume)
+#   *** storageState = credential เต็มของ session — ห้าม log ค่า cookie ดิบ / ห้าม commit ***
+# ===========================================================================
+CLAUDE_RL_KEY = os.environ.get("CLAUDE_RL_KEY", "").strip()
+
+
+def _clrl_fernet():
+    try:
+        from cryptography.fernet import Fernet
+    except Exception:
+        return None
+    key = CLAUDE_RL_KEY
+    if not key:
+        keyfile = Path(DB_PATH).parent / "claude_rl.key"
+        try:
+            if keyfile.exists():
+                key = keyfile.read_text().strip()
+            else:
+                key = Fernet.generate_key().decode()
+                keyfile.write_text(key)
+                try:
+                    os.chmod(keyfile, 0o600)
+                except Exception:
+                    pass
+        except Exception:
+            return None
+    try:
+        return Fernet(key.encode() if isinstance(key, str) else key)
+    except Exception:
+        return None
+
+
+def _clrl_encrypt(plaintext: str) -> str:
+    if not plaintext:
+        return ""
+    f = _clrl_fernet()
+    if f is None:                       # fallback (ไม่ปลอดภัยเท่า — มี cryptography แล้วจะไม่เข้าเส้นนี้)
+        import base64
+        return "b64:" + base64.b64encode(plaintext.encode()).decode()
+    return "fe:" + f.encrypt(plaintext.encode()).decode()
+
+
+def _clrl_decrypt(stored: str) -> str:
+    if not stored:
+        return ""
+    if stored.startswith("fe:"):
+        f = _clrl_fernet()
+        if f is None:
+            return ""
+        try:
+            return f.decrypt(stored[3:].encode()).decode()
+        except Exception:
+            return ""
+    if stored.startswith("b64:"):
+        import base64
+        try:
+            return base64.b64decode(stored[4:]).decode()
+        except Exception:
+            return ""
+    return ""
 
 
 class WazzupLoginIn(BaseModel):
@@ -8875,6 +8978,219 @@ def ads_campaigns(_sess: dict = Depends(_require_module("ads"))) -> dict[str, An
         "mapped": {"name": k_name, "period": k_period, "budget": k_budget, "objective": k_obj,
                    "start": k_start, "end": k_end, "bid": k_bid, "project_code": k_pcode, "project_name": k_pname},
     }
+
+
+# ===========================================================================
+# v1.9.207 — Claude RateLimit: ติดตาม usage/limit ของ Claude.ai subscription หลาย account
+#   *** ดูข้อมูล usage จริง ทำโดย worker แยก (Playwright headless) — service นี้เก็บ/แสดงผล ***
+# ===========================================================================
+def _clrl_settings() -> dict:
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM claude_ratelimit_settings WHERE id = 1").fetchone()
+    if not row:
+        return {"check_cron": "0 * * * *", "alert_config": {}, "threshold_pct": 90}
+    d = dict(row)
+    try:
+        d["alert_config"] = _json.loads(d.get("alert_config") or "{}")
+    except Exception:
+        d["alert_config"] = {}
+    return d
+
+
+def _clrl_send_alert(text: str) -> tuple[bool, str]:
+    """ส่ง alert ไป webhook (Teams/Power Automate/generic) และ/หรือ LINE — ไม่ log token/cookie"""
+    cfg = _clrl_settings().get("alert_config") or {}
+    sent, notes = False, []
+    wh = (cfg.get("webhook_url") or "").strip()
+    if wh:
+        try:
+            body = _json.dumps({"text": text}).encode("utf-8")
+            req = urllib.request.Request(wh, data=body, headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                resp.read()
+            sent = True
+        except Exception as e:
+            notes.append(f"webhook ล้มเหลว: {str(e)[:120]}")
+    lt = (cfg.get("line_token") or "").strip()
+    if lt:
+        to = (cfg.get("line_to") or "").strip()
+        url = "https://api.line.me/v2/bot/message/push" if to else "https://api.line.me/v2/bot/message/broadcast"
+        payload = {"messages": [{"type": "text", "text": text[:4900]}]}
+        if to:
+            payload["to"] = to
+        try:
+            req = urllib.request.Request(url, data=_json.dumps(payload).encode("utf-8"),
+                                         headers={"Content-Type": "application/json", "Authorization": f"Bearer {lt}"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                resp.read()
+            sent = True
+        except Exception as e:
+            notes.append(f"LINE ล้มเหลว: {str(e)[:120]}")
+    if not wh and not lt:
+        return False, "ยังไม่ได้ตั้งค่า alert channel (webhook หรือ LINE)"
+    return sent, "; ".join(notes)
+
+
+def _clrl_account_dash(conn, acc) -> dict:
+    """ข้อมูล 1 account สำหรับ dashboard (ไม่รวม storage_state)"""
+    snap = conn.execute(
+        "SELECT * FROM claude_usage_snapshots WHERE account_id = ? ORDER BY checked_at DESC LIMIT 1",
+        (acc["id"],),
+    ).fetchone()
+    s = dict(snap) if snap else None
+    if s:
+        s.pop("raw_json", None)
+    return {
+        "id": acc["id"], "label": acc["label"],
+        "session_status": acc["session_status"] or "no_session",
+        "has_session": bool(acc["storage_state"]),
+        "updated_at": acc["updated_at"],
+        "latest": s,
+    }
+
+
+@app.get("/api/claude-ratelimit")
+def claude_ratelimit_dashboard(_sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    with db_conn() as conn:
+        accs = conn.execute("SELECT * FROM claude_accounts ORDER BY label COLLATE NOCASE").fetchall()
+        out = [_clrl_account_dash(conn, a) for a in accs]
+    return {"accounts": out, "count": len(out)}
+
+
+@app.get("/api/claude-ratelimit/accounts")
+def claude_rl_accounts(_sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    with db_conn() as conn:
+        accs = conn.execute("SELECT * FROM claude_accounts ORDER BY label COLLATE NOCASE").fetchall()
+        out = [{"id": a["id"], "label": a["label"], "session_status": a["session_status"] or "no_session",
+                "has_session": bool(a["storage_state"]), "created_at": a["created_at"], "updated_at": a["updated_at"]}
+               for a in accs]
+    return {"accounts": out}
+
+
+class ClrlAccountIn(BaseModel):
+    label: str = Field(..., min_length=1, max_length=120)
+
+
+@app.post("/api/claude-ratelimit/accounts")
+def claude_rl_create(payload: ClrlAccountIn, _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO claude_accounts(label, session_status, created_at, updated_at) VALUES (?, 'no_session', ?, ?)",
+            (payload.label.strip(), now, now),
+        )
+        return {"id": cur.lastrowid, "label": payload.label.strip()}
+
+
+@app.put("/api/claude-ratelimit/accounts/{acc_id}")
+def claude_rl_update(acc_id: int, payload: ClrlAccountIn, _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    with db_conn() as conn:
+        r = conn.execute("SELECT id FROM claude_accounts WHERE id = ?", (acc_id,)).fetchone()
+        if not r:
+            raise HTTPException(status_code=404, detail="ไม่พบ account")
+        conn.execute("UPDATE claude_accounts SET label = ?, updated_at = ? WHERE id = ?",
+                     (payload.label.strip(), utc_now().isoformat(), acc_id))
+    return {"ok": True}
+
+
+@app.delete("/api/claude-ratelimit/accounts/{acc_id}")
+def claude_rl_delete(acc_id: int, _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    with db_conn() as conn:
+        conn.execute("DELETE FROM claude_usage_snapshots WHERE account_id = ?", (acc_id,))
+        conn.execute("DELETE FROM claude_accounts WHERE id = ?", (acc_id,))
+    return {"ok": True}
+
+
+class ClrlSessionIn(BaseModel):
+    storage_state: str = Field(..., min_length=2, max_length=2_000_000)
+
+
+@app.post("/api/claude-ratelimit/accounts/{acc_id}/session")
+def claude_rl_session(acc_id: int, payload: ClrlSessionIn, _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    # validate ว่าเป็น storageState JSON ที่มี cookies (ไม่ log เนื้อหา)
+    try:
+        obj = _json.loads(payload.storage_state)
+    except Exception:
+        raise HTTPException(status_code=400, detail="ไฟล์ไม่ใช่ JSON ที่ถูกต้อง")
+    if not isinstance(obj, dict) or not isinstance(obj.get("cookies"), list) or not obj["cookies"]:
+        raise HTTPException(status_code=400, detail="ไม่พบ 'cookies' ใน storageState — export ผิดไฟล์หรือยังไม่ได้ login")
+    enc = _clrl_encrypt(payload.storage_state)
+    with db_conn() as conn:
+        r = conn.execute("SELECT id FROM claude_accounts WHERE id = ?", (acc_id,)).fetchone()
+        if not r:
+            raise HTTPException(status_code=404, detail="ไม่พบ account")
+        conn.execute("UPDATE claude_accounts SET storage_state = ?, session_status = 'healthy', updated_at = ? WHERE id = ?",
+                     (enc, utc_now().isoformat(), acc_id))
+    return {"ok": True, "session_status": "healthy", "cookies": len(obj["cookies"])}
+
+
+@app.post("/api/claude-ratelimit/check/{acc_id}")
+def claude_rl_check(acc_id: int, _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    # การเช็คจริงทำโดย worker (Playwright) แยก — web service ไม่มี Chromium
+    with db_conn() as conn:
+        r = conn.execute("SELECT * FROM claude_accounts WHERE id = ?", (acc_id,)).fetchone()
+        if not r:
+            raise HTTPException(status_code=404, detail="ไม่พบ account")
+        if not r["storage_state"]:
+            raise HTTPException(status_code=400, detail="ยังไม่ได้อัปโหลด session (storageState)")
+    return {"ok": True, "queued": True,
+            "note": "การเช็คจริงทำโดย worker service (Playwright) — รอบถัดไปจะอัปเดต snapshot ให้ (ดู scripts/claude_usage_worker.py)"}
+
+
+@app.get("/api/claude-ratelimit/settings")
+def claude_rl_get_settings(_sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    s = _clrl_settings()
+    cfg = s.get("alert_config") or {}
+    return {
+        "check_cron": s.get("check_cron") or "0 * * * *",
+        "threshold_pct": s.get("threshold_pct") or 90,
+        "alert": {
+            "webhook_url": cfg.get("webhook_url") or "",
+            "line_to": cfg.get("line_to") or "",
+            "line_token_set": bool(cfg.get("line_token")),   # ไม่ส่ง token กลับ
+            "quiet_start": cfg.get("quiet_start") or "",
+            "quiet_end": cfg.get("quiet_end") or "",
+        },
+    }
+
+
+class ClrlSettingsIn(BaseModel):
+    check_cron: str = Field("0 * * * *", max_length=120)
+    threshold_pct: float = Field(90, ge=1, le=100)
+    webhook_url: str = Field("", max_length=1000)
+    line_token: Optional[str] = Field(None, max_length=400)   # None = ไม่เปลี่ยน, "" = ลบ
+    line_to: str = Field("", max_length=200)
+    quiet_start: str = Field("", max_length=5)
+    quiet_end: str = Field("", max_length=5)
+
+
+@app.post("/api/claude-ratelimit/settings")
+def claude_rl_save_settings(payload: ClrlSettingsIn, _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    cur = _clrl_settings().get("alert_config") or {}
+    cfg = {
+        "webhook_url": (payload.webhook_url or "").strip(),
+        "line_to": (payload.line_to or "").strip(),
+        "quiet_start": (payload.quiet_start or "").strip(),
+        "quiet_end": (payload.quiet_end or "").strip(),
+        "line_token": cur.get("line_token", ""),
+    }
+    if payload.line_token is not None:                      # ส่งมา = ตั้งค่าใหม่ ("" = ลบ)
+        cfg["line_token"] = payload.line_token.strip()
+    with db_conn() as conn:
+        conn.execute(
+            "UPDATE claude_ratelimit_settings SET check_cron = ?, alert_config = ?, threshold_pct = ?, updated_at = ? WHERE id = 1",
+            (payload.check_cron.strip() or "0 * * * *", _json.dumps(cfg, ensure_ascii=False),
+             float(payload.threshold_pct), utc_now().isoformat()),
+        )
+    return {"ok": True}
+
+
+@app.post("/api/claude-ratelimit/test-alert")
+def claude_rl_test_alert(_sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    ok, note = _clrl_send_alert("🔔 [ทดสอบ] Claude RateLimit alert — การตั้งค่าช่องแจ้งเตือนทำงานปกติ")
+    if not ok:
+        raise HTTPException(status_code=400, detail=note or "ส่งไม่สำเร็จ")
+    return {"ok": True, "note": note}
 
 
 # ===========================================================================

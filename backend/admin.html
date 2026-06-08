@@ -1953,6 +1953,187 @@ function openDemoDistPanel(ageLabel) {
   wrap.querySelector('.sup-panel-backdrop').addEventListener('click', close);
   wrap.querySelector('.sup-panel-close').addEventListener('click', close);
 }
+// ===== Claude RateLimit (Platform tab) =====
+let _clrlSub = 'dashboard';
+async function renderClaudeRL() {
+  const root = $('claude-rl-root');
+  if (!root) return;
+  root.innerHTML = `
+    <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+      <div style="display:inline-flex;border:1px solid var(--border);border-radius:9px;overflow:hidden">
+        <button class="clrl-sub-btn" data-sub="dashboard" style="border:0;padding:8px 16px;font-size:13px;cursor:pointer">📊 Dashboard</button>
+        <button class="clrl-sub-btn" data-sub="settings" style="border:0;padding:8px 16px;font-size:13px;cursor:pointer">⚙️ Settings</button>
+      </div>
+      <div style="flex:1"></div>
+      <div style="font-size:11px;color:var(--text-soft)">⏱️ ติดตาม usage/limit ของ Claude.ai subscription (ใช้ส่วนตัว)</div>
+    </div>
+    <div id="clrl-body"><div class="empty">กำลังโหลด…</div></div>`;
+  root.querySelectorAll('.clrl-sub-btn').forEach(b => {
+    const on = b.dataset.sub === _clrlSub;
+    b.style.background = on ? 'var(--primary)' : 'var(--bg-card)';
+    b.style.color = on ? '#fff' : 'var(--text-muted)';
+    b.style.fontWeight = on ? '700' : '500';
+    b.onclick = () => { _clrlSub = b.dataset.sub; renderClaudeRL(); };
+  });
+  if (_clrlSub === 'settings') _clrlRenderSettings(); else _clrlRenderDashboard();
+}
+function _clrlBadge(a) {
+  if (a.session_status === 'expired') return { t: '⚠️ Session expired', c: '#b45309', bg: 'rgba(245,158,11,.15)' };
+  if (!a.has_session) return { t: '— ยังไม่มี session', c: 'var(--text-soft)', bg: 'var(--bg-soft)' };
+  const st = a.latest && a.latest.status;
+  if (st === 'full') return { t: '🔴 Limit reached', c: '#dc2626', bg: 'rgba(220,38,38,.12)' };
+  if (st === 'ok') return { t: '✅ OK', c: '#16a34a', bg: 'rgba(22,163,74,.12)' };
+  if (st === 'error') return { t: '⚠️ Error', c: '#b45309', bg: 'rgba(245,158,11,.15)' };
+  return { t: '⏱ ยังไม่เคยเช็ค', c: 'var(--text-muted)', bg: 'var(--bg-soft)' };
+}
+function _clrlPct(p) { return p == null ? '—' : (Math.round(p) + '%'); }
+function _clrlBar(p, color) {
+  const v = p == null ? 0 : Math.max(0, Math.min(100, p));
+  return `<div style="height:7px;border-radius:999px;background:var(--bg-soft);overflow:hidden;margin-top:3px"><div style="height:100%;width:${v}%;background:${color}"></div></div>`;
+}
+function _clrlTime(t) {
+  if (!t) return '—';
+  const d = new Date(t);
+  return isNaN(d.getTime()) ? escapeHtml(String(t)) : d.toLocaleString('th-TH');
+}
+async function _clrlRenderDashboard() {
+  const body = $('clrl-body'); if (!body) return;
+  let d;
+  try { d = await fetchJson('/api/claude-ratelimit'); }
+  catch (e) { body.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`; return; }
+  if (!d.accounts || !d.accounts.length) {
+    body.innerHTML = `<div class="empty" style="padding:30px;text-align:center">ยังไม่มี account — ไปที่ <b>⚙️ Settings</b> เพื่อเพิ่มและอัปโหลด session</div>`;
+    return;
+  }
+  const cards = d.accounts.map(a => {
+    const b = _clrlBadge(a), L = a.latest || {};
+    return `<div class="card" style="display:block">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+        <div style="font-size:15px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(a.label)}</div>
+        <span style="font-size:11.5px;font-weight:700;padding:3px 11px;border-radius:999px;background:${b.bg};color:${b.c};white-space:nowrap">${b.t}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div>
+          <div style="font-size:11px;color:var(--text-muted)">Session (5h) · <b>${_clrlPct(L.session_pct)}</b></div>
+          ${_clrlBar(L.session_pct, '#2563eb')}
+          <div style="font-size:10px;color:var(--text-soft);margin-top:4px">reset: ${_clrlTime(L.session_reset_at)}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text-muted)">Weekly · <b>${_clrlPct(L.weekly_pct)}</b>${L.weekly_opus_pct != null ? ` · Opus ${_clrlPct(L.weekly_opus_pct)}` : ''}</div>
+          ${_clrlBar(L.weekly_pct, '#8b5cf6')}
+          <div style="font-size:10px;color:var(--text-soft);margin-top:4px">reset: ${_clrlTime(L.weekly_reset_at)}</div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:8px">
+        <span style="font-size:10.5px;color:var(--text-soft)">last checked: ${L.checked_at ? _clrlTime(L.checked_at) : 'ยังไม่เคย'}</span>
+        <button class="btn clrl-check" data-id="${a.id}" style="font-size:12px;padding:6px 12px"${a.has_session ? '' : ' disabled'}>🔄 Check now</button>
+      </div>
+    </div>`;
+  }).join('');
+  body.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px">${cards}</div>`;
+  body.querySelectorAll('.clrl-check').forEach(btn => {
+    btn.onclick = async () => {
+      btn.disabled = true; const old = btn.textContent; btn.textContent = '⏱ ...';
+      try { const r = await fetchJson('/api/claude-ratelimit/check/' + btn.dataset.id, { method: 'POST' }); alert(r.note || 'ส่งคำสั่งเช็คแล้ว'); }
+      catch (e) { alert('เช็คไม่สำเร็จ: ' + e.message); }
+      btn.disabled = false; btn.textContent = old;
+    };
+  });
+}
+async function _clrlRenderSettings() {
+  const body = $('clrl-body'); if (!body) return;
+  let accs, st;
+  try { accs = (await fetchJson('/api/claude-ratelimit/accounts')).accounts || []; st = await fetchJson('/api/claude-ratelimit/settings'); }
+  catch (e) { body.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`; return; }
+  const stBadge = s => s === 'healthy' ? '<span style="color:#16a34a;font-weight:700">healthy</span>' : s === 'expired' ? '<span style="color:#dc2626;font-weight:700">expired · re-auth</span>' : '<span style="color:var(--text-soft)">ยังไม่มี session</span>';
+  const accRows = accs.map(a => `
+    <div class="card" style="display:block" data-acc="${a.id}">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+        <input class="clrl-label" value="${escapeHtml(a.label)}" style="flex:1;min-width:160px;padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text)">
+        <span style="font-size:11.5px">session: ${stBadge(a.session_status)}</span>
+        <button class="btn clrl-save-label" style="font-size:12px;padding:6px 11px">💾</button>
+        <button class="btn clrl-del" style="font-size:12px;padding:6px 11px;color:#dc2626">🗑</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:5px">อัปโหลด/วาง <b>storageState JSON</b> (จาก scripts/save_session.py) ${a.has_session ? '· <span style="color:#16a34a">มี session แล้ว</span>' : ''}</div>
+      <input type="file" class="clrl-file" accept=".json,application/json" style="font-size:12px;margin-bottom:6px">
+      <textarea class="clrl-ss" placeholder='วาง JSON เช่น {"cookies":[...],"origins":[...]}' style="width:100%;height:64px;font-size:11px;font-family:ui-monospace,Menlo,monospace;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);resize:vertical"></textarea>
+      <div style="text-align:right;margin-top:6px"><button class="btn clrl-save-ss" style="font-size:12px;padding:6px 13px">📤 บันทึก session</button></div>
+    </div>`).join('');
+  const a2 = st.alert || {};
+  body.innerHTML = `
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <input id="clrl-new-label" placeholder="ชื่อ account ใหม่ (label)" style="flex:1;padding:9px 12px;font-size:13px;border:1px solid var(--border);border-radius:9px;background:var(--bg-input);color:var(--text)">
+      <button class="btn" id="clrl-add" style="font-size:13px;padding:9px 16px">+ เพิ่ม account</button>
+    </div>
+    <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Accounts (${accs.length})</div>
+    ${accRows || '<div class="empty" style="padding:18px">— ยังไม่มี account —</div>'}
+    <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin:18px 0 8px">⚙️ การตั้งค่า / แจ้งเตือน</div>
+    <div class="card" style="display:block">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <label style="font-size:12px;color:var(--text-muted)">Check interval (cron)<br><input id="clrl-cron" value="${escapeHtml(st.check_cron || '0 * * * *')}" style="width:100%;margin-top:3px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:ui-monospace,monospace;font-size:12px"></label>
+        <label style="font-size:12px;color:var(--text-muted)">Alert threshold (%)<br><input id="clrl-thr" type="number" min="1" max="100" value="${st.threshold_pct || 90}" style="width:100%;margin-top:3px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text)"></label>
+        <label style="font-size:12px;color:var(--text-muted);grid-column:1/3">Webhook URL (Teams / Power Automate / generic — POST {"text":...})<br><input id="clrl-webhook" value="${escapeHtml(a2.webhook_url || '')}" placeholder="https://..." style="width:100%;margin-top:3px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text)"></label>
+        <label style="font-size:12px;color:var(--text-muted)">LINE token ${a2.line_token_set ? '· <span style="color:#16a34a">ตั้งไว้แล้ว</span>' : ''}<br><input id="clrl-linetoken" type="password" placeholder="${a2.line_token_set ? 'เว้นว่าง = คงเดิม' : 'channel access token'}" style="width:100%;margin-top:3px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text)"></label>
+        <label style="font-size:12px;color:var(--text-muted)">LINE to (userId/groupId — เว้นว่าง=broadcast)<br><input id="clrl-lineto" value="${escapeHtml(a2.line_to || '')}" style="width:100%;margin-top:3px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text)"></label>
+        <label style="font-size:12px;color:var(--text-muted)">Quiet hours (เริ่ม)<br><input id="clrl-qs" type="time" value="${escapeHtml(a2.quiet_start || '')}" style="margin-top:3px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text)"></label>
+        <label style="font-size:12px;color:var(--text-muted)">Quiet hours (สิ้นสุด)<br><input id="clrl-qe" type="time" value="${escapeHtml(a2.quiet_end || '')}" style="margin-top:3px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text)"></label>
+      </div>
+      ${a2.line_token_set ? '<label style="font-size:11px;color:var(--text-soft);display:block;margin-top:8px"><input type="checkbox" id="clrl-clear-token"> ลบ LINE token ที่ตั้งไว้</label>' : ''}
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn" id="clrl-save-cfg" style="font-size:13px;padding:8px 16px">💾 บันทึกการตั้งค่า</button>
+        <button class="btn" id="clrl-test" style="font-size:13px;padding:8px 16px">🔔 Test alert</button>
+      </div>
+      <div style="font-size:10.5px;color:var(--text-soft);margin-top:10px;line-height:1.6">⚠️ การเช็คจริงทำโดย <b>worker service แยก</b> (Playwright headless) ตาม cron · session = credential เต็ม เก็บแบบเข้ารหัส ไม่ commit/ไม่ log · ดู <code style="background:var(--bg-soft);padding:1px 5px;border-radius:4px">README</code> + <code style="background:var(--bg-soft);padding:1px 5px;border-radius:4px">scripts/save_session.py</code></div>
+    </div>`;
+  // add account
+  const add = $('clrl-add');
+  if (add) add.onclick = async () => {
+    const lbl = $('clrl-new-label').value.trim();
+    if (!lbl) { alert('ใส่ชื่อ account'); return; }
+    try { await fetchJson('/api/claude-ratelimit/accounts', { method: 'POST', body: JSON.stringify({ label: lbl }) }); _clrlRenderSettings(); }
+    catch (e) { alert('เพิ่มไม่สำเร็จ: ' + e.message); }
+  };
+  // per-account handlers
+  body.querySelectorAll('[data-acc]').forEach(card => {
+    const id = card.dataset.acc;
+    const fileEl = card.querySelector('.clrl-file'), ssEl = card.querySelector('.clrl-ss');
+    if (fileEl) fileEl.onchange = () => { const f = fileEl.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { ssEl.value = r.result; }; r.readAsText(f); };
+    card.querySelector('.clrl-save-label').onclick = async () => {
+      const lbl = card.querySelector('.clrl-label').value.trim(); if (!lbl) return;
+      try { await fetchJson('/api/claude-ratelimit/accounts/' + id, { method: 'PUT', body: JSON.stringify({ label: lbl }) }); alert('บันทึกชื่อแล้ว'); }
+      catch (e) { alert('ไม่สำเร็จ: ' + e.message); }
+    };
+    card.querySelector('.clrl-del').onclick = async () => {
+      if (!confirm('ลบ account นี้?')) return;
+      try { await fetchJson('/api/claude-ratelimit/accounts/' + id, { method: 'DELETE' }); _clrlRenderSettings(); }
+      catch (e) { alert('ลบไม่สำเร็จ: ' + e.message); }
+    };
+    card.querySelector('.clrl-save-ss').onclick = async () => {
+      const ss = ssEl.value.trim(); if (!ss) { alert('วางหรืออัปโหลดไฟล์ storageState ก่อน'); return; }
+      try { const r = await fetchJson('/api/claude-ratelimit/accounts/' + id + '/session', { method: 'POST', body: JSON.stringify({ storage_state: ss }) }); alert('บันทึก session แล้ว (' + r.cookies + ' cookies)'); _clrlRenderSettings(); }
+      catch (e) { alert('บันทึกไม่สำเร็จ: ' + e.message); }
+    };
+  });
+  // save config + test
+  $('clrl-save-cfg').onclick = async () => {
+    const tokEl = $('clrl-linetoken'), clearTok = $('clrl-clear-token');
+    let line_token = null;
+    if (clearTok && clearTok.checked) line_token = '';
+    else if (tokEl.value) line_token = tokEl.value;
+    const payload = {
+      check_cron: $('clrl-cron').value, threshold_pct: parseFloat($('clrl-thr').value) || 90,
+      webhook_url: $('clrl-webhook').value, line_to: $('clrl-lineto').value,
+      quiet_start: $('clrl-qs').value, quiet_end: $('clrl-qe').value,
+    };
+    if (line_token !== null) payload.line_token = line_token;
+    try { await fetchJson('/api/claude-ratelimit/settings', { method: 'POST', body: JSON.stringify(payload) }); alert('บันทึกการตั้งค่าแล้ว'); _clrlRenderSettings(); }
+    catch (e) { alert('บันทึกไม่สำเร็จ: ' + e.message); }
+  };
+  $('clrl-test').onclick = async () => {
+    try { const r = await fetchJson('/api/claude-ratelimit/test-alert', { method: 'POST' }); alert('ส่ง test alert แล้ว' + (r.note ? ' (' + r.note + ')' : '')); }
+    catch (e) { alert('ส่งไม่สำเร็จ: ' + e.message); }
+  };
+}
 // ===== Campaign (รายการแคมเปญจาก Google Sheet) =====
 async function renderAdsCampaigns() {
   _subMain().innerHTML = `
@@ -4465,6 +4646,7 @@ async function renderPlatformsPage(initialTab) {
         <button type="button" class="acc-menu-item active" data-plat-tab="platform"><span class="acc-menu-ico">🚀</span> Platform</button>
         <button type="button" class="acc-menu-item" data-plat-tab="skill"><span class="acc-menu-ico">🛒</span> Skill Marketplace</button>
         <button type="button" class="acc-menu-item" data-plat-tab="aiproject"><span class="acc-menu-ico">🤖</span> AI Project</button>
+        <button type="button" class="acc-menu-item" data-plat-tab="claude-rl"><span class="acc-menu-ico">⏱️</span> Claude RateLimit</button>
       </div>
       <!-- เนื้อหาขวา -->
       <div class="acc-detail">
@@ -4508,6 +4690,11 @@ async function renderPlatformsPage(initialTab) {
         <div data-plat-panel="aiproject" style="display:none">
           <div id="aiproj-root"><div class="empty">กำลังโหลด…</div></div>
         </div>
+
+        <!-- ============ Claude RateLimit ============ -->
+        <div data-plat-panel="claude-rl" style="display:none">
+          <div id="claude-rl-root"><div class="empty">กำลังโหลด…</div></div>
+        </div>
       </div>
     </div>
   `;
@@ -4515,15 +4702,17 @@ async function renderPlatformsPage(initialTab) {
   // v1.9.120/132/143 — submenu Platform / Skill Marketplace / AI Project (lazy-load)
   let _skillMpLoaded = false;
   let _aiprojLoaded = false;
+  let _clrlLoaded = false;
   function showPlatPanel(panel) {
     document.querySelectorAll('[data-plat-panel]').forEach(p => { p.style.display = (p.dataset.platPanel === panel) ? '' : 'none'; });
     document.querySelectorAll('[data-plat-tab]').forEach(b => b.classList.toggle('active', b.dataset.platTab === panel));
     if (panel === 'skill' && !_skillMpLoaded) { _skillMpLoaded = true; renderSkillMarketplace(); }
     if (panel === 'aiproject' && !_aiprojLoaded) { _aiprojLoaded = true; renderAiProjects(); }
+    if (panel === 'claude-rl' && !_clrlLoaded) { _clrlLoaded = true; renderClaudeRL(); }
   }
   document.querySelectorAll('[data-plat-tab]').forEach(b => b.addEventListener('click', () => showPlatPanel(b.dataset.platTab)));
   // v1.9.153 — เปิด tab ตาม deep-link (เช่นจาก dashboard)
-  if (initialTab && ['platform', 'skill', 'aiproject'].includes(initialTab)) showPlatPanel(initialTab);
+  if (initialTab && ['platform', 'skill', 'aiproject', 'claude-rl'].includes(initialTab)) showPlatPanel(initialTab);
 
   let data;
   try {

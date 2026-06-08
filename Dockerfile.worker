@@ -1,0 +1,16 @@
+# Worker service สำหรับ Claude RateLimit (Playwright headless Chromium)
+# ใช้ official Playwright image ให้ Chromium dependency ครบบน Railway
+# ตั้ง Railway service แยก: Dockerfile = Dockerfile.worker, รันแบบ cron (รายชั่วโมง)
+FROM mcr.microsoft.com/playwright/python:v1.47.0-jammy
+
+WORKDIR /app
+COPY backend/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+COPY backend/claude_usage_parser.py /app/backend/claude_usage_parser.py
+COPY scripts/claude_usage_worker.py /app/scripts/claude_usage_worker.py
+
+# ENV ที่ต้องตั้งบน Railway worker service (แชร์ Volume/DB กับ web service):
+#   FCT_DB_PATH      = path ของ SQLite (ชี้ไป Volume เดียวกับ web)
+#   CLAUDE_RL_KEY    = Fernet key เดียวกับ web (ถอดรหัส storage_state ได้)
+#   CLAUDE_USAGE_URL = (optional) override usage url
+CMD ["python", "scripts/claude_usage_worker.py"]

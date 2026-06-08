@@ -33,3 +33,6 @@ Thumbs.db
 *~
 
 .claude/
+claude_session*.json
+claude_rl.key
+*.session.json

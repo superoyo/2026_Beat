@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.207",
+      "date": "2026-06-02",
+      "title": "Platform › Claude RateLimit (foundation) — ติดตาม usage Claude.ai หลาย account",
+      "summary": "เมนูใหม่ใต้ Platform: Dashboard (สถานะ session/weekly + Check now) + Settings (CRUD account, อัปโหลด storageState เข้ารหัส, ตั้ง cron/threshold/alert webhook|LINE, test alert) + worker/helper/Dockerfile/parser scaffold (Playwright) ที่ต้อง verify กับ claude.ai จริง",
+      "changes": [
+        "Backend: 3 ตาราง (claude_accounts/usage_snapshots/ratelimit_settings) + เข้ารหัส storageState (Fernet) + endpoints CRUD/session/settings/test-alert/check",
+        "Frontend: tab Claude RateLimit (Dashboard cards + Settings form) gate module platform",
+        "scripts/save_session.py (capture session local), scripts/claude_usage_worker.py (Playwright headless), backend/claude_usage_parser.py (defensive, ต้อง verify), Dockerfile.worker, CLAUDE_RATELIMIT.md",
+        "Security: encrypted storage_state, ไม่ commit session/key (.gitignore), mask ใน UI",
+        "หมายเหตุ: การเช็คจริงต้องตั้ง worker service แยก (Playwright image) + verify usage JSON/selectors กับ claude.ai"
+      ]
+    },
+    {
       "version": "1.9.206",
       "date": "2026-06-02",
       "title": "Campaign panel: คอลัมน์ ad กว้างคงที่ 200px + scroll แนวนอน",
