@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.209",
+      "date": "2026-06-02",
+      "title": "Claude RateLimit: pivot เป็น local runner (Cloudflare บล็อก server)",
+      "summary": "ทดสอบแล้ว Railway headless โดน Cloudflare บล็อก + cf_clearance ผูก IP → เปลี่ยนเป็นรัน check จากเครื่องผู้ใช้ (stealth Playwright ผ่าน Cloudflare) แล้ว POST แค่ตัวเลข usage เข้าเว็บผ่าน /ingest (token auth) — session ไม่ออกจากเครื่อง",
+      "changes": [
+        "เพิ่ม POST /api/claude-ratelimit/ingest (shared token) เก็บ snapshot+alert state-change",
+        "scripts/claude_usage_local.py (runner: stealth + parse + POST), claude_runner_config.json (gitignore)",
+        "save_session.py verify login+อ่าน usage ได้ก่อน save",
+        "README ปรับเป็นแนว local cron, Railway worker = reference เท่านั้น"
+      ]
+    },
+    {
       "version": "1.9.208",
       "date": "2026-06-02",
       "title": "Claude RateLimit: parser อ่าน usage JSON จริงได้ (map ตรง)",

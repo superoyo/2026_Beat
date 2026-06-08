@@ -4680,6 +4680,8 @@ ADS_CAMPAIGN_CSV_URL = os.environ.get("ADS_CAMPAIGN_CSV_URL", "").strip()
 #   *** storageState = credential เต็มของ session — ห้าม log ค่า cookie ดิบ / ห้าม commit ***
 # ===========================================================================
 CLAUDE_RL_KEY = os.environ.get("CLAUDE_RL_KEY", "").strip()
+# v1.9.209 — token สำหรับ local runner POST ผล usage เข้ามา (ไม่ต้องอัปโหลด session เข้าเว็บ)
+CLAUDE_RL_INGEST_TOKEN = os.environ.get("CLAUDE_RL_INGEST_TOKEN", "").strip()
 
 
 def _clrl_fernet():
@@ -9191,6 +9193,64 @@ def claude_rl_test_alert(_sess: dict = Depends(_require_module("platform"))) -> 
     if not ok:
         raise HTTPException(status_code=400, detail=note or "ส่งไม่สำเร็จ")
     return {"ok": True, "note": note}
+
+
+def _clrl_compute_status(session_pct, weekly_pct, opus_pct, threshold) -> str:
+    vals = [v for v in (session_pct, weekly_pct, opus_pct) if isinstance(v, (int, float))]
+    if not vals:
+        return "ok"
+    hi = max(vals)
+    return "full" if (hi >= 100 or hi >= float(threshold or 90)) else "ok"
+
+
+class ClrlIngestIn(BaseModel):
+    token: str
+    label: str = Field(..., min_length=1, max_length=120)
+    session_pct: Optional[float] = None
+    session_reset_at: Optional[str] = None
+    weekly_pct: Optional[float] = None
+    weekly_reset_at: Optional[str] = None
+    weekly_opus_pct: Optional[float] = None
+    weekly_opus_reset_at: Optional[str] = None
+    expired: bool = False
+    raw: Optional[dict] = None
+
+
+@app.post("/api/claude-ratelimit/ingest")
+def claude_rl_ingest(payload: ClrlIngestIn) -> dict[str, Any]:
+    # auth ด้วย shared token (เรียกจาก local runner ไม่ใช่ browser session)
+    if not CLAUDE_RL_INGEST_TOKEN or payload.token != CLAUDE_RL_INGEST_TOKEN:
+        raise HTTPException(status_code=403, detail="invalid ingest token")
+    now = utc_now().isoformat()
+    s = _clrl_settings()
+    status = "expired" if payload.expired else _clrl_compute_status(
+        payload.session_pct, payload.weekly_pct, payload.weekly_opus_pct, s.get("threshold_pct") or 90)
+    with db_conn() as conn:
+        acc = conn.execute("SELECT * FROM claude_accounts WHERE label = ?", (payload.label.strip(),)).fetchone()
+        if acc:
+            acc_id = acc["id"]
+            prev_sess = acc["session_status"] or ""
+            prow = conn.execute("SELECT status FROM claude_usage_snapshots WHERE account_id=? ORDER BY checked_at DESC LIMIT 1", (acc_id,)).fetchone()
+            prev_status = (prow["status"] if prow else "") or ""
+        else:
+            cur = conn.execute("INSERT INTO claude_accounts(label, session_status, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                               (payload.label.strip(), "healthy", now, now))
+            acc_id, prev_sess, prev_status = cur.lastrowid, "", ""
+        conn.execute("UPDATE claude_accounts SET session_status=?, updated_at=? WHERE id=?",
+                     ("expired" if payload.expired else "healthy", now, acc_id))
+        conn.execute(
+            "INSERT INTO claude_usage_snapshots(account_id, session_pct, session_reset_at, weekly_pct, weekly_reset_at, "
+            " weekly_opus_pct, weekly_opus_reset_at, raw_json, status, checked_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (acc_id, payload.session_pct, payload.session_reset_at, payload.weekly_pct, payload.weekly_reset_at,
+             payload.weekly_opus_pct, payload.weekly_opus_reset_at, _json.dumps(payload.raw or {}, ensure_ascii=False), status, now),
+        )
+    # alert เฉพาะตอน state เปลี่ยน (กัน spam)
+    if status == "full" and prev_status != "full":
+        _clrl_send_alert(f"🔴 [{payload.label}] Claude limit ใกล้เต็ม/เต็มแล้ว — "
+                         f"session {payload.session_pct}% · weekly {payload.weekly_pct}%")
+    if payload.expired and prev_sess != "expired":
+        _clrl_send_alert(f"⚠️ [{payload.label}] Claude session หมดอายุ — ต้อง re-auth (รัน save_session ใหม่)")
+    return {"ok": True, "account_id": acc_id, "status": status}
 
 
 # ===========================================================================
