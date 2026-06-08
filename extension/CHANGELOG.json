@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.211",
+      "date": "2026-06-02",
+      "title": "SSO: Beat เป็น Identity Provider (login ด้วย Beat)",
+      "summary": "ระบบอื่น authenticate ผ่าน Beat ได้ (OAuth/OIDC-style redirect) — Beat ออก id_token (JWT) พิสูจน์ตัวตน ไม่แชร์รหัสผ่าน · จัดการ client ใน Setting › SSO (super admin)",
+      "changes": [
+        "Backend: /sso/authorize (code), /sso/token (id_token JWT HS256), /sso/userinfo + client CRUD (super admin) + ตาราง sso_clients/sso_codes",
+        "JWT hand-rolled (HS256) ไม่พึ่ง lib เพิ่ม, code single-use 2 นาที, redirect_uri exact-match",
+        "Frontend: Setting › 🪪 SSO (จัดการ client + endpoints), รองรับ sso_continue (login เสร็จ redirect กลับ)",
+        "login.html ส่งต่อ sso_continue, คู่มือ SSO.md"
+      ]
+    },
+    {
       "version": "1.9.210",
       "date": "2026-06-02",
       "title": "Claude RateLimit: แก้ badge dashboard (โหมด local-runner)",

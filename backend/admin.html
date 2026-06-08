@@ -1255,10 +1255,10 @@ function _extractErrDetail(j) {
 }
 
 // admin-only routes — member ห้ามเข้า (bounce ไป default)
-const ADMIN_ONLY_ROUTES = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads', 'ads-benchmark', 'ads-audience', 'ads-campaigns']);
+const ADMIN_ONLY_ROUTES = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads', 'ads-benchmark', 'ads-audience', 'ads-campaigns', 'sso']);
 // menu items ที่ซ่อนใน sidebar สำหรับ member
 // (dashboard เห็นได้ทุกบทบาท — ใช้เป็นหน้าแรกของ member ด้วย)
-const HIDE_FROM_MEMBER_NAV = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads', 'ads-benchmark', 'ads-audience', 'ads-campaigns']);
+const HIDE_FROM_MEMBER_NAV = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads', 'ads-benchmark', 'ads-audience', 'ads-campaigns', 'sso']);
 // v1.9.162 — IAM: route → module ที่ต้องมีสิทธิ์ (member ที่ถูก grant ถึงเข้าได้)
 const ROUTE_MODULE = { platforms: 'platform', ads: 'ads', 'ads-benchmark': 'ads', 'ads-audience': 'ads', 'ads-campaigns': 'ads', calendar: 'customer', domains: 'customer', websites: 'customer', 'services-config': 'customer', 'domains-config': 'customer' };
 let currentModules = new Set();   // module ที่ผู้ใช้ปัจจุบันเข้าถึงได้ (member)
@@ -1280,6 +1280,7 @@ const routes = {
   'logs':             () => renderSettingPage('logs'),
   'security':         () => renderSettingPage('security'),
   'iam':              () => renderSettingPage('iam'),
+  'sso':              () => renderSettingPage('sso'),
   'ads':              () => renderAdsSection('ads'),
   'ads-benchmark':    () => renderAdsSection('ads-benchmark'),
   'ads-audience':     () => renderAdsSection('ads-audience'),
@@ -12093,7 +12094,66 @@ function renderSettingPage(active, arg) {
     { route: 'logs',     ico: '📜', label: 'Logs',    render: () => renderLogsPage() },
     { route: 'security', ico: '🔑', label: 'API Key', render: () => renderSecurityPage() },
     { route: 'iam',      ico: '🔐', label: 'IAM',     render: () => renderIamPage() },
+    { route: 'sso',      ico: '🪪', label: 'SSO',     render: () => renderSsoClients() },
   ]});
+}
+// v1.9.211 — SSO Identity Provider: จัดการ client (super admin)
+async function renderSsoClients() {
+  const root = _subMain();
+  root.innerHTML = '<div class="empty">กำลังโหลด…</div>';
+  let d;
+  try { d = await fetchJson('/api/sso/clients'); }
+  catch (e) {
+    root.innerHTML = `<div class="empty" style="padding:24px;text-align:center">${/403/.test(e.message) ? '🔒 ต้องเป็น <b>super admin</b> (login ด้วย username/password ของ admin หลัก) เพื่อจัดการ SSO' : 'โหลดไม่สำเร็จ: ' + escapeHtml(e.message)}</div>`;
+    return;
+  }
+  const epRow = (k, v) => `<div style="display:flex;gap:8px;padding:4px 0;font-size:12px"><span style="min-width:110px;color:var(--text-muted)">${k}</span><code style="background:var(--bg-soft);padding:2px 7px;border-radius:5px;word-break:break-all">${escapeHtml(v)}</code></div>`;
+  const ep = `<div class="card" style="display:block;margin-bottom:16px">
+    <div style="font-size:13px;font-weight:700;margin-bottom:8px">🔗 Endpoints (ให้ระบบอื่นตั้งค่า)</div>
+    ${epRow('Issuer', d.issuer)}${epRow('Authorize', d.authorize_url)}${epRow('Token', d.token_url)}${epRow('UserInfo', d.userinfo_url)}
+    <div style="font-size:11px;color:var(--text-soft);margin-top:8px;line-height:1.6">Flow: ระบบอื่น redirect ไป <b>Authorize</b> (พร้อม <code>client_id</code>, <code>redirect_uri</code>, <code>state</code>) → ผู้ใช้ login Beat → กลับ <code>redirect_uri?code=…</code> → แลก code ที่ <b>Token</b> (client_id+secret) ได้ <b>id_token (JWT)</b> · verify JWT ด้วย client_secret (HS256)</div>
+  </div>`;
+  const rows = (d.clients || []).map(c => `
+    <div class="card" style="display:block" data-cid="${c.id}">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+        <input class="sso-name" value="${escapeHtml(c.name)}" style="flex:1;min-width:140px;padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text)">
+        <label style="font-size:12px;white-space:nowrap"><input type="checkbox" class="sso-en" ${c.enabled ? 'checked' : ''}> เปิดใช้</label>
+        <button class="btn sso-save" style="font-size:12px;padding:6px 11px">💾</button>
+        <button class="btn sso-del" style="font-size:12px;padding:6px 11px;color:#dc2626">🗑</button>
+      </div>
+      <div style="font-size:12px;display:grid;grid-template-columns:auto 1fr;gap:4px 8px;margin-bottom:8px;align-items:center">
+        <span style="color:var(--text-muted)">client_id</span><code style="background:var(--bg-soft);padding:2px 7px;border-radius:5px;word-break:break-all">${escapeHtml(c.client_id)}</code>
+        <span style="color:var(--text-muted)">client_secret</span><span><code class="sso-sec" data-sec="${escapeHtml(c.client_secret)}" style="background:var(--bg-soft);padding:2px 7px;border-radius:5px;word-break:break-all">••••••••••</code> <button class="btn sso-reveal" style="font-size:10px;padding:2px 7px">👁</button> <button class="btn sso-rotate" style="font-size:10px;padding:2px 7px">↻ หมุน</button></span>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:3px">redirect_uris (1 บรรทัด/อัน — ต้องตรงเป๊ะ)</div>
+      <textarea class="sso-uris" placeholder="https://app2.example.com/auth/beat/callback" style="width:100%;height:52px;font-size:11px;font-family:ui-monospace,monospace;padding:7px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);resize:vertical">${escapeHtml(c.redirect_uris || '')}</textarea>
+    </div>`).join('');
+  root.innerHTML = `
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <input id="sso-new-name" placeholder="ชื่อระบบใหม่ที่จะให้ login ด้วย Beat (เช่น Internal CRM)" style="flex:1;padding:9px 12px;font-size:13px;border:1px solid var(--border);border-radius:9px;background:var(--bg-input);color:var(--text)">
+      <button class="btn" id="sso-add" style="font-size:13px;padding:9px 16px">+ เพิ่ม client</button>
+    </div>
+    ${ep}
+    <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Clients (${(d.clients || []).length})</div>
+    ${rows || '<div class="empty" style="padding:18px">— ยังไม่มี client —</div>'}`;
+  $('sso-add').onclick = async () => {
+    const name = $('sso-new-name').value.trim(); if (!name) { alert('ใส่ชื่อระบบ'); return; }
+    try {
+      const r = await fetchJson('/api/sso/clients', { method: 'POST', body: JSON.stringify({ name, redirect_uris: '', enabled: true }) });
+      alert('สร้าง client แล้ว — เก็บค่านี้ไว้:\n\nclient_id: ' + r.client_id + '\nclient_secret: ' + r.client_secret);
+      renderSsoClients();
+    } catch (e) { alert('ไม่สำเร็จ: ' + e.message); }
+  };
+  root.querySelectorAll('[data-cid]').forEach(card => {
+    const id = card.dataset.cid;
+    card.querySelector('.sso-save').onclick = async () => {
+      try { await fetchJson('/api/sso/clients/' + id, { method: 'PUT', body: JSON.stringify({ name: card.querySelector('.sso-name').value.trim(), redirect_uris: card.querySelector('.sso-uris').value.trim(), enabled: card.querySelector('.sso-en').checked }) }); alert('บันทึกแล้ว'); }
+      catch (e) { alert('ไม่สำเร็จ: ' + e.message); }
+    };
+    card.querySelector('.sso-del').onclick = async () => { if (!confirm('ลบ client นี้? (ระบบที่ใช้อยู่จะ login ด้วย Beat ไม่ได้)')) return; try { await fetchJson('/api/sso/clients/' + id, { method: 'DELETE' }); renderSsoClients(); } catch (e) { alert(e.message); } };
+    card.querySelector('.sso-reveal').onclick = () => { const el = card.querySelector('.sso-sec'); el.textContent = el.textContent.startsWith('•') ? el.dataset.sec : '••••••••••'; };
+    card.querySelector('.sso-rotate').onclick = async () => { if (!confirm('หมุน secret ใหม่? ระบบที่ใช้อยู่ต้องอัปเดต secret')) return; try { const r = await fetchJson('/api/sso/clients/' + id + '/rotate', { method: 'POST' }); alert('client_secret ใหม่:\n' + r.client_secret); renderSsoClients(); } catch (e) { alert(e.message); } };
+  });
 }
 
 // ============== v1.9.132 — Skill Marketplace ==============
@@ -16545,9 +16605,14 @@ function attachSidebarHandlers() {
 
 (async () => {
   const session = await detectActiveSession();
+  // v1.9.211 — SSO: redirect-based login ด้วย Beat
+  const _ssoCont = new URLSearchParams(location.search).get('sso_continue');
   if (!session) {
-    location.replace('/login');
+    location.replace(_ssoCont ? '/login?sso_continue=' + encodeURIComponent(_ssoCont) : '/login');
     return;
+  }
+  if (_ssoCont) {
+    try { const u = decodeURIComponent(_ssoCont); if (u.startsWith(location.origin + '/sso/authorize')) { location.replace(u); return; } } catch (e) { }
   }
   currentRole = session.role;
   currentLabel = session.label;

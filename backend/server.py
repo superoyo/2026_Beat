@@ -6,6 +6,7 @@ SQLite, and serves analytics + a single-page dashboard. Bind only to
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import json as _json
@@ -26,7 +27,7 @@ from typing import Any, Iterator, Optional
 
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
 VERSION = "1.1.0"
@@ -711,6 +712,27 @@ def init_db() -> None:
                 alert_config  TEXT,                        -- json {webhook_url,line_token,line_to,quiet_start,quiet_end}
                 threshold_pct REAL    DEFAULT 90,
                 updated_at    TEXT
+            );
+            CREATE TABLE IF NOT EXISTS sso_clients (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                client_id     TEXT    UNIQUE NOT NULL,
+                client_secret TEXT    NOT NULL,
+                name          TEXT    NOT NULL,
+                redirect_uris TEXT    NOT NULL DEFAULT '',   -- คั่นด้วยขึ้นบรรทัด/ช่องว่าง
+                enabled       INTEGER DEFAULT 1,
+                created_at    TEXT    NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS sso_codes (
+                code        TEXT    PRIMARY KEY,
+                client_id   TEXT    NOT NULL,
+                redirect_uri TEXT   NOT NULL,
+                sub         TEXT    NOT NULL,
+                email       TEXT,
+                name        TEXT,
+                role        TEXT,
+                expires_at  TEXT    NOT NULL,
+                used        INTEGER DEFAULT 0,
+                created_at  TEXT    NOT NULL
             );
             """
         )
@@ -4682,6 +4704,48 @@ ADS_CAMPAIGN_CSV_URL = os.environ.get("ADS_CAMPAIGN_CSV_URL", "").strip()
 CLAUDE_RL_KEY = os.environ.get("CLAUDE_RL_KEY", "").strip()
 # v1.9.209 — token สำหรับ local runner POST ผล usage เข้ามา (ไม่ต้องอัปโหลด session เข้าเว็บ)
 CLAUDE_RL_INGEST_TOKEN = os.environ.get("CLAUDE_RL_INGEST_TOKEN", "").strip()
+
+# ===========================================================================
+# v1.9.211 — SSO (Identity Provider): ระบบอื่น login ด้วย Beat ได้ (OAuth/OIDC-ish)
+#   Beat ออก id_token (JWT) พิสูจน์ตัวตน — ไม่แชร์รหัสผ่าน
+# ===========================================================================
+SSO_ISSUER = os.environ.get("SSO_ISSUER", "https://beat.datafirst.id").rstrip("/")
+SSO_ID_TOKEN_TTL = int(os.environ.get("SSO_ID_TOKEN_TTL", "3600"))   # อายุ id_token (วินาที)
+SSO_CODE_TTL = 120                                                    # อายุ authorization code (วินาที)
+
+
+def _sso_b64u(b: bytes) -> str:
+    return base64.urlsafe_b64encode(b).rstrip(b"=").decode("ascii")
+
+
+def _sso_b64u_dec(s: str) -> bytes:
+    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+
+
+def _sso_jwt_encode(payload: dict, secret: str) -> str:
+    import hmac as _hmac
+    import hashlib as _hashlib
+    head = _sso_b64u(_json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+    body = _sso_b64u(_json.dumps(payload, separators=(",", ":")).encode())
+    seg = f"{head}.{body}"
+    sig = _sso_b64u(_hmac.new(secret.encode(), seg.encode(), _hashlib.sha256).digest())
+    return f"{seg}.{sig}"
+
+
+def _sso_jwt_decode(token: str, secret: str) -> Optional[dict]:
+    import hmac as _hmac
+    import hashlib as _hashlib
+    try:
+        seg, sig = token.rsplit(".", 1)
+        expect = _sso_b64u(_hmac.new(secret.encode(), seg.encode(), _hashlib.sha256).digest())
+        if not _hmac.compare_digest(sig, expect):
+            return None
+        payload = _json.loads(_sso_b64u_dec(seg.split(".", 1)[1]))
+        if payload.get("exp") and float(payload["exp"]) < utc_now().timestamp():
+            return None
+        return payload
+    except Exception:
+        return None
 
 
 def _clrl_fernet():
@@ -9251,6 +9315,179 @@ def claude_rl_ingest(payload: ClrlIngestIn) -> dict[str, Any]:
     if payload.expired and prev_sess != "expired":
         _clrl_send_alert(f"⚠️ [{payload.label}] Claude session หมดอายุ — ต้อง re-auth (รัน save_session ใหม่)")
     return {"ok": True, "account_id": acc_id, "status": status}
+
+
+# ===========================================================================
+# v1.9.211 — SSO endpoints (Identity Provider)
+# ===========================================================================
+def _sso_get_client(client_id: str):
+    if not client_id:
+        return None
+    with db_conn() as conn:
+        return conn.execute("SELECT * FROM sso_clients WHERE client_id = ?", (client_id,)).fetchone()
+
+
+def _sso_redirect_ok(client, redirect_uri: str) -> bool:
+    allowed = [u.strip() for u in (client["redirect_uris"] or "").split() if u.strip()]
+    return redirect_uri in allowed
+
+
+def _sso_current_identity(fct_session, fct_member_session):
+    sess = get_session(fct_session)
+    if sess:
+        return {"sub": f"admin:{sess.get('user_id')}", "name": sess.get("username") or "admin", "email": "", "role": "admin"}
+    msess = get_member_session(fct_member_session)
+    if msess:
+        mid = msess["member_id"]
+        with db_conn() as conn:
+            row = conn.execute("SELECT * FROM members WHERE id = ?", (mid,)).fetchone()
+        d = dict(row) if row else {}
+        return {"sub": f"member:{mid}", "name": d.get("name") or "member", "email": d.get("email") or "", "role": "member"}
+    return None
+
+
+@app.get("/sso/authorize")
+def sso_authorize(client_id: str = "", redirect_uri: str = "", state: str = "",
+                  response_type: str = "code", scope: str = "",
+                  fct_session: Optional[str] = Cookie(default=None),
+                  fct_member_session: Optional[str] = Cookie(default=None)):
+    from urllib.parse import urlencode as _ue, quote as _q
+    client = _sso_get_client(client_id)
+    if not client or not client["enabled"]:
+        return HTMLResponse("<h3 style='font-family:sans-serif'>SSO error: ไม่รู้จัก client หรือถูกปิดใช้งาน</h3>", status_code=400)
+    if not _sso_redirect_ok(client, redirect_uri):
+        return HTMLResponse("<h3 style='font-family:sans-serif'>SSO error: redirect_uri ไม่ตรงกับที่ลงทะเบียนไว้</h3>", status_code=400)
+    if response_type != "code":
+        return HTMLResponse("<h3 style='font-family:sans-serif'>SSO error: รองรับเฉพาะ response_type=code</h3>", status_code=400)
+    ident = _sso_current_identity(fct_session, fct_member_session)
+    if not ident:
+        # ยังไม่ได้ login Beat → พาไป login แล้วกลับมาที่ authorize เดิม
+        cont = f"{SSO_ISSUER}/sso/authorize?" + _ue({"client_id": client_id, "redirect_uri": redirect_uri,
+                                                      "state": state, "response_type": "code", "scope": scope})
+        return RedirectResponse(f"/?sso_continue={_q(cont, safe='')}", status_code=302)
+    code = secrets.token_urlsafe(32)
+    now = utc_now()
+    with db_conn() as conn:
+        conn.execute(
+            "INSERT INTO sso_codes(code, client_id, redirect_uri, sub, email, name, role, expires_at, used, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,0,?)",
+            (code, client_id, redirect_uri, ident["sub"], ident["email"], ident["name"], ident["role"],
+             (now + timedelta(seconds=SSO_CODE_TTL)).isoformat(), now.isoformat()),
+        )
+    sep = "&" if "?" in redirect_uri else "?"
+    url = f"{redirect_uri}{sep}code={code}" + (f"&state={_q(state, safe='')}" if state else "")
+    return RedirectResponse(url, status_code=302)
+
+
+@app.post("/sso/token")
+async def sso_token(request: Request):
+    ct = request.headers.get("content-type", "")
+    try:
+        if "application/json" in ct:
+            data = await request.json()
+        else:
+            from urllib.parse import parse_qs
+            data = {k: v[0] for k, v in parse_qs((await request.body()).decode()).items()}
+    except Exception:
+        data = {}
+    client_id = (data.get("client_id") or "").strip()
+    client_secret = (data.get("client_secret") or "").strip()
+    code = (data.get("code") or "").strip()
+    redirect_uri = (data.get("redirect_uri") or "").strip()
+    client = _sso_get_client(client_id)
+    import hmac as _hmac
+    if not client or not _hmac.compare_digest(client["client_secret"], client_secret):
+        raise HTTPException(status_code=401, detail="invalid client")
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM sso_codes WHERE code = ?", (code,)).fetchone()
+        if not row or row["used"] or row["client_id"] != client_id or row["redirect_uri"] != redirect_uri:
+            raise HTTPException(status_code=400, detail="invalid code")
+        if parse_iso(row["expires_at"]) < utc_now():
+            raise HTTPException(status_code=400, detail="code expired")
+        conn.execute("UPDATE sso_codes SET used = 1 WHERE code = ?", (code,))
+    now = int(utc_now().timestamp())
+    claims = {
+        "iss": SSO_ISSUER, "sub": row["sub"], "aud": client_id,
+        "iat": now, "exp": now + SSO_ID_TOKEN_TTL,
+        "name": row["name"], "email": row["email"], "role": row["role"],
+    }
+    id_token = _sso_jwt_encode(claims, client["client_secret"])
+    return {"access_token": id_token, "id_token": id_token, "token_type": "Bearer",
+            "expires_in": SSO_ID_TOKEN_TTL,
+            "profile": {"sub": row["sub"], "name": row["name"], "email": row["email"], "role": row["role"]}}
+
+
+@app.get("/sso/userinfo")
+def sso_userinfo(authorization: Optional[str] = Header(default=None)):
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="missing bearer token")
+    token = authorization.split(" ", 1)[1].strip()
+    # อ่าน aud (unverified) เพื่อหา client → verify ด้วย secret ของ client
+    try:
+        body = _json.loads(_sso_b64u_dec(token.split(".")[1]))
+        aud = body.get("aud")
+    except Exception:
+        raise HTTPException(status_code=401, detail="invalid token")
+    client = _sso_get_client(aud)
+    payload = _sso_jwt_decode(token, client["client_secret"]) if client else None
+    if not payload:
+        raise HTTPException(status_code=401, detail="invalid or expired token")
+    return {"sub": payload["sub"], "name": payload.get("name"), "email": payload.get("email"), "role": payload.get("role")}
+
+
+# ---- client management (super admin) ----
+class SsoClientIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    redirect_uris: str = Field("", max_length=4000)
+    enabled: bool = True
+
+
+@app.get("/api/sso/clients")
+def sso_list_clients(_sess: dict = Depends(require_super_admin)) -> dict[str, Any]:
+    with db_conn() as conn:
+        rows = conn.execute("SELECT * FROM sso_clients ORDER BY created_at DESC").fetchall()
+    return {"clients": [dict(r) for r in rows], "issuer": SSO_ISSUER,
+            "authorize_url": f"{SSO_ISSUER}/sso/authorize", "token_url": f"{SSO_ISSUER}/sso/token",
+            "userinfo_url": f"{SSO_ISSUER}/sso/userinfo"}
+
+
+@app.post("/api/sso/clients")
+def sso_create_client(payload: SsoClientIn, _sess: dict = Depends(require_super_admin)) -> dict[str, Any]:
+    cid = "beat_" + secrets.token_hex(8)
+    secret = secrets.token_urlsafe(32)
+    with db_conn() as conn:
+        conn.execute("INSERT INTO sso_clients(client_id, client_secret, name, redirect_uris, enabled, created_at) VALUES (?,?,?,?,?,?)",
+                     (cid, secret, payload.name.strip(), payload.redirect_uris.strip(), 1 if payload.enabled else 0, utc_now().isoformat()))
+    return {"ok": True, "client_id": cid, "client_secret": secret}
+
+
+@app.put("/api/sso/clients/{cid_id}")
+def sso_update_client(cid_id: int, payload: SsoClientIn, _sess: dict = Depends(require_super_admin)) -> dict[str, Any]:
+    with db_conn() as conn:
+        r = conn.execute("SELECT id FROM sso_clients WHERE id = ?", (cid_id,)).fetchone()
+        if not r:
+            raise HTTPException(status_code=404, detail="ไม่พบ client")
+        conn.execute("UPDATE sso_clients SET name = ?, redirect_uris = ?, enabled = ? WHERE id = ?",
+                     (payload.name.strip(), payload.redirect_uris.strip(), 1 if payload.enabled else 0, cid_id))
+    return {"ok": True}
+
+
+@app.post("/api/sso/clients/{cid_id}/rotate")
+def sso_rotate_secret(cid_id: int, _sess: dict = Depends(require_super_admin)) -> dict[str, Any]:
+    secret = secrets.token_urlsafe(32)
+    with db_conn() as conn:
+        r = conn.execute("SELECT id FROM sso_clients WHERE id = ?", (cid_id,)).fetchone()
+        if not r:
+            raise HTTPException(status_code=404, detail="ไม่พบ client")
+        conn.execute("UPDATE sso_clients SET client_secret = ? WHERE id = ?", (secret, cid_id))
+    return {"ok": True, "client_secret": secret}
+
+
+@app.delete("/api/sso/clients/{cid_id}")
+def sso_delete_client(cid_id: int, _sess: dict = Depends(require_super_admin)) -> dict[str, Any]:
+    with db_conn() as conn:
+        conn.execute("DELETE FROM sso_clients WHERE id = ?", (cid_id,))
+    return {"ok": True}
 
 
 # ===========================================================================
