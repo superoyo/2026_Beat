@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.208",
+      "date": "2026-06-02",
+      "title": "Claude RateLimit: parser อ่าน usage JSON จริงได้ (map ตรง)",
+      "summary": "จูน claude_usage_parser ตาม response จริงของ claude.ai: five_hour=session(5h), seven_day=weekly, seven_day_opus=opus (utilization เป็น % ตรง) + เก็บ extra_usage credits, รองรับ response ห่อ/ซ้อน, คง heuristic เดิมเป็น fallback",
+      "changes": [
+        "map five_hour/seven_day/seven_day_opus.utilization+resets_at ตรง ๆ",
+        "แก้บั๊กค่า 1.0 ถูกตีเป็น 100% (exact path ไม่ใช้ ratio)",
+        "_find_usage_obj หา object usage แม้โดนห่อ"
+      ]
+    },
+    {
       "version": "1.9.207",
       "date": "2026-06-02",
       "title": "Platform › Claude RateLimit (foundation) — ติดตาม usage Claude.ai หลาย account",

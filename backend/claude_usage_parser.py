@@ -87,20 +87,73 @@ def _pick_block(captured: list, scope_keys: tuple, exclude_keys: tuple = ()) -> 
     return {"pct": pct, "reset": reset}
 
 
+# --- exact mapping (ยืนยันจาก response จริง 2026-06: claude.ai /settings/usage) ---
+#   {"five_hour":{"utilization":22.0,"resets_at":...},
+#    "seven_day":{"utilization":3.0,"resets_at":...},
+#    "seven_day_opus":{...}|null, "seven_day_sonnet":{...}, "extra_usage":{...}, ...}
+def _util_pct(v) -> Optional[float]:
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return None if f != f else round(f, 1)   # ค่าเป็น % ตรง ๆ (0..100) ไม่ใช่ ratio
+
+
+def _bucket(b) -> tuple:
+    if not isinstance(b, dict):
+        return None, None
+    return _util_pct(b.get("utilization")), (b.get("resets_at") or None)
+
+
+def _find_usage_obj(data):
+    """หา dict ที่มี key usage จริง (five_hour / seven_day) — รองรับโดนห่อ/ซ้อน"""
+    if isinstance(data, dict):
+        if "five_hour" in data or "seven_day" in data:
+            return data
+        for v in data.values():
+            r = _find_usage_obj(v)
+            if r:
+                return r
+    elif isinstance(data, list):
+        for v in data:
+            r = _find_usage_obj(v)
+            if r:
+                return r
+    return None
+
+
 def parse_usage(captured: list, page_text: str = "") -> dict:
     """
     captured: list ของ JSON object ที่ดักจาก network responses (usage endpoints)
     page_text: text ของหน้า (fallback)
-    คืน dict: session_pct, session_reset_at, weekly_pct, weekly_reset_at, weekly_opus_pct, weekly_opus_reset_at, found
+    คืน dict: session_pct, session_reset_at, weekly_pct, weekly_reset_at, weekly_opus_pct, weekly_opus_reset_at, extra, found
     """
     out = {
         "session_pct": None, "session_reset_at": None,
         "weekly_pct": None, "weekly_reset_at": None,
         "weekly_opus_pct": None, "weekly_opus_reset_at": None,
-        "found": False,
+        "extra": None, "found": False,
     }
     captured = [c for c in (captured or []) if isinstance(c, (dict, list))]
-    if captured:
+
+    obj = None
+    for data in captured:
+        obj = _find_usage_obj(data)
+        if obj:
+            break
+
+    if obj is not None:                          # ---- exact mapping ----
+        out["session_pct"], out["session_reset_at"] = _bucket(obj.get("five_hour"))
+        out["weekly_pct"], out["weekly_reset_at"] = _bucket(obj.get("seven_day"))
+        out["weekly_opus_pct"], out["weekly_opus_reset_at"] = _bucket(obj.get("seven_day_opus"))
+        ex = obj.get("extra_usage")
+        if isinstance(ex, dict) and ex.get("is_enabled"):
+            out["extra"] = {
+                "monthly_limit": ex.get("monthly_limit"),
+                "used_credits": ex.get("used_credits"),
+                "currency": ex.get("currency"),
+            }
+    elif captured:                               # ---- fallback heuristic (เผื่อ schema เปลี่ยน) ----
         sess = _pick_block(captured, _KEYS_SESSION, exclude_keys=_KEYS_OPUS)
         out["session_pct"], out["session_reset_at"] = sess["pct"], sess["reset"]
         wk = _pick_block(captured, _KEYS_WEEKLY, exclude_keys=_KEYS_OPUS)
