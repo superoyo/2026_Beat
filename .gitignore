@@ -36,3 +36,5 @@ Thumbs.db
 claude_session*.json
 claude_rl.key
 *.session.json
+claude_*.json
+claude_superoyo.json
