@@ -12097,6 +12097,65 @@ function renderSettingPage(active, arg) {
     { route: 'sso',      ico: '🪪', label: 'SSO',     render: () => renderSsoClients() },
   ]});
 }
+// v1.9.212 — สเปค SSO พร้อมวางใน Claude Code ของระบบอื่น
+function _ssoBrief(c, ep, uri) {
+  const U = uri || '<ใส่ redirect_uri ของระบบนี้ — ต้องไปลงทะเบียนใน Beat ด้วย>';
+  return `ภารกิจ: เพิ่ม "Login ด้วย Beat" (SSO) เข้าระบบนี้ โดยใช้ Beat เป็น Identity Provider
+(OAuth2 Authorization Code flow → ได้ id_token เป็น JWT HS256). อย่าเก็บ/ขอรหัสผ่านผู้ใช้เอง.
+
+=== ค่าจาก Beat (ใช้ได้เลย) ===
+Issuer        : ${ep.issuer}
+Authorize URL : ${ep.authorize_url}
+Token URL     : ${ep.token_url}
+UserInfo URL  : ${ep.userinfo_url}
+client_id     : ${c.client_id}
+client_secret : ${c.client_secret}
+redirect_uri  : ${U}
+(*) redirect_uri ต้องตรงเป๊ะกับที่ลงทะเบียนใน Beat — ถ้าเปลี่ยน path ต้องไปแก้ใน Beat ด้วย
+
+=== Flow ที่ต้อง implement ===
+1) ปุ่ม "Login ด้วย Beat" → redirect ผู้ใช้ไป:
+   ${ep.authorize_url}?client_id=${c.client_id}&redirect_uri=<URLENCODE(redirect_uri)>&response_type=code&state=<RANDOM>
+   - สร้าง state สุ่ม เก็บใน session ฝั่งนี้ (กัน CSRF)
+2) สร้าง route callback ที่ redirect_uri → รับ query ?code=&state=
+   - ตรวจ state ให้ตรงกับที่เก็บไว้
+3) แลก code แบบ server-to-server:
+   POST ${ep.token_url}   (Content-Type: application/x-www-form-urlencoded หรือ JSON ก็ได้)
+   body: client_id=${c.client_id}&client_secret=${c.client_secret}&code=<code>&redirect_uri=<redirect_uri>
+   → response: {"id_token":"<JWT>","access_token":"<JWT>","token_type":"Bearer","expires_in":3600,
+                "profile":{"sub":"...","name":"...","email":"...","role":"..."}}
+4) verify id_token เป็น JWT HS256 ด้วย client_secret:
+   - alg=HS256, ตรวจ signature ด้วย secret
+   - ตรวจ iss == "${ep.issuer}", aud == "${c.client_id}", exp ยังไม่หมด
+   - claims ที่ได้: sub (เช่น "admin:1" หรือ "member:5"), name, email, role ("admin"|"member")
+   (หรือเรียก GET ${ep.userinfo_url} พร้อม header Authorization: Bearer <id_token>)
+5) ใช้ sub/email สร้าง session ของระบบนี้เอง → ถือว่า login สำเร็จ
+
+=== ตัวอย่าง (Python — ปรับตาม framework จริง) ===
+import requests, jwt   # pip install pyjwt
+# callback handler:
+tok = requests.post("${ep.token_url}", data={
+    "client_id": "${c.client_id}", "client_secret": "${c.client_secret}",
+    "code": request.args["code"], "redirect_uri": "${U}"}).json()["id_token"]
+claims = jwt.decode(tok, "${c.client_secret}", algorithms=["HS256"],
+                    audience="${c.client_id}", issuer="${ep.issuer}")
+# claims["sub"], claims["email"], claims["role"] → login user ในระบบนี้
+
+=== ความปลอดภัย ===
+- เก็บ client_secret ไว้ฝั่ง server เท่านั้น (env/secret store) อย่าใส่ใน frontend
+- code ใช้ครั้งเดียว หมดอายุ ~2 นาที · id_token อายุ 1 ชม.
+- ตรวจ state ทุกครั้งตอน callback`;
+}
+function _ssoCopy(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => alert('คัดลอกสเปคแล้ว — เอาไปวางในแชท Claude Code ของระบบอื่นได้เลย'),
+      () => alert('คัดลอกไม่สำเร็จ — เลือกข้อความเองจากกล่องที่เปิด'));
+  } else {
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); alert('คัดลอกสเปคแล้ว'); } catch (e) { alert('คัดลอกไม่สำเร็จ'); }
+    ta.remove();
+  }
+}
 // v1.9.211 — SSO Identity Provider: จัดการ client (super admin)
 async function renderSsoClients() {
   const root = _subMain();
@@ -12127,6 +12186,7 @@ async function renderSsoClients() {
       </div>
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:3px">redirect_uris (1 บรรทัด/อัน — ต้องตรงเป๊ะ)</div>
       <textarea class="sso-uris" placeholder="https://app2.example.com/auth/beat/callback" style="width:100%;height:52px;font-size:11px;font-family:ui-monospace,monospace;padding:7px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);resize:vertical">${escapeHtml(c.redirect_uris || '')}</textarea>
+      <button class="btn sso-copy" style="font-size:12px;padding:7px 13px;margin-top:8px;width:100%;background:var(--primary);color:#fff">📋 คัดลอกสเปคให้ Claude Code (ระบบอื่น)</button>
     </div>`).join('');
   root.innerHTML = `
     <div style="display:flex;gap:8px;margin-bottom:14px">
@@ -12152,6 +12212,11 @@ async function renderSsoClients() {
     };
     card.querySelector('.sso-del').onclick = async () => { if (!confirm('ลบ client นี้? (ระบบที่ใช้อยู่จะ login ด้วย Beat ไม่ได้)')) return; try { await fetchJson('/api/sso/clients/' + id, { method: 'DELETE' }); renderSsoClients(); } catch (e) { alert(e.message); } };
     card.querySelector('.sso-reveal').onclick = () => { const el = card.querySelector('.sso-sec'); el.textContent = el.textContent.startsWith('•') ? el.dataset.sec : '••••••••••'; };
+    card.querySelector('.sso-copy').onclick = () => {
+      const c = (d.clients || []).find(x => String(x.id) === String(id)); if (!c) return;
+      const uri = (card.querySelector('.sso-uris').value.split('\n').map(s => s.trim()).filter(Boolean)[0]) || '';
+      _ssoCopy(_ssoBrief(c, d, uri));
+    };
     card.querySelector('.sso-rotate').onclick = async () => { if (!confirm('หมุน secret ใหม่? ระบบที่ใช้อยู่ต้องอัปเดต secret')) return; try { const r = await fetchJson('/api/sso/clients/' + id + '/rotate', { method: 'POST' }); alert('client_secret ใหม่:\n' + r.client_secret); renderSsoClients(); } catch (e) { alert(e.message); } };
   });
 }

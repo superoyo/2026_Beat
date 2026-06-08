@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.212",
+      "date": "2026-06-02",
+      "title": "SSO Clients: ปุ่มคัดลอกสเปคให้ Claude Code (ระบบอื่น)",
+      "summary": "แต่ละ client มีปุ่ม 'คัดลอกสเปคให้ Claude Code' — ก๊อปคำสั่งครบ (endpoints + client_id/secret + redirect_uri + flow + ตัวอย่างโค้ด Python + ข้อควรระวัง) ไปวางในแชท Claude Code ของระบบอื่นเพื่อ implement SSO ได้เลย",
+      "changes": [
+        "_ssoBrief สร้างสเปคพร้อมวาง (ฝัง client_id/secret/redirect_uri จริง)",
+        "ปุ่ม 📋 ต่อ client + copy to clipboard (มี fallback)"
+      ]
+    },
+    {
       "version": "1.9.211",
       "date": "2026-06-02",
       "title": "SSO: Beat เป็น Identity Provider (login ด้วย Beat)",
