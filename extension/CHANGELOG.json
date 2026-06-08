@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.210",
+      "date": "2026-06-02",
+      "title": "Claude RateLimit: แก้ badge dashboard (โหมด local-runner)",
+      "summary": "badge ดูจาก session_status + snapshot ล่าสุด แทน has_session (เพราะ local-runner ไม่อัปโหลด session เข้าเว็บ) — account ที่มีข้อมูลจะขึ้น OK/full ถูกต้อง, ปุ่มเปลี่ยนเป็นรีเฟรช",
+      "changes": [
+        "_clrlBadge ไม่ใช้ has_session แล้ว ใช้ snapshot/session_status",
+        "ปุ่ม Check now → รีเฟรช (ดึงค่าล่าสุด) + โน้ตว่าเช็คจาก local cron"
+      ]
+    },
+    {
       "version": "1.9.209",
       "date": "2026-06-02",
       "title": "Claude RateLimit: pivot เป็น local runner (Cloudflare บล็อก server)",

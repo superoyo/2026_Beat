@@ -1978,13 +1978,14 @@ async function renderClaudeRL() {
   if (_clrlSub === 'settings') _clrlRenderSettings(); else _clrlRenderDashboard();
 }
 function _clrlBadge(a) {
-  if (a.session_status === 'expired') return { t: '⚠️ Session expired', c: '#b45309', bg: 'rgba(245,158,11,.15)' };
-  if (!a.has_session) return { t: '— ยังไม่มี session', c: 'var(--text-soft)', bg: 'var(--bg-soft)' };
-  const st = a.latest && a.latest.status;
-  if (st === 'full') return { t: '🔴 Limit reached', c: '#dc2626', bg: 'rgba(220,38,38,.12)' };
-  if (st === 'ok') return { t: '✅ OK', c: '#16a34a', bg: 'rgba(22,163,74,.12)' };
-  if (st === 'error') return { t: '⚠️ Error', c: '#b45309', bg: 'rgba(245,158,11,.15)' };
-  return { t: '⏱ ยังไม่เคยเช็ค', c: 'var(--text-muted)', bg: 'var(--bg-soft)' };
+  // โหมด local-runner: ดูจาก session_status + snapshot ล่าสุด (ไม่ใช้ has_session)
+  const L = a.latest;
+  if (a.session_status === 'expired' || (L && L.status === 'expired'))
+    return { t: '⚠️ Session expired', c: '#b45309', bg: 'rgba(245,158,11,.15)' };
+  if (!L) return { t: '⏱ ยังไม่เคยเช็ค', c: 'var(--text-muted)', bg: 'var(--bg-soft)' };
+  if (L.status === 'full') return { t: '🔴 Limit reached', c: '#dc2626', bg: 'rgba(220,38,38,.12)' };
+  if (L.status === 'error') return { t: '⚠️ Error', c: '#b45309', bg: 'rgba(245,158,11,.15)' };
+  return { t: '✅ OK', c: '#16a34a', bg: 'rgba(22,163,74,.12)' };
 }
 function _clrlPct(p) { return p == null ? '—' : (Math.round(p) + '%'); }
 function _clrlBar(p, color) {
@@ -2026,19 +2027,13 @@ async function _clrlRenderDashboard() {
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:8px">
         <span style="font-size:10.5px;color:var(--text-soft)">last checked: ${L.checked_at ? _clrlTime(L.checked_at) : 'ยังไม่เคย'}</span>
-        <button class="btn clrl-check" data-id="${a.id}" style="font-size:12px;padding:6px 12px"${a.has_session ? '' : ' disabled'}>🔄 Check now</button>
+        <button class="btn clrl-refresh" style="font-size:12px;padding:6px 12px">🔄 รีเฟรช</button>
       </div>
     </div>`;
   }).join('');
-  body.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px">${cards}</div>`;
-  body.querySelectorAll('.clrl-check').forEach(btn => {
-    btn.onclick = async () => {
-      btn.disabled = true; const old = btn.textContent; btn.textContent = '⏱ ...';
-      try { const r = await fetchJson('/api/claude-ratelimit/check/' + btn.dataset.id, { method: 'POST' }); alert(r.note || 'ส่งคำสั่งเช็คแล้ว'); }
-      catch (e) { alert('เช็คไม่สำเร็จ: ' + e.message); }
-      btn.disabled = false; btn.textContent = old;
-    };
-  });
+  body.innerHTML = `<div style="font-size:10.5px;color:var(--text-soft);margin-bottom:10px">⏱️ เช็คอัตโนมัติจากเครื่อง local ทุกชั่วโมง (cron) · กดรีเฟรชเพื่อดึงค่าล่าสุด</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px">${cards}</div>`;
+  body.querySelectorAll('.clrl-refresh').forEach(btn => { btn.onclick = () => _clrlRenderDashboard(); });
 }
 async function _clrlRenderSettings() {
   const body = $('clrl-body'); if (!body) return;
