@@ -768,7 +768,7 @@ def init_db() -> None:
             )
 
         # v1.9.162 — seed IAM module config (platform=ทุกคน, customer/ads=restricted ตามเดิม)
-        for _mk, _mode in [("platform", "all"), ("customer", "restricted"), ("ads", "restricted")]:
+        for _mk, _mode in [("platform", "all"), ("customer", "restricted"), ("ads", "restricted"), ("tv", "restricted")]:
             conn.execute(
                 "INSERT OR IGNORE INTO iam_module_config(module_key, mode, updated_at) VALUES (?,?,?)",
                 (_mk, _mode, _now),
@@ -9505,6 +9505,19 @@ def sso_embed_token(client_id: str = "",
     client = _sso_get_client(cid)
     if not client or not client["enabled"]:
         raise HTTPException(status_code=404, detail="ไม่พบ SSO client — สร้างใน Setting › SSO ก่อน")
+    # v1.9.215 — ถ้า client ผูกกับ IAM module → member ต้องมีสิทธิ์ module นั้น (admin ผ่านเสมอ)
+    need_mod = SSO_CLIENT_MODULE.get(cid)
+    if need_mod and ident["role"] != "admin" and str(ident["sub"]).startswith("member:"):
+        try:
+            mid = int(str(ident["sub"]).split(":", 1)[1])
+        except (ValueError, IndexError):
+            mid = None
+        with db_conn() as conn:
+            row = conn.execute("SELECT is_admin FROM members WHERE id = ?", (mid,)).fetchone() if mid else None
+            is_admin = bool(row["is_admin"]) if row else False
+            mods = _member_accessible_modules(conn, mid, is_admin) if mid else []
+        if not is_admin and need_mod not in mods:
+            raise HTTPException(status_code=403, detail="คุณไม่มีสิทธิ์เข้าถึงเมนูนี้")
     now = int(utc_now().timestamp())
     claims = {"iss": SSO_ISSUER, "sub": ident["sub"], "aud": cid, "iat": now, "exp": now + SSO_ID_TOKEN_TTL,
               "name": ident["name"], "email": ident["email"], "role": ident["role"]}
@@ -9512,7 +9525,7 @@ def sso_embed_token(client_id: str = "",
 
 
 @app.get("/api/tv-config")
-def tv_config(_sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+def tv_config(_sess: dict = Depends(_require_module("tv"))) -> dict[str, Any]:
     return {"base": TV_MONITOR_BASE_URL, "client_id": TV_MONITOR_CLIENT_ID}
 
 
@@ -9783,7 +9796,10 @@ IAM_MODULES = [
     {"key": "platform", "label": "Platform", "icon": "🚀", "desc": "เมนู Platforms"},
     {"key": "customer", "label": "Customer", "icon": "🌐", "desc": "เมนู Customer (Calendar / Websites / Services)"},
     {"key": "ads",      "label": "Ads",      "icon": "💰", "desc": "เมนู Ads (ยอดใช้จ่ายค่าโฆษณา)"},
+    {"key": "tv",       "label": "TV",       "icon": "📺", "desc": "เมนู TV (TV Ad Monitor — ฝัง Scheduling)"},
 ]
+# v1.9.215 — client_id ของ SSO ที่ผูกกับ module (กันคนไม่มีสิทธิ์ขอ embed-token ไปเปิดเอง)
+SSO_CLIENT_MODULE = {TV_MONITOR_CLIENT_ID: "tv"}
 IAM_MODULE_KEYS = {m["key"] for m in IAM_MODULES}
 
 

@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.215",
+      "date": "2026-06-08",
+      "title": "IAM — เพิ่มสิทธิ์เมนู TV (กำหนดคน/ทีมที่เห็นและเข้าได้)",
+      "summary": "เพิ่ม module “TV” ใน Setting › IAM — กำหนดคน/ทีมที่เข้าถึงเมนู TV ได้ · มีชื่อ→เห็นและเข้าได้ · ไม่มีชื่อ→ซ่อนและเข้าไม่ได้ (ดีฟอลต์ restricted) · admin เห็นทุกเมนูตามเดิม",
+      "changes": [
+        "IAM_MODULES เพิ่ม key 'tv' (📺) → โผล่การ์ดในหน้า IAM อัตโนมัติ พร้อม assign คน/ทีม",
+        "ดีฟอลต์ mode=restricted (ไม่มีสิทธิ์ = ไม่เห็น)",
+        "Backend gate /api/tv-config ด้วย _require_module('tv') + /api/sso/embed-token เช็คสิทธิ์ module ก่อน mint token",
+        "Frontend ROUTE_MODULE ผูก tv/tv-scheduling → nav ซ่อน + navigate() บล็อกการเข้าตรงสำหรับ member ที่ไม่มีสิทธิ์"
+      ]
+    },
+    {
       "version": "1.9.214",
       "date": "2026-06-08",
       "title": "TV › Scheduling — ปุ่ม “เปิดในหน้าต่างใหม่”",
