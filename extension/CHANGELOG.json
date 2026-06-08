@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.214",
+      "date": "2026-06-08",
+      "title": "TV › Scheduling — ปุ่ม “เปิดในหน้าต่างใหม่”",
+      "summary": "เพิ่มปุ่มด้านบนหน้า TV › Scheduling เปิด TV Monitor แบบเต็มหน้าต่าง (พร้อม beat_token auto-login) — เป็น first-party เลยไม่ติดปัญหา cross-site cookie ของ iframe",
+      "changes": [
+        "ปุ่ม 🔗 เปิดในหน้าต่างใหม่ → window.open(/spotmon?beat_token=…)",
+        "แถบหัวแสดง base URL ของ TV Monitor",
+        "ปรับข้อความเตือน mixed-content ให้แนะนำกดเปิดหน้าต่างใหม่"
+      ]
+    },
+    {
       "version": "1.9.213",
       "date": "2026-06-02",
       "title": "เมนู TV › Scheduling — ฝัง TV Ad Monitor ผ่าน Beat SSO (auto-login)",
