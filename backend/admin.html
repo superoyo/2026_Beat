@@ -636,6 +636,19 @@
       display: flex; justify-content: flex-end; gap: 8px;
       margin-top: 18px;
     }
+    /* v1.9.217 — slide-in modal variant (สไลด์จากขวา ใช้ฟอร์ม showModal เดิม) */
+    .modal-bg.is-slide { justify-content: flex-end; align-items: stretch; backdrop-filter: blur(2px); }
+    .modal-bg.is-slide .modal {
+      border-radius: 0; margin: 0; height: 100vh; max-height: 100vh; max-width: 96vw;
+      box-shadow: -8px 0 30px rgba(15,23,42,.22);
+      transform: translateX(100%); transition: transform .28s cubic-bezier(.4,0,.2,1);
+    }
+    .modal-bg.is-slide.is-open .modal { transform: translateX(0); }
+    /* v1.9.217 — hardware card คลิกได้ทั้งใบ */
+    .hw-card { cursor: pointer; transition: box-shadow .14s, border-color .14s; }
+    .hw-card:hover { border-color: var(--primary); box-shadow: 0 3px 12px rgba(37,99,235,.12); }
+    .hw-card .hw-chev { color: var(--text-muted); opacity: .45; transition: transform .14s, opacity .14s, color .14s; }
+    .hw-card:hover .hw-chev { opacity: 1; transform: translateX(2px); color: var(--primary); }
     /* v1.9.137 — searchable member picker (รูป+ชื่อ+ทีม) */
     .mpick-trigger:hover { border-color: var(--accent); }
     .mpick-item:hover { background: rgba(124,58,237,.08); }
@@ -10334,8 +10347,16 @@ function renderHardwareRows() {
     return;
   }
   listEl.innerHTML = list.map(h => renderHardwareRow(h)).join('');
+  // v1.9.217 — คลิกที่การ์ดทั้งใบ → เปิด slide-in รายละเอียด (ปุ่มดูรูปยังคลิกได้)
+  listEl.querySelectorAll('.hw-card[data-hw-card]').forEach(card => {
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('button[data-hw-act]')) return;   // ปล่อยให้ปุ่มในการ์ด (ดูรูป) ทำงานเอง
+      const h = _hwCache.find(x => x.id === parseInt(card.dataset.hwCard, 10));
+      if (h) showHardwareDetail(h);
+    });
+  });
   listEl.querySelectorAll('button[data-hw-act]').forEach(btn => {
-    btn.addEventListener('click', () => handleHardwareAction(btn));
+    btn.addEventListener('click', (e) => { e.stopPropagation(); handleHardwareAction(btn); });
   });
 }
 
@@ -10353,31 +10374,26 @@ function renderHwAssetLine(assetNumber, opts) {
 }
 
 function renderHardwareRow(h) {
-  // Spec line — แตกต่างกันตาม type
+  // v1.9.217 — spec line สะอาด: ตัด emoji ต่อรายการ + แยก meta รอง (SN/วันที่/ที่เก็บ) เป็นบรรทัดจาง
   const specs = [];
   if (h.hw_type === 'pc') {
-    if (h.model) specs.push(`📦 ${escapeHtml(h.model)}`);
-    if (h.os) specs.push(`💿 ${escapeHtml(h.os)}${h.os_version ? ' ' + escapeHtml(h.os_version) : ''}`);
-    if (h.cpu) specs.push(`🔧 ${escapeHtml(h.cpu)}`);
-    if (h.ram) specs.push(`🧠 ${escapeHtml(h.ram)}`);
-    if (h.storage) specs.push(`💾 ${escapeHtml(h.storage)}`);
-    if (h.display) specs.push(`🖥️ ${escapeHtml(h.display)}`);
+    if (h.model) specs.push(escapeHtml(h.model));
+    if (h.os) specs.push(escapeHtml(h.os) + (h.os_version ? ' ' + escapeHtml(h.os_version) : ''));
+    if (h.cpu) specs.push(escapeHtml(h.cpu));
+    if (h.ram) specs.push(escapeHtml(h.ram));
+    if (h.storage) specs.push(escapeHtml(h.storage));
+    if (h.display) specs.push(escapeHtml(h.display));
   } else if (h.hw_type === 'device') {
-    if (h.device_subtype) specs.push(`📦 ${escapeHtml(h.device_subtype)}`);
-    if (h.capacity) specs.push(`📏 ${escapeHtml(h.capacity)}`);
+    if (h.device_subtype) specs.push(escapeHtml(h.device_subtype));
+    if (h.capacity) specs.push(escapeHtml(h.capacity));
   }
-  // v1.9.73 — asset_number ไม่อยู่ใน specs แล้ว ไปอยู่บรรทัดแรกแทน (ดูด้านล่าง)
-  if (h.serial_number) specs.push(`#️⃣ ${escapeHtml(h.serial_number)}`);
-  if (h.purchased_at) {
-    // PC ใช้ month/year ส่วน device/network ใช้ full date
-    const dateLabel = (h.hw_type === 'pc') ? fmtMonthYearThai(h.purchased_at) : fmtDateThai(h.purchased_at);
-    specs.push(`📅 ${escapeHtml(dateLabel)}`);
-  }
-  if (h.department || h.location) {
-    const dl = [h.department, h.location].filter(Boolean).map(escapeHtml).join(' / ');
-    specs.push(`📍 ${dl}`);
-  }
-  const specLine = specs.length ? specs.join(' <span style="color:var(--border)">·</span> ') : '<span style="color:var(--text-muted);font-style:italic">— ไม่มีรายละเอียด</span>';
+  const meta2 = [];
+  if (h.serial_number) meta2.push('SN ' + escapeHtml(h.serial_number));
+  if (h.purchased_at) meta2.push(escapeHtml((h.hw_type === 'pc') ? fmtMonthYearThai(h.purchased_at) : fmtDateThai(h.purchased_at)));
+  if (h.department || h.location) meta2.push([h.department, h.location].filter(Boolean).map(escapeHtml).join(' / '));
+  const _sep = ' <span style="color:var(--border)">·</span> ';
+  const specLine = specs.length ? specs.join(_sep) : '<span style="color:var(--text-muted);font-style:italic">— ไม่มีรายละเอียด</span>';
+  const meta2Line = meta2.length ? `<div style="font-size:11px;color:var(--text-soft);line-height:1.5;margin-top:1px">${meta2.join(_sep)}</div>` : '';
 
   // Status badge (PC only — device/network ไม่มี status field)
   let statusBadge = '';
@@ -10421,9 +10437,9 @@ function renderHardwareRow(h) {
   // v1.9.73 — Asset No เป็นบรรทัดแรกที่เด่น (ถ้ามี) — รายการอื่นอยู่ถัดไป
   const assetLine = renderHwAssetLine(h.asset_number);
   return `
-    <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px;padding:10px 14px">
+    <div class="card hw-card" data-hw-card="${h.id}" style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px;padding:10px 14px">
       ${thumb}
-      <div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:3px;overflow:hidden">
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;overflow:hidden">
         ${assetLine}
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <span style="font-weight:700;font-size:14.5px;color:var(--text)">${escapeHtml(h.name)}</span>
@@ -10431,15 +10447,87 @@ function renderHardwareRow(h) {
           ${ownerBadge}
         </div>
         <div style="font-size:12px;color:var(--text-muted);line-height:1.5;overflow:hidden;text-overflow:ellipsis">${specLine}</div>
+        ${meta2Line}
         ${h.notes ? `<div style="font-size:11.5px;color:var(--text-muted);font-style:italic;margin-top:2px">📝 ${escapeHtml(h.notes.length > 80 ? h.notes.slice(0, 77) + '…' : h.notes)}</div>` : ''}
       </div>
-      <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
-        <button class="btn" data-hw-act="history" data-hw-id="${h.id}" data-hw-name="${escapeHtml(h.name)}" style="font-size:12px;padding:5px 10px">📜 ประวัติ</button>
-        <button class="btn" data-hw-act="edit" data-hw-id="${h.id}" style="font-size:12px;padding:5px 10px">✏️ แก้ไข</button>
-        <button class="btn danger" data-hw-act="delete" data-hw-id="${h.id}" data-hw-name="${escapeHtml(h.name)}" style="font-size:12px;padding:5px 10px">🗑 ลบ</button>
-      </div>
+      <div class="hw-chev" style="flex-shrink:0;font-size:22px;line-height:1">›</div>
     </div>
   `;
+}
+
+// v1.9.217 — Slide-in รายละเอียดอุปกรณ์ (คลิกการ์ด) + ปุ่ม ประวัติ/แก้ไข/ลบ อยู่ข้างใน
+function showHardwareDetail(h) {
+  document.querySelectorAll('.sup-panel-wrap').forEach(e => e.remove());
+  const statusMap = {
+    active:  ['background:rgba(16,185,129,.12);color:var(--green)', '✓ ใช้งาน'],
+    repair:  ['background:rgba(245,158,11,.15);color:#92400e', '🔧 ซ่อม / รอซ่อม'],
+    stock:   ['background:rgba(99,102,241,.10);color:#3730a3', '📦 Stock'],
+    retired: ['background:rgba(220,38,38,.10);color:var(--critical)', '⚠ ปลดระวาง'],
+  };
+  let statusBadge = '';
+  if (h.hw_type === 'pc' && h.status && statusMap[h.status]) {
+    const [st, lb] = statusMap[h.status];
+    statusBadge = `<span style="display:inline-flex;align-items:center;padding:3px 11px;border-radius:999px;font-size:11.5px;font-weight:700;${st}">${lb}</span>`;
+  }
+  const ownerBadge = h.current_member_label
+    ? `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:999px;font-size:11.5px;font-weight:600;background:rgba(16,185,129,.10);color:var(--green)">👤 ${escapeHtml(h.current_member_label)}</span>`
+    : `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--bg-soft);color:var(--text-muted)">🔓 ยังไม่ผูก</span>`;
+  const rows = [];
+  const add = (label, val) => {
+    if (val == null || String(val).trim() === '') return;
+    rows.push(`<div style="display:flex;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)"><div style="width:108px;flex-shrink:0;font-size:12px;color:var(--text-muted)">${label}</div><div style="flex:1;font-size:13px;color:var(--text);font-weight:500;word-break:break-word">${escapeHtml(String(val))}</div></div>`);
+  };
+  if (h.hw_type === 'pc') {
+    add('รุ่น', h.model);
+    add('OS', (h.os || '') + (h.os_version ? ' ' + h.os_version : ''));
+    add('CPU', h.cpu);
+    add('RAM', h.ram);
+    add('Storage', h.storage);
+    add('จอภาพ', h.display);
+  } else if (h.hw_type === 'device') {
+    add('ประเภท', h.device_subtype);
+    add('ความจุ', h.capacity);
+  }
+  add('Serial', h.serial_number);
+  if (h.purchased_at) add('ซื้อเมื่อ', (h.hw_type === 'pc') ? fmtMonthYearThai(h.purchased_at) : fmtDateThai(h.purchased_at));
+  add('แผนก / ที่เก็บ', [h.department, h.location].filter(Boolean).join(' / '));
+  add('โน้ต', h.notes);
+  const photo = h.photo_data
+    ? `<img src="${h.photo_data}" alt="" style="width:100%;max-height:200px;object-fit:contain;border-radius:10px;border:1px solid var(--border);background:var(--bg-soft);display:block;margin-bottom:14px" />`
+    : '';
+  const wrap = document.createElement('div');
+  wrap.className = 'sup-panel-wrap';
+  wrap.innerHTML = `
+    <div class="sup-panel-backdrop"></div>
+    <div class="sup-panel" style="width:460px">
+      <div class="sup-panel-head"><button class="sup-panel-close" title="ปิด">✕</button></div>
+      <div class="sup-panel-body" style="padding:4px 24px 28px">
+        ${renderHwAssetLine(h.asset_number)}
+        <div style="font-size:18px;font-weight:800;margin:6px 0 8px">${escapeHtml(h.name)}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">${statusBadge}${ownerBadge}</div>
+        ${photo}
+        <div style="border:1px solid var(--border);border-radius:12px;padding:4px 14px;margin-bottom:18px">${rows.join('') || '<div style="padding:14px 0;color:var(--text-muted);font-style:italic">— ไม่มีรายละเอียด —</div>'}</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn" data-detail-act="history" style="flex:1;justify-content:center">📜 ประวัติ</button>
+          <button class="btn primary" data-detail-act="edit" style="flex:1;justify-content:center">✏️ แก้ไข</button>
+          <button class="btn danger" data-detail-act="delete" style="flex:1;justify-content:center">🗑 ลบ</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  requestAnimationFrame(() => wrap.classList.add('is-open'));
+  const close = () => { wrap.classList.remove('is-open'); document.removeEventListener('keydown', onKey); setTimeout(() => wrap.remove(), 260); };
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  wrap.querySelector('.sup-panel-backdrop').addEventListener('click', close);
+  wrap.querySelector('.sup-panel-close').addEventListener('click', close);
+  wrap.querySelector('[data-detail-act="history"]').addEventListener('click', () => { close(); showHardwareHistoryModal(h.id, h.name); });
+  wrap.querySelector('[data-detail-act="edit"]').addEventListener('click', () => { close(); showHardwareModal(h, h.hw_type); });
+  wrap.querySelector('[data-detail-act="delete"]').addEventListener('click', async () => {
+    if (!confirm(`ลบ "${h.name}"?\n\n(ประวัติการครอบครองจะถูกลบด้วย)`)) return;
+    try { await fetchJson('/api/admin/hardware/' + h.id, { method: 'DELETE' }); close(); await loadHardware(); }
+    catch (e) { alert('ลบไม่สำเร็จ: ' + e.message); }
+  });
 }
 
 async function handleHardwareAction(btn) {
@@ -11078,6 +11166,7 @@ async function showHardwareModal(hw, type, afterSubmit) {
 
   showModal({
     title: isEdit ? `แก้ไข ${tabInfo.label}: ${hw.name}` : `+ เพิ่ม ${tabInfo.label}`,
+    slide: true,   // v1.9.217 — สไลด์จากด้านขวาแทน popup
     // v1.9.70 — xwide สำหรับ PC เพื่อให้ layout 2 column (ซ้าย=รูป ขวา=ฟิลด์) เหมือนหน้า detail
     size: showPC ? 'xwide' : 'wide',
     body: `
@@ -16438,11 +16527,12 @@ async function renderExtensionPage(mount) {
 }
 
 // ---------- modal helper ----------
-function showModal({ title, body, onSubmit, size }) {
+function showModal({ title, body, onSubmit, size, slide }) {
   // size: 'wide' (720px) | 'xwide' (920px) | undefined (440px default)
+  // slide: true → สไลด์จากด้านขวา (drawer) แทน popup กลางจอ
   const sizeClass = size === 'wide' ? ' modal-wide' : size === 'xwide' ? ' modal-xwide' : '';
   const bg = document.createElement('div');
-  bg.className = 'modal-bg';
+  bg.className = 'modal-bg' + (slide ? ' is-slide' : '');
   bg.innerHTML = `
     <div class="modal${sizeClass}">
       <h3>${escapeHtml(title)}</h3>
@@ -16455,8 +16545,12 @@ function showModal({ title, body, onSubmit, size }) {
     </div>
   `;
   document.body.appendChild(bg);
+  if (slide) requestAnimationFrame(() => bg.classList.add('is-open'));
 
-  const close = () => bg.remove();
+  const close = () => {
+    if (slide) { bg.classList.remove('is-open'); setTimeout(() => bg.remove(), 280); }
+    else bg.remove();
+  };
   bg.querySelector('#m-cancel').addEventListener('click', close);
   bg.addEventListener('click', e => { if (e.target === bg) close(); });
   bg.querySelector('#m-ok').addEventListener('click', async (ev) => {

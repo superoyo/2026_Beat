@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.217",
+      "date": "2026-06-08",
+      "title": "Device & Software — การ์ดคอมสะอาดขึ้น + คลิกเปิด slide-in",
+      "summary": "การ์ด Personal Computer ตัด emoji ต่อ spec ออกให้ดูง่าย · คลิกการ์ดที่ไหนก็ได้เปิดแผงรายละเอียดสไลด์จากขวา · ปุ่ม ประวัติ/แก้ไข/ลบ ย้ายเข้าไปในแผง · ฟอร์มแก้ไขเปลี่ยนจาก popup เป็น slide-in",
+      "changes": [
+        "renderHardwareRow: spec line ไม่มี emoji + แยก meta รอง (SN/วันที่/ที่เก็บ) เป็นบรรทัดจาง + เอาปุ่มออกจากแถว + ทั้งใบคลิกได้ (chevron ›)",
+        "showHardwareDetail: slide-in รายละเอียด (รูป/สเปค/สถานะ/owner) + ปุ่ม ประวัติ/แก้ไข/ลบ ข้างใน",
+        "showModal รองรับ slide:true (สไลด์จากขวา) → showHardwareModal (เพิ่ม/แก้ไข) เป็น slide-in"
+      ]
+    },
+    {
       "version": "1.9.216",
       "date": "2026-06-08",
       "title": "แก้อาการ “กดบันทึกแล้วค้าง” — modal มี loading + SQLite WAL",
