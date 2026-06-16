@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.220",
+      "date": "2026-06-16",
+      "title": "Credit Card — อัพ invoice หลายไฟล์ + ค้นหารายการ + preview ใบเสร็จ",
+      "summary": "อัพโหลด invoice/receipt ได้หลายไฟล์พร้อมกัน (อ่าน OCR แยกแต่ละใบ พรีวิวแก้ได้ทุกใบ) · หน้าจับคู่ฝั่งรายการบัตรมีช่องค้นหา filter · ใบเสร็จกดปุ่ม 👁 preview ดูไฟล์ในแอปได้ (PDF/รูป)",
+      "changes": [
+        "อัพโหลด invoice แบบหลายไฟล์ (multiple) → preview เป็นรายการ แก้ได้ทุกใบ แล้วบันทึกทีเดียว",
+        "หน้า detail: ช่องค้นหา filter รายการบัตร (ตามรายละเอียด/วันที่/ยอด)",
+        "ปุ่ม 👁 preview ไฟล์ invoice/receipt ในแอป (PDF=iframe, รูป=img) ทั้งในบิลและกองลอย"
+      ]
+    },
+    {
       "version": "1.9.219",
       "date": "2026-06-16",
       "title": "Credit Card — อัพ invoice แบบลอย (ไม่ผูกบิล) + แก้ไขบิล/invoice ได้",

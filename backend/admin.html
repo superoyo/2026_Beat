@@ -2010,6 +2010,7 @@ const _CC_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.'
 function _ccMoney(n){ if(n==null||isNaN(n))return '—'; return Number(n).toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function _ccMonthLabel(m,y){ const mm=(m>=1&&m<=12)?_CC_MONTHS[m-1]:'—'; return `${mm} ${y||'—'}`; }
 function _ccMonthSelect(id,sel){ return `<select id="${id}" style="width:100%"><option value="">—</option>${_CC_MONTHS.map((m,i)=>`<option value="${i+1}" ${sel===i+1?'selected':''}>${m}</option>`).join('')}</select>`; }
+function _ccMonthSelectCls(cls,sel){ return `<select class="${cls}" style="width:100%"><option value="">—</option>${_CC_MONTHS.map((m,i)=>`<option value="${i+1}" ${sel===i+1?'selected':''}>${m}</option>`).join('')}</select>`; }
 function _ccFileToDataUrl(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error('อ่านไฟล์ไม่ได้')); r.readAsDataURL(file); }); }
 function _ccDownscale(dataUrl,maxW){ return new Promise((res)=>{ const img=new Image(); img.onload=()=>{ const scale=Math.min(1,maxW/img.width); if(scale>=1){ res(dataUrl); return; } const c=document.createElement('canvas'); c.width=Math.round(img.width*scale); c.height=Math.round(img.height*scale); c.getContext('2d').drawImage(img,0,0,c.width,c.height); try{ res(c.toDataURL('image/jpeg',0.82)); }catch(_){ res(dataUrl); } }; img.onerror=()=>res(dataUrl); img.src=dataUrl; }); }
 
@@ -2220,32 +2221,42 @@ function _ccCreateBill(){
 }
 
 // ---- upload invoice/receipt (PDF/รูป → อ่าน บริษัท/เดือน/ยอด → preview → save) ----
+function _ccInvUploadRow(idx,fname,p){
+  return `<div class="cc-invrow card" data-idx="${idx}" style="padding:10px 12px;margin-bottom:8px">
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;word-break:break-all">📎 ${escapeHtml(fname)}</div>
+    <label style="display:block;margin-bottom:6px;font-size:12px">บริษัท / Platform<input class="cc-ir-company" value="${escapeHtml(p.company||'')}" style="width:100%" /></label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <label style="width:120px;font-size:12px">ประเภท<select class="cc-ir-kind" style="width:100%"><option value="invoice" ${p.kind!=='receipt'?'selected':''}>Invoice</option><option value="receipt" ${p.kind==='receipt'?'selected':''}>Receipt</option></select></label>
+      <label style="width:110px;font-size:12px">เดือน${_ccMonthSelectCls('cc-ir-month',p.month)}</label>
+      <label style="width:90px;font-size:12px">ปี<input class="cc-ir-year" type="number" value="${p.year||''}" style="width:100%" /></label>
+      <label style="flex:1;min-width:110px;font-size:12px">ยอดเงิน<input class="cc-ir-amount" type="number" step="0.01" value="${p.amount!=null?p.amount:''}" style="width:100%" /></label>
+    </div>
+  </div>`;
+}
 function _ccUploadInvoice(defaultBillId){
-  let fileData=null,fileMime=null,fileName=null;
+  const items=[];   // {fileData, fileMime, fileName, parsed}
   const billOpts=`<option value="">— ยังไม่ผูกบิล (ลอยไว้ก่อน) —</option>`+_ccState.bills.map(b=>`<option value="${b.id}" ${b.id===defaultBillId?'selected':''}>${escapeHtml(b.card_number||'บัตร')} · ${_ccMonthLabel(b.bill_month,b.bill_year)}</option>`).join('');
   showModal({
-    title:'⬆️ อัพโหลด Invoice / Receipt', slide:true, size:'wide',
+    title:'⬆️ อัพโหลด Invoice / Receipt (หลายไฟล์ได้)', slide:true, size:'wide',
     body:`
-      <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px">อัพโหลด PDF (หรือรูป) → ระบบอ่าน บริษัท/เดือน/ยอด → ตรวจ/แก้ → บันทึก · ไม่ผูกบิลก็ได้ (ลอยไว้ แล้วค่อยลากจับคู่ในบิลทีหลัง)</div>
-      <label style="display:block;margin-bottom:10px;font-size:12px">บิลปลายทาง (ไม่บังคับ)<select id="cc-inv-bill" style="width:100%">${billOpts}</select></label>
-      <input id="cc-inv-file" type="file" accept="application/pdf,image/*" style="margin-bottom:8px" />
+      <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px">อัพโหลด PDF/รูป <b>หลายไฟล์พร้อมกันได้</b> → ระบบอ่านแต่ละใบ → ตรวจ/แก้ → บันทึกทั้งหมด · ไม่ผูกบิลก็ได้ (ลอยไว้)</div>
+      <label style="display:block;margin-bottom:10px;font-size:12px">บิลปลายทาง (ใช้กับทุกไฟล์ · ไม่บังคับ)<select id="cc-inv-bill" style="width:100%">${billOpts}</select></label>
+      <input id="cc-inv-file" type="file" accept="application/pdf,image/*" multiple style="margin-bottom:8px" />
       <div id="cc-inv-status" style="font-size:12.5px;color:var(--primary)"></div>
-      <div id="cc-inv-fields" style="display:none;margin-top:12px">
-        <label style="display:block;margin-bottom:8px;font-size:12px">บริษัท / Platform<input id="cc-inv-company" style="width:100%" /></label>
-        <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <label style="width:130px;font-size:12px">ประเภท<select id="cc-inv-kind" style="width:100%"><option value="invoice">Invoice</option><option value="receipt">Receipt</option></select></label>
-          <label style="width:120px;font-size:12px">เดือน${_ccMonthSelect('cc-inv-month')}</label>
-          <label style="width:100px;font-size:12px">ปี<input id="cc-inv-year" type="number" style="width:100%" /></label>
-          <label style="flex:1;min-width:120px;font-size:12px">ยอดเงิน<input id="cc-inv-amount" type="number" step="0.01" style="width:100%" /></label>
-        </div>
-      </div>`,
+      <div id="cc-inv-list" style="margin-top:12px"></div>`,
     onSubmit: async ()=>{
-      if(!fileData) throw new Error('อัพโหลดไฟล์ก่อน');
-      const bv=$('cc-inv-bill').value;
-      const body={ bill_id: bv?parseInt(bv,10):null, company:$('cc-inv-company').value.trim()||null,
-        kind:$('cc-inv-kind').value, inv_month:parseInt($('cc-inv-month').value,10)||null, inv_year:parseInt($('cc-inv-year').value,10)||null,
-        amount:parseFloat($('cc-inv-amount').value)||null, file_data:fileData, file_name:fileName, file_mime:fileMime };
-      await fetchJson('/api/creditcard/invoices',{method:'POST',body:JSON.stringify(body)});
+      const rows=Array.from(document.querySelectorAll('#cc-inv-list .cc-invrow'));
+      if(!rows.length) throw new Error('อัพโหลดไฟล์ก่อน');
+      const bv=$('cc-inv-bill').value; const bill_id=bv?parseInt(bv,10):null;
+      let ok=0;
+      for(const r of rows){
+        const it=items[parseInt(r.dataset.idx,10)]; if(!it) continue;
+        const body={ bill_id, company:r.querySelector('.cc-ir-company').value.trim()||null,
+          kind:r.querySelector('.cc-ir-kind').value, inv_month:parseInt(r.querySelector('.cc-ir-month').value,10)||null,
+          inv_year:parseInt(r.querySelector('.cc-ir-year').value,10)||null, amount:parseFloat(r.querySelector('.cc-ir-amount').value)||null,
+          file_data:it.fileData, file_name:it.fileName, file_mime:it.fileMime };
+        await fetchJson('/api/creditcard/invoices',{method:'POST',body:JSON.stringify(body)}); ok++;
+      }
       await _ccLoadBills();
       if(_ccState.billId) _ccRenderDetail($('cc-view'));
       else if(_ccState.view==='pool') _ccRenderPool($('cc-view'));
@@ -2253,30 +2264,26 @@ function _ccUploadInvoice(defaultBillId){
     },
   });
   setTimeout(()=>{
-    const inp=$('cc-inv-file'); const st=$('cc-inv-status');
+    const inp=$('cc-inv-file'); const st=$('cc-inv-status'); const listEl=$('cc-inv-list');
     inp.onchange=async ()=>{
-      const f=inp.files&&inp.files[0]; if(!f) return;
-      if(f.size>12*1024*1024){ st.textContent='⚠️ ไฟล์ใหญ่เกิน 12MB — ลองบีบอัดก่อน'; return; }
-      fileName=f.name; fileMime=f.type||'application/octet-stream'; st.textContent='กำลังอ่านไฟล์…';
-      try{
-        fileData=await _ccFileToDataUrl(f);
-        let text='';
-        if((f.type||'').includes('pdf')||/\.pdf$/i.test(f.name)){
-          st.textContent='อ่าน PDF…';
-          text=await _ccPdfToText(await f.arrayBuffer(),(p,tot)=>{ st.textContent=p?`อ่าน PDF หน้า ${p}/${tot}…`:'OCR PDF (สแกน)…'; });
-        } else {
-          st.textContent='OCR รูป…';
-          text=await ocrImage(fileData,'eng',(p)=>{ st.textContent=`OCR … ${Math.round((p.progress||0)*100)}%`; });
-        }
+      const files=Array.from(inp.files||[]); if(!files.length) return;
+      items.length=0; listEl.innerHTML='';
+      for(let i=0;i<files.length;i++){
+        const f=files[i];
+        if(f.size>12*1024*1024){ st.textContent=`⚠️ ข้าม ${f.name} (เกิน 12MB)`; continue; }
+        st.textContent=`อ่านไฟล์ ${i+1}/${files.length}: ${f.name}…`;
+        let fileData,text='';
+        try{
+          fileData=await _ccFileToDataUrl(f);
+          if((f.type||'').includes('pdf')||/\.pdf$/i.test(f.name)){ text=await _ccPdfToText(await f.arrayBuffer(),(p,tot)=>{ st.textContent=`${f.name}: PDF ${p?p+'/'+tot:'สแกน'}…`; }); }
+          else { text=await ocrImage(fileData,'eng',(p)=>{ st.textContent=`${f.name}: OCR ${Math.round((p.progress||0)*100)}%`; }); }
+        }catch(e){ st.textContent=`อ่าน ${f.name} ไม่สำเร็จ`; continue; }
         const parsed=_ccParseInvoice(text);
-        $('cc-inv-fields').style.display='';
-        $('cc-inv-company').value=parsed.company||'';
-        if(parsed.kind) $('cc-inv-kind').value=parsed.kind;
-        if(parsed.month) $('cc-inv-month').value=parsed.month;
-        if(parsed.year) $('cc-inv-year').value=parsed.year;
-        if(parsed.amount!=null) $('cc-inv-amount').value=parsed.amount;
-        st.textContent='✓ อ่านเสร็จ — ตรวจ/แก้แล้วกดบันทึก';
-      }catch(e){ st.textContent='อ่านไฟล์ไม่สำเร็จ: '+e.message; }
+        const idx=items.length;
+        items.push({ fileData, fileMime:f.type||'application/octet-stream', fileName:f.name, parsed });
+        listEl.insertAdjacentHTML('beforeend', _ccInvUploadRow(idx, f.name, parsed));
+      }
+      st.textContent=`✓ อ่าน ${items.length} ไฟล์ — ตรวจ/แก้แล้วกดบันทึกทั้งหมด`;
     };
   },0);
 }
@@ -2307,7 +2314,13 @@ async function _ccRenderDetail(v){
     </div>
     <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:10px">ลาก invoice จากขวา → วางบนรายการซ้ายเพื่อจับคู่ · หรือคลิก invoice แล้วคลิกรายการ</div>
     <div style="display:grid;grid-template-columns:1fr 320px;gap:14px;align-items:start">
-      <div><div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px">รายการจากบัตร (${total})</div><div id="cc-txn-col"></div></div>
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:700;color:var(--text-muted)">รายการจากบัตร (${total})</span>
+          <input id="cc-txn-search" placeholder="🔍 ค้นหารายการ…" style="font-size:12px;padding:5px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);width:180px;max-width:55%" />
+        </div>
+        <div id="cc-txn-col"></div>
+      </div>
       <div><div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px">Invoice / Receipt (${d.invoices.length})</div><div id="cc-inv-col"></div></div>
     </div>`;
   $('cc-txn-col').innerHTML=d.transactions.map(t=>{
@@ -2330,13 +2343,16 @@ async function _ccRenderDetail(v){
   $('cc-add-inv').onclick=()=>_ccUploadInvoice(_ccState.billId);
   $('cc-del-bill').onclick=async ()=>{ if(!confirm('ลบบิลนี้ทั้งหมด? (รายการ/invoice/การจับคู่จะถูกลบด้วย)'))return; await fetchJson('/api/creditcard/bills/'+_ccState.billId,{method:'DELETE'}); _ccState.billId=null; await _ccLoadBills(); _ccRender(); };
   v.querySelectorAll('.cc-unmatch').forEach(x=>x.addEventListener('click',async(e)=>{ e.stopPropagation(); await fetchJson('/api/creditcard/matches/'+x.dataset.match,{method:'DELETE'}); _ccRenderDetail($('cc-view')); }));
+  v.querySelectorAll('.cc-inv-prev').forEach(x=>x.addEventListener('click',(e)=>{ e.stopPropagation(); const inv=allInvById[parseInt(x.dataset.inv,10)]; if(inv) _ccPreviewInvoice(inv); }));
   v.querySelectorAll('.cc-inv-edit').forEach(x=>x.addEventListener('click',(e)=>{ e.stopPropagation(); const inv=allInvById[parseInt(x.dataset.inv,10)]; if(inv) _ccEditInvoice(inv,()=>_ccRenderDetail($('cc-view'))); }));
   v.querySelectorAll('.cc-inv-del').forEach(x=>x.addEventListener('click',async(e)=>{ e.stopPropagation(); if(!confirm('ลบ invoice นี้?'))return; await fetchJson('/api/creditcard/invoices/'+x.dataset.inv,{method:'DELETE'}); await _ccLoadBills(); _ccRenderDetail($('cc-view')); }));
+  const _ccTxnSearch=$('cc-txn-search');
+  if(_ccTxnSearch) _ccTxnSearch.addEventListener('input',()=>{ const q=_ccTxnSearch.value.trim().toLowerCase(); v.querySelectorAll('.cc-txn').forEach(el=>{ el.style.display=(!q||(el.textContent||'').toLowerCase().includes(q))?'':'none'; }); });
   let dragInv=null;
   const doMatch=async(txnId,invId)=>{ try{ await fetchJson('/api/creditcard/matches',{method:'POST',body:JSON.stringify({transaction_id:txnId,invoice_id:invId})}); _ccState.selInvoice=null; await _ccLoadBills(); _ccRenderDetail($('cc-view')); }catch(e){ alert(e.message); } };
   v.querySelectorAll('.cc-inv').forEach(el=>{
     el.addEventListener('dragstart',e=>{ dragInv=parseInt(el.dataset.inv,10); e.dataTransfer.effectAllowed='move'; });
-    el.addEventListener('click',(e)=>{ if(e.target.closest('a,.cc-inv-del,.cc-inv-edit'))return; const id=parseInt(el.dataset.inv,10); _ccState.selInvoice=(_ccState.selInvoice===id)?null:id; v.querySelectorAll('.cc-inv').forEach(x=>x.style.outline=''); if(_ccState.selInvoice) el.style.outline='2px solid var(--primary)'; });
+    el.addEventListener('click',(e)=>{ if(e.target.closest('a,.cc-inv-del,.cc-inv-edit,.cc-inv-prev'))return; const id=parseInt(el.dataset.inv,10); _ccState.selInvoice=(_ccState.selInvoice===id)?null:id; v.querySelectorAll('.cc-inv').forEach(x=>x.style.outline=''); if(_ccState.selInvoice) el.style.outline='2px solid var(--primary)'; });
   });
   v.querySelectorAll('.cc-txn').forEach(el=>{
     el.addEventListener('dragover',e=>{ e.preventDefault(); el.style.background='var(--bg-soft)'; });
@@ -2353,12 +2369,39 @@ function _ccInvCardHtml(i,isMatched,isPool){
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px">
       <span style="font-weight:700;color:var(--green);font-variant-numeric:tabular-nums">${_ccMoney(i.amount)}</span>
       <span style="display:flex;gap:11px">
-        <a href="${API}/api/creditcard/invoices/${i.id}/file" target="_blank" rel="noopener" style="font-size:12px" title="ดูไฟล์">📄</a>
+        <span class="cc-inv-prev" data-inv="${i.id}" style="font-size:12px;cursor:pointer" title="preview">👁</span>
         <span class="cc-inv-edit" data-inv="${i.id}" style="font-size:12px;cursor:pointer" title="แก้ไข">✏️</span>
         <span class="cc-inv-del" data-inv="${i.id}" style="font-size:11px;color:var(--critical);cursor:pointer">ลบ</span>
       </span>
     </div>
   </div>`;
+}
+
+// ---- preview ไฟล์ invoice/receipt ในแอป (PDF=iframe, รูป=img) ----
+function _ccPreviewInvoice(inv){
+  const url=API+'/api/creditcard/invoices/'+inv.id+'/file';
+  const isImg=(inv.file_mime||'').startsWith('image/')||/\.(png|jpe?g|gif|webp|bmp)$/i.test(inv.file_name||'');
+  const inner=isImg
+    ? `<img src="${url}" alt="" style="width:100%;max-height:78vh;object-fit:contain;display:block;background:#0f172a" />`
+    : `<iframe src="${url}" style="width:100%;height:78vh;border:0;background:#fff;display:block" title="preview"></iframe>`;
+  const bg=document.createElement('div'); bg.className='modal-bg'; bg.style.zIndex='1200';
+  bg.innerHTML=`<div class="modal modal-xwide" style="max-width:940px;padding:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">
+      <div style="min-width:0">
+        <div style="font-size:15px;font-weight:800">${escapeHtml(inv.company||'—')} · ${_ccMoney(inv.amount)}</div>
+        <div style="font-size:11.5px;color:var(--text-muted)">${inv.kind==='receipt'?'ใบเสร็จ':'invoice'} · ${_ccMonthLabel(inv.inv_month,inv.inv_year)} · ${escapeHtml(inv.file_name||'')}</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-shrink:0">
+        <a href="${url}" target="_blank" rel="noopener" class="btn" style="font-size:12px">↗ แท็บใหม่</a>
+        <button class="btn" id="cc-prev-close" style="font-size:12px">ปิด</button>
+      </div>
+    </div>
+    <div style="border-radius:10px;overflow:hidden;border:1px solid var(--border)">${inner}</div>
+  </div>`;
+  document.body.appendChild(bg);
+  const close=()=>bg.remove();
+  bg.querySelector('#cc-prev-close').onclick=close;
+  bg.addEventListener('click',e=>{ if(e.target===bg) close(); });
 }
 
 // ---- edit invoice (แก้ไขข้อมูล invoice/receipt ที่อัพไปแล้ว) ----
@@ -2450,12 +2493,13 @@ async function _ccRenderPool(v){
       </div>
       <div style="display:flex;align-items:center;gap:14px;flex-shrink:0">
         <span style="font-weight:800;color:var(--green);font-variant-numeric:tabular-nums">${_ccMoney(i.amount)}</span>
-        <a href="${API}/api/creditcard/invoices/${i.id}/file" target="_blank" rel="noopener" style="font-size:13px" title="ดูไฟล์">📄</a>
+        <span class="cc-pool-prev" data-inv="${i.id}" style="font-size:13px;cursor:pointer" title="preview">👁</span>
         <span class="cc-pool-edit" data-inv="${i.id}" style="font-size:13px;cursor:pointer" title="แก้ไข">✏️</span>
         <span class="cc-pool-del" data-inv="${i.id}" style="font-size:12px;color:var(--critical);cursor:pointer">ลบ</span>
       </div>
     </div>`).join('');
   const byId={}; list.forEach(i=>byId[i.id]=i);
+  v.querySelectorAll('.cc-pool-prev').forEach(x=>x.addEventListener('click',()=>{ const inv=byId[parseInt(x.dataset.inv,10)]; if(inv) _ccPreviewInvoice(inv); }));
   v.querySelectorAll('.cc-pool-edit').forEach(x=>x.addEventListener('click',()=>{ const inv=byId[parseInt(x.dataset.inv,10)]; if(inv) _ccEditInvoice(inv,()=>_ccRenderPool($('cc-view'))); }));
   v.querySelectorAll('.cc-pool-del').forEach(x=>x.addEventListener('click',async()=>{ if(!confirm('ลบ invoice นี้?'))return; await fetchJson('/api/creditcard/invoices/'+x.dataset.inv,{method:'DELETE'}); _ccRenderPool($('cc-view')); }));
 }
