@@ -2,6 +2,20 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.218",
+      "date": "2026-06-16",
+      "title": "Platform › Credit Card — จับคู่รายการบัตรเครดิตกับ invoice/receipt",
+      "summary": "เมนูใหม่ Platform › Credit Card: สร้างบิลรายเดือน (อัพโหลดใบแจ้งยอด → OCR ดึงรายการ) · อัพโหลด invoice/receipt (PDF/รูป → OCR บริษัท/เดือน/ยอด) · หน้า detail ลาก-วาง invoice จับคู่กับรายการบัตร · หน้า Summary เช็คความครบถ้วนการจับคู่ + เลื่อนดูบิลอื่นได้",
+      "changes": [
+        "DB: cc_bills / cc_statement_pages / cc_transactions / cc_invoices / cc_matches",
+        "API /api/creditcard/* (bills CRUD + invoices + matches + ดูไฟล์) gate _require_module('platform')",
+        "OCR ในเบราว์เซอร์: Tesseract (รูป) + pdf.js (PDF, text layer + fallback OCR สแกน) → regex parse → พรีวิวแก้ได้ก่อนบันทึก",
+        "หน้าแรกรวมบิลรายเดือน เรียงเดือน/ปีล่าสุดก่อน + แถบ % จับคู่",
+        "Detail: ซ้าย=รายการบัตร ขวา=invoice ลาก-วาง/คลิกจับคู่ · Summary: สรุปครบถ้วน+ผลต่างยอด เลื่อนดูบิลอื่น",
+        "เก็บรูปใบแจ้งยอดแบบย่อ (OCR บน full-res ก่อน) กัน DB บวม"
+      ]
+    },
+    {
       "version": "1.9.217",
       "date": "2026-06-08",
       "title": "Device & Software — การ์ดคอมสะอาดขึ้น + คลิกเปิด slide-in",

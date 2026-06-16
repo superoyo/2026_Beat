@@ -747,6 +747,64 @@ def init_db() -> None:
                 used        INTEGER DEFAULT 0,
                 created_at  TEXT    NOT NULL
             );
+            -- v1.9.218 — Credit Card reconciliation (จับคู่รายการบัตรเครดิต กับ invoice/receipt)
+            CREATE TABLE IF NOT EXISTS cc_bills (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                card_number   TEXT,                  -- เลขบัตร (mask/last4 จาก OCR)
+                bill_month    INTEGER,               -- 1..12
+                bill_year     INTEGER,               -- ค.ศ.
+                note          TEXT,
+                created_by_id INTEGER,
+                created_by    TEXT,
+                created_at    TEXT NOT NULL,
+                updated_at    TEXT
+            );
+            CREATE TABLE IF NOT EXISTS cc_statement_pages (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                bill_id     INTEGER NOT NULL REFERENCES cc_bills(id) ON DELETE CASCADE,
+                page_order  INTEGER DEFAULT 0,
+                image_data  TEXT,                    -- base64 data URL
+                ocr_text    TEXT,
+                created_at  TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_cc_pages_bill ON cc_statement_pages(bill_id, page_order);
+            CREATE TABLE IF NOT EXISTS cc_transactions (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                bill_id     INTEGER NOT NULL REFERENCES cc_bills(id) ON DELETE CASCADE,
+                txn_date    TEXT,                    -- ISO หรือข้อความตามสลิป
+                description TEXT,
+                amount      REAL,
+                row_order   INTEGER DEFAULT 0,
+                created_at  TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_cc_txn_bill ON cc_transactions(bill_id, row_order);
+            CREATE TABLE IF NOT EXISTS cc_invoices (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                bill_id       INTEGER NOT NULL REFERENCES cc_bills(id) ON DELETE CASCADE,
+                company       TEXT,                  -- บริษัท/platform จาก OCR
+                kind          TEXT DEFAULT 'invoice',-- 'invoice' | 'receipt'
+                inv_month     INTEGER,
+                inv_year      INTEGER,
+                amount        REAL,
+                file_data     TEXT,                  -- base64 (PDF/รูป)
+                file_name     TEXT,
+                file_mime     TEXT,
+                ocr_text      TEXT,
+                uploaded_by_id INTEGER,
+                uploaded_by   TEXT,
+                created_at    TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_cc_inv_bill ON cc_invoices(bill_id);
+            CREATE TABLE IF NOT EXISTS cc_matches (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                bill_id        INTEGER NOT NULL REFERENCES cc_bills(id) ON DELETE CASCADE,
+                transaction_id INTEGER NOT NULL REFERENCES cc_transactions(id) ON DELETE CASCADE,
+                invoice_id     INTEGER NOT NULL REFERENCES cc_invoices(id) ON DELETE CASCADE,
+                created_by     TEXT,
+                created_at     TEXT NOT NULL,
+                UNIQUE(transaction_id, invoice_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_cc_match_bill ON cc_matches(bill_id);
             """
         )
         conn.execute(
@@ -9540,6 +9598,199 @@ def sso_embed_token(client_id: str = "",
 @app.get("/api/tv-config")
 def tv_config(_sess: dict = Depends(_require_module("tv"))) -> dict[str, Any]:
     return {"base": TV_MONITOR_BASE_URL, "client_id": TV_MONITOR_CLIENT_ID}
+
+
+# ===========================================================================
+# v1.9.218 — Credit Card reconciliation (จับคู่รายการบัตรเครดิต ↔ invoice/receipt)
+# ===========================================================================
+class CcPageIn(BaseModel):
+    image_data: Optional[str] = None
+    ocr_text: Optional[str] = Field(None, max_length=300000)
+
+
+class CcTxnIn(BaseModel):
+    txn_date: Optional[str] = None
+    description: Optional[str] = None
+    amount: Optional[float] = None
+
+
+class CcBillIn(BaseModel):
+    card_number: Optional[str] = None
+    bill_month: Optional[int] = None
+    bill_year: Optional[int] = None
+    note: Optional[str] = None
+    pages: list[CcPageIn] = Field(default_factory=list)
+    transactions: list[CcTxnIn] = Field(default_factory=list)
+
+
+class CcInvoiceIn(BaseModel):
+    bill_id: int
+    company: Optional[str] = None
+    kind: str = Field("invoice", pattern="^(invoice|receipt)$")
+    inv_month: Optional[int] = None
+    inv_year: Optional[int] = None
+    amount: Optional[float] = None
+    file_data: Optional[str] = None
+    file_name: Optional[str] = None
+    file_mime: Optional[str] = None
+    ocr_text: Optional[str] = Field(None, max_length=300000)
+
+
+class CcMatchIn(BaseModel):
+    transaction_id: int
+    invoice_id: int
+
+
+def _cc_ident(fct_session, fct_member_session):
+    ident = _sso_current_identity(fct_session, fct_member_session) or {}
+    sub = ident.get("sub") or ""
+    mid = None
+    if sub.startswith("member:"):
+        try:
+            mid = int(sub.split(":", 1)[1])
+        except (ValueError, IndexError):
+            mid = None
+    return mid, (ident.get("name") or "")
+
+
+@app.get("/api/creditcard/bills")
+def cc_list_bills(_sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    with db_conn() as conn:
+        bills = conn.execute(
+            "SELECT * FROM cc_bills ORDER BY COALESCE(bill_year,0) DESC, COALESCE(bill_month,0) DESC, id DESC"
+        ).fetchall()
+        out = []
+        for b in bills:
+            bid = b["id"]
+            tx = conn.execute("SELECT COUNT(*) c, COALESCE(SUM(amount),0) s FROM cc_transactions WHERE bill_id=?", (bid,)).fetchone()
+            inv = conn.execute("SELECT COUNT(*) c, COALESCE(SUM(amount),0) s FROM cc_invoices WHERE bill_id=?", (bid,)).fetchone()
+            mt = conn.execute("SELECT COUNT(DISTINCT transaction_id) c FROM cc_matches WHERE bill_id=?", (bid,)).fetchone()
+            pg = conn.execute("SELECT COUNT(*) c FROM cc_statement_pages WHERE bill_id=?", (bid,)).fetchone()
+            out.append({**dict(b), "txn_count": tx["c"], "txn_total": tx["s"],
+                        "invoice_count": inv["c"], "invoice_total": inv["s"],
+                        "matched_txn": mt["c"], "page_count": pg["c"]})
+    return {"bills": out}
+
+
+@app.post("/api/creditcard/bills")
+def cc_create_bill(payload: CcBillIn,
+                   fct_session: Optional[str] = Cookie(default=None),
+                   fct_member_session: Optional[str] = Cookie(default=None),
+                   _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    mid, name = _cc_ident(fct_session, fct_member_session)
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO cc_bills(card_number,bill_month,bill_year,note,created_by_id,created_by,created_at) VALUES (?,?,?,?,?,?,?)",
+            (payload.card_number, payload.bill_month, payload.bill_year, payload.note, mid, name, now))
+        bid = cur.lastrowid
+        for i, pg in enumerate(payload.pages):
+            conn.execute("INSERT INTO cc_statement_pages(bill_id,page_order,image_data,ocr_text,created_at) VALUES (?,?,?,?,?)",
+                         (bid, i, pg.image_data, pg.ocr_text, now))
+        for i, t in enumerate(payload.transactions):
+            conn.execute("INSERT INTO cc_transactions(bill_id,txn_date,description,amount,row_order,created_at) VALUES (?,?,?,?,?,?)",
+                         (bid, t.txn_date, t.description, t.amount, i, now))
+    return {"ok": True, "id": bid}
+
+
+@app.get("/api/creditcard/bills/{bid}")
+def cc_bill_detail(bid: int, _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    with db_conn() as conn:
+        b = conn.execute("SELECT * FROM cc_bills WHERE id=?", (bid,)).fetchone()
+        if not b:
+            raise HTTPException(status_code=404, detail="ไม่พบบิล")
+        txns = conn.execute("SELECT * FROM cc_transactions WHERE bill_id=? ORDER BY row_order, id", (bid,)).fetchall()
+        invs = conn.execute(
+            "SELECT id,bill_id,company,kind,inv_month,inv_year,amount,file_name,file_mime,ocr_text,uploaded_by,uploaded_by_id,created_at "
+            "FROM cc_invoices WHERE bill_id=? ORDER BY id", (bid,)).fetchall()
+        matches = conn.execute("SELECT * FROM cc_matches WHERE bill_id=?", (bid,)).fetchall()
+        pages = conn.execute("SELECT id,page_order FROM cc_statement_pages WHERE bill_id=? ORDER BY page_order", (bid,)).fetchall()
+    return {"bill": dict(b),
+            "transactions": [dict(t) for t in txns],
+            "invoices": [dict(i) for i in invs],
+            "matches": [dict(m) for m in matches],
+            "pages": [dict(p) for p in pages]}
+
+
+@app.delete("/api/creditcard/bills/{bid}")
+def cc_delete_bill(bid: int, _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    with db_conn() as conn:
+        conn.execute("DELETE FROM cc_bills WHERE id=?", (bid,))
+    return {"ok": True}
+
+
+@app.post("/api/creditcard/invoices")
+def cc_create_invoice(payload: CcInvoiceIn,
+                      fct_session: Optional[str] = Cookie(default=None),
+                      fct_member_session: Optional[str] = Cookie(default=None),
+                      _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    mid, name = _cc_ident(fct_session, fct_member_session)
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        if not conn.execute("SELECT 1 FROM cc_bills WHERE id=?", (payload.bill_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="ไม่พบบิลปลายทาง")
+        cur = conn.execute(
+            "INSERT INTO cc_invoices(bill_id,company,kind,inv_month,inv_year,amount,file_data,file_name,file_mime,ocr_text,uploaded_by_id,uploaded_by,created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (payload.bill_id, payload.company, payload.kind, payload.inv_month, payload.inv_year, payload.amount,
+             payload.file_data, payload.file_name, payload.file_mime, payload.ocr_text, mid, name, now))
+    return {"ok": True, "id": cur.lastrowid}
+
+
+@app.get("/api/creditcard/invoices/{iid}/file")
+def cc_invoice_file(iid: int, _sess: dict = Depends(_require_module("platform"))) -> Response:
+    with db_conn() as conn:
+        r = conn.execute("SELECT file_data,file_mime,file_name FROM cc_invoices WHERE id=?", (iid,)).fetchone()
+    if not r or not r["file_data"]:
+        raise HTTPException(status_code=404, detail="ไม่มีไฟล์")
+    raw_b64 = r["file_data"]
+    mime = r["file_mime"] or "application/octet-stream"
+    if raw_b64.startswith("data:"):
+        head, _, b64 = raw_b64.partition(",")
+        if ";base64" in head and head[5:].split(";")[0]:
+            mime = head[5:].split(";")[0]
+        raw_b64 = b64
+    try:
+        data = base64.b64decode(raw_b64)
+    except Exception:
+        raise HTTPException(status_code=500, detail="ไฟล์เสียหาย")
+    return Response(content=data, media_type=mime)
+
+
+@app.delete("/api/creditcard/invoices/{iid}")
+def cc_delete_invoice(iid: int, _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    with db_conn() as conn:
+        conn.execute("DELETE FROM cc_invoices WHERE id=?", (iid,))
+    return {"ok": True}
+
+
+@app.post("/api/creditcard/matches")
+def cc_create_match(payload: CcMatchIn,
+                    fct_session: Optional[str] = Cookie(default=None),
+                    fct_member_session: Optional[str] = Cookie(default=None),
+                    _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    _mid, name = _cc_ident(fct_session, fct_member_session)
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        t = conn.execute("SELECT bill_id FROM cc_transactions WHERE id=?", (payload.transaction_id,)).fetchone()
+        i = conn.execute("SELECT bill_id FROM cc_invoices WHERE id=?", (payload.invoice_id,)).fetchone()
+        if not t or not i:
+            raise HTTPException(status_code=404, detail="ไม่พบรายการ/invoice")
+        if t["bill_id"] != i["bill_id"]:
+            raise HTTPException(status_code=400, detail="รายการกับ invoice อยู่คนละบิล")
+        conn.execute(
+            "INSERT OR IGNORE INTO cc_matches(bill_id,transaction_id,invoice_id,created_by,created_at) VALUES (?,?,?,?,?)",
+            (t["bill_id"], payload.transaction_id, payload.invoice_id, name, now))
+        m = conn.execute("SELECT id FROM cc_matches WHERE transaction_id=? AND invoice_id=?",
+                         (payload.transaction_id, payload.invoice_id)).fetchone()
+    return {"ok": True, "id": m["id"] if m else None}
+
+
+@app.delete("/api/creditcard/matches/{mid}")
+def cc_delete_match(mid: int, _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    with db_conn() as conn:
+        conn.execute("DELETE FROM cc_matches WHERE id=?", (mid,))
+    return {"ok": True}
 
 
 # ===========================================================================

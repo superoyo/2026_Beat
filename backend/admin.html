@@ -2004,6 +2004,397 @@ async function renderTvScheduling() {
   const btn = document.getElementById('tvOpenNew');
   if (btn) btn.onclick = () => window.open(popUrl, '_blank', 'noopener,noreferrer');
 }
+// ===== Credit Card reconciliation (Platform tab) — v1.9.218 =====
+let _ccState = { view: 'bills', billId: null, bills: [], selInvoice: null, summaryBillId: null };
+const _CC_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+function _ccMoney(n){ if(n==null||isNaN(n))return '—'; return Number(n).toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function _ccMonthLabel(m,y){ const mm=(m>=1&&m<=12)?_CC_MONTHS[m-1]:'—'; return `${mm} ${y||'—'}`; }
+function _ccMonthSelect(id,sel){ return `<select id="${id}" style="width:100%"><option value="">—</option>${_CC_MONTHS.map((m,i)=>`<option value="${i+1}" ${sel===i+1?'selected':''}>${m}</option>`).join('')}</select>`; }
+function _ccFileToDataUrl(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error('อ่านไฟล์ไม่ได้')); r.readAsDataURL(file); }); }
+function _ccDownscale(dataUrl,maxW){ return new Promise((res)=>{ const img=new Image(); img.onload=()=>{ const scale=Math.min(1,maxW/img.width); if(scale>=1){ res(dataUrl); return; } const c=document.createElement('canvas'); c.width=Math.round(img.width*scale); c.height=Math.round(img.height*scale); c.getContext('2d').drawImage(img,0,0,c.width,c.height); try{ res(c.toDataURL('image/jpeg',0.82)); }catch(_){ res(dataUrl); } }; img.onerror=()=>res(dataUrl); img.src=dataUrl; }); }
+
+// ---- pdf.js lazy loader ----
+let _pdfjsLoading = null;
+function ensurePdfJs(){
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if (_pdfjsLoading) return _pdfjsLoading;
+  _pdfjsLoading = new Promise((resolve,reject)=>{
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload=()=>{ try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }catch(_){} resolve(window.pdfjsLib); };
+    s.onerror=()=>{ _pdfjsLoading=null; reject(new Error('โหลด pdf.js ไม่สำเร็จ (เช็คอินเทอร์เน็ต)')); };
+    document.head.appendChild(s);
+  });
+  return _pdfjsLoading;
+}
+async function _ccPdfToText(arrayBuffer, onProgress){
+  const pdfjs = await ensurePdfJs();
+  const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+  let text='';
+  const maxPages=Math.min(pdf.numPages,6);
+  for (let p=1;p<=maxPages;p++){
+    const page=await pdf.getPage(p);
+    const tc=await page.getTextContent();
+    text += tc.items.map(it=>it.str).join(' ') + '\n';
+    onProgress && onProgress(p,maxPages);
+  }
+  if (text.replace(/\s/g,'').length < 25){   // PDF สแกน (ไม่มี text layer) → OCR หน้าแรก
+    onProgress && onProgress(0,1);
+    const page=await pdf.getPage(1);
+    const viewport=page.getViewport({scale:2});
+    const canvas=document.createElement('canvas');
+    canvas.width=viewport.width; canvas.height=viewport.height;
+    await page.render({ canvasContext:canvas.getContext('2d'), viewport }).promise;
+    text = await ocrImage(canvas.toDataURL('image/png'),'eng');
+  }
+  return text;
+}
+
+// ---- OCR text parsers (heuristic — ผู้ใช้ตรวจ/แก้ก่อนบันทึก) ----
+function _ccParseStatement(text){
+  text=text||''; const lines=text.split(/\r?\n/); const txns=[]; const monthCount={};
+  for (const raw of lines){
+    const line=raw.replace(/\s+/g,' ').trim();
+    if (line.length<6) continue;
+    const dm=line.match(/^(\d{1,2})[\/\.\-](\d{1,2})(?:[\/\.\-](\d{2,4}))?\b/);
+    if (!dm) continue;
+    const am=line.match(/(\d{1,3}(?:,\d{3})+(?:\.\d{2})?|\d+\.\d{2})\s*(?:CR|DR|-)?\s*$/i);
+    if (!am) continue;
+    const amount=parseFloat(am[1].replace(/,/g,''));
+    if (isNaN(amount)) continue;
+    let desc=line.slice(dm[0].length, line.length-am[0].length).replace(/\s+/g,' ').trim();
+    desc=desc.replace(/^\d{1,2}[\/\.\-]\d{1,2}(?:[\/\.\-]\d{2,4})?\s*/,'');
+    const t={ txn_date: dm[0], description: desc||'(ไม่ระบุ)', amount };
+    const mo=parseInt(dm[2],10); if(mo>=1&&mo<=12) monthCount[mo]=(monthCount[mo]||0)+1;
+    if (dm[3]){ let y=parseInt(dm[3],10); if(y<100)y+=(y>70?1900:2000); t._y=y; }
+    txns.push(t);
+  }
+  let card=null;
+  const cm=text.match(/(\d{4}[\sxX\*]{0,2}[\dxX\*]{4}[\sxX\*]{0,2}[\dxX\*]{4}[\sxX\*]{0,2}\d{4})/)||text.match(/[xX\*]{4,}\s?\d{4}/);
+  if (cm) card=(cm[1]||cm[0]).replace(/\s+/g,'');
+  let bm=null,best=0; for(const k in monthCount){ if(monthCount[k]>best){best=monthCount[k];bm=parseInt(k,10);} }
+  const years=txns.map(t=>t._y).filter(Boolean); const by=years.length?years.sort((a,b)=>b-a)[0]:null;
+  txns.forEach(t=>delete t._y);
+  return { card_number:card, bill_month:bm, bill_year:by, transactions:txns };
+}
+function _ccParseInvoice(text){
+  text=text||''; const lines=text.split(/\r?\n/).map(s=>s.replace(/\s+/g,' ').trim()).filter(Boolean);
+  let company=lines.find(l=>/(บริษัท|company|co\.?,?\s*ltd|จำกัด|inc\.|corporation)/i.test(l)) || lines.find(l=>l.length>=4&&/[A-Za-zก-๙]/.test(l)) || null;
+  if (company) company=company.slice(0,80);
+  let totalAmt=null;
+  for (const l of lines){
+    if (/(grand\s*total|total|รวมทั้งสิ้น|ยอดรวม|จำนวนเงินรวม|amount\s*due|net\s*total)/i.test(l)){
+      const m=l.match(/(\d{1,3}(?:,\d{3})+(?:\.\d{2})?|\d+\.\d{2})/g);
+      if(m) totalAmt=parseFloat(m[m.length-1].replace(/,/g,''));
+    }
+  }
+  const amts=[]; let mAll; const re=/(\d{1,3}(?:,\d{3})+(?:\.\d{2})?|\d+\.\d{2})/g;
+  while((mAll=re.exec(text))){ const n=parseFloat(mAll[1].replace(/,/g,'')); if(!isNaN(n)) amts.push(n); }
+  const amount=totalAmt!=null?totalAmt:(amts.length?Math.max(...amts):null);
+  let month=null,year=null;
+  const dm=text.match(/(\d{1,2})[\/\.\-](\d{1,2})[\/\.\-](\d{2,4})/);
+  if(dm){ month=parseInt(dm[2],10); let y=parseInt(dm[3],10); if(y<100)y+=2000; year=y; }
+  if(!month){ const mn=text.match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{4})/i);
+    if(mn){ const idx=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].indexOf(mn[1].slice(0,3).toLowerCase()); month=idx+1; year=parseInt(mn[2],10); } }
+  let kind='invoice';
+  if(/(receipt|ใบเสร็จ|ใบรับเงิน)/i.test(text)) kind='receipt';
+  return { company, amount, month, year, kind };
+}
+
+// ---- entry + router ----
+async function renderCreditCard(){
+  const root=$('creditcard-root'); if(!root) return;
+  root.innerHTML=`
+    <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
+      <button class="btn cc-nav" data-cc-view="bills">🧾 บิลรายเดือน</button>
+      <button class="btn cc-nav" data-cc-view="summary">📊 Summary</button>
+    </div>
+    <div id="cc-view"><div class="empty">กำลังโหลด…</div></div>`;
+  root.querySelectorAll('.cc-nav').forEach(b=>b.addEventListener('click',()=>{ _ccState.view=b.dataset.ccView; _ccState.billId=null; _ccRender(); }));
+  await _ccLoadBills(); _ccRender();
+}
+async function _ccLoadBills(){ try{ _ccState.bills=(await fetchJson('/api/creditcard/bills')).bills||[]; }catch(e){ _ccState.bills=[]; } }
+function _ccRender(){
+  document.querySelectorAll('.cc-nav').forEach(b=>b.classList.toggle('primary', b.dataset.ccView===_ccState.view && !_ccState.billId));
+  const v=$('cc-view'); if(!v) return;
+  if(_ccState.billId) return _ccRenderDetail(v);
+  if(_ccState.view==='summary') return _ccRenderSummary(v);
+  return _ccRenderBills(v);
+}
+
+// ---- bills list (home) ----
+function _ccRenderBills(v){
+  const bills=_ccState.bills;
+  v.innerHTML=`
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+      <button class="btn primary" id="cc-new-bill">+ สร้างบิลรายเดือน</button>
+      <button class="btn" id="cc-up-invoice">⬆️ อัพโหลด Invoice / Receipt</button>
+    </div>
+    ${bills.length?bills.map(_ccBillCard).join(''):'<div class="empty">ยังไม่มีบิล — กด “สร้างบิลรายเดือน” แล้วอัพโหลดใบแจ้งยอดบัตรเครดิต</div>'}`;
+  $('cc-new-bill').onclick=()=>_ccCreateBill();
+  $('cc-up-invoice').onclick=()=>_ccUploadInvoice(null);
+  v.querySelectorAll('[data-cc-bill]').forEach(c=>c.addEventListener('click',()=>{ _ccState.billId=parseInt(c.dataset.ccBill,10); _ccRender(); }));
+}
+function _ccBillCard(b){
+  const complete=b.txn_count>0 && b.matched_txn>=b.txn_count;
+  const pct=b.txn_count?Math.round(b.matched_txn/b.txn_count*100):0;
+  return `<div class="card hw-card" data-cc-bill="${b.id}" style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px;padding:12px 16px">
+    <div style="min-width:0">
+      <div style="font-size:15px;font-weight:800">💳 ${escapeHtml(b.card_number||'บัตรเครดิต')} · ${_ccMonthLabel(b.bill_month,b.bill_year)}</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-top:3px">${b.txn_count} รายการ · ยอดรวม ${_ccMoney(b.txn_total)} · invoice ${b.invoice_count} ใบ${b.created_by?' · โดย '+escapeHtml(b.created_by):''}</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+      <span style="display:inline-flex;align-items:center;padding:3px 11px;border-radius:999px;font-size:12px;font-weight:700;${complete?'background:rgba(16,185,129,.12);color:var(--green)':'background:rgba(245,158,11,.14);color:#92400e'}">${complete?'✓ ครบ':'จับคู่ '+pct+'%'}</span>
+      <span class="hw-chev" style="font-size:22px;line-height:1">›</span>
+    </div>
+  </div>`;
+}
+
+// ---- create monthly bill (upload statement images → OCR → preview → save) ----
+function _ccCreateBill(){
+  const pages=[];
+  showModal({
+    title:'+ สร้างบิลรายเดือน', slide:true, size:'wide',
+    body:`
+      <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px">อัพโหลดรูปใบแจ้งยอดบัตรเครดิต (หลายใบได้) → ระบบ OCR ดึงรายการ → ตรวจ/แก้ก่อนบันทึก</div>
+      <input id="cc-bill-files" type="file" accept="image/*" multiple style="margin-bottom:10px" />
+      <div id="cc-bill-status" style="font-size:12.5px;color:var(--primary)"></div>
+      <div id="cc-bill-fields" style="display:none;margin-top:12px">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+          <label style="flex:1;min-width:150px;font-size:12px">เลขบัตร<input id="cc-bill-card" style="width:100%" /></label>
+          <label style="width:120px;font-size:12px">เดือน${_ccMonthSelect('cc-bill-month')}</label>
+          <label style="width:110px;font-size:12px">ปี (ค.ศ.)<input id="cc-bill-year" type="number" placeholder="${new Date().getFullYear()}" style="width:100%" /></label>
+        </div>
+        <div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:6px">รายการจากบัตร (<span id="cc-bill-count">0</span>)</div>
+        <div id="cc-bill-txns"></div>
+        <button type="button" class="btn" id="cc-bill-addrow" style="margin-top:8px;font-size:12px">+ เพิ่มแถว</button>
+      </div>`,
+    onSubmit: async ()=>{
+      if(!pages.length) throw new Error('อัพโหลดรูปใบแจ้งยอดก่อน');
+      const rows=Array.from(document.querySelectorAll('#cc-bill-txns .cc-txn-row')).map(r=>({
+        txn_date:r.querySelector('.cc-t-date').value.trim()||null,
+        description:r.querySelector('.cc-t-desc').value.trim()||null,
+        amount:parseFloat(r.querySelector('.cc-t-amt').value)||null,
+      })).filter(t=>t.description||t.amount!=null);
+      const body={ card_number:$('cc-bill-card').value.trim()||null, bill_month:parseInt($('cc-bill-month').value,10)||null,
+        bill_year:parseInt($('cc-bill-year').value,10)||null, pages, transactions:rows };
+      await fetchJson('/api/creditcard/bills',{method:'POST',body:JSON.stringify(body)});
+      await _ccLoadBills(); _ccState.view='bills'; _ccState.billId=null; _ccRender();
+    },
+  });
+  setTimeout(()=>{
+    const updateCount=()=>{ const el=$('cc-bill-count'); if(el) el.textContent=document.querySelectorAll('#cc-bill-txns .cc-txn-row').length; };
+    const addRow=(t)=>{
+      const w=document.createElement('div'); w.className='cc-txn-row';
+      w.style.cssText='display:flex;gap:6px;margin-bottom:5px;align-items:center';
+      w.innerHTML=`<input class="cc-t-date" placeholder="วันที่" value="${escapeHtml((t&&t.txn_date)||'')}" style="width:88px;font-size:12px" />
+        <input class="cc-t-desc" placeholder="รายละเอียด" value="${escapeHtml((t&&t.description)||'')}" style="flex:1;min-width:0;font-size:12px" />
+        <input class="cc-t-amt" placeholder="ยอด" type="number" step="0.01" value="${(t&&t.amount!=null)?t.amount:''}" style="width:100px;font-size:12px;text-align:right" />
+        <button type="button" class="btn danger cc-t-del" style="padding:3px 8px;font-size:12px">✕</button>`;
+      w.querySelector('.cc-t-del').onclick=()=>{ w.remove(); updateCount(); };
+      $('cc-bill-txns').appendChild(w);
+    };
+    const addBtn=$('cc-bill-addrow'); if(addBtn) addBtn.onclick=()=>{ addRow(null); updateCount(); };
+    const inp=$('cc-bill-files'); const st=$('cc-bill-status');
+    inp.onchange=async ()=>{
+      const files=Array.from(inp.files||[]); if(!files.length) return;
+      pages.length=0; $('cc-bill-txns').innerHTML=''; let allText='';
+      for(let i=0;i<files.length;i++){
+        st.textContent=`OCR รูปที่ ${i+1}/${files.length}…`;
+        let dataUrl; try{ dataUrl=await _ccFileToDataUrl(files[i]); }catch(_){ continue; }
+        let text=''; try{ text=await ocrImage(dataUrl,'eng',(p)=>{ st.textContent=`OCR รูปที่ ${i+1}/${files.length} … ${Math.round((p.progress||0)*100)}%`; }); }catch(_){ text=''; }
+        const stored=await _ccDownscale(dataUrl,1600);   // OCR ทำบน full-res แล้ว → เก็บแบบย่อ
+        pages.push({ image_data:stored, ocr_text:text }); allText+=text+'\n';
+      }
+      const parsed=_ccParseStatement(allText);
+      $('cc-bill-fields').style.display='';
+      $('cc-bill-card').value=parsed.card_number||'';
+      if(parsed.bill_month) $('cc-bill-month').value=parsed.bill_month;
+      if(parsed.bill_year) $('cc-bill-year').value=parsed.bill_year;
+      parsed.transactions.forEach(addRow); updateCount();
+      st.textContent=`✓ อ่านได้ ${parsed.transactions.length} รายการ — ตรวจ/แก้แล้วกดบันทึก`;
+    };
+  },0);
+}
+
+// ---- upload invoice/receipt (PDF/รูป → อ่าน บริษัท/เดือน/ยอด → preview → save) ----
+function _ccUploadInvoice(defaultBillId){
+  if(!_ccState.bills.length){ alert('สร้างบิลอย่างน้อย 1 ใบก่อน แล้วค่อยอัพโหลด invoice'); return; }
+  let fileData=null,fileMime=null,fileName=null;
+  const billOpts=_ccState.bills.map(b=>`<option value="${b.id}" ${b.id===defaultBillId?'selected':''}>${escapeHtml(b.card_number||'บัตร')} · ${_ccMonthLabel(b.bill_month,b.bill_year)}</option>`).join('');
+  showModal({
+    title:'⬆️ อัพโหลด Invoice / Receipt', slide:true, size:'wide',
+    body:`
+      <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px">อัพโหลด PDF (หรือรูป) → ระบบอ่าน บริษัท/เดือน/ยอด → ตรวจ/แก้ → บันทึก</div>
+      <label style="display:block;margin-bottom:10px;font-size:12px">บิลปลายทาง<select id="cc-inv-bill" style="width:100%">${billOpts}</select></label>
+      <input id="cc-inv-file" type="file" accept="application/pdf,image/*" style="margin-bottom:8px" />
+      <div id="cc-inv-status" style="font-size:12.5px;color:var(--primary)"></div>
+      <div id="cc-inv-fields" style="display:none;margin-top:12px">
+        <label style="display:block;margin-bottom:8px;font-size:12px">บริษัท / Platform<input id="cc-inv-company" style="width:100%" /></label>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <label style="width:130px;font-size:12px">ประเภท<select id="cc-inv-kind" style="width:100%"><option value="invoice">Invoice</option><option value="receipt">Receipt</option></select></label>
+          <label style="width:120px;font-size:12px">เดือน${_ccMonthSelect('cc-inv-month')}</label>
+          <label style="width:100px;font-size:12px">ปี<input id="cc-inv-year" type="number" style="width:100%" /></label>
+          <label style="flex:1;min-width:120px;font-size:12px">ยอดเงิน<input id="cc-inv-amount" type="number" step="0.01" style="width:100%" /></label>
+        </div>
+      </div>`,
+    onSubmit: async ()=>{
+      if(!fileData) throw new Error('อัพโหลดไฟล์ก่อน');
+      const body={ bill_id:parseInt($('cc-inv-bill').value,10), company:$('cc-inv-company').value.trim()||null,
+        kind:$('cc-inv-kind').value, inv_month:parseInt($('cc-inv-month').value,10)||null, inv_year:parseInt($('cc-inv-year').value,10)||null,
+        amount:parseFloat($('cc-inv-amount').value)||null, file_data:fileData, file_name:fileName, file_mime:fileMime };
+      await fetchJson('/api/creditcard/invoices',{method:'POST',body:JSON.stringify(body)});
+      await _ccLoadBills();
+      if(_ccState.billId) _ccRenderDetail($('cc-view')); else _ccRender();
+    },
+  });
+  setTimeout(()=>{
+    const inp=$('cc-inv-file'); const st=$('cc-inv-status');
+    inp.onchange=async ()=>{
+      const f=inp.files&&inp.files[0]; if(!f) return;
+      if(f.size>12*1024*1024){ st.textContent='⚠️ ไฟล์ใหญ่เกิน 12MB — ลองบีบอัดก่อน'; return; }
+      fileName=f.name; fileMime=f.type||'application/octet-stream'; st.textContent='กำลังอ่านไฟล์…';
+      try{
+        fileData=await _ccFileToDataUrl(f);
+        let text='';
+        if((f.type||'').includes('pdf')||/\.pdf$/i.test(f.name)){
+          st.textContent='อ่าน PDF…';
+          text=await _ccPdfToText(await f.arrayBuffer(),(p,tot)=>{ st.textContent=p?`อ่าน PDF หน้า ${p}/${tot}…`:'OCR PDF (สแกน)…'; });
+        } else {
+          st.textContent='OCR รูป…';
+          text=await ocrImage(fileData,'eng',(p)=>{ st.textContent=`OCR … ${Math.round((p.progress||0)*100)}%`; });
+        }
+        const parsed=_ccParseInvoice(text);
+        $('cc-inv-fields').style.display='';
+        $('cc-inv-company').value=parsed.company||'';
+        if(parsed.kind) $('cc-inv-kind').value=parsed.kind;
+        if(parsed.month) $('cc-inv-month').value=parsed.month;
+        if(parsed.year) $('cc-inv-year').value=parsed.year;
+        if(parsed.amount!=null) $('cc-inv-amount').value=parsed.amount;
+        st.textContent='✓ อ่านเสร็จ — ตรวจ/แก้แล้วกดบันทึก';
+      }catch(e){ st.textContent='อ่านไฟล์ไม่สำเร็จ: '+e.message; }
+    };
+  },0);
+}
+
+// ---- bill detail (left=transactions, right=invoices, drag-drop / click-to-match) ----
+async function _ccRenderDetail(v){
+  v.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  let d; try{ d=await fetchJson('/api/creditcard/bills/'+_ccState.billId); }
+  catch(e){ v.innerHTML=`<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`; return; }
+  const invById={}; d.invoices.forEach(i=>invById[i.id]=i);
+  const matchByTxn={}; const matchedInvIds=new Set();
+  d.matches.forEach(m=>{ (matchByTxn[m.transaction_id]=matchByTxn[m.transaction_id]||[]).push({matchId:m.id,inv:invById[m.invoice_id]}); matchedInvIds.add(m.invoice_id); });
+  const total=d.transactions.length, matchedTxn=Object.keys(matchByTxn).filter(k=>matchByTxn[k].length).length;
+  const complete=total>0 && matchedTxn>=total;
+  v.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="btn" id="cc-back" style="font-size:12px">← กลับ</button>
+        <span style="font-size:16px;font-weight:800">💳 ${escapeHtml(d.bill.card_number||'บัตร')} · ${_ccMonthLabel(d.bill.bill_month,d.bill.bill_year)}</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="font-size:12.5px;font-weight:700;${complete?'color:var(--green)':'color:#92400e'}">${complete?'✓ จับคู่ครบ':matchedTxn+'/'+total+' จับคู่แล้ว'}</span>
+        <button class="btn" id="cc-add-inv" style="font-size:12px">⬆️ เพิ่ม invoice</button>
+        <button class="btn danger" id="cc-del-bill" style="font-size:12px">🗑 ลบบิล</button>
+      </div>
+    </div>
+    <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:10px">ลาก invoice จากขวา → วางบนรายการซ้ายเพื่อจับคู่ · หรือคลิก invoice แล้วคลิกรายการ</div>
+    <div style="display:grid;grid-template-columns:1fr 320px;gap:14px;align-items:start">
+      <div><div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px">รายการจากบัตร (${total})</div><div id="cc-txn-col"></div></div>
+      <div><div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px">Invoice / Receipt (${d.invoices.length})</div><div id="cc-inv-col"></div></div>
+    </div>`;
+  $('cc-txn-col').innerHTML=d.transactions.map(t=>{
+    const ms=matchByTxn[t.id]||[];
+    const chips=ms.map(mm=>`<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;background:rgba(16,185,129,.12);color:var(--green);font-weight:600;margin:3px 3px 0 0">${escapeHtml((mm.inv&&mm.inv.company)||'invoice')} ${_ccMoney(mm.inv&&mm.inv.amount)} <span class="cc-unmatch" data-match="${mm.matchId}" style="cursor:pointer;opacity:.7">✕</span></span>`).join('');
+    return `<div class="cc-txn card" data-txn="${t.id}" style="padding:9px 12px;margin-bottom:6px;border:1px solid ${ms.length?'rgba(16,185,129,.45)':'var(--border)'};transition:background .1s">
+      <div style="display:flex;justify-content:space-between;gap:8px">
+        <div style="min-width:0"><div style="font-size:13px;font-weight:600">${escapeHtml(t.description||'—')}</div><div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t.txn_date||'')}</div></div>
+        <div style="font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap">${_ccMoney(t.amount)}</div>
+      </div>${chips?`<div>${chips}</div>`:''}
+    </div>`;
+  }).join('')||'<div class="empty" style="font-size:12px">ไม่มีรายการ</div>';
+  $('cc-inv-col').innerHTML=d.invoices.map(i=>`
+    <div class="cc-inv card" draggable="true" data-inv="${i.id}" style="padding:9px 11px;margin-bottom:6px;cursor:grab;border:1px solid ${matchedInvIds.has(i.id)?'rgba(16,185,129,.45)':'var(--border)'}">
+      <div style="font-size:12.5px;font-weight:700">${escapeHtml(i.company||'—')} <span style="font-size:10px;color:var(--text-muted);font-weight:500">${i.kind==='receipt'?'ใบเสร็จ':'invoice'}</span></div>
+      <div style="font-size:11px;color:var(--text-muted)">${_ccMonthLabel(i.inv_month,i.inv_year)} · โดย ${escapeHtml(i.uploaded_by||'—')}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px">
+        <span style="font-weight:700;color:var(--green);font-variant-numeric:tabular-nums">${_ccMoney(i.amount)}</span>
+        <span style="display:flex;gap:10px"><a href="${API}/api/creditcard/invoices/${i.id}/file" target="_blank" rel="noopener" style="font-size:11px">📄 ไฟล์</a><span class="cc-inv-del" data-inv="${i.id}" style="font-size:11px;color:var(--critical);cursor:pointer">ลบ</span></span>
+      </div>
+    </div>`).join('')||'<div class="empty" style="font-size:12px">ยังไม่มี invoice — กด “เพิ่ม invoice”</div>';
+  $('cc-back').onclick=()=>{ _ccState.billId=null; _ccState.selInvoice=null; _ccRender(); };
+  $('cc-add-inv').onclick=()=>_ccUploadInvoice(_ccState.billId);
+  $('cc-del-bill').onclick=async ()=>{ if(!confirm('ลบบิลนี้ทั้งหมด? (รายการ/invoice/การจับคู่จะถูกลบด้วย)'))return; await fetchJson('/api/creditcard/bills/'+_ccState.billId,{method:'DELETE'}); _ccState.billId=null; await _ccLoadBills(); _ccRender(); };
+  v.querySelectorAll('.cc-unmatch').forEach(x=>x.addEventListener('click',async(e)=>{ e.stopPropagation(); await fetchJson('/api/creditcard/matches/'+x.dataset.match,{method:'DELETE'}); _ccRenderDetail($('cc-view')); }));
+  v.querySelectorAll('.cc-inv-del').forEach(x=>x.addEventListener('click',async(e)=>{ e.stopPropagation(); if(!confirm('ลบ invoice นี้?'))return; await fetchJson('/api/creditcard/invoices/'+x.dataset.inv,{method:'DELETE'}); await _ccLoadBills(); _ccRenderDetail($('cc-view')); }));
+  let dragInv=null;
+  const doMatch=async(txnId,invId)=>{ try{ await fetchJson('/api/creditcard/matches',{method:'POST',body:JSON.stringify({transaction_id:txnId,invoice_id:invId})}); _ccState.selInvoice=null; await _ccLoadBills(); _ccRenderDetail($('cc-view')); }catch(e){ alert(e.message); } };
+  v.querySelectorAll('.cc-inv').forEach(el=>{
+    el.addEventListener('dragstart',e=>{ dragInv=parseInt(el.dataset.inv,10); e.dataTransfer.effectAllowed='move'; });
+    el.addEventListener('click',(e)=>{ if(e.target.closest('a,.cc-inv-del'))return; const id=parseInt(el.dataset.inv,10); _ccState.selInvoice=(_ccState.selInvoice===id)?null:id; v.querySelectorAll('.cc-inv').forEach(x=>x.style.outline=''); if(_ccState.selInvoice) el.style.outline='2px solid var(--primary)'; });
+  });
+  v.querySelectorAll('.cc-txn').forEach(el=>{
+    el.addEventListener('dragover',e=>{ e.preventDefault(); el.style.background='var(--bg-soft)'; });
+    el.addEventListener('dragleave',()=>{ el.style.background=''; });
+    el.addEventListener('drop',e=>{ e.preventDefault(); el.style.background=''; if(dragInv) doMatch(parseInt(el.dataset.txn,10),dragInv); dragInv=null; });
+    el.addEventListener('click',()=>{ if(_ccState.selInvoice) doMatch(parseInt(el.dataset.txn,10),_ccState.selInvoice); });
+  });
+}
+
+// ---- summary (completeness per bill + navigate bills) ----
+async function _ccRenderSummary(v){
+  const bills=_ccState.bills;
+  if(!bills.length){ v.innerHTML='<div class="empty">ยังไม่มีบิล</div>'; return; }
+  if(!_ccState.summaryBillId||!bills.find(b=>b.id===_ccState.summaryBillId)) _ccState.summaryBillId=bills[0].id;
+  v.innerHTML=`
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+      <span style="font-size:12.5px;color:var(--text-muted)">เลือกบิล:</span>
+      <select id="cc-sum-bill" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);min-width:240px">
+        ${bills.map(b=>`<option value="${b.id}" ${b.id===_ccState.summaryBillId?'selected':''}>${escapeHtml(b.card_number||'บัตร')} · ${_ccMonthLabel(b.bill_month,b.bill_year)} ${b.txn_count&&b.matched_txn>=b.txn_count?'✓':''}</option>`).join('')}
+      </select>
+    </div>
+    <div id="cc-sum-body"><div class="empty">กำลังโหลด…</div></div>`;
+  $('cc-sum-bill').onchange=(e)=>{ _ccState.summaryBillId=parseInt(e.target.value,10); _ccRenderSummary(v); };
+  let d; try{ d=await fetchJson('/api/creditcard/bills/'+_ccState.summaryBillId); }
+  catch(e){ $('cc-sum-body').innerHTML=`<div class="empty">${escapeHtml(e.message)}</div>`; return; }
+  const invById={}; d.invoices.forEach(i=>invById[i.id]=i);
+  const matchByTxn={}; d.matches.forEach(m=>{ (matchByTxn[m.transaction_id]=matchByTxn[m.transaction_id]||[]).push(invById[m.invoice_id]); });
+  const total=d.transactions.length, matched=Object.keys(matchByTxn).filter(k=>matchByTxn[k].length).length, unmatched=total-matched;
+  const txnTotal=d.transactions.reduce((s,t)=>s+(t.amount||0),0);
+  const invTotal=d.invoices.reduce((s,i)=>s+(i.amount||0),0);
+  const matchedInvIds=new Set(d.matches.map(m=>m.invoice_id));
+  const unusedInv=d.invoices.filter(i=>!matchedInvIds.has(i.id)).length;
+  const rows=d.transactions.map(t=>{
+    const ms=matchByTxn[t.id]||[]; const ok=ms.length>0;
+    const invSum=ms.reduce((s,i)=>s+((i&&i.amount)||0),0); const diff=Math.abs(invSum-(t.amount||0));
+    return `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:7px 8px">${ok?'<span style="color:var(--green);font-weight:800">✓</span>':'<span style="color:var(--critical);font-weight:800">✗</span>'}</td>
+      <td style="padding:7px 8px;font-size:12.5px">${escapeHtml(t.description||'—')}<div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t.txn_date||'')}</div></td>
+      <td style="padding:7px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap">${_ccMoney(t.amount)}</td>
+      <td style="padding:7px 8px;font-size:12px">${ms.length?ms.map(i=>escapeHtml((i&&i.company)||'invoice')+' '+_ccMoney(i&&i.amount)).join('<br>'):'<span style="color:var(--text-muted)">— ยังไม่จับคู่ —</span>'}</td>
+      <td style="padding:7px 8px;text-align:right;font-size:12px;white-space:nowrap;${ok&&diff>0.01?'color:#92400e;font-weight:700':''}">${ok?(diff>0.01?'Δ '+_ccMoney(diff):'ตรง'):''}</td>
+    </tr>`;
+  }).join('');
+  $('cc-sum-body').innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px;margin-bottom:16px">
+      ${_ccStat('รายการทั้งหมด',total)}
+      ${_ccStat('จับคู่แล้ว',matched,'var(--green)')}
+      ${_ccStat('ยังไม่จับคู่',unmatched,unmatched?'#92400e':'var(--text)')}
+      ${_ccStat('ยอดบัตรรวม',_ccMoney(txnTotal))}
+      ${_ccStat('ยอด invoice รวม',_ccMoney(invTotal))}
+      ${_ccStat('invoice ยังไม่ใช้',unusedInv,unusedInv?'#92400e':'var(--text)')}
+    </div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase">
+        <th style="padding:6px 8px"></th><th style="padding:6px 8px">รายการบัตร</th><th style="padding:6px 8px;text-align:right">ยอด</th><th style="padding:6px 8px">Invoice / Receipt</th><th style="padding:6px 8px;text-align:right">ผลต่าง</th>
+      </tr></thead><tbody>${rows||'<tr><td colspan="5" style="padding:14px;text-align:center;color:var(--text-muted)">ไม่มีรายการ</td></tr>'}</tbody>
+    </table></div>`;
+}
+function _ccStat(label,val,color){
+  return `<div class="card" style="padding:10px 12px"><div style="font-size:11px;color:var(--text-muted)">${label}</div><div style="font-size:18px;font-weight:800;${color?'color:'+color:''}">${val}</div></div>`;
+}
+
 // ===== Claude RateLimit (Platform tab) =====
 let _clrlSub = 'dashboard';
 async function renderClaudeRL() {
@@ -4693,6 +5084,7 @@ async function renderPlatformsPage(initialTab) {
         <button type="button" class="acc-menu-item" data-plat-tab="skill"><span class="acc-menu-ico">🛒</span> Skill Marketplace</button>
         <button type="button" class="acc-menu-item" data-plat-tab="aiproject"><span class="acc-menu-ico">🤖</span> AI Project</button>
         <button type="button" class="acc-menu-item" data-plat-tab="claude-rl"><span class="acc-menu-ico">⏱️</span> Claude RateLimit</button>
+        <button type="button" class="acc-menu-item" data-plat-tab="creditcard"><span class="acc-menu-ico">💳</span> Credit Card</button>
       </div>
       <!-- เนื้อหาขวา -->
       <div class="acc-detail">
@@ -4741,6 +5133,11 @@ async function renderPlatformsPage(initialTab) {
         <div data-plat-panel="claude-rl" style="display:none">
           <div id="claude-rl-root"><div class="empty">กำลังโหลด…</div></div>
         </div>
+
+        <!-- ============ Credit Card ============ -->
+        <div data-plat-panel="creditcard" style="display:none">
+          <div id="creditcard-root"><div class="empty">กำลังโหลด…</div></div>
+        </div>
       </div>
     </div>
   `;
@@ -4749,16 +5146,18 @@ async function renderPlatformsPage(initialTab) {
   let _skillMpLoaded = false;
   let _aiprojLoaded = false;
   let _clrlLoaded = false;
+  let _ccLoaded = false;
   function showPlatPanel(panel) {
     document.querySelectorAll('[data-plat-panel]').forEach(p => { p.style.display = (p.dataset.platPanel === panel) ? '' : 'none'; });
     document.querySelectorAll('[data-plat-tab]').forEach(b => b.classList.toggle('active', b.dataset.platTab === panel));
     if (panel === 'skill' && !_skillMpLoaded) { _skillMpLoaded = true; renderSkillMarketplace(); }
     if (panel === 'aiproject' && !_aiprojLoaded) { _aiprojLoaded = true; renderAiProjects(); }
     if (panel === 'claude-rl' && !_clrlLoaded) { _clrlLoaded = true; renderClaudeRL(); }
+    if (panel === 'creditcard' && !_ccLoaded) { _ccLoaded = true; renderCreditCard(); }
   }
   document.querySelectorAll('[data-plat-tab]').forEach(b => b.addEventListener('click', () => showPlatPanel(b.dataset.platTab)));
   // v1.9.153 — เปิด tab ตาม deep-link (เช่นจาก dashboard)
-  if (initialTab && ['platform', 'skill', 'aiproject', 'claude-rl'].includes(initialTab)) showPlatPanel(initialTab);
+  if (initialTab && ['platform', 'skill', 'aiproject', 'claude-rl', 'creditcard'].includes(initialTab)) showPlatPanel(initialTab);
 
   let data;
   try {
