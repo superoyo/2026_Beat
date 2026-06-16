@@ -2107,6 +2107,7 @@ async function renderCreditCard(){
   root.innerHTML=`
     <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
       <button class="btn cc-nav" data-cc-view="bills">🧾 บิลรายเดือน</button>
+      <button class="btn cc-nav" data-cc-view="pool">📥 Invoice ลอย</button>
       <button class="btn cc-nav" data-cc-view="summary">📊 Summary</button>
     </div>
     <div id="cc-view"><div class="empty">กำลังโหลด…</div></div>`;
@@ -2118,6 +2119,7 @@ function _ccRender(){
   document.querySelectorAll('.cc-nav').forEach(b=>b.classList.toggle('primary', b.dataset.ccView===_ccState.view && !_ccState.billId));
   const v=$('cc-view'); if(!v) return;
   if(_ccState.billId) return _ccRenderDetail(v);
+  if(_ccState.view==='pool') return _ccRenderPool(v);
   if(_ccState.view==='summary') return _ccRenderSummary(v);
   return _ccRenderBills(v);
 }
@@ -2219,14 +2221,13 @@ function _ccCreateBill(){
 
 // ---- upload invoice/receipt (PDF/รูป → อ่าน บริษัท/เดือน/ยอด → preview → save) ----
 function _ccUploadInvoice(defaultBillId){
-  if(!_ccState.bills.length){ alert('สร้างบิลอย่างน้อย 1 ใบก่อน แล้วค่อยอัพโหลด invoice'); return; }
   let fileData=null,fileMime=null,fileName=null;
-  const billOpts=_ccState.bills.map(b=>`<option value="${b.id}" ${b.id===defaultBillId?'selected':''}>${escapeHtml(b.card_number||'บัตร')} · ${_ccMonthLabel(b.bill_month,b.bill_year)}</option>`).join('');
+  const billOpts=`<option value="">— ยังไม่ผูกบิล (ลอยไว้ก่อน) —</option>`+_ccState.bills.map(b=>`<option value="${b.id}" ${b.id===defaultBillId?'selected':''}>${escapeHtml(b.card_number||'บัตร')} · ${_ccMonthLabel(b.bill_month,b.bill_year)}</option>`).join('');
   showModal({
     title:'⬆️ อัพโหลด Invoice / Receipt', slide:true, size:'wide',
     body:`
-      <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px">อัพโหลด PDF (หรือรูป) → ระบบอ่าน บริษัท/เดือน/ยอด → ตรวจ/แก้ → บันทึก</div>
-      <label style="display:block;margin-bottom:10px;font-size:12px">บิลปลายทาง<select id="cc-inv-bill" style="width:100%">${billOpts}</select></label>
+      <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px">อัพโหลด PDF (หรือรูป) → ระบบอ่าน บริษัท/เดือน/ยอด → ตรวจ/แก้ → บันทึก · ไม่ผูกบิลก็ได้ (ลอยไว้ แล้วค่อยลากจับคู่ในบิลทีหลัง)</div>
+      <label style="display:block;margin-bottom:10px;font-size:12px">บิลปลายทาง (ไม่บังคับ)<select id="cc-inv-bill" style="width:100%">${billOpts}</select></label>
       <input id="cc-inv-file" type="file" accept="application/pdf,image/*" style="margin-bottom:8px" />
       <div id="cc-inv-status" style="font-size:12.5px;color:var(--primary)"></div>
       <div id="cc-inv-fields" style="display:none;margin-top:12px">
@@ -2240,12 +2241,15 @@ function _ccUploadInvoice(defaultBillId){
       </div>`,
     onSubmit: async ()=>{
       if(!fileData) throw new Error('อัพโหลดไฟล์ก่อน');
-      const body={ bill_id:parseInt($('cc-inv-bill').value,10), company:$('cc-inv-company').value.trim()||null,
+      const bv=$('cc-inv-bill').value;
+      const body={ bill_id: bv?parseInt(bv,10):null, company:$('cc-inv-company').value.trim()||null,
         kind:$('cc-inv-kind').value, inv_month:parseInt($('cc-inv-month').value,10)||null, inv_year:parseInt($('cc-inv-year').value,10)||null,
         amount:parseFloat($('cc-inv-amount').value)||null, file_data:fileData, file_name:fileName, file_mime:fileMime };
       await fetchJson('/api/creditcard/invoices',{method:'POST',body:JSON.stringify(body)});
       await _ccLoadBills();
-      if(_ccState.billId) _ccRenderDetail($('cc-view')); else _ccRender();
+      if(_ccState.billId) _ccRenderDetail($('cc-view'));
+      else if(_ccState.view==='pool') _ccRenderPool($('cc-view'));
+      else _ccRender();
     },
   });
   setTimeout(()=>{
@@ -2283,6 +2287,7 @@ async function _ccRenderDetail(v){
   let d; try{ d=await fetchJson('/api/creditcard/bills/'+_ccState.billId); }
   catch(e){ v.innerHTML=`<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`; return; }
   const invById={}; d.invoices.forEach(i=>invById[i.id]=i);
+  const allInvById={}; d.invoices.forEach(i=>allInvById[i.id]=i); (d.pool_invoices||[]).forEach(i=>allInvById[i.id]=i);
   const matchByTxn={}; const matchedInvIds=new Set();
   d.matches.forEach(m=>{ (matchByTxn[m.transaction_id]=matchByTxn[m.transaction_id]||[]).push({matchId:m.id,inv:invById[m.invoice_id]}); matchedInvIds.add(m.invoice_id); });
   const total=d.transactions.length, matchedTxn=Object.keys(matchByTxn).filter(k=>matchByTxn[k].length).length;
@@ -2293,8 +2298,9 @@ async function _ccRenderDetail(v){
         <button class="btn" id="cc-back" style="font-size:12px">← กลับ</button>
         <span style="font-size:16px;font-weight:800">💳 ${escapeHtml(d.bill.card_number||'บัตร')} · ${_ccMonthLabel(d.bill.bill_month,d.bill.bill_year)}</span>
       </div>
-      <div style="display:flex;gap:8px;align-items:center">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <span style="font-size:12.5px;font-weight:700;${complete?'color:var(--green)':'color:#92400e'}">${complete?'✓ จับคู่ครบ':matchedTxn+'/'+total+' จับคู่แล้ว'}</span>
+        <button class="btn" id="cc-edit-bill" style="font-size:12px">✏️ แก้ไขบิล</button>
         <button class="btn" id="cc-add-inv" style="font-size:12px">⬆️ เพิ่ม invoice</button>
         <button class="btn danger" id="cc-del-bill" style="font-size:12px">🗑 ลบบิล</button>
       </div>
@@ -2314,25 +2320,23 @@ async function _ccRenderDetail(v){
       </div>${chips?`<div>${chips}</div>`:''}
     </div>`;
   }).join('')||'<div class="empty" style="font-size:12px">ไม่มีรายการ</div>';
-  $('cc-inv-col').innerHTML=d.invoices.map(i=>`
-    <div class="cc-inv card" draggable="true" data-inv="${i.id}" style="padding:9px 11px;margin-bottom:6px;cursor:grab;border:1px solid ${matchedInvIds.has(i.id)?'rgba(16,185,129,.45)':'var(--border)'}">
-      <div style="font-size:12.5px;font-weight:700">${escapeHtml(i.company||'—')} <span style="font-size:10px;color:var(--text-muted);font-weight:500">${i.kind==='receipt'?'ใบเสร็จ':'invoice'}</span></div>
-      <div style="font-size:11px;color:var(--text-muted)">${_ccMonthLabel(i.inv_month,i.inv_year)} · โดย ${escapeHtml(i.uploaded_by||'—')}</div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px">
-        <span style="font-weight:700;color:var(--green);font-variant-numeric:tabular-nums">${_ccMoney(i.amount)}</span>
-        <span style="display:flex;gap:10px"><a href="${API}/api/creditcard/invoices/${i.id}/file" target="_blank" rel="noopener" style="font-size:11px">📄 ไฟล์</a><span class="cc-inv-del" data-inv="${i.id}" style="font-size:11px;color:var(--critical);cursor:pointer">ลบ</span></span>
-      </div>
-    </div>`).join('')||'<div class="empty" style="font-size:12px">ยังไม่มี invoice — กด “เพิ่ม invoice”</div>';
+  const poolInv=d.pool_invoices||[];
+  $('cc-inv-col').innerHTML=(
+    d.invoices.map(i=>_ccInvCardHtml(i, matchedInvIds.has(i.id), false)).join('')
+    + (poolInv.length?`<div style="font-size:11px;color:#92400e;margin:10px 0 6px;font-weight:700">📥 ลอย (ยังไม่ผูกบิล) — ลากมาจับคู่เพื่อผูกเข้าบิลนี้</div>`+poolInv.map(i=>_ccInvCardHtml(i,false,true)).join(''):'')
+  )||'<div class="empty" style="font-size:12px">ยังไม่มี invoice — กด “เพิ่ม invoice”</div>';
   $('cc-back').onclick=()=>{ _ccState.billId=null; _ccState.selInvoice=null; _ccRender(); };
+  $('cc-edit-bill').onclick=()=>_ccEditBill(d);
   $('cc-add-inv').onclick=()=>_ccUploadInvoice(_ccState.billId);
   $('cc-del-bill').onclick=async ()=>{ if(!confirm('ลบบิลนี้ทั้งหมด? (รายการ/invoice/การจับคู่จะถูกลบด้วย)'))return; await fetchJson('/api/creditcard/bills/'+_ccState.billId,{method:'DELETE'}); _ccState.billId=null; await _ccLoadBills(); _ccRender(); };
   v.querySelectorAll('.cc-unmatch').forEach(x=>x.addEventListener('click',async(e)=>{ e.stopPropagation(); await fetchJson('/api/creditcard/matches/'+x.dataset.match,{method:'DELETE'}); _ccRenderDetail($('cc-view')); }));
+  v.querySelectorAll('.cc-inv-edit').forEach(x=>x.addEventListener('click',(e)=>{ e.stopPropagation(); const inv=allInvById[parseInt(x.dataset.inv,10)]; if(inv) _ccEditInvoice(inv,()=>_ccRenderDetail($('cc-view'))); }));
   v.querySelectorAll('.cc-inv-del').forEach(x=>x.addEventListener('click',async(e)=>{ e.stopPropagation(); if(!confirm('ลบ invoice นี้?'))return; await fetchJson('/api/creditcard/invoices/'+x.dataset.inv,{method:'DELETE'}); await _ccLoadBills(); _ccRenderDetail($('cc-view')); }));
   let dragInv=null;
   const doMatch=async(txnId,invId)=>{ try{ await fetchJson('/api/creditcard/matches',{method:'POST',body:JSON.stringify({transaction_id:txnId,invoice_id:invId})}); _ccState.selInvoice=null; await _ccLoadBills(); _ccRenderDetail($('cc-view')); }catch(e){ alert(e.message); } };
   v.querySelectorAll('.cc-inv').forEach(el=>{
     el.addEventListener('dragstart',e=>{ dragInv=parseInt(el.dataset.inv,10); e.dataTransfer.effectAllowed='move'; });
-    el.addEventListener('click',(e)=>{ if(e.target.closest('a,.cc-inv-del'))return; const id=parseInt(el.dataset.inv,10); _ccState.selInvoice=(_ccState.selInvoice===id)?null:id; v.querySelectorAll('.cc-inv').forEach(x=>x.style.outline=''); if(_ccState.selInvoice) el.style.outline='2px solid var(--primary)'; });
+    el.addEventListener('click',(e)=>{ if(e.target.closest('a,.cc-inv-del,.cc-inv-edit'))return; const id=parseInt(el.dataset.inv,10); _ccState.selInvoice=(_ccState.selInvoice===id)?null:id; v.querySelectorAll('.cc-inv').forEach(x=>x.style.outline=''); if(_ccState.selInvoice) el.style.outline='2px solid var(--primary)'; });
   });
   v.querySelectorAll('.cc-txn').forEach(el=>{
     el.addEventListener('dragover',e=>{ e.preventDefault(); el.style.background='var(--bg-soft)'; });
@@ -2340,6 +2344,120 @@ async function _ccRenderDetail(v){
     el.addEventListener('drop',e=>{ e.preventDefault(); el.style.background=''; if(dragInv) doMatch(parseInt(el.dataset.txn,10),dragInv); dragInv=null; });
     el.addEventListener('click',()=>{ if(_ccState.selInvoice) doMatch(parseInt(el.dataset.txn,10),_ccState.selInvoice); });
   });
+}
+
+function _ccInvCardHtml(i,isMatched,isPool){
+  return `<div class="cc-inv card" draggable="true" data-inv="${i.id}" style="padding:9px 11px;margin-bottom:6px;cursor:grab;border:1px solid ${isPool?'rgba(245,158,11,.5)':(isMatched?'rgba(16,185,129,.45)':'var(--border)')}">
+    <div style="font-size:12.5px;font-weight:700">${escapeHtml(i.company||'—')} <span style="font-size:10px;color:var(--text-muted);font-weight:500">${i.kind==='receipt'?'ใบเสร็จ':'invoice'}</span>${isPool?' <span style="font-size:9.5px;color:#92400e;background:rgba(245,158,11,.15);padding:1px 6px;border-radius:999px">ลอย</span>':''}</div>
+    <div style="font-size:11px;color:var(--text-muted)">${_ccMonthLabel(i.inv_month,i.inv_year)} · โดย ${escapeHtml(i.uploaded_by||'—')}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px">
+      <span style="font-weight:700;color:var(--green);font-variant-numeric:tabular-nums">${_ccMoney(i.amount)}</span>
+      <span style="display:flex;gap:11px">
+        <a href="${API}/api/creditcard/invoices/${i.id}/file" target="_blank" rel="noopener" style="font-size:12px" title="ดูไฟล์">📄</a>
+        <span class="cc-inv-edit" data-inv="${i.id}" style="font-size:12px;cursor:pointer" title="แก้ไข">✏️</span>
+        <span class="cc-inv-del" data-inv="${i.id}" style="font-size:11px;color:var(--critical);cursor:pointer">ลบ</span>
+      </span>
+    </div>
+  </div>`;
+}
+
+// ---- edit invoice (แก้ไขข้อมูล invoice/receipt ที่อัพไปแล้ว) ----
+function _ccEditInvoice(inv,onDone){
+  showModal({
+    title:'✏️ แก้ไข Invoice / Receipt', slide:true,
+    body:`
+      <label style="display:block;margin-bottom:8px;font-size:12px">บริษัท / Platform<input id="cc-ei-company" value="${escapeHtml(inv.company||'')}" style="width:100%" /></label>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <label style="width:130px;font-size:12px">ประเภท<select id="cc-ei-kind" style="width:100%"><option value="invoice" ${inv.kind!=='receipt'?'selected':''}>Invoice</option><option value="receipt" ${inv.kind==='receipt'?'selected':''}>Receipt</option></select></label>
+        <label style="width:120px;font-size:12px">เดือน${_ccMonthSelect('cc-ei-month',inv.inv_month||null)}</label>
+        <label style="width:100px;font-size:12px">ปี<input id="cc-ei-year" type="number" value="${inv.inv_year||''}" style="width:100%" /></label>
+        <label style="flex:1;min-width:120px;font-size:12px">ยอดเงิน<input id="cc-ei-amount" type="number" step="0.01" value="${inv.amount!=null?inv.amount:''}" style="width:100%" /></label>
+      </div>
+      <div style="margin-top:10px"><a href="${API}/api/creditcard/invoices/${inv.id}/file" target="_blank" rel="noopener" style="font-size:12px">📄 ดูไฟล์ต้นฉบับ</a></div>`,
+    onSubmit: async ()=>{
+      const body={ company:$('cc-ei-company').value.trim()||null, kind:$('cc-ei-kind').value,
+        inv_month:parseInt($('cc-ei-month').value,10)||null, inv_year:parseInt($('cc-ei-year').value,10)||null,
+        amount:parseFloat($('cc-ei-amount').value)||null };
+      await fetchJson('/api/creditcard/invoices/'+inv.id,{method:'PUT',body:JSON.stringify(body)});
+      await _ccLoadBills(); if(onDone) onDone();
+    },
+  });
+}
+
+// ---- edit bill (แก้ไขบิลรายเดือน: เลขบัตร/เดือน/ปี + รายการ — รักษา match ของแถวเดิม) ----
+function _ccEditBill(d){
+  const bill=d.bill;
+  showModal({
+    title:'✏️ แก้ไขบิลรายเดือน', slide:true, size:'wide',
+    body:`
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        <label style="flex:1;min-width:150px;font-size:12px">เลขบัตร<input id="cc-eb-card" value="${escapeHtml(bill.card_number||'')}" style="width:100%" /></label>
+        <label style="width:120px;font-size:12px">เดือน${_ccMonthSelect('cc-eb-month',bill.bill_month||null)}</label>
+        <label style="width:110px;font-size:12px">ปี (ค.ศ.)<input id="cc-eb-year" type="number" value="${bill.bill_year||''}" style="width:100%" /></label>
+      </div>
+      <div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:6px">รายการจากบัตร (<span id="cc-eb-count">0</span>) · ลบแถว = ยกเลิกการจับคู่ของแถวนั้นด้วย</div>
+      <div id="cc-eb-txns"></div>
+      <button type="button" class="btn" id="cc-eb-addrow" style="margin-top:8px;font-size:12px">+ เพิ่มแถว</button>`,
+    onSubmit: async ()=>{
+      const rows=Array.from(document.querySelectorAll('#cc-eb-txns .cc-txn-row')).map(r=>({
+        id: r.dataset.tid?parseInt(r.dataset.tid,10):undefined,
+        txn_date:r.querySelector('.cc-t-date').value.trim()||null,
+        description:r.querySelector('.cc-t-desc').value.trim()||null,
+        amount:parseFloat(r.querySelector('.cc-t-amt').value)||null,
+      })).filter(t=>t.description||t.amount!=null||t.id);
+      const body={ card_number:$('cc-eb-card').value.trim()||null, bill_month:parseInt($('cc-eb-month').value,10)||null,
+        bill_year:parseInt($('cc-eb-year').value,10)||null, transactions:rows };
+      await fetchJson('/api/creditcard/bills/'+bill.id,{method:'PUT',body:JSON.stringify(body)});
+      await _ccLoadBills(); _ccRenderDetail($('cc-view'));
+    },
+  });
+  setTimeout(()=>{
+    const updateCount=()=>{ const el=$('cc-eb-count'); if(el) el.textContent=document.querySelectorAll('#cc-eb-txns .cc-txn-row').length; };
+    const addRow=(t)=>{
+      const w=document.createElement('div'); w.className='cc-txn-row';
+      if(t&&t.id) w.dataset.tid=t.id;
+      w.style.cssText='display:flex;gap:6px;margin-bottom:5px;align-items:center';
+      w.innerHTML=`<input class="cc-t-date" placeholder="วันที่" value="${escapeHtml((t&&t.txn_date)||'')}" style="width:88px;font-size:12px" />
+        <input class="cc-t-desc" placeholder="รายละเอียด" value="${escapeHtml((t&&t.description)||'')}" style="flex:1;min-width:0;font-size:12px" />
+        <input class="cc-t-amt" placeholder="ยอด" type="number" step="0.01" value="${(t&&t.amount!=null)?t.amount:''}" style="width:100px;font-size:12px;text-align:right" />
+        <button type="button" class="btn danger cc-t-del" style="padding:3px 8px;font-size:12px">✕</button>`;
+      w.querySelector('.cc-t-del').onclick=()=>{ w.remove(); updateCount(); };
+      $('cc-eb-txns').appendChild(w);
+    };
+    (d.transactions||[]).forEach(addRow); updateCount();
+    const addBtn=$('cc-eb-addrow'); if(addBtn) addBtn.onclick=()=>{ addRow(null); updateCount(); };
+  },0);
+}
+
+// ---- pool: invoice ลอย (ยังไม่ผูกบิล) ----
+async function _ccRenderPool(v){
+  v.innerHTML=`
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+      <button class="btn primary" id="cc-pool-up">⬆️ อัพโหลด Invoice / Receipt</button>
+      <span style="font-size:12px;color:var(--text-muted)">invoice ที่ยังไม่ผูกบิล — เปิดบิลแล้วลากจับคู่เพื่อผูกเข้าบิลอัตโนมัติ</span>
+    </div>
+    <div id="cc-pool-list"><div class="empty">กำลังโหลด…</div></div>`;
+  $('cc-pool-up').onclick=()=>_ccUploadInvoice(null);
+  let list;
+  try{ list=(await fetchJson('/api/creditcard/pool-invoices')).invoices||[]; }
+  catch(e){ $('cc-pool-list').innerHTML=`<div class="empty">${escapeHtml(e.message)}</div>`; return; }
+  if(!list.length){ $('cc-pool-list').innerHTML='<div class="empty">ไม่มี invoice ลอย — ทุกใบผูกบิลแล้ว หรือยังไม่ได้อัพโหลด</div>'; return; }
+  $('cc-pool-list').innerHTML=list.map(i=>`
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px;padding:11px 15px">
+      <div style="min-width:0">
+        <div style="font-size:14px;font-weight:700">${escapeHtml(i.company||'—')} <span style="font-size:10px;color:var(--text-muted);font-weight:500">${i.kind==='receipt'?'ใบเสร็จ':'invoice'}</span></div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:2px">${_ccMonthLabel(i.inv_month,i.inv_year)} · โดย ${escapeHtml(i.uploaded_by||'—')}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;flex-shrink:0">
+        <span style="font-weight:800;color:var(--green);font-variant-numeric:tabular-nums">${_ccMoney(i.amount)}</span>
+        <a href="${API}/api/creditcard/invoices/${i.id}/file" target="_blank" rel="noopener" style="font-size:13px" title="ดูไฟล์">📄</a>
+        <span class="cc-pool-edit" data-inv="${i.id}" style="font-size:13px;cursor:pointer" title="แก้ไข">✏️</span>
+        <span class="cc-pool-del" data-inv="${i.id}" style="font-size:12px;color:var(--critical);cursor:pointer">ลบ</span>
+      </div>
+    </div>`).join('');
+  const byId={}; list.forEach(i=>byId[i.id]=i);
+  v.querySelectorAll('.cc-pool-edit').forEach(x=>x.addEventListener('click',()=>{ const inv=byId[parseInt(x.dataset.inv,10)]; if(inv) _ccEditInvoice(inv,()=>_ccRenderPool($('cc-view'))); }));
+  v.querySelectorAll('.cc-pool-del').forEach(x=>x.addEventListener('click',async()=>{ if(!confirm('ลบ invoice นี้?'))return; await fetchJson('/api/creditcard/invoices/'+x.dataset.inv,{method:'DELETE'}); _ccRenderPool($('cc-view')); }));
 }
 
 // ---- summary (completeness per bill + navigate bills) ----

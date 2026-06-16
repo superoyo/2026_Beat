@@ -780,7 +780,7 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_cc_txn_bill ON cc_transactions(bill_id, row_order);
             CREATE TABLE IF NOT EXISTS cc_invoices (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                bill_id       INTEGER NOT NULL REFERENCES cc_bills(id) ON DELETE CASCADE,
+                bill_id       INTEGER REFERENCES cc_bills(id) ON DELETE CASCADE,  -- nullable: invoice ลอยได้ (ยังไม่ผูกบิล)
                 company       TEXT,                  -- บริษัท/platform จาก OCR
                 kind          TEXT DEFAULT 'invoice',-- 'invoice' | 'receipt'
                 inv_month     INTEGER,
@@ -812,6 +812,35 @@ def init_db() -> None:
             "VALUES (1, '0 * * * *', '{}', 90, ?)",
             (utc_now().isoformat(),),
         )
+
+        # v1.9.219 — migrate cc_invoices.bill_id → nullable (invoice ลอยได้ ยังไม่ผูกบิล)
+        _cci = conn.execute("PRAGMA table_info(cc_invoices)").fetchall()
+        _billcol = next((c for c in _cci if c["name"] == "bill_id"), None)
+        if _billcol is not None and _billcol["notnull"] == 1:
+            conn.executescript(
+                """
+                ALTER TABLE cc_invoices RENAME TO cc_invoices_old;
+                CREATE TABLE cc_invoices (
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    bill_id       INTEGER REFERENCES cc_bills(id) ON DELETE CASCADE,
+                    company       TEXT,
+                    kind          TEXT DEFAULT 'invoice',
+                    inv_month     INTEGER,
+                    inv_year      INTEGER,
+                    amount        REAL,
+                    file_data     TEXT,
+                    file_name     TEXT,
+                    file_mime     TEXT,
+                    ocr_text      TEXT,
+                    uploaded_by_id INTEGER,
+                    uploaded_by   TEXT,
+                    created_at    TEXT NOT NULL
+                );
+                INSERT INTO cc_invoices SELECT * FROM cc_invoices_old;
+                DROP TABLE cc_invoices_old;
+                CREATE INDEX IF NOT EXISTS idx_cc_inv_bill ON cc_invoices(bill_id);
+                """
+            )
 
         # ---- 4. seed config defaults
         for key, value in DEFAULT_CONFIG.items():
@@ -9624,7 +9653,7 @@ class CcBillIn(BaseModel):
 
 
 class CcInvoiceIn(BaseModel):
-    bill_id: int
+    bill_id: Optional[int] = None              # ว่าง = ลอยไว้ (ยังไม่ผูกบิล)
     company: Optional[str] = None
     kind: str = Field("invoice", pattern="^(invoice|receipt)$")
     inv_month: Optional[int] = None
@@ -9634,6 +9663,22 @@ class CcInvoiceIn(BaseModel):
     file_name: Optional[str] = None
     file_mime: Optional[str] = None
     ocr_text: Optional[str] = Field(None, max_length=300000)
+
+
+class CcInvoiceEdit(BaseModel):
+    company: Optional[str] = None
+    kind: str = Field("invoice", pattern="^(invoice|receipt)$")
+    inv_month: Optional[int] = None
+    inv_year: Optional[int] = None
+    amount: Optional[float] = None
+
+
+class CcBillEdit(BaseModel):
+    card_number: Optional[str] = None
+    bill_month: Optional[int] = None
+    bill_year: Optional[int] = None
+    note: Optional[str] = None
+    transactions: list[dict] = Field(default_factory=list)   # [{id?, txn_date, description, amount}]
 
 
 class CcMatchIn(BaseModel):
@@ -9705,9 +9750,13 @@ def cc_bill_detail(bid: int, _sess: dict = Depends(_require_module("platform")))
             "FROM cc_invoices WHERE bill_id=? ORDER BY id", (bid,)).fetchall()
         matches = conn.execute("SELECT * FROM cc_matches WHERE bill_id=?", (bid,)).fetchall()
         pages = conn.execute("SELECT id,page_order FROM cc_statement_pages WHERE bill_id=? ORDER BY page_order", (bid,)).fetchall()
+        pool = conn.execute(
+            "SELECT id,bill_id,company,kind,inv_month,inv_year,amount,file_name,file_mime,uploaded_by,uploaded_by_id,created_at "
+            "FROM cc_invoices WHERE bill_id IS NULL ORDER BY id DESC", ()).fetchall()
     return {"bill": dict(b),
             "transactions": [dict(t) for t in txns],
             "invoices": [dict(i) for i in invs],
+            "pool_invoices": [dict(p) for p in pool],
             "matches": [dict(m) for m in matches],
             "pages": [dict(p) for p in pages]}
 
@@ -9715,6 +9764,7 @@ def cc_bill_detail(bid: int, _sess: dict = Depends(_require_module("platform")))
 @app.delete("/api/creditcard/bills/{bid}")
 def cc_delete_bill(bid: int, _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
     with db_conn() as conn:
+        conn.execute("PRAGMA foreign_keys = ON")   # cascade ลบ pages/transactions/invoices(ที่ผูกบิล)/matches
         conn.execute("DELETE FROM cc_bills WHERE id=?", (bid,))
     return {"ok": True}
 
@@ -9727,7 +9777,7 @@ def cc_create_invoice(payload: CcInvoiceIn,
     mid, name = _cc_ident(fct_session, fct_member_session)
     now = utc_now().isoformat()
     with db_conn() as conn:
-        if not conn.execute("SELECT 1 FROM cc_bills WHERE id=?", (payload.bill_id,)).fetchone():
+        if payload.bill_id is not None and not conn.execute("SELECT 1 FROM cc_bills WHERE id=?", (payload.bill_id,)).fetchone():
             raise HTTPException(status_code=404, detail="ไม่พบบิลปลายทาง")
         cur = conn.execute(
             "INSERT INTO cc_invoices(bill_id,company,kind,inv_month,inv_year,amount,file_data,file_name,file_mime,ocr_text,uploaded_by_id,uploaded_by,created_at) "
@@ -9735,6 +9785,57 @@ def cc_create_invoice(payload: CcInvoiceIn,
             (payload.bill_id, payload.company, payload.kind, payload.inv_month, payload.inv_year, payload.amount,
              payload.file_data, payload.file_name, payload.file_mime, payload.ocr_text, mid, name, now))
     return {"ok": True, "id": cur.lastrowid}
+
+
+@app.put("/api/creditcard/invoices/{iid}")
+def cc_edit_invoice(iid: int, payload: CcInvoiceEdit, _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    with db_conn() as conn:
+        if not conn.execute("SELECT 1 FROM cc_invoices WHERE id=?", (iid,)).fetchone():
+            raise HTTPException(status_code=404, detail="ไม่พบ invoice")
+        conn.execute("UPDATE cc_invoices SET company=?, kind=?, inv_month=?, inv_year=?, amount=? WHERE id=?",
+                     (payload.company, payload.kind, payload.inv_month, payload.inv_year, payload.amount, iid))
+    return {"ok": True}
+
+
+@app.get("/api/creditcard/pool-invoices")
+def cc_pool_invoices(_sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT id,bill_id,company,kind,inv_month,inv_year,amount,file_name,file_mime,uploaded_by,uploaded_by_id,created_at "
+            "FROM cc_invoices WHERE bill_id IS NULL ORDER BY id DESC", ()).fetchall()
+    return {"invoices": [dict(r) for r in rows]}
+
+
+@app.put("/api/creditcard/bills/{bid}")
+def cc_edit_bill(bid: int, payload: CcBillEdit, _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        conn.execute("PRAGMA foreign_keys = ON")   # ลบรายการที่หาย → cascade ลบ match ของแถวนั้น (ต้องสั่งก่อน DML)
+        if not conn.execute("SELECT 1 FROM cc_bills WHERE id=?", (bid,)).fetchone():
+            raise HTTPException(status_code=404, detail="ไม่พบบิล")
+        conn.execute("UPDATE cc_bills SET card_number=?, bill_month=?, bill_year=?, note=?, updated_at=? WHERE id=?",
+                     (payload.card_number, payload.bill_month, payload.bill_year, payload.note, now, bid))
+        # upsert transactions by id; delete ที่หายไป (รักษา match ของแถวเดิมที่ไม่ถูกลบ)
+        keep_ids = []
+        for i, t in enumerate(payload.transactions):
+            tid = t.get("id")
+            date = t.get("txn_date")
+            desc = t.get("description")
+            amt = t.get("amount")
+            if tid and conn.execute("SELECT 1 FROM cc_transactions WHERE id=? AND bill_id=?", (tid, bid)).fetchone():
+                conn.execute("UPDATE cc_transactions SET txn_date=?, description=?, amount=?, row_order=? WHERE id=?",
+                             (date, desc, amt, i, tid))
+                keep_ids.append(tid)
+            else:
+                cur = conn.execute("INSERT INTO cc_transactions(bill_id,txn_date,description,amount,row_order,created_at) VALUES (?,?,?,?,?,?)",
+                                   (bid, date, desc, amt, i, now))
+                keep_ids.append(cur.lastrowid)
+        if keep_ids:
+            ph = ",".join("?" * len(keep_ids))
+            conn.execute(f"DELETE FROM cc_transactions WHERE bill_id=? AND id NOT IN ({ph})", [bid] + keep_ids)
+        else:
+            conn.execute("DELETE FROM cc_transactions WHERE bill_id=?", (bid,))
+    return {"ok": True}
 
 
 @app.get("/api/creditcard/invoices/{iid}/file")
@@ -9760,6 +9861,7 @@ def cc_invoice_file(iid: int, _sess: dict = Depends(_require_module("platform"))
 @app.delete("/api/creditcard/invoices/{iid}")
 def cc_delete_invoice(iid: int, _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
     with db_conn() as conn:
+        conn.execute("PRAGMA foreign_keys = ON")   # cascade ลบ matches ของ invoice นี้
         conn.execute("DELETE FROM cc_invoices WHERE id=?", (iid,))
     return {"ok": True}
 
@@ -9776,8 +9878,11 @@ def cc_create_match(payload: CcMatchIn,
         i = conn.execute("SELECT bill_id FROM cc_invoices WHERE id=?", (payload.invoice_id,)).fetchone()
         if not t or not i:
             raise HTTPException(status_code=404, detail="ไม่พบรายการ/invoice")
-        if t["bill_id"] != i["bill_id"]:
-            raise HTTPException(status_code=400, detail="รายการกับ invoice อยู่คนละบิล")
+        # invoice ลอย (bill_id NULL) → ผูกเข้ากับบิลของรายการนี้อัตโนมัติ
+        if i["bill_id"] is None:
+            conn.execute("UPDATE cc_invoices SET bill_id=? WHERE id=?", (t["bill_id"], payload.invoice_id))
+        elif t["bill_id"] != i["bill_id"]:
+            raise HTTPException(status_code=400, detail="invoice นี้ผูกกับบิลอื่นอยู่แล้ว")
         conn.execute(
             "INSERT OR IGNORE INTO cc_matches(bill_id,transaction_id,invoice_id,created_by,created_at) VALUES (?,?,?,?,?)",
             (t["bill_id"], payload.transaction_id, payload.invoice_id, name, now))

@@ -2,6 +2,20 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.219",
+      "date": "2026-06-16",
+      "title": "Credit Card — อัพ invoice แบบลอย (ไม่ผูกบิล) + แก้ไขบิล/invoice ได้",
+      "summary": "อัพโหลด invoice/receipt โดยไม่ต้องผูกบิลได้ (ลอยไว้ในแท็บ ‘Invoice ลอย’) แล้วค่อยลากจับคู่ในบิล → ผูกบิลอัตโนมัติ · บิลรายเดือนและ invoice แก้ไขได้หลังสร้าง",
+      "changes": [
+        "cc_invoices.bill_id เป็น nullable (migrate รื้อตารางอัตโนมัติ) — invoice ลอยได้",
+        "แท็บใหม่ ‘📥 Invoice ลอย’ + GET /pool-invoices · upload เลือกบิลเป็น optional",
+        "ลาก invoice ลอย → วางบนรายการ = ผูกบิลให้อัตโนมัติตอนจับคู่",
+        "แก้ไขบิล (เลขบัตร/เดือน/ปี/รายการ) PUT /bills/{id} — รักษา match ของแถวเดิม",
+        "แก้ไข invoice (บริษัท/ประเภท/เดือน/ปี/ยอด) PUT /invoices/{id}",
+        "fix: delete bill/invoice ใส่ PRAGMA foreign_keys=ON ให้ cascade ลบ orphan จริง"
+      ]
+    },
+    {
       "version": "1.9.218",
       "date": "2026-06-16",
       "title": "Platform › Credit Card — จับคู่รายการบัตรเครดิตกับ invoice/receipt",
