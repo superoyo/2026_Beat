@@ -813,14 +813,15 @@ def init_db() -> None:
             (utc_now().isoformat(),),
         )
 
-        # v1.9.219 — migrate cc_invoices.bill_id → nullable (invoice ลอยได้ ยังไม่ผูกบิล)
+        # v1.9.219/222 — migrate cc_invoices.bill_id → nullable (invoice ลอยได้)
+        # ใช้ create-temp → copy → drop → rename-temp (กัน SQLite rewrite FK ของ cc_matches ตอน rename)
         _cci = conn.execute("PRAGMA table_info(cc_invoices)").fetchall()
         _billcol = next((c for c in _cci if c["name"] == "bill_id"), None)
         if _billcol is not None and _billcol["notnull"] == 1:
             conn.executescript(
                 """
-                ALTER TABLE cc_invoices RENAME TO cc_invoices_old;
-                CREATE TABLE cc_invoices (
+                DROP TABLE IF EXISTS cc_invoices_new;
+                CREATE TABLE cc_invoices_new (
                     id            INTEGER PRIMARY KEY AUTOINCREMENT,
                     bill_id       INTEGER REFERENCES cc_bills(id) ON DELETE CASCADE,
                     company       TEXT,
@@ -836,9 +837,34 @@ def init_db() -> None:
                     uploaded_by   TEXT,
                     created_at    TEXT NOT NULL
                 );
-                INSERT INTO cc_invoices SELECT * FROM cc_invoices_old;
-                DROP TABLE cc_invoices_old;
+                INSERT INTO cc_invoices_new
+                    SELECT id,bill_id,company,kind,inv_month,inv_year,amount,file_data,file_name,file_mime,ocr_text,uploaded_by_id,uploaded_by,created_at FROM cc_invoices;
+                DROP TABLE cc_invoices;
+                ALTER TABLE cc_invoices_new RENAME TO cc_invoices;
                 CREATE INDEX IF NOT EXISTS idx_cc_inv_bill ON cc_invoices(bill_id);
+                """
+            )
+        conn.execute("DROP TABLE IF EXISTS cc_invoices_old")   # cleanup เผื่อ migration เก่าค้าง
+        # v1.9.222 — repair: migration เดิม (rename) ทำให้ FK ของ cc_matches ชี้ไป cc_invoices_old → รื้อใหม่ให้ถูก
+        _mrow = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='cc_matches'").fetchone()
+        if _mrow and _mrow["sql"] and "cc_invoices_old" in _mrow["sql"]:
+            conn.executescript(
+                """
+                DROP TABLE IF EXISTS cc_matches_new;
+                CREATE TABLE cc_matches_new (
+                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                    bill_id        INTEGER NOT NULL REFERENCES cc_bills(id) ON DELETE CASCADE,
+                    transaction_id INTEGER NOT NULL REFERENCES cc_transactions(id) ON DELETE CASCADE,
+                    invoice_id     INTEGER NOT NULL REFERENCES cc_invoices(id) ON DELETE CASCADE,
+                    created_by     TEXT,
+                    created_at     TEXT NOT NULL,
+                    UNIQUE(transaction_id, invoice_id)
+                );
+                INSERT INTO cc_matches_new
+                    SELECT id,bill_id,transaction_id,invoice_id,created_by,created_at FROM cc_matches;
+                DROP TABLE cc_matches;
+                ALTER TABLE cc_matches_new RENAME TO cc_matches;
+                CREATE INDEX IF NOT EXISTS idx_cc_match_bill ON cc_matches(bill_id);
                 """
             )
 

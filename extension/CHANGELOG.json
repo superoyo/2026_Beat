@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.222",
+      "date": "2026-06-16",
+      "title": "แก้บั๊ก Credit Card: แก้ไข/ลบบิล error (FK ของ cc_matches ชี้ตารางที่ถูก rename)",
+      "summary": "migration v1.9.219 ใช้ ALTER TABLE RENAME ทำให้ SQLite (เมื่อ foreign_keys=ON) rewrite FK ของ cc_matches ไปชี้ cc_invoices_old ที่ถูก drop → แก้ไข/ลบบิล error 'no such table cc_invoices_old' · v1.9.222 รื้อ cc_matches ใหม่ให้ถูก + เปลี่ยน migration เป็นแบบ create-temp กันเกิดซ้ำ",
+      "changes": [
+        "repair: รื้อ cc_matches ที่ FK ชี้ cc_invoices_old → ชี้ cc_invoices ถูกต้อง (ข้อมูล match คงอยู่)",
+        "เปลี่ยน migration cc_invoices เป็น create-temp→copy→drop→rename-temp (ไม่ rename ตารางที่ถูกอ้างอิง)",
+        "cleanup cc_invoices_old ที่อาจค้าง"
+      ]
+    },
+    {
       "version": "1.9.221",
       "date": "2026-06-16",
       "title": "Credit Card — OCR จับชื่อ platform ที่รู้จัก (Google/Facebook/Anthropic/…)",
