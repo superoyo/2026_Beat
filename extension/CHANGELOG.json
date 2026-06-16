@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.223",
+      "date": "2026-06-16",
+      "title": "Credit Card Summary — กดดู PDF ที่จับคู่ + filter ตาม platform",
+      "summary": "หน้า Summary: คลิก 👁 ที่ invoice ในแต่ละรายการเพื่อพรีวิว PDF/ไฟล์ที่จับคู่ได้ · เพิ่มแถบ filter ตาม platform (Google/Meta/Anthropic/อื่น ๆ — auto จากรายการในบิล) พร้อมจำนวนต่อกลุ่ม",
+      "changes": [
+        "แต่ละรายการที่จับคู่แล้วแสดงเป็นปุ่ม 👁 คลิกเปิดพรีวิวไฟล์ในแอป",
+        "แถบ chip filter ตาม platform (ตรวจจาก description รายการ → fallback invoice → อื่น ๆ) + นับจำนวน",
+        "กรองตารางตาม platform ที่เลือก (ทั้งหมด = แสดงทุกแถว)"
+      ]
+    },
+    {
       "version": "1.9.222",
       "date": "2026-06-16",
       "title": "แก้บั๊ก Credit Card: แก้ไข/ลบบิล error (FK ของ cc_matches ชี้ตารางที่ถูก rename)",

@@ -2580,17 +2580,33 @@ async function _ccRenderSummary(v){
   const invTotal=d.invoices.reduce((s,i)=>s+(i.amount||0),0);
   const matchedInvIds=new Set(d.matches.map(m=>m.invoice_id));
   const unusedInv=d.invoices.filter(i=>!matchedInvIds.has(i.id)).length;
+  // v1.9.223 — platform ของแต่ละรายการ (จาก description ก่อน, ไม่เจอลองจาก invoice ที่จับคู่, สุดท้าย 'อื่น ๆ')
+  const platOf=(t)=>{
+    const p=_ccDetectPlatform(t.description||''); if(p) return p;
+    for(const i of (matchByTxn[t.id]||[])){ if(i){ const q=_ccDetectPlatform(i.company||''); if(q) return q; } }
+    return 'อื่น ๆ';
+  };
+  const platCount={}; d.transactions.forEach(t=>{ const p=platOf(t); platCount[p]=(platCount[p]||0)+1; });
+  const orderedPlats=[...Object.keys(platCount).filter(p=>p!=='อื่น ๆ').sort(), ...(platCount['อื่น ๆ']?['อื่น ๆ']:[])];
   const rows=d.transactions.map(t=>{
     const ms=matchByTxn[t.id]||[]; const ok=ms.length>0;
     const invSum=ms.reduce((s,i)=>s+((i&&i.amount)||0),0); const diff=Math.abs(invSum-(t.amount||0));
-    return `<tr style="border-bottom:1px solid var(--border)">
+    const invCells=ms.length
+      ? ms.map(i=>i?`<span class="cc-sum-prev" data-inv="${i.id}" title="ดู PDF / ไฟล์" style="cursor:pointer;color:var(--primary);border-bottom:1px dashed var(--primary);white-space:nowrap">👁 ${escapeHtml(i.company||'invoice')} ${_ccMoney(i.amount)}</span>`:'invoice').join('<br>')
+      : '<span style="color:var(--text-muted)">— ยังไม่จับคู่ —</span>';
+    return `<tr data-platform="${escapeHtml(platOf(t))}" style="border-bottom:1px solid var(--border)">
       <td style="padding:7px 8px">${ok?'<span style="color:var(--green);font-weight:800">✓</span>':'<span style="color:var(--critical);font-weight:800">✗</span>'}</td>
       <td style="padding:7px 8px;font-size:12.5px">${escapeHtml(t.description||'—')}<div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t.txn_date||'')}</div></td>
       <td style="padding:7px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap">${_ccMoney(t.amount)}</td>
-      <td style="padding:7px 8px;font-size:12px">${ms.length?ms.map(i=>escapeHtml((i&&i.company)||'invoice')+' '+_ccMoney(i&&i.amount)).join('<br>'):'<span style="color:var(--text-muted)">— ยังไม่จับคู่ —</span>'}</td>
+      <td style="padding:7px 8px;font-size:12px">${invCells}</td>
       <td style="padding:7px 8px;text-align:right;font-size:12px;white-space:nowrap;${ok&&diff>0.01?'color:#92400e;font-weight:700':''}">${ok?(diff>0.01?'Δ '+_ccMoney(diff):'ตรง'):''}</td>
     </tr>`;
   }).join('');
+  const filterChips=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+    <span style="font-size:11.5px;color:var(--text-muted)">กรองตาม platform:</span>
+    <button class="btn cc-sum-filter" data-plat="" style="font-size:12px">ทั้งหมด (${total})</button>
+    ${orderedPlats.map(p=>`<button class="btn cc-sum-filter" data-plat="${escapeHtml(p)}" style="font-size:12px">${escapeHtml(p)} (${platCount[p]})</button>`).join('')}
+  </div>`;
   $('cc-sum-body').innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px;margin-bottom:16px">
       ${_ccStat('รายการทั้งหมด',total)}
@@ -2600,11 +2616,19 @@ async function _ccRenderSummary(v){
       ${_ccStat('ยอด invoice รวม',_ccMoney(invTotal))}
       ${_ccStat('invoice ยังไม่ใช้',unusedInv,unusedInv?'#92400e':'var(--text)')}
     </div>
-    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+    ${filterChips}
+    <div style="overflow-x:auto"><table id="cc-sum-table" style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase">
         <th style="padding:6px 8px"></th><th style="padding:6px 8px">รายการบัตร</th><th style="padding:6px 8px;text-align:right">ยอด</th><th style="padding:6px 8px">Invoice / Receipt</th><th style="padding:6px 8px;text-align:right">ผลต่าง</th>
       </tr></thead><tbody>${rows||'<tr><td colspan="5" style="padding:14px;text-align:center;color:var(--text-muted)">ไม่มีรายการ</td></tr>'}</tbody>
     </table></div>`;
+  v.querySelectorAll('.cc-sum-prev').forEach(x=>x.addEventListener('click',()=>{ const inv=invById[parseInt(x.dataset.inv,10)]; if(inv) _ccPreviewInvoice(inv); }));
+  const applyFilter=(plat)=>{
+    v.querySelectorAll('.cc-sum-filter').forEach(b=>b.classList.toggle('primary', b.dataset.plat===plat));
+    v.querySelectorAll('#cc-sum-table tbody tr[data-platform]').forEach(tr=>{ tr.style.display=(!plat||tr.dataset.platform===plat)?'':'none'; });
+  };
+  v.querySelectorAll('.cc-sum-filter').forEach(b=>b.addEventListener('click',()=>applyFilter(b.dataset.plat)));
+  applyFilter('');
 }
 function _ccStat(label,val,color){
   return `<div class="card" style="padding:10px 12px"><div style="font-size:11px;color:var(--text-muted)">${label}</div><div style="font-size:18px;font-weight:800;${color?'color:'+color:''}">${val}</div></div>`;
