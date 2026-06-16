@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.221",
+      "date": "2026-06-16",
+      "title": "Credit Card — OCR จับชื่อ platform ที่รู้จัก (Google/Facebook/Anthropic/…)",
+      "summary": "ตอนอ่าน invoice/receipt ระบบมองหาชื่อ platform ที่รู้จักก่อน (Google, Meta/Facebook, Anthropic, OpenAI, TikTok, LINE, Microsoft, AWS ฯลฯ) + fuzzy match กัน OCR เพี้ยน (เช่น Antropic→Anthropic) แทนที่จะเดาจากบรรทัดแรก",
+      "changes": [
+        "เพิ่มตาราง platform ที่รู้จัก ~24 ราย (alias หลายแบบต่อราย)",
+        "จับแบบ word-boundary กัน false positive (deadline/online/metadata ไม่โดน)",
+        "fuzzy (Levenshtein) จับ OCR เพี้ยนเล็กน้อยของชื่อยาว ≥5 ตัว",
+        "ถ้าไม่เจอ platform → fallback เดาจากบรรทัดที่มี บริษัท/Co.,Ltd เหมือนเดิม"
+      ]
+    },
+    {
       "version": "1.9.220",
       "date": "2026-06-16",
       "title": "Credit Card — อัพ invoice หลายไฟล์ + ค้นหารายการ + preview ใบเสร็จ",

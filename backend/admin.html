@@ -2078,10 +2078,63 @@ function _ccParseStatement(text){
   txns.forEach(t=>delete t._y);
   return { card_number:card, bill_month:bm, bill_year:by, transactions:txns };
 }
+// v1.9.221 — จับชื่อ platform/บริษัทที่รู้จักจากข้อความ OCR (alias + fuzzy กัน OCR เพี้ยน)
+const _CC_PLATFORMS = [
+  { name:'Google',          aliases:['google','google ads','google cloud','google asia pacific','google ireland','youtube','admob','google workspace','gcp'] },
+  { name:'Meta (Facebook)', aliases:['facebook','meta platforms','meta platforms ireland','facebook ireland','instagram','whatsapp'] },
+  { name:'Anthropic',       aliases:['anthropic','claude ai','claude'] },
+  { name:'OpenAI',          aliases:['openai','chatgpt'] },
+  { name:'TikTok',          aliases:['tiktok','tik tok','tiktok ads','bytedance','tiktok pte'] },
+  { name:'LINE',            aliases:['line company','line man','line ads','line for business','line oa','ly corporation','line plus','line official account'] },
+  { name:'Microsoft',       aliases:['microsoft','azure','microsoft advertising','bing ads','linkedin','github'] },
+  { name:'Amazon (AWS)',    aliases:['amazon web services','aws','amazon.com','amazon advertising','amazon'] },
+  { name:'X (Twitter)',     aliases:['x corp','x ads','twitter'] },
+  { name:'Adobe',           aliases:['adobe'] },
+  { name:'Canva',           aliases:['canva'] },
+  { name:'Apple',           aliases:['apple','app store','itunes'] },
+  { name:'Shopee',          aliases:['shopee'] },
+  { name:'Lazada',          aliases:['lazada'] },
+  { name:'Grab',            aliases:['grab'] },
+  { name:'Cloudflare',      aliases:['cloudflare'] },
+  { name:'Shopify',         aliases:['shopify'] },
+  { name:'Netflix',         aliases:['netflix'] },
+  { name:'Spotify',         aliases:['spotify'] },
+  { name:'Notion',          aliases:['notion'] },
+  { name:'Figma',           aliases:['figma'] },
+  { name:'Zoom',            aliases:['zoom'] },
+  { name:'Slack',           aliases:['slack'] },
+  { name:'Dropbox',         aliases:['dropbox'] },
+];
+function _ccLeven(a,b){
+  const m=a.length,n=b.length; if(!m)return n; if(!n)return m;
+  let prev=Array.from({length:n+1},(_,j)=>j), cur=new Array(n+1);
+  for(let i=1;i<=m;i++){ cur[0]=i; for(let j=1;j<=n;j++){ const c=a[i-1]===b[j-1]?0:1; cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+c); } [prev,cur]=[cur,prev]; }
+  return prev[n];
+}
+function _ccDetectPlatform(text){
+  const norm=' '+(text||'').toLowerCase().replace(/[^a-z0-9ก-๙]+/g,' ').trim()+' ';
+  for(const p of _CC_PLATFORMS){
+    for(const a of p.aliases){
+      const al=' '+a.toLowerCase().replace(/[^a-z0-9ก-๙]+/g,' ').trim()+' ';
+      if(norm.includes(al)) return p.name;   // word-boundary match (กัน metadata/online/deadline ฯลฯ)
+    }
+  }
+  const words=norm.split(' ').filter(w=>w.length>=5);   // fuzzy: คำที่ OCR อ่านเพี้ยนเล็กน้อย
+  for(const p of _CC_PLATFORMS){
+    const key=p.aliases[0].toLowerCase().replace(/[^a-z0-9]/g,'');
+    if(key.length<5) continue;
+    const lim=key.length>=8?2:1;
+    for(const w of words){ if(Math.abs(w.length-key.length)<=lim && _ccLeven(w,key)<=lim) return p.name; }
+  }
+  return null;
+}
 function _ccParseInvoice(text){
   text=text||''; const lines=text.split(/\r?\n/).map(s=>s.replace(/\s+/g,' ').trim()).filter(Boolean);
-  let company=lines.find(l=>/(บริษัท|company|co\.?,?\s*ltd|จำกัด|inc\.|corporation)/i.test(l)) || lines.find(l=>l.length>=4&&/[A-Za-zก-๙]/.test(l)) || null;
-  if (company) company=company.slice(0,80);
+  let company=_ccDetectPlatform(text);   // จับ platform ที่รู้จักก่อน (Google/Facebook/Anthropic/…)
+  if(!company){
+    company=lines.find(l=>/(บริษัท|company|co\.?,?\s*ltd|จำกัด|inc\.|corporation)/i.test(l)) || lines.find(l=>l.length>=4&&/[A-Za-zก-๙]/.test(l)) || null;
+    if (company) company=company.slice(0,80);
+  }
   let totalAmt=null;
   for (const l of lines){
     if (/(grand\s*total|total|รวมทั้งสิ้น|ยอดรวม|จำนวนเงินรวม|amount\s*due|net\s*total)/i.test(l)){
