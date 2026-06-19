@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.225",
+      "date": "2026-06-19",
+      "title": "Credit Card Summary — คอลัมน์แคบลง + เพิ่มคอลัมน์รายละเอียด/เจ้าของ",
+      "summary": "หน้า Summary: คอลัมน์แรก (✓/✗) แคบลงครึ่งหนึ่ง · เพิ่มคอลัมน์ใหม่ ‘รายละเอียด / เจ้าของ’ แสดง description (ตัวปกติ) + profile เจ้าของใบ (รูป+ชื่อเล็กลง)",
+      "changes": [
+        "คอลัมน์ ✓/✗ แคบลง (width 18px, padding น้อยลง)",
+        "คอลัมน์ใหม่: 📝 description (ขนาดปกติ) + เจ้าของใบ (avatar 13px + ชื่อ font เล็ก)",
+        "_ccUploaderChip รับขนาด avatar ได้"
+      ]
+    },
+    {
       "version": "1.9.224",
       "date": "2026-06-19",
       "title": "Credit Card — invoice มีผู้อัพโหลด (profile) + รายละเอียดเอกสาร แก้ไขได้",

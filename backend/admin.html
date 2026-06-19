@@ -2017,12 +2017,13 @@ async function _ccLoadMembers(){ try{ _ccMembers=(await fetchJson('/api/creditca
 function _ccUploaderSelect(id,selId,firstLabel){
   return `<select id="${id}" style="width:100%"><option value="">${firstLabel}</option>${_ccMembers.map(m=>`<option value="${m.id}" ${m.id===selId?'selected':''}>${escapeHtml(m.name)}</option>`).join('')}</select>`;
 }
-function _ccUploaderChip(inv){
+function _ccUploaderChip(inv,px){
+  px=px||15; const fs=Math.round(px*0.6), va='-'+Math.round(px*0.2)+'px';
   const m=_ccMembers.find(x=>x.id===inv.uploaded_by_id);
   const name=(m&&m.name)||inv.uploaded_by||'—';
   const av=(m&&m.avatar)
-    ? `<img src="${m.avatar}" style="width:15px;height:15px;border-radius:50%;object-fit:cover;vertical-align:-3px" />`
-    : `<span style="display:inline-flex;width:15px;height:15px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-size:9px;align-items:center;justify-content:center;vertical-align:-3px">${escapeHtml((String(name).trim().charAt(0)||'?').toUpperCase())}</span>`;
+    ? `<img src="${m.avatar}" style="width:${px}px;height:${px}px;border-radius:50%;object-fit:cover;vertical-align:${va}" />`
+    : `<span style="display:inline-flex;width:${px}px;height:${px}px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-size:${fs}px;align-items:center;justify-content:center;vertical-align:${va}">${escapeHtml((String(name).trim().charAt(0)||'?').toUpperCase())}</span>`;
   return `${av} ${escapeHtml(name)}`;
 }
 function _ccFileToDataUrl(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error('อ่านไฟล์ไม่ได้')); r.readAsDataURL(file); }); }
@@ -2620,11 +2621,15 @@ async function _ccRenderSummary(v){
     const invCells=ms.length
       ? ms.map(i=>i?`<span class="cc-sum-prev" data-inv="${i.id}" title="ดู PDF / ไฟล์" style="cursor:pointer;color:var(--primary);border-bottom:1px dashed var(--primary);white-space:nowrap">👁 ${escapeHtml(i.company||'invoice')} ${_ccMoney(i.amount)}</span>`:'invoice').join('<br>')
       : '<span style="color:var(--text-muted)">— ยังไม่จับคู่ —</span>';
+    const ownerCells=ms.length
+      ? ms.map(i=>i?`<div style="margin-bottom:4px">${i.description?`<div style="font-size:13px;color:var(--text)">📝 ${escapeHtml(i.description)}</div>`:'<span style="font-size:11px;color:var(--text-muted)">— ไม่มีรายละเอียด —</span>'}<div style="font-size:10.5px;color:var(--text-muted)">${_ccUploaderChip(i,13)}</div></div>`:'').join('')
+      : '<span style="color:var(--text-muted);font-size:12px">—</span>';
     return `<tr data-platform="${escapeHtml(platOf(t))}" style="border-bottom:1px solid var(--border)">
-      <td style="padding:7px 8px">${ok?'<span style="color:var(--green);font-weight:800">✓</span>':'<span style="color:var(--critical);font-weight:800">✗</span>'}</td>
+      <td style="padding:7px 3px;text-align:center;width:18px">${ok?'<span style="color:var(--green);font-weight:800">✓</span>':'<span style="color:var(--critical);font-weight:800">✗</span>'}</td>
       <td style="padding:7px 8px;font-size:12.5px">${escapeHtml(t.description||'—')}<div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t.txn_date||'')}</div></td>
       <td style="padding:7px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap">${_ccMoney(t.amount)}</td>
       <td style="padding:7px 8px;font-size:12px">${invCells}</td>
+      <td style="padding:7px 8px">${ownerCells}</td>
       <td style="padding:7px 8px;text-align:right;font-size:12px;white-space:nowrap;${ok&&diff>0.01?'color:#92400e;font-weight:700':''}">${ok?(diff>0.01?'Δ '+_ccMoney(diff):'ตรง'):''}</td>
     </tr>`;
   }).join('');
@@ -2645,8 +2650,8 @@ async function _ccRenderSummary(v){
     ${filterChips}
     <div style="overflow-x:auto"><table id="cc-sum-table" style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase">
-        <th style="padding:6px 8px"></th><th style="padding:6px 8px">รายการบัตร</th><th style="padding:6px 8px;text-align:right">ยอด</th><th style="padding:6px 8px">Invoice / Receipt</th><th style="padding:6px 8px;text-align:right">ผลต่าง</th>
-      </tr></thead><tbody>${rows||'<tr><td colspan="5" style="padding:14px;text-align:center;color:var(--text-muted)">ไม่มีรายการ</td></tr>'}</tbody>
+        <th style="padding:6px 3px;width:18px"></th><th style="padding:6px 8px">รายการบัตร</th><th style="padding:6px 8px;text-align:right">ยอด</th><th style="padding:6px 8px">Invoice / Receipt</th><th style="padding:6px 8px">รายละเอียด / เจ้าของ</th><th style="padding:6px 8px;text-align:right">ผลต่าง</th>
+      </tr></thead><tbody>${rows||'<tr><td colspan="6" style="padding:14px;text-align:center;color:var(--text-muted)">ไม่มีรายการ</td></tr>'}</tbody>
     </table></div>`;
   v.querySelectorAll('.cc-sum-prev').forEach(x=>x.addEventListener('click',()=>{ const inv=invById[parseInt(x.dataset.inv,10)]; if(inv) _ccPreviewInvoice(inv); }));
   const applyFilter=(plat)=>{
