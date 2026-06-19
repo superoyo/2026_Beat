@@ -2014,9 +2014,7 @@ function _ccMonthSelectCls(cls,sel){ return `<select class="${cls}" style="width
 // v1.9.224 — ผู้อัพโหลด/เจ้าของเอกสาร (profile)
 let _ccMembers=[];
 async function _ccLoadMembers(){ try{ _ccMembers=(await fetchJson('/api/creditcard/members')).members||[]; }catch(e){ _ccMembers=[]; } }
-function _ccUploaderSelect(id,selId,firstLabel){
-  return `<select id="${id}" style="width:100%"><option value="">${firstLabel}</option>${_ccMembers.map(m=>`<option value="${m.id}" ${m.id===selId?'selected':''}>${escapeHtml(m.name)}</option>`).join('')}</select>`;
-}
+// ผู้อัพโหลด/เจ้าของเอกสาร: ใช้ searchable member picker (รูป+ชื่อ) — _memberPickerHtml/_initMemberPicker (v1.9.137)
 function _ccUploaderChip(inv,px){
   px=px||15; const fs=Math.round(px*0.6), va='-'+Math.round(px*0.2)+'px';
   const m=_ccMembers.find(x=>x.id===inv.uploaded_by_id);
@@ -2311,7 +2309,7 @@ function _ccUploadInvoice(defaultBillId){
       <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px">อัพโหลด PDF/รูป <b>หลายไฟล์พร้อมกันได้</b> → ระบบอ่านแต่ละใบ → ตรวจ/แก้ → บันทึกทั้งหมด · ไม่ผูกบิลก็ได้ (ลอยไว้)</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
         <label style="flex:1;min-width:180px;font-size:12px">บิลปลายทาง (ทุกไฟล์ · ไม่บังคับ)<select id="cc-inv-bill" style="width:100%">${billOpts}</select></label>
-        <label style="flex:1;min-width:180px;font-size:12px">ผู้อัพโหลด / เจ้าของเอกสาร${_ccUploaderSelect('cc-inv-uploader',null,'— ฉัน (ผู้ล็อกอิน) —')}</label>
+        <div style="flex:1;min-width:180px;font-size:12px">ผู้อัพโหลด / เจ้าของเอกสาร${_memberPickerHtml('cc-inv-uploader',null,'— ฉัน (ผู้ล็อกอิน) —')}</div>
       </div>
       <input id="cc-inv-file" type="file" accept="application/pdf,image/*" multiple style="margin-bottom:8px" />
       <div id="cc-inv-status" style="font-size:12.5px;color:var(--primary)"></div>
@@ -2338,6 +2336,7 @@ function _ccUploadInvoice(defaultBillId){
     },
   });
   setTimeout(()=>{
+    _initMemberPicker('cc-inv-uploader', _ccMembers, '— ฉัน (ผู้ล็อกอิน) —');   // searchable picker (รูป+ชื่อ)
     const inp=$('cc-inv-file'); const st=$('cc-inv-status'); const listEl=$('cc-inv-list');
     inp.onchange=async ()=>{
       const files=Array.from(inp.files||[]); if(!files.length) return;
@@ -2481,12 +2480,13 @@ function _ccPreviewInvoice(inv){
 
 // ---- edit invoice (แก้ไขข้อมูล invoice/receipt ที่อัพไปแล้ว) ----
 function _ccEditInvoice(inv,onDone){
+  const _euLabel='— คงเดิม ('+(inv.uploaded_by||'—')+') —';
   showModal({
     title:'✏️ แก้ไข Invoice / Receipt', slide:true,
     body:`
       <label style="display:block;margin-bottom:8px;font-size:12px">บริษัท / Platform<input id="cc-ei-company" value="${escapeHtml(inv.company||'')}" style="width:100%" /></label>
       <label style="display:block;margin-bottom:8px;font-size:12px">รายละเอียดเอกสาร<input id="cc-ei-desc" value="${escapeHtml(inv.description||'')}" placeholder="เช่น ค่าโฆษณา Facebook เดือน พ.ค." style="width:100%" /></label>
-      <label style="display:block;margin-bottom:8px;font-size:12px">ผู้อัพโหลด / เจ้าของเอกสาร${_ccUploaderSelect('cc-ei-uploader',inv.uploaded_by_id,'— คงเดิม ('+escapeHtml(inv.uploaded_by||'—')+') —')}</label>
+      <div style="margin-bottom:8px;font-size:12px">ผู้อัพโหลด / เจ้าของเอกสาร${_memberPickerHtml('cc-ei-uploader',inv.uploaded_by_id,_euLabel)}</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <label style="width:130px;font-size:12px">ประเภท<select id="cc-ei-kind" style="width:100%"><option value="invoice" ${inv.kind!=='receipt'?'selected':''}>Invoice</option><option value="receipt" ${inv.kind==='receipt'?'selected':''}>Receipt</option></select></label>
         <label style="width:120px;font-size:12px">เดือน${_ccMonthSelect('cc-ei-month',inv.inv_month||null)}</label>
@@ -2504,6 +2504,7 @@ function _ccEditInvoice(inv,onDone){
       await _ccLoadBills(); if(onDone) onDone();
     },
   });
+  setTimeout(()=>{ _initMemberPicker('cc-ei-uploader', _ccMembers, _euLabel); }, 0);   // searchable picker (รูป+ชื่อ)
 }
 
 // ---- edit bill (แก้ไขบิลรายเดือน: เลขบัตร/เดือน/ปี + รายการ — รักษา match ของแถวเดิม) ----

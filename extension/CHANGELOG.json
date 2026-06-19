@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.230",
+      "date": "2026-06-19",
+      "title": "Credit Card — ช่องเลือกเจ้าของเอกสารเป็น searchable picker (รูป+ชื่อ)",
+      "summary": "ตอนอัพโหลด/แก้ไข invoice ช่องเลือกผู้อัพโหลด/เจ้าของเอกสาร เปลี่ยนจาก dropdown ธรรมดา เป็น picker ที่พิมพ์ค้นหาชื่อได้ และผลลัพธ์แสดงทั้งรูป (avatar) และชื่อ",
+      "changes": [
+        "ใช้ _memberPickerHtml/_initMemberPicker (คอมโพเนนต์ searchable member picker เดิม) แทน <select>",
+        "ค้นหาชื่อได้ + แต่ละรายการมี avatar + ชื่อ",
+        "ใช้ทั้งฟอร์มอัพโหลด (cc-inv-uploader) และแก้ไข (cc-ei-uploader) · ลบ _ccUploaderSelect (dead code)"
+      ]
+    },
+    {
       "version": "1.9.229",
       "date": "2026-06-19",
       "title": "People › Teams — ปุ่มสร้าง Temporary Staff + ยุบรวมเป็น account จริงอัตโนมัติ",
