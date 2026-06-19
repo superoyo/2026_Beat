@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.227",
+      "date": "2026-06-19",
+      "title": "หน้า login OTP — ย่อ +66 / เบอร์ตัวใหญ่ / OTP 6 ช่องย่อย",
+      "summary": "ปรับ UI หน้า login ด้วย OTP: ช่อง +66 แคบลง · ช่องกรอกเบอร์ตัวใหญ่ขึ้น · ช่อง OTP เปลี่ยนเป็น 6 ช่องย่อยกรอกทีละหลัก (auto-advance/backspace/paste/iOS autofill + auto-submit) · เบอร์ที่หน้า OTP แสดงตัวใหญ่เด่นขึ้น",
+      "changes": [
+        "country code (+66) แคบลง 84→54px",
+        "ช่องเบอร์มือถือ font ใหญ่ขึ้น (19px) + เว้นระยะอ่านง่าย",
+        "OTP เป็น 6 ช่องย่อย: เลื่อนช่องอัตโนมัติ, backspace ย้อน, วาง/iOS autofill กระจายทุกช่อง, ครบ 6 ยืนยันให้เลย",
+        "เบอร์ที่หน้า OTP แสดงตัวใหญ่ตัวหนา"
+      ]
+    },
+    {
       "version": "1.9.226",
       "date": "2026-06-19",
       "title": "แก้ login OTP error 500 — เบอร์เดิม firebase_uid เปลี่ยน (re-link)",

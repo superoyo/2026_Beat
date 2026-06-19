@@ -205,13 +205,23 @@
 
     .phone-row { display: flex; gap: 8px; }
     .phone-row .country-code {
-      width: 84px; flex-shrink: 0;
+      width: 54px; flex-shrink: 0; flex-grow: 0;
       background: var(--bg-soft); color: var(--text);
       border: 1px solid var(--border); border-radius: 8px;
-      padding: 11px 10px; font-size: 14.5px; font-family: inherit;
-      text-align: center; font-weight: 500;
+      padding: 11px 4px; font-size: 15px; font-family: inherit;
+      text-align: center; font-weight: 600;
     }
-    .phone-row input { flex: 1; }
+    .phone-row input#phone { flex: 1; font-size: 19px; font-weight: 600; letter-spacing: 1.5px; }
+    /* OTP 6 ช่องย่อย */
+    .otp-boxes { display: flex; gap: 8px; }
+    .otp-box {
+      flex: 1; min-width: 0; width: auto;
+      text-align: center; font-size: 22px; font-weight: 700; color: var(--text);
+      padding: 12px 0; border: 1px solid var(--border); border-radius: 10px;
+      background: #fff; font-family: inherit;
+    }
+    .otp-box:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
+    .otp-phone { display: inline-block; font-size: 19px; font-weight: 800; letter-spacing: .5px; color: var(--text); margin-top: 3px; }
   </style>
 </head>
 <body>
@@ -294,8 +304,15 @@
       <div class="step" id="step-otp">
         <div class="info-box" id="otpInfo"></div>
         <div class="field">
-          <label for="otp">รหัส OTP (6 หลัก)</label>
-          <input id="otp" class="otp" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" />
+          <label>รหัส OTP (6 หลัก)</label>
+          <div class="otp-boxes" id="otpBoxes">
+            <input class="otp-box" type="text" inputmode="numeric" maxlength="1" autocomplete="one-time-code" aria-label="หลักที่ 1" />
+            <input class="otp-box" type="text" inputmode="numeric" maxlength="1" aria-label="หลักที่ 2" />
+            <input class="otp-box" type="text" inputmode="numeric" maxlength="1" aria-label="หลักที่ 3" />
+            <input class="otp-box" type="text" inputmode="numeric" maxlength="1" aria-label="หลักที่ 4" />
+            <input class="otp-box" type="text" inputmode="numeric" maxlength="1" aria-label="หลักที่ 5" />
+            <input class="otp-box" type="text" inputmode="numeric" maxlength="1" aria-label="หลักที่ 6" />
+          </div>
         </div>
         <button class="primary-btn" id="verifyOtpBtn">ยืนยัน OTP</button>
         <button class="secondary-btn" id="changePhoneBtn" type="button">← เปลี่ยนเบอร์</button>
@@ -565,9 +582,9 @@
       try {
         const verifier = ensureRecaptcha();
         confirmationResult = await signInWithPhoneNumber(auth, normalizedPhone, verifier);
-        $('otpInfo').textContent = `ส่ง OTP ไปที่ ${normalizedPhone} แล้ว — กรุณากรอกรหัสที่ได้รับ`;
+        $('otpInfo').innerHTML = `ส่งรหัส OTP ไปที่<br><span class="otp-phone">${normalizedPhone}</span><br>กรุณากรอกรหัสที่ได้รับ`;
         goStep('step-otp');
-        $('otp').focus();
+        clearOtpBoxes(); focusOtpFirst();
       } catch (e) {
         console.error(e);
         showErr('ส่ง OTP ไม่สำเร็จ: ' + (e.message || e.code || 'unknown'));
@@ -591,9 +608,43 @@
       document.querySelectorAll('.tab').forEach(t => { if (t.dataset.tab !== 'phone') t.style.display = 'none'; });
     }
 
+    // ===== OTP 6 ช่องย่อย: auto-advance / backspace / paste =====
+    const _otpBoxes = () => Array.from(document.querySelectorAll('#otpBoxes .otp-box'));
+    function getOtpCode() { return _otpBoxes().map(b => b.value).join(''); }
+    function clearOtpBoxes() { _otpBoxes().forEach(b => b.value = ''); }
+    function focusOtpFirst() { const f = _otpBoxes()[0]; if (f) f.focus(); }
+    (function setupOtpBoxes() {
+      const boxes = _otpBoxes();
+      boxes.forEach((box, i) => {
+        box.addEventListener('input', () => {
+          const digits = box.value.replace(/\D/g, '');
+          if (digits.length > 1) {                      // autofill (iOS one-time-code) / วางหลายตัว → กระจาย
+            digits.slice(0, boxes.length - i).split('').forEach((d, k) => { if (boxes[i + k]) boxes[i + k].value = d; });
+            boxes[Math.min(i + digits.length, boxes.length - 1)].focus();
+          } else {
+            box.value = digits.slice(0, 1);
+            if (box.value && i < boxes.length - 1) boxes[i + 1].focus();
+          }
+          if (boxes.every(b => b.value)) $('verifyOtpBtn').click();   // auto-submit เมื่อครบ 6
+        });
+        box.addEventListener('keydown', (e) => {
+          if (e.key === 'Backspace' && !box.value && i > 0) { boxes[i - 1].focus(); boxes[i - 1].value = ''; e.preventDefault(); }
+          else if (e.key === 'ArrowLeft' && i > 0) boxes[i - 1].focus();
+          else if (e.key === 'ArrowRight' && i < boxes.length - 1) boxes[i + 1].focus();
+        });
+        box.addEventListener('paste', (e) => {
+          e.preventDefault();
+          const ds = ((e.clipboardData || window.clipboardData).getData('text') || '').replace(/\D/g, '').slice(0, 6).split('');
+          ds.forEach((d, j) => { if (boxes[j]) boxes[j].value = d; });
+          (boxes[Math.min(ds.length, boxes.length - 1)] || box).focus();
+          if (boxes.every(b => b.value)) $('verifyOtpBtn').click();
+        });
+      });
+    })();
+
     $('verifyOtpBtn').addEventListener('click', async () => {
       clearMsg();
-      const code = $('otp').value.trim();
+      const code = getOtpCode();
       if (!/^\d{6}$/.test(code)) { showErr('OTP ต้องเป็นตัวเลข 6 หลัก'); return; }
       if (!confirmationResult) { showErr('Session หมดอายุ'); goStep('step-phone'); return; }
       $('verifyOtpBtn').disabled = true;
