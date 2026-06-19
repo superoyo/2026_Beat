@@ -2011,6 +2011,20 @@ function _ccMoney(n){ if(n==null||isNaN(n))return '—'; return Number(n).toLoca
 function _ccMonthLabel(m,y){ const mm=(m>=1&&m<=12)?_CC_MONTHS[m-1]:'—'; return `${mm} ${y||'—'}`; }
 function _ccMonthSelect(id,sel){ return `<select id="${id}" style="width:100%"><option value="">—</option>${_CC_MONTHS.map((m,i)=>`<option value="${i+1}" ${sel===i+1?'selected':''}>${m}</option>`).join('')}</select>`; }
 function _ccMonthSelectCls(cls,sel){ return `<select class="${cls}" style="width:100%"><option value="">—</option>${_CC_MONTHS.map((m,i)=>`<option value="${i+1}" ${sel===i+1?'selected':''}>${m}</option>`).join('')}</select>`; }
+// v1.9.224 — ผู้อัพโหลด/เจ้าของเอกสาร (profile)
+let _ccMembers=[];
+async function _ccLoadMembers(){ try{ _ccMembers=(await fetchJson('/api/creditcard/members')).members||[]; }catch(e){ _ccMembers=[]; } }
+function _ccUploaderSelect(id,selId,firstLabel){
+  return `<select id="${id}" style="width:100%"><option value="">${firstLabel}</option>${_ccMembers.map(m=>`<option value="${m.id}" ${m.id===selId?'selected':''}>${escapeHtml(m.name)}</option>`).join('')}</select>`;
+}
+function _ccUploaderChip(inv){
+  const m=_ccMembers.find(x=>x.id===inv.uploaded_by_id);
+  const name=(m&&m.name)||inv.uploaded_by||'—';
+  const av=(m&&m.avatar)
+    ? `<img src="${m.avatar}" style="width:15px;height:15px;border-radius:50%;object-fit:cover;vertical-align:-3px" />`
+    : `<span style="display:inline-flex;width:15px;height:15px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-size:9px;align-items:center;justify-content:center;vertical-align:-3px">${escapeHtml((String(name).trim().charAt(0)||'?').toUpperCase())}</span>`;
+  return `${av} ${escapeHtml(name)}`;
+}
 function _ccFileToDataUrl(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error('อ่านไฟล์ไม่ได้')); r.readAsDataURL(file); }); }
 function _ccDownscale(dataUrl,maxW){ return new Promise((res)=>{ const img=new Image(); img.onload=()=>{ const scale=Math.min(1,maxW/img.width); if(scale>=1){ res(dataUrl); return; } const c=document.createElement('canvas'); c.width=Math.round(img.width*scale); c.height=Math.round(img.height*scale); c.getContext('2d').drawImage(img,0,0,c.width,c.height); try{ res(c.toDataURL('image/jpeg',0.82)); }catch(_){ res(dataUrl); } }; img.onerror=()=>res(dataUrl); img.src=dataUrl; }); }
 
@@ -2166,7 +2180,7 @@ async function renderCreditCard(){
     </div>
     <div id="cc-view"><div class="empty">กำลังโหลด…</div></div>`;
   root.querySelectorAll('.cc-nav').forEach(b=>b.addEventListener('click',()=>{ _ccState.view=b.dataset.ccView; _ccState.billId=null; _ccRender(); }));
-  await _ccLoadBills(); _ccRender();
+  await Promise.all([_ccLoadBills(), _ccLoadMembers()]); _ccRender();
 }
 async function _ccLoadBills(){ try{ _ccState.bills=(await fetchJson('/api/creditcard/bills')).bills||[]; }catch(e){ _ccState.bills=[]; } }
 function _ccRender(){
@@ -2278,6 +2292,7 @@ function _ccInvUploadRow(idx,fname,p){
   return `<div class="cc-invrow card" data-idx="${idx}" style="padding:10px 12px;margin-bottom:8px">
     <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;word-break:break-all">📎 ${escapeHtml(fname)}</div>
     <label style="display:block;margin-bottom:6px;font-size:12px">บริษัท / Platform<input class="cc-ir-company" value="${escapeHtml(p.company||'')}" style="width:100%" /></label>
+    <label style="display:block;margin-bottom:6px;font-size:12px">รายละเอียดเอกสาร<input class="cc-ir-desc" placeholder="เช่น ค่าโฆษณา Facebook เดือน พ.ค." style="width:100%" /></label>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <label style="width:120px;font-size:12px">ประเภท<select class="cc-ir-kind" style="width:100%"><option value="invoice" ${p.kind!=='receipt'?'selected':''}>Invoice</option><option value="receipt" ${p.kind==='receipt'?'selected':''}>Receipt</option></select></label>
       <label style="width:110px;font-size:12px">เดือน${_ccMonthSelectCls('cc-ir-month',p.month)}</label>
@@ -2293,7 +2308,10 @@ function _ccUploadInvoice(defaultBillId){
     title:'⬆️ อัพโหลด Invoice / Receipt (หลายไฟล์ได้)', slide:true, size:'wide',
     body:`
       <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px">อัพโหลด PDF/รูป <b>หลายไฟล์พร้อมกันได้</b> → ระบบอ่านแต่ละใบ → ตรวจ/แก้ → บันทึกทั้งหมด · ไม่ผูกบิลก็ได้ (ลอยไว้)</div>
-      <label style="display:block;margin-bottom:10px;font-size:12px">บิลปลายทาง (ใช้กับทุกไฟล์ · ไม่บังคับ)<select id="cc-inv-bill" style="width:100%">${billOpts}</select></label>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+        <label style="flex:1;min-width:180px;font-size:12px">บิลปลายทาง (ทุกไฟล์ · ไม่บังคับ)<select id="cc-inv-bill" style="width:100%">${billOpts}</select></label>
+        <label style="flex:1;min-width:180px;font-size:12px">ผู้อัพโหลด / เจ้าของเอกสาร${_ccUploaderSelect('cc-inv-uploader',null,'— ฉัน (ผู้ล็อกอิน) —')}</label>
+      </div>
       <input id="cc-inv-file" type="file" accept="application/pdf,image/*" multiple style="margin-bottom:8px" />
       <div id="cc-inv-status" style="font-size:12.5px;color:var(--primary)"></div>
       <div id="cc-inv-list" style="margin-top:12px"></div>`,
@@ -2301,10 +2319,12 @@ function _ccUploadInvoice(defaultBillId){
       const rows=Array.from(document.querySelectorAll('#cc-inv-list .cc-invrow'));
       if(!rows.length) throw new Error('อัพโหลดไฟล์ก่อน');
       const bv=$('cc-inv-bill').value; const bill_id=bv?parseInt(bv,10):null;
+      const uv=$('cc-inv-uploader').value; const uploaded_by_id=uv?parseInt(uv,10):null;
       let ok=0;
       for(const r of rows){
         const it=items[parseInt(r.dataset.idx,10)]; if(!it) continue;
-        const body={ bill_id, company:r.querySelector('.cc-ir-company').value.trim()||null,
+        const body={ bill_id, uploaded_by_id, company:r.querySelector('.cc-ir-company').value.trim()||null,
+          description:r.querySelector('.cc-ir-desc').value.trim()||null,
           kind:r.querySelector('.cc-ir-kind').value, inv_month:parseInt(r.querySelector('.cc-ir-month').value,10)||null,
           inv_year:parseInt(r.querySelector('.cc-ir-year').value,10)||null, amount:parseFloat(r.querySelector('.cc-ir-amount').value)||null,
           file_data:it.fileData, file_name:it.fileName, file_mime:it.fileMime };
@@ -2418,7 +2438,8 @@ async function _ccRenderDetail(v){
 function _ccInvCardHtml(i,isMatched,isPool){
   return `<div class="cc-inv card" draggable="true" data-inv="${i.id}" style="padding:9px 11px;margin-bottom:6px;cursor:grab;border:1px solid ${isPool?'rgba(245,158,11,.5)':(isMatched?'rgba(16,185,129,.45)':'var(--border)')}">
     <div style="font-size:12.5px;font-weight:700">${escapeHtml(i.company||'—')} <span style="font-size:10px;color:var(--text-muted);font-weight:500">${i.kind==='receipt'?'ใบเสร็จ':'invoice'}</span>${isPool?' <span style="font-size:9.5px;color:#92400e;background:rgba(245,158,11,.15);padding:1px 6px;border-radius:999px">ลอย</span>':''}</div>
-    <div style="font-size:11px;color:var(--text-muted)">${_ccMonthLabel(i.inv_month,i.inv_year)} · โดย ${escapeHtml(i.uploaded_by||'—')}</div>
+    ${i.description?`<div style="font-size:11px;color:var(--text);margin-top:1px">📝 ${escapeHtml(i.description)}</div>`:''}
+    <div style="font-size:11px;color:var(--text-muted)">${_ccMonthLabel(i.inv_month,i.inv_year)} · ${_ccUploaderChip(i)}</div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px">
       <span style="font-weight:700;color:var(--green);font-variant-numeric:tabular-nums">${_ccMoney(i.amount)}</span>
       <span style="display:flex;gap:11px">
@@ -2442,7 +2463,7 @@ function _ccPreviewInvoice(inv){
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">
       <div style="min-width:0">
         <div style="font-size:15px;font-weight:800">${escapeHtml(inv.company||'—')} · ${_ccMoney(inv.amount)}</div>
-        <div style="font-size:11.5px;color:var(--text-muted)">${inv.kind==='receipt'?'ใบเสร็จ':'invoice'} · ${_ccMonthLabel(inv.inv_month,inv.inv_year)} · ${escapeHtml(inv.file_name||'')}</div>
+        <div style="font-size:11.5px;color:var(--text-muted)">${inv.kind==='receipt'?'ใบเสร็จ':'invoice'} · ${_ccMonthLabel(inv.inv_month,inv.inv_year)} · ${_ccUploaderChip(inv)}${inv.description?' · 📝 '+escapeHtml(inv.description):''}</div>
       </div>
       <div style="display:flex;gap:8px;flex-shrink:0">
         <a href="${url}" target="_blank" rel="noopener" class="btn" style="font-size:12px">↗ แท็บใหม่</a>
@@ -2463,6 +2484,8 @@ function _ccEditInvoice(inv,onDone){
     title:'✏️ แก้ไข Invoice / Receipt', slide:true,
     body:`
       <label style="display:block;margin-bottom:8px;font-size:12px">บริษัท / Platform<input id="cc-ei-company" value="${escapeHtml(inv.company||'')}" style="width:100%" /></label>
+      <label style="display:block;margin-bottom:8px;font-size:12px">รายละเอียดเอกสาร<input id="cc-ei-desc" value="${escapeHtml(inv.description||'')}" placeholder="เช่น ค่าโฆษณา Facebook เดือน พ.ค." style="width:100%" /></label>
+      <label style="display:block;margin-bottom:8px;font-size:12px">ผู้อัพโหลด / เจ้าของเอกสาร${_ccUploaderSelect('cc-ei-uploader',inv.uploaded_by_id,'— คงเดิม ('+escapeHtml(inv.uploaded_by||'—')+') —')}</label>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <label style="width:130px;font-size:12px">ประเภท<select id="cc-ei-kind" style="width:100%"><option value="invoice" ${inv.kind!=='receipt'?'selected':''}>Invoice</option><option value="receipt" ${inv.kind==='receipt'?'selected':''}>Receipt</option></select></label>
         <label style="width:120px;font-size:12px">เดือน${_ccMonthSelect('cc-ei-month',inv.inv_month||null)}</label>
@@ -2471,9 +2494,11 @@ function _ccEditInvoice(inv,onDone){
       </div>
       <div style="margin-top:10px"><a href="${API}/api/creditcard/invoices/${inv.id}/file" target="_blank" rel="noopener" style="font-size:12px">📄 ดูไฟล์ต้นฉบับ</a></div>`,
     onSubmit: async ()=>{
+      const uv=$('cc-ei-uploader').value;
       const body={ company:$('cc-ei-company').value.trim()||null, kind:$('cc-ei-kind').value,
         inv_month:parseInt($('cc-ei-month').value,10)||null, inv_year:parseInt($('cc-ei-year').value,10)||null,
-        amount:parseFloat($('cc-ei-amount').value)||null };
+        amount:parseFloat($('cc-ei-amount').value)||null, description:$('cc-ei-desc').value.trim()||null,
+        uploaded_by_id: uv?parseInt(uv,10):null };
       await fetchJson('/api/creditcard/invoices/'+inv.id,{method:'PUT',body:JSON.stringify(body)});
       await _ccLoadBills(); if(onDone) onDone();
     },
@@ -2542,7 +2567,8 @@ async function _ccRenderPool(v){
     <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px;padding:11px 15px">
       <div style="min-width:0">
         <div style="font-size:14px;font-weight:700">${escapeHtml(i.company||'—')} <span style="font-size:10px;color:var(--text-muted);font-weight:500">${i.kind==='receipt'?'ใบเสร็จ':'invoice'}</span></div>
-        <div style="font-size:12px;color:var(--text-muted);margin-top:2px">${_ccMonthLabel(i.inv_month,i.inv_year)} · โดย ${escapeHtml(i.uploaded_by||'—')}</div>
+        ${i.description?`<div style="font-size:12px;color:var(--text);margin-top:2px">📝 ${escapeHtml(i.description)}</div>`:''}
+        <div style="font-size:12px;color:var(--text-muted);margin-top:2px">${_ccMonthLabel(i.inv_month,i.inv_year)} · ${_ccUploaderChip(i)}</div>
       </div>
       <div style="display:flex;align-items:center;gap:14px;flex-shrink:0">
         <span style="font-weight:800;color:var(--green);font-variant-numeric:tabular-nums">${_ccMoney(i.amount)}</span>

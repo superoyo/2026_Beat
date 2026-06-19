@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.224",
+      "date": "2026-06-19",
+      "title": "Credit Card — invoice มีผู้อัพโหลด (profile) + รายละเอียดเอกสาร แก้ไขได้",
+      "summary": "ตอนอัพโหลด invoice/receipt เลือกผู้อัพโหลด/เจ้าของเอกสาร (profile รูป+ชื่อ) ได้ (ดีฟอลต์=ผู้ล็อกอิน) + ใส่รายละเอียดเอกสาร (description) ต่อไฟล์ · ในหน้าจับคู่/ลอย/พรีวิว แสดง profile + description และกด edit เปลี่ยนผู้อัพโหลด/แก้ description ได้",
+      "changes": [
+        "DB: cc_invoices เพิ่มคอลัมน์ description (+ migration)",
+        "API /api/creditcard/members (เลือกเจ้าของเอกสาร) · create/edit invoice รับ description + uploaded_by_id",
+        "อัพโหลด: เลือกผู้อัพโหลด (ใช้กับทุกไฟล์) + ช่อง description ต่อไฟล์",
+        "แสดง profile (avatar+ชื่อ) + 📝 description ในการ์ด invoice หน้าจับคู่/กองลอย/พรีวิว",
+        "แก้ไข invoice: เปลี่ยนผู้อัพโหลด + แก้ description ได้"
+      ]
+    },
+    {
       "version": "1.9.223",
       "date": "2026-06-16",
       "title": "Credit Card Summary — กดดู PDF ที่จับคู่ + filter ตาม platform",
