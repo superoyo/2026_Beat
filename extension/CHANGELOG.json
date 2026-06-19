@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.229",
+      "date": "2026-06-19",
+      "title": "People › Teams — ปุ่มสร้าง Temporary Staff + ยุบรวมเป็น account จริงอัตโนมัติ",
+      "summary": "admin สร้างพนักงานชั่วคราว (ชื่อ+เบอร์+แผนกชั่วคราว) เพื่อผูกอุปกรณ์ก่อนเจ้าตัวสมัคร · เมื่อเจ้าของเบอร์ login OTP สำเร็จ ระบบยุบรวมเป็น account จริงให้อัตโนมัติ (id เดิม → อุปกรณ์/ทีมที่ผูกไว้ติดไปด้วย)",
+      "changes": [
+        "ปุ่ม + สร้าง Temporary Staff ข้างปุ่มสร้างทีม (admin เท่านั้น)",
+        "temp staff = member row จริง (firebase_uid placeholder + is_temp=1 + temp_department) — โผล่ใน owner picker/รายชื่อ",
+        "login OTP เบอร์เดิม → re-link by phone เซ็ต firebase_uid จริง + is_temp=0 (ยุบรวมอัตโนมัติ ไม่ต้องย้ายข้อมูล)",
+        "normalize เบอร์เป็น E.164 (+66) ให้ตรงกับที่ OTP เก็บ",
+        "badge 🕓 ชั่วคราว ในรายชื่อสมาชิก"
+      ]
+    },
+    {
       "version": "1.9.228",
       "date": "2026-06-19",
       "title": "Wazzup SSO — เปลี่ยน label เป็น รหัสพนักงาน + วันเกิด (ค.ศ.)",

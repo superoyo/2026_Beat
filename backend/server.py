@@ -668,6 +668,9 @@ def init_db() -> None:
             ("share_birthdate",        "INTEGER NOT NULL DEFAULT 1"),
             ("share_shirt_size",       "INTEGER NOT NULL DEFAULT 1"),
             ("share_phone",            "INTEGER NOT NULL DEFAULT 1"),
+            # v1.9.229 — Temporary Staff: สร้างก่อนเจ้าตัว login (placeholder firebase_uid) → ผูกอุปกรณ์/แผนกชั่วคราว
+            ("is_temp",                "INTEGER NOT NULL DEFAULT 0"),
+            ("temp_department",        "TEXT"),
         ]:
             if col_name not in member_cols:
                 conn.execute(f"ALTER TABLE members ADD COLUMN {col_name} {col_def}")
@@ -2914,7 +2917,7 @@ def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
             "SELECT id, phone, email, display_name, enabled, is_admin, avatar_data, "
             "       extension_version, extension_last_used_at, firebase_uid, "
             "       (pw_hash IS NOT NULL) AS has_password, "
-            "       wazzup_emp_code, "
+            "       wazzup_emp_code, is_temp, temp_department, "
             "       (wazzup_profile_url IS NOT NULL AND wazzup_profile_url != '') AS has_wazzup_photo, "
             "       created_at, last_login_at "
             "FROM members ORDER BY created_at DESC"
@@ -2974,11 +2977,54 @@ def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
                 "extension_last_used_at": r["extension_last_used_at"] if "extension_last_used_at" in r.keys() else None,
                 "created_at": r["created_at"],
                 "last_login_at": r["last_login_at"],
+                "is_temp": bool(r["is_temp"]) if "is_temp" in r.keys() else False,
+                "temp_department": r["temp_department"] if "temp_department" in r.keys() else None,
                 "teams": teams_by_member.get(r["id"], []),
             }
             for r in rows
         ]
     }
+
+
+def _normalize_th_phone(raw: str) -> str:
+    """แปลงเบอร์ไทยเป็น E.164 (+66...) ให้ตรงกับที่ Firebase OTP เก็บ — ตรงกับ normalizePhone ฝั่ง login"""
+    p = re.sub(r"\D", "", raw or "")
+    if not p:
+        return ""
+    if p.startswith("0"):
+        p = p[1:]
+    elif p.startswith("66") and len(p) >= 11:
+        p = p[2:]
+    return "+66" + p
+
+
+class TempStaffIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    phone: str = Field(..., min_length=4, max_length=30)
+    department: Optional[str] = Field(None, max_length=120)
+
+
+@app.post("/api/admin/temp-staff")
+def admin_create_temp_staff(payload: TempStaffIn, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    """v1.9.229 — สร้างพนักงานชั่วคราว (ชื่อ+เบอร์) เป็น member row (firebase_uid placeholder, is_temp=1)
+    เมื่อเจ้าของเบอร์ login OTP จริง → re-link by phone จะเซ็ต firebase_uid + is_temp=0 ให้ row เดิม
+    (= account จริง โดย id ไม่เปลี่ยน → อุปกรณ์/ทีมที่ผูกไว้ติดไปอัตโนมัติ)"""
+    phone = _normalize_th_phone(payload.phone)
+    if len(re.sub(r"\D", "", phone)) < 11:
+        raise HTTPException(status_code=400, detail="เบอร์โทรไม่ถูกต้อง (ต้องเป็นเบอร์มือถือไทย)")
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        ex = conn.execute("SELECT id, is_temp, display_name FROM members WHERE phone = ?", (phone,)).fetchone()
+        if ex:
+            kind = "พนักงานชั่วคราว" if ex["is_temp"] else "ผู้ใช้จริง"
+            raise HTTPException(status_code=409, detail=f"เบอร์นี้มีอยู่แล้ว ({kind}: {ex['display_name'] or phone})")
+        fake_uid = "temp:" + secrets.token_hex(12)
+        cur = conn.execute(
+            "INSERT INTO members(phone, firebase_uid, display_name, is_temp, temp_department, created_at) "
+            "VALUES (?, ?, ?, 1, ?, ?)",
+            (phone, fake_uid, payload.name.strip(), (payload.department or "").strip() or None, now))
+        mid = cur.lastrowid
+    return {"ok": True, "id": mid, "phone": phone}
 
 
 class MemberTeamsPatch(BaseModel):
@@ -4798,9 +4844,10 @@ def member_verify(payload: MemberVerifyIn, response: Response) -> dict[str, Any]
                 if by_phone:
                     if _is_member_disabled(by_phone):
                         raise HTTPException(status_code=403, detail="บัญชีนี้ถูกระงับการใช้งาน")
+                    # v1.9.229 — ถ้าเป็น temp staff → claim เป็น account จริง (is_temp=0); ทุกอย่างที่ผูกไว้ติดมาเพราะ id เดิม
                     conn.execute(
                         "UPDATE members SET firebase_uid = ?, display_name = COALESCE(?, display_name), "
-                        "last_login_at = ? WHERE id = ?",
+                        "is_temp = 0, last_login_at = ? WHERE id = ?",
                         (firebase_uid, display_name, now, by_phone["id"]),
                     )
                     member_id = by_phone["id"]

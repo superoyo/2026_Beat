@@ -5759,7 +5759,10 @@ async function renderTeamsPage(selectedTeamId, mount) {
   mount.innerHTML = `
     <div class="page-head">
       <h2 class="page-title">👨‍👩‍👧 Teams</h2>
-      <button class="btn primary" id="add-team-btn">+ สร้าง Team ใหม่</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${currentRole === 'admin' ? '<button class="btn" id="add-temp-staff-btn">+ สร้าง Temporary Staff</button>' : ''}
+        <button class="btn primary" id="add-team-btn">+ สร้าง Team ใหม่</button>
+      </div>
     </div>
     <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px">
       จัดกลุ่ม member เพื่อกำหนดสิทธิ์เข้าถึง platform — site ที่ผูกกับทีมจะ visible เฉพาะคนในทีมเท่านั้น
@@ -5836,6 +5839,8 @@ async function renderTeamsPage(selectedTeamId, mount) {
   `;
 
   $('add-team-btn').addEventListener('click', showAddTeamModal);
+  const _tsBtn = $('add-temp-staff-btn');
+  if (_tsBtn) _tsBtn.addEventListener('click', showAddTempStaffModal);
 
   // Wire team row clicks → update URL hash
   document.querySelectorAll('.teams-row[data-team-id]').forEach(btn => {
@@ -5994,6 +5999,44 @@ function getTeamDescendantIds(teams, rootId) {
     }
   }
   return result;
+}
+
+// v1.9.229 — สร้างพนักงานชั่วคราว (ชื่อ+เบอร์) → member row (is_temp), ผูกอุปกรณ์/แผนกได้, claim เป็นจริงตอน login OTP
+function showAddTempStaffModal() {
+  showModal({
+    title: '🕓 สร้าง Temporary Staff',
+    body: `
+      <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px;line-height:1.6">
+        ใส่แค่ <strong>ชื่อ + เบอร์</strong> เพื่อ<strong>ผูกอุปกรณ์ + ระบุแผนกชั่วคราว</strong> ก่อนเจ้าตัวสมัครจริง<br>
+        เมื่อเจ้าของเบอร์ login ด้วย OTP สำเร็จ → <strong>ยุบรวมเป็น account จริงให้อัตโนมัติ</strong> (อุปกรณ์/ทีมที่ผูกไว้ติดไปด้วย)
+      </div>
+      <div class="field">
+        <label>ชื่อ-สกุล</label>
+        <input id="ts-name" type="text" placeholder="เช่น สมชาย ใจดี" />
+      </div>
+      <div class="field">
+        <label>เบอร์มือถือ</label>
+        <input id="ts-phone" type="tel" inputmode="numeric" placeholder="0812345678" />
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">ต้องเป็นเบอร์ที่เจ้าตัวจะใช้ login OTP (เริ่มด้วย 0 ได้ ระบบแปลงให้)</div>
+      </div>
+      <div class="field">
+        <label>แผนก (ชั่วคราว) — optional</label>
+        <input id="ts-dept" type="text" placeholder="เช่น Event ชั่วคราว / Outsource" />
+      </div>
+    `,
+    onSubmit: async () => {
+      const name = $('ts-name').value.trim();
+      const phone = $('ts-phone').value.trim();
+      if (!name) throw new Error('กรอกชื่อ');
+      if (phone.replace(/\D/g, '').length < 9) throw new Error('กรอกเบอร์มือถือให้ครบ');
+      const r = await fetchJson('/api/admin/temp-staff', {
+        method: 'POST',
+        body: JSON.stringify({ name, phone, department: $('ts-dept').value.trim() || null }),
+      });
+      _hwMembersCache = []; _membersCache = [];   // ให้ owner picker / members list โหลดใหม่ (เห็น temp staff)
+      showSavedToast('✓ สร้าง Temporary Staff: ' + name + ' (' + (r.phone || phone) + ')');
+    },
+  });
 }
 
 async function showAddTeamModal() {
@@ -14011,7 +14054,9 @@ function renderMemberBubbles(members) {
            style="flex:0 0 96px;text-align:center;cursor:pointer" title="คลิกดูสถิติของ ${safeName}">
         ${avatar}
         <div style="margin-top:8px;font-size:12.5px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:96px">${escapeHtml(display)}</div>
-        <div style="font-size:10.5px;color:var(--text-muted);margin-top:1px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:96px">${escapeHtml(joinedTxt)}</div>
+        ${m.is_temp
+          ? `<div title="${escapeHtml(m.temp_department || 'พนักงานชั่วคราว')}" style="font-size:9.5px;color:#92400e;background:rgba(245,158,11,.15);border-radius:999px;padding:1px 7px;display:inline-block;margin-top:3px;font-weight:700">🕓 ชั่วคราว</div>`
+          : `<div style="font-size:10.5px;color:var(--text-muted);margin-top:1px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:96px">${escapeHtml(joinedTxt)}</div>`}
       </div>
     `;
   }).join('');
