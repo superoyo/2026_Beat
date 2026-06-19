@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.228",
+      "date": "2026-06-19",
+      "title": "Wazzup SSO — เปลี่ยน label เป็น รหัสพนักงาน + วันเกิด (ค.ศ.)",
+      "summary": "หน้า login แท็บ Wazzup SSO: ช่อง user เปลี่ยนเป็น ‘รหัสพนักงาน’ (placeholder ‘กรุณากรอกรหัสพนักงาน’) · ช่อง password เปลี่ยนเป็น ‘วันเกิด (ค.ศ.)’ placeholder ‘กรุณากรอกวันเกิด เป็น ค.ศ. รูปแบบ ddmmyyyy เช่น 02081980’",
+      "changes": [
+        "label/placeholder ช่อง user → รหัสพนักงาน",
+        "label/placeholder ช่อง password → วันเกิด (ค.ศ.) ddmmyyyy เช่น 02081980",
+        "ปรับข้อความ info-box ให้ตรง"
+      ]
+    },
+    {
       "version": "1.9.227",
       "date": "2026-06-19",
       "title": "หน้า login OTP — ย่อ +66 / เบอร์ตัวใหญ่ / OTP 6 ช่องย่อย",

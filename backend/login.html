@@ -322,16 +322,16 @@
     <!-- v1.9.83 — Wazzup SSO panel -->
     <div class="panel" id="panel-wazzup">
       <div class="info-box" style="margin-bottom:14px">
-        🏢 <strong>Wazzup (Fareast Fameline)</strong> — เข้าด้วย username + password ของบริษัท
+        🏢 <strong>Wazzup (Fareast Fameline)</strong> — เข้าด้วย รหัสพนักงาน + วันเกิด (ค.ศ.)
       </div>
       <form id="wazzupForm">
         <div class="field">
-          <label for="waz-user">Username</label>
-          <input id="waz-user" type="text" autocomplete="username" placeholder="ชื่อ Wazzup ของคุณ" />
+          <label for="waz-user">รหัสพนักงาน</label>
+          <input id="waz-user" type="text" autocomplete="username" placeholder="กรุณากรอกรหัสพนักงาน" />
         </div>
         <div class="field">
-          <label for="waz-pass">Password</label>
-          <input id="waz-pass" type="password" autocomplete="current-password" />
+          <label for="waz-pass">วันเกิด (ค.ศ.)</label>
+          <input id="waz-pass" type="password" autocomplete="current-password" inputmode="numeric" placeholder="กรุณากรอกวันเกิด เป็น ค.ศ. รูปแบบ ddmmyyyy เช่น 02081980" />
         </div>
         <button type="submit" class="primary-btn" id="wazLoginBtn">🏢 Login ด้วย Wazzup</button>
       </form>
