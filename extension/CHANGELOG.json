@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.226",
+      "date": "2026-06-19",
+      "title": "แก้ login OTP error 500 — เบอร์เดิม firebase_uid เปลี่ยน (re-link)",
+      "summary": "ยืนยัน OTP แล้ว HTTP 500 เพราะ INSERT member เบอร์ซ้ำชน UNIQUE(phone) (เกิดเมื่อ firebase_uid เปลี่ยน เช่นเปลี่ยน Firebase project/ลบ-สร้าง user) · แก้: ถ้าเบอร์มีอยู่แล้ว re-link firebase_uid ใหม่เข้ากับ member เดิมแทน insert + log สาเหตุจริงแทน 500 เปล่า",
+      "changes": [
+        "member_verify: ถ้าเบอร์มีอยู่แล้วแต่ uid ไม่ตรง → UPDATE firebase_uid (re-link) แทน INSERT (กัน UNIQUE(phone) ชน)",
+        "ครอบ upsert ด้วย try/except → log traceback + คืนชื่อ exception (debug ง่ายขึ้น)"
+      ]
+    },
+    {
       "version": "1.9.225",
       "date": "2026-06-19",
       "title": "Credit Card Summary — คอลัมน์แคบลง + เพิ่มคอลัมน์รายละเอียด/เจ้าของ",

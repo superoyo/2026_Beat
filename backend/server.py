@@ -4757,47 +4757,69 @@ def member_verify(payload: MemberVerifyIn, response: Response) -> dict[str, Any]
     display_name = user.get("displayName") or None
     now = utc_now().isoformat()
 
-    with db_conn() as conn:
-        existing = conn.execute(
-            "SELECT id, enabled FROM members WHERE firebase_uid = ?", (firebase_uid,)
-        ).fetchone()
-        # v1.9.85 — fallback: หาใน member_aliases (กรณีบัญชีนี้ถูก merge ไปแล้ว)
-        via_alias = False
-        if not existing:
+    try:
+        with db_conn() as conn:
             existing = conn.execute(
-                "SELECT m.id, m.enabled FROM member_aliases a "
-                "JOIN members m ON m.id = a.member_id "
-                "WHERE a.kind = 'firebase_uid' AND a.value = ?",
-                (firebase_uid,),
+                "SELECT id, enabled FROM members WHERE firebase_uid = ?", (firebase_uid,)
             ).fetchone()
-            via_alias = bool(existing)
-        if existing and _is_member_disabled(existing):
-            raise HTTPException(status_code=403, detail="บัญชีนี้ถูกระงับการใช้งาน")
-        if existing:
-            # v1.9.85 — ถ้า match ผ่าน alias ไม่ overwrite phone (primary's identity ต่างกัน)
-            if via_alias:
-                conn.execute(
-                    "UPDATE members SET last_login_at = ? WHERE id = ?",
-                    (now, existing["id"]),
-                )
+            # v1.9.85 — fallback: หาใน member_aliases (กรณีบัญชีนี้ถูก merge ไปแล้ว)
+            via_alias = False
+            if not existing:
+                existing = conn.execute(
+                    "SELECT m.id, m.enabled FROM member_aliases a "
+                    "JOIN members m ON m.id = a.member_id "
+                    "WHERE a.kind = 'firebase_uid' AND a.value = ?",
+                    (firebase_uid,),
+                ).fetchone()
+                via_alias = bool(existing)
+            if existing and _is_member_disabled(existing):
+                raise HTTPException(status_code=403, detail="บัญชีนี้ถูกระงับการใช้งาน")
+            if existing:
+                # v1.9.85 — ถ้า match ผ่าน alias ไม่ overwrite phone (primary's identity ต่างกัน)
+                if via_alias:
+                    conn.execute(
+                        "UPDATE members SET last_login_at = ? WHERE id = ?",
+                        (now, existing["id"]),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE members SET phone = ?, display_name = COALESCE(?, display_name), "
+                        "last_login_at = ? WHERE id = ?",
+                        (phone, display_name, now, existing["id"]),
+                    )
+                member_id = existing["id"]
+                is_new = False
             else:
-                conn.execute(
-                    "UPDATE members SET phone = ?, display_name = COALESCE(?, display_name), "
-                    "last_login_at = ? WHERE id = ?",
-                    (phone, display_name, now, existing["id"]),
-                )
-            member_id = existing["id"]
-            is_new = False
-        else:
-            cur = conn.execute(
-                "INSERT INTO members(phone, firebase_uid, display_name, created_at, last_login_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (phone, firebase_uid, display_name, now, now),
-            )
-            member_id = cur.lastrowid
-            is_new = True
-
-    token = _set_member_cookie(response, member_id, phone)
+                # v1.9.226 — กัน UNIQUE(phone) ชน → 500: ถ้าเบอร์นี้มี member อยู่แล้วแต่ firebase_uid ไม่ตรง
+                # (เช่นเปลี่ยน Firebase project / ลบ-สร้าง user ใหม่ → uid เปลี่ยน) → re-link uid ใหม่เข้ากับ member เดิม
+                by_phone = conn.execute(
+                    "SELECT id, enabled FROM members WHERE phone = ?", (phone,)
+                ).fetchone()
+                if by_phone:
+                    if _is_member_disabled(by_phone):
+                        raise HTTPException(status_code=403, detail="บัญชีนี้ถูกระงับการใช้งาน")
+                    conn.execute(
+                        "UPDATE members SET firebase_uid = ?, display_name = COALESCE(?, display_name), "
+                        "last_login_at = ? WHERE id = ?",
+                        (firebase_uid, display_name, now, by_phone["id"]),
+                    )
+                    member_id = by_phone["id"]
+                    is_new = False
+                else:
+                    cur = conn.execute(
+                        "INSERT INTO members(phone, firebase_uid, display_name, created_at, last_login_at) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (phone, firebase_uid, display_name, now, now),
+                    )
+                    member_id = cur.lastrowid
+                    is_new = True
+        token = _set_member_cookie(response, member_id, phone)
+    except HTTPException:
+        raise
+    except Exception as e:   # v1.9.226 — log สาเหตุจริงแทน 500 เปล่า ๆ
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"บันทึกบัญชีไม่สำเร็จ ({type(e).__name__})")
     return {"ok": True, "role": "member", "member_id": member_id, "phone": phone,
             "is_new": is_new, "token": token, "label": display_name or phone}
 
