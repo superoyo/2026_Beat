@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.231",
+      "date": "2026-06-20",
+      "title": "Personal Computer list — บล็อกปฏิทินวันที่ซื้อ + อายุการใช้งาน",
+      "summary": "การ์ดเครื่องในหน้า Device & Software › Personal Computer แสดงบล็อกปฏิทิน (เดือน+ปี พ.ศ.) ของวันที่ซื้อด้านขวา + ข้อความ ‘⏱ ใช้งานมาแล้ว X ปี Y เดือน’ (ใช้ helper เดียวกับหน้าทีม)",
+      "changes": [
+        "เพิ่ม calendar tile (renderMyDevicePurchaseTile) ด้านขวาของการ์ด PC",
+        "เพิ่มข้อความอายุการใช้งาน (calcHwAgeStr)",
+        "ย้ายวันที่ซื้อของ PC จากบรรทัดข้อความรอง ไปอยู่ในบล็อกปฏิทินแทน (device/network ยังเป็นข้อความเหมือนเดิม)"
+      ]
+    },
+    {
       "version": "1.9.230",
       "date": "2026-06-19",
       "title": "Credit Card — ช่องเลือกเจ้าของเอกสารเป็น searchable picker (รูป+ชื่อ)",

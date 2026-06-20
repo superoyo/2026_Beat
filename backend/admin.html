@@ -11100,9 +11100,13 @@ function renderHardwareRow(h) {
     if (h.device_subtype) specs.push(escapeHtml(h.device_subtype));
     if (h.capacity) specs.push(escapeHtml(h.capacity));
   }
+  // v1.9.231 — PC: วันที่ซื้อแสดงเป็นบล็อกปฏิทิน (เดือน+ปี พ.ศ.) + อายุการใช้งาน แทนข้อความบรรทัดรอง
+  const isPc = h.hw_type === 'pc';
+  const tile = isPc ? renderMyDevicePurchaseTile(h.purchased_at) : '';
+  const ageStr = isPc ? calcHwAgeStr(h.purchased_at) : '';
   const meta2 = [];
   if (h.serial_number) meta2.push('SN ' + escapeHtml(h.serial_number));
-  if (h.purchased_at) meta2.push(escapeHtml((h.hw_type === 'pc') ? fmtMonthYearThai(h.purchased_at) : fmtDateThai(h.purchased_at)));
+  if (h.purchased_at && !isPc) meta2.push(escapeHtml(fmtDateThai(h.purchased_at)));
   if (h.department || h.location) meta2.push([h.department, h.location].filter(Boolean).map(escapeHtml).join(' / '));
   const _sep = ' <span style="color:var(--border)">·</span> ';
   const specLine = specs.length ? specs.join(_sep) : '<span style="color:var(--text-muted);font-style:italic">— ไม่มีรายละเอียด</span>';
@@ -11161,8 +11165,10 @@ function renderHardwareRow(h) {
         </div>
         <div style="font-size:12px;color:var(--text-muted);line-height:1.5;overflow:hidden;text-overflow:ellipsis">${specLine}</div>
         ${meta2Line}
+        ${ageStr ? `<div style="font-size:11.5px;color:var(--accent);font-weight:600;margin-top:1px">⏱ ใช้งานมาแล้ว ${escapeHtml(ageStr)}</div>` : ''}
         ${h.notes ? `<div style="font-size:11.5px;color:var(--text-muted);font-style:italic;margin-top:2px">📝 ${escapeHtml(h.notes.length > 80 ? h.notes.slice(0, 77) + '…' : h.notes)}</div>` : ''}
       </div>
+      ${tile}
       <div class="hw-chev" style="flex-shrink:0;font-size:22px;line-height:1">›</div>
     </div>
   `;
