@@ -10033,6 +10033,7 @@ let _hwSearch = '';
 let _hwOsFilter = '';       // PC only: '' | 'mac' | 'windows' | 'linux' | 'other'
 let _hwDeptFilter = '';     // PC only: '' หรือ team_id string (subtree) — v1.9.61: เปลี่ยนจาก dept name → team tree
 let _hwLinkFilter = '';     // PC only: '' (ทั้งหมด) | 'linked' (มี owner) | 'unlinked' (ยังไม่ผูก)
+let _hwSort = '';           // v1.9.251 PC only: '' (ชื่อ) | 'purchase_desc' | 'purchase_asc'
 let _hwTeamsCache = [];     // v1.9.61: cache teams (hierarchy) สำหรับ "แผนก" filter
 let _hwMembersCache = [];   // members list (สำหรับ owner dropdown)
 
@@ -11068,6 +11069,7 @@ async function renderHardwarePage(type) {
   _hwOsFilter = '';
   _hwDeptFilter = '';
   _hwLinkFilter = '';
+  _hwSort = '';
   const tab = HW_TYPES.find(t => t.id === _hwActiveType) || HW_TYPES[0];
   const isPc = _hwActiveType === 'pc';
   // v1.9.250 — filter เป็น dropdown ด้านบน (ประหยัดที่)
@@ -11090,6 +11092,11 @@ async function renderHardwarePage(type) {
         <select id="hw-f-link" style="${selS}"></select>
         <select id="hw-f-dept" style="${selS}"></select>
         <select id="hw-f-os" style="${selS}"></select>
+        <select id="hw-f-sort" style="${selS}">
+          <option value="">↕️ เรียง: ชื่อ (ก-ฮ)</option>
+          <option value="purchase_desc">🛒 ซื้อล่าสุด → เก่า</option>
+          <option value="purchase_asc">🛒 ซื้อเก่าสุด → ใหม่</option>
+        </select>
       </div>
     ` : ''}
     <div id="hw-list"><div class="empty">กำลังโหลด…</div></div>
@@ -11103,6 +11110,7 @@ async function renderHardwarePage(type) {
     $('hw-f-link').addEventListener('change', (e) => { _hwLinkFilter = e.target.value; renderHardwareRows(); });
     $('hw-f-dept').addEventListener('change', (e) => { _hwDeptFilter = e.target.value; renderHardwareRows(); });
     $('hw-f-os').addEventListener('change', (e) => { _hwOsFilter = e.target.value; renderHardwareRows(); });
+    $('hw-f-sort').addEventListener('change', (e) => { _hwSort = e.target.value; renderHardwareRows(); });
   }
   // โหลด members + teams refresh ทุกครั้ง — กัน stale cache
   // owner picker แสดง "ทุก member" ไม่ว่า is_admin หรือ enabled เป็นอะไร
@@ -11166,6 +11174,20 @@ function applyHwFiltersExcept(h, excludeKey, q) {
     if (!hit) return false;
   }
   return true;
+}
+
+// v1.9.251 — เรียงลำดับ PC ตามวันสั่งซื้อ (purchased_at = ISO YYYY-MM-DD CE → string sort ตรง)
+function _hwSortList(list) {
+  if (_hwSort !== 'purchase_desc' && _hwSort !== 'purchase_asc') return list;
+  const dir = _hwSort === 'purchase_desc' ? -1 : 1;
+  return [...list].sort((a, b) => {
+    const pa = (a.purchased_at || '').slice(0, 10);
+    const pb = (b.purchased_at || '').slice(0, 10);
+    if (!pa && !pb) return 0;
+    if (!pa) return 1;            // เครื่องที่ไม่มีวันซื้อ → ท้ายสุดเสมอ
+    if (!pb) return -1;
+    return pa < pb ? -dir : pa > pb ? dir : 0;
+  });
 }
 
 // v1.9.250 — Filter dropdowns (PC only) — การเชื่อมโยง / แผนก team-tree / OS — cross-filter counts
@@ -11314,7 +11336,8 @@ function renderHardwareRows() {
     return;
   }
   // v1.9.250 — PC แสดงเป็น card grid (เหมือนหน้าคอมส่วนกลาง) · Device/Network แสดงเป็น list เดิม
-  const cardsHtml = list.map(h => renderHardwareRow(h)).join('');
+  const ordered = isPc ? _hwSortList(list) : list;   // v1.9.251 — เรียงตามวันสั่งซื้อ (ถ้าเลือก)
+  const cardsHtml = ordered.map(h => renderHardwareRow(h)).join('');
   listEl.innerHTML = isPc
     ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:8px">${cardsHtml}</div>`
     : cardsHtml;

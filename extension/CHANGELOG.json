@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.251",
+      "date": "2026-06-20",
+      "title": "Personal Computer — เพิ่ม dropdown เรียงตามวันสั่งซื้อ",
+      "summary": "หน้า Personal Computer เพิ่ม dropdown เรียงลำดับตัวที่ 4: ชื่อ (ก-ฮ) / ซื้อล่าสุด→เก่า / ซื้อเก่าสุด→ใหม่ · เครื่องที่ไม่มีวันซื้อจะอยู่ท้ายสุด",
+      "changes": [
+        "dropdown เรียง: ↕️ ชื่อ (default) · 🛒 ซื้อล่าสุด→เก่า · 🛒 ซื้อเก่าสุด→ใหม่",
+        "เรียงจาก purchased_at (ISO) · เครื่องไม่มีวันซื้อ → ท้ายสุดเสมอ",
+        "ทำงานร่วมกับ filter การเชื่อมโยง/แผนก/OS + คำค้นได้"
+      ]
+    },
+    {
       "version": "1.9.250",
       "date": "2026-06-20",
       "title": "Personal Computer — filter เป็น dropdown ด้านบน + การ์ดแบบ grid",
