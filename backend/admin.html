@@ -10849,13 +10849,22 @@ function _searchMatchHw(h, q) {
       || (h.device_subtype || '').toLowerCase().includes(q)
       || (h.notes || '').toLowerCase().includes(q);
 }
+// v1.9.232 — คอมส่วนกลาง = ไม่มี owner แต่ถูก "ระบุ" แล้ว (มีทีมที่สังกัด / ที่เก็บ / status=stock)
+function _isHwCentral(h) {
+  if (h.current_member_id) return false;
+  return h.unassigned_team_id != null
+    || (h.storage_location && String(h.storage_location).trim() !== '')
+    || h.status === 'stock';
+}
 // apply all PC filters except `excludeKey` ('os' | 'dept' | 'link' | null = all)
 function applyHwFiltersExcept(h, excludeKey, q) {
   if (!_searchMatchHw(h, q)) return false;
   if (excludeKey !== 'os' && _hwOsFilter && classifyHwOs(h.os) !== _hwOsFilter) return false;
   if (excludeKey !== 'link') {
     if (_hwLinkFilter === 'linked' && !h.current_member_id) return false;
-    if (_hwLinkFilter === 'unlinked' && h.current_member_id) return false;
+    if (_hwLinkFilter === 'central' && !_isHwCentral(h)) return false;
+    // ยังไม่ได้เชื่อมจริง ๆ = ไม่มี owner และไม่ใช่คอมส่วนกลาง
+    if (_hwLinkFilter === 'unlinked' && (h.current_member_id || _isHwCentral(h))) return false;
   }
   if (excludeKey !== 'dept' && _hwDeptFilter) {
     const tid = parseInt(_hwDeptFilter, 10);
@@ -10886,8 +10895,12 @@ function renderHwSidebar() {
   const visForDept = _hwCache.filter(h => applyHwFiltersExcept(h, 'dept', q));
 
   // === Link ===
-  let linkedCount = 0, unlinkedCount = 0;
-  visForLink.forEach(h => h.current_member_id ? linkedCount++ : unlinkedCount++);
+  let linkedCount = 0, centralCount = 0, unlinkedCount = 0;
+  visForLink.forEach(h => {
+    if (h.current_member_id) linkedCount++;
+    else if (_isHwCentral(h)) centralCount++;
+    else unlinkedCount++;
+  });
 
   // === OS ===
   const osLabels = { mac: '🍎 Mac', windows: '🪟 Windows', linux: '🐧 Linux', other: '🖥 อื่น ๆ' };
@@ -10938,6 +10951,7 @@ function renderHwSidebar() {
   const linkItems = [
     itemHtml('link:', '📋 ทั้งหมด', visForLink.length, _hwLinkFilter === ''),
     itemHtml('link:linked', '✅ เชื่อมแล้ว', linkedCount, _hwLinkFilter === 'linked'),
+    itemHtml('link:central', '📦 คอมฯส่วนกลาง', centralCount, _hwLinkFilter === 'central'),
     itemHtml('link:unlinked', '🔓 ยังไม่ได้เชื่อม', unlinkedCount, _hwLinkFilter === 'unlinked'),
   ];
   const osItems = [
@@ -11053,7 +11067,7 @@ function renderHardwareRows() {
       reasons.push(`แผนก = <strong>${escapeHtml(team ? team.name : _hwDeptFilter)}</strong>`);
     }
     if (isPc && _hwLinkFilter) {
-      const linkLabels = { linked: '✅ เชื่อมแล้ว', unlinked: '🔓 ยังไม่ได้เชื่อม' };
+      const linkLabels = { linked: '✅ เชื่อมแล้ว', central: '📦 คอมฯส่วนกลาง', unlinked: '🔓 ยังไม่ได้เชื่อม' };
       reasons.push(`การเชื่อมโยง = <strong>${linkLabels[_hwLinkFilter] || _hwLinkFilter}</strong>`);
     }
     listEl.innerHTML = `<div class="empty">ไม่พบรายการที่ตรงกับ ${reasons.join(' + ')}</div>`;
@@ -11127,10 +11141,12 @@ function renderHardwareRow(h) {
     }
   }
 
-  // Owner badge
+  // Owner badge — มี owner = 👤 / คอมส่วนกลาง = 📦 ส่วนกลาง / ที่เหลือ = 🔓 ยังไม่ผูก
   const ownerBadge = h.current_member_label
     ? `<span title="${escapeHtml(h.current_member_username || '')}" style="display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(16,185,129,.10);color:var(--green)">👤 ${escapeHtml(h.current_member_label)}</span>`
-    : `<span style="display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;background:var(--bg-soft);color:var(--text-muted)">🔓 ยังไม่ผูก</span>`;
+    : (_isHwCentral(h)
+        ? `<span title="คอมส่วนกลาง${h.storage_location ? ' · ที่เก็บ: ' + escapeHtml(h.storage_location) : ''}" style="display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(99,102,241,.12);color:#3730a3">📦 ส่วนกลาง</span>`
+        : `<span style="display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;background:var(--bg-soft);color:var(--text-muted)">🔓 ยังไม่ผูก</span>`);
 
   // Owner avatar overlay (มุมขวาล่างของรูปอุปกรณ์) — แสดงเฉพาะถ้าผูกกับ owner
   let ownerAvatarOverlay = '';
