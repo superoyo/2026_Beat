@@ -10856,7 +10856,16 @@ function _pcdOwnerPanel(memberId, onChange) {
     ? m.teams.map(t => `<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;background:rgba(37,99,235,.10);color:var(--primary);margin:2px 3px 0 0">${escapeHtml(t.name)}</span>`).join('')
     : '<span style="color:var(--text-muted)">—</span>';
   const row = (label, val) => `<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)"><div style="width:90px;flex-shrink:0;font-size:12px;color:var(--text-muted)">${label}</div><div style="flex:1;font-size:13px;color:var(--text);word-break:break-word">${val}</div></div>`;
-  const devCard = (p) => { const a = calcHwAgeStr(p.purchased_at); return `<div class="hw-card" data-pcd-dev="${p.id}" title="คลิกดูรายละเอียด + แก้ไข" style="border:1px solid var(--border);border-radius:10px;padding:8px 11px;margin-bottom:6px;cursor:pointer"><div style="font-size:12.5px;font-weight:700">${_pcDashIsMac(p) ? '🍎' : '💻'} ${escapeHtml(p.name)}${p.is_personal_owned ? ' <span style="font-size:10px;color:#7c3aed;font-weight:700">🙋 เครื่องตนเอง</span>' : ''}</div><div style="font-size:11px;color:var(--text-muted);margin-top:1px">${escapeHtml(p.model || '—')}${a ? ' · ⏱ ' + escapeHtml(a) : ''}</div></div>`; };
+  // v1.9.256 — แสดงหมายเหตุ (+ หมวด) ใต้อุปกรณ์
+  const _catLabel = { keep: '🔸 ยังไม่เปลี่ยน', procuring: '🛒 อยู่ระหว่างจัดหา', transferring: '🔄 ได้เครื่องใหม่ — transfer' };
+  const devCard = (p) => {
+    const a = calcHwAgeStr(p.purchased_at);
+    const cat = _catLabel[p.note_category];
+    const noteHtml = (p.notes || cat)
+      ? `<div style="font-size:11px;color:#92400e;margin-top:5px;background:rgba(245,158,11,.1);padding:4px 8px;border-radius:6px;line-height:1.45">📝 ${cat ? `<b>${cat}</b>${p.notes ? ' · ' : ''}` : ''}${escapeHtml(p.notes || '')}</div>`
+      : '';
+    return `<div class="hw-card" data-pcd-dev="${p.id}" title="คลิกดูรายละเอียด + แก้ไข" style="border:1px solid var(--border);border-radius:10px;padding:8px 11px;margin-bottom:6px;cursor:pointer"><div style="font-size:12.5px;font-weight:700">${_pcDashIsMac(p) ? '🍎' : '💻'} ${escapeHtml(p.name)}${p.is_personal_owned ? ' <span style="font-size:10px;color:#7c3aed;font-weight:700">🙋 เครื่องตนเอง</span>' : ''}</div><div style="font-size:11px;color:var(--text-muted);margin-top:1px">${escapeHtml(p.model || '—')}${a ? ' · ⏱ ' + escapeHtml(a) : ''}</div>${noteHtml}</div>`;
+  };
   const wrap = document.createElement('div');
   wrap.className = 'sup-panel-wrap';
   wrap.innerHTML = `
