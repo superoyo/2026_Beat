@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.233",
+      "date": "2026-06-20",
+      "title": "Dashboard — ‘เครื่องยังไม่ผูก’ นับเฉพาะที่ยังไม่ผูกจริง ๆ (ไม่รวมคอมส่วนกลาง)",
+      "summary": "การ์ด ‘เครื่องยังไม่ผูก’ + pie chart ผูกแล้ว/ยังไม่ผูก ตัดคอมส่วนกลางออก (ระบุ team/ที่เก็บ/stock) ให้ตรงกับหน้า Personal Computer · pie เพิ่มสไลซ์ ‘ส่วนกลาง’",
+      "changes": [
+        "dashboard_stats.unbound_pc: นับเฉพาะ no owner + ไม่มี unassigned_team_id/storage_location/stock",
+        "hardware_pc_stats.by_assignment: เพิ่ม central, unassigned = ยังไม่ผูกจริง ๆ",
+        "pie chart: ผูกแล้ว / ส่วนกลาง (ถ้ามี) / ยังไม่ผูก"
+      ]
+    },
+    {
       "version": "1.9.232",
       "date": "2026-06-20",
       "title": "Personal Computer — แยกคอมฯส่วนกลางออกจาก ‘ยังไม่ได้เชื่อม’",

@@ -7829,13 +7829,19 @@ def hardware_pc_stats(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
     """v1.9.108 — สรุปจำนวน PC: total + แบ่งตาม ผูก/ไม่ผูก + แบ่งตาม OS (Windows/Mac/อื่นๆ)"""
     with db_conn() as conn:
         rows = conn.execute(
-            "SELECT os, (current_member_id IS NOT NULL) AS assigned "
+            "SELECT os, current_member_id, unassigned_team_id, storage_location, status "
             "FROM hardware WHERE hw_type = 'pc'"
         ).fetchall()
     total = len(rows)
-    assigned = sum(1 for r in rows if r["assigned"])
+    assigned = central = 0
     win = mac = other = 0
     for r in rows:
+        if r["current_member_id"] is not None:
+            assigned += 1
+        elif (r["unassigned_team_id"] is not None
+              or (r["storage_location"] and str(r["storage_location"]).strip() != "")
+              or r["status"] == "stock"):
+            central += 1                          # v1.9.233 — คอมส่วนกลาง (ระบุแล้ว แต่ยังไม่ผูก owner)
         os_v = (r["os"] or "").lower()
         if "win" in os_v:
             win += 1
@@ -7845,7 +7851,8 @@ def hardware_pc_stats(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
             other += 1
     return {
         "total": total,
-        "by_assignment": {"assigned": assigned, "unassigned": total - assigned},
+        # unassigned = ยังไม่ผูกจริง ๆ (ไม่รวมส่วนกลาง)
+        "by_assignment": {"assigned": assigned, "central": central, "unassigned": total - assigned - central},
         "by_os": {"windows": win, "mac": mac, "other": other},
     }
 
@@ -8677,8 +8684,13 @@ def dashboard_stats(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
         platforms = conn.execute("SELECT COUNT(*) AS n FROM sites").fetchone()["n"]
         skills = conn.execute("SELECT COUNT(*) AS n FROM skills").fetchone()["n"]
         ai_projects = conn.execute("SELECT COUNT(*) AS n FROM ai_projects").fetchone()["n"]
+        # v1.9.233 — เครื่องยังไม่ผูก "จริง ๆ" = ไม่มี owner และไม่ใช่คอมส่วนกลาง
+        # (คอมส่วนกลาง = ระบุ unassigned_team_id / storage_location / status=stock)
         unbound_pc = conn.execute(
-            "SELECT COUNT(*) AS n FROM hardware WHERE hw_type = 'pc' AND current_member_id IS NULL"
+            "SELECT COUNT(*) AS n FROM hardware WHERE hw_type = 'pc' AND current_member_id IS NULL "
+            "AND unassigned_team_id IS NULL "
+            "AND (storage_location IS NULL OR TRIM(storage_location) = '') "
+            "AND (status IS NULL OR status != 'stock')"
         ).fetchone()["n"]
         members_no_team = conn.execute(
             "SELECT COUNT(*) AS n FROM members m "

@@ -1503,9 +1503,9 @@ function drawPcChart() {
     if (o.other > 0) { labels.push('อื่นๆ'); values.push(o.other); colors.push('#cbd5e1'); }
   } else {
     const a = pcStatsData.by_assignment;
-    labels = ['ผูกแล้ว', 'ยังไม่ผูก'];
-    values = [a.assigned, a.unassigned];
-    colors = ['#2563eb', '#cbd5e1'];
+    labels = ['ผูกแล้ว']; values = [a.assigned]; colors = ['#2563eb'];
+    if (a.central > 0) { labels.push('ส่วนกลาง'); values.push(a.central); colors.push('#6366f1'); }
+    labels.push('ยังไม่ผูก'); values.push(a.unassigned); colors.push('#cbd5e1');
   }
   if (pcStatsChart) { try { pcStatsChart.destroy(); } catch {} }
   // eslint-disable-next-line no-undef
