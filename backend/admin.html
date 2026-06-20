@@ -10896,15 +10896,11 @@ async function renderPcDashboard() {
       ${card('การผูก owner', assigned, 'var(--green)', `ส่วนกลาง ${central} · ยังไม่ผูก ${unassigned}`)}
     </div>
 
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px;align-items:start" id="pcd-2col">
-      <div>
-        <div style="font-size:13px;font-weight:800;margin-bottom:8px">⚠️ ควรพิจารณาเปลี่ยน (${needReplace.length})</div>
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:8px">เกณฑ์: notebook ใช้เกิน 3 ปี · Mac เกิน 5 ปี · เรียงตามที่เกินเกณฑ์มากสุด</div>
-        <div style="max-height:480px;overflow-y:auto">${needReplace.length ? needReplace.map(replaceRow).join('') : '<div class="empty" style="padding:24px">🎉 ไม่มีเครื่องที่เกินเกณฑ์</div>'}</div>
-      </div>
+    <!-- ปฏิทินการซื้อ (ซ้าย) | รายการเดือนที่คลิก (ขวา) -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px;align-items:start;margin-bottom:18px">
       <div>
         <div style="font-size:13px;font-weight:800;margin-bottom:8px">📅 ปฏิทินการซื้อ (ตามเดือน/ปี)</div>
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:8px">สีเข้ม = ซื้อเยอะ · คลิกช่องเพื่อดูว่าเดือนนั้นซื้ออะไร</div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:8px">สีเข้ม = ซื้อเยอะ · คลิกช่องเพื่อดูว่าเดือนนั้นซื้ออะไร (แสดงคอลัมน์ขวา)</div>
         <div style="overflow-x:auto;border:1px solid var(--border);border-radius:10px;padding:6px">
           <table style="width:100%;border-collapse:separate;border-spacing:2px;font-size:11px">
             <thead><tr style="color:var(--text-muted)">
@@ -10913,18 +10909,31 @@ async function renderPcDashboard() {
             <tbody>${calRows || '<tr><td colspan="14" style="padding:18px;text-align:center;color:var(--text-muted)">ยังไม่มีข้อมูลวันที่ซื้อ</td></tr>'}</tbody>
           </table>
         </div>
-        <div id="pcd-month-detail" style="margin-top:10px"></div>
-
-        <div style="font-size:13px;font-weight:800;margin:18px 0 8px">📊 การกระจายอายุ (เครื่องที่ใช้งานอยู่)</div>
-        <div style="display:flex;flex-direction:column;gap:6px">
-          ${buckets.map(b => `<div style="display:flex;align-items:center;gap:8px">
-            <div style="width:64px;font-size:12px;color:var(--text-muted);flex-shrink:0">${b.label}</div>
-            <div style="flex:1;background:var(--bg-soft);border-radius:6px;height:20px;overflow:hidden"><div style="height:100%;width:${Math.round(b.count / maxBucket * 100)}%;background:${b.color};border-radius:6px;min-width:${b.count ? 3 : 0}px"></div></div>
-            <div style="width:32px;text-align:right;font-weight:700;font-size:12.5px;flex-shrink:0">${b.count}</div>
-          </div>`).join('')}
-        </div>
-        ${noDate ? `<div style="font-size:11px;color:var(--text-soft);margin-top:8px">* อีก ${noDate} เครื่องที่ใช้งานอยู่ยังไม่ได้ระบุวันที่ซื้อ — เติมข้อมูลเพื่อความแม่นยำ</div>` : ''}
       </div>
+      <div>
+        <div style="font-size:13px;font-weight:800;margin-bottom:8px">🛒 รายการที่ซื้อ</div>
+        <div id="pcd-month-detail"><div class="empty" style="padding:28px 16px;font-size:12.5px;line-height:1.7">👈 คลิกช่องเดือนในปฏิทิน<br>เพื่อดูว่าเดือนนั้นซื้อคอมอะไรบ้าง</div></div>
+      </div>
+    </div>
+
+    <!-- การกระจายอายุ (เต็มความกว้าง) -->
+    <div style="margin-bottom:18px">
+      <div style="font-size:13px;font-weight:800;margin-bottom:8px">📊 การกระจายอายุ (เครื่องที่ใช้งานอยู่)</div>
+      <div style="display:flex;flex-direction:column;gap:6px;max-width:720px">
+        ${buckets.map(b => `<div style="display:flex;align-items:center;gap:8px">
+          <div style="width:64px;font-size:12px;color:var(--text-muted);flex-shrink:0">${b.label}</div>
+          <div style="flex:1;background:var(--bg-soft);border-radius:6px;height:20px;overflow:hidden"><div style="height:100%;width:${Math.round(b.count / maxBucket * 100)}%;background:${b.color};border-radius:6px;min-width:${b.count ? 3 : 0}px"></div></div>
+          <div style="width:32px;text-align:right;font-weight:700;font-size:12.5px;flex-shrink:0">${b.count}</div>
+        </div>`).join('')}
+      </div>
+      ${noDate ? `<div style="font-size:11px;color:var(--text-soft);margin-top:8px">* อีก ${noDate} เครื่องที่ใช้งานอยู่ยังไม่ได้ระบุวันที่ซื้อ — เติมข้อมูลเพื่อความแม่นยำ</div>` : ''}
+    </div>
+
+    <!-- ควรพิจารณาเปลี่ยน (ล่างสุด เต็มความกว้าง) -->
+    <div>
+      <div style="font-size:13px;font-weight:800;margin-bottom:4px">⚠️ ควรพิจารณาเปลี่ยน (${needReplace.length})</div>
+      <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:8px">เกณฑ์: notebook ใช้เกิน 3 ปี · Mac เกิน 5 ปี · เรียงตามที่เกินเกณฑ์มากสุด</div>
+      ${needReplace.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px">${needReplace.map(replaceRow).join('')}</div>` : '<div class="empty" style="padding:24px">🎉 ไม่มีเครื่องที่เกินเกณฑ์</div>'}
     </div>`;
 
   $('pcd-refresh').onclick = () => renderPcDashboard();
