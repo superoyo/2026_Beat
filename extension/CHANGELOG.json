@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.257",
+      "date": "2026-06-20",
+      "title": "Dashboard ควรพิจารณาเปลี่ยน — toggle Mac / Windows",
+      "summary": "เพิ่ม toggle switch (ทั้งหมด / 🍎 Mac / 🪟 Windows) ในส่วน ‘ควรพิจารณาเปลี่ยน’ ของ PC Dashboard · กรองการ์ดตามชนิดเครื่อง + มี count กำกับ · re-render เฉพาะส่วนนั้น (ไม่โหลดใหม่)",
+      "changes": [
+        "toggle ทั้งหมด / Mac / Windows พร้อมจำนวนในแต่ละปุ่ม",
+        "กรองรายการควรเปลี่ยนตามชนิด · ยังแยกกลุ่มตามหมวดหมายเหตุเหมือนเดิม",
+        "re-render เฉพาะ body + re-wire คลิกการ์ด (เปิด slide-in ได้)"
+      ]
+    },
+    {
       "version": "1.9.256",
       "date": "2026-06-20",
       "title": "Owner panel — แสดงหมายเหตุใต้อุปกรณ์ที่ผูกอยู่",
