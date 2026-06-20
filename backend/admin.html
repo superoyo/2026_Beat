@@ -1127,7 +1127,7 @@
           <span id="nav-peoples-badge" style="display:none;background:var(--critical);color:#fff;font-size:10px;padding:0 6px;border-radius:999px;font-weight:700;position:absolute;top:6px;right:6px;line-height:16px"></span>
         </a>
         <!-- v1.9.124 — Device & Software: direct link -->
-        <a href="#/sites" data-route="sites" data-route-extra="hardware-pc,hardware-pc-unassigned,hardware-device,hardware-network,financial-documents" data-label="Device & Software">
+        <a href="#/sites" data-route="sites" data-route-extra="hardware-pc-dashboard,hardware-pc,hardware-pc-unassigned,hardware-device,hardware-network,financial-documents" data-label="Device & Software">
           <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>
           <span class="nav-label">Device &amp; Software</span>
         </a>
@@ -1277,10 +1277,10 @@ function _extractErrDetail(j) {
 }
 
 // admin-only routes — member ห้ามเข้า (bounce ไป default)
-const ADMIN_ONLY_ROUTES = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads', 'ads-benchmark', 'ads-audience', 'ads-campaigns', 'sso']);
+const ADMIN_ONLY_ROUTES = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc-dashboard', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads', 'ads-benchmark', 'ads-audience', 'ads-campaigns', 'sso']);
 // menu items ที่ซ่อนใน sidebar สำหรับ member
 // (dashboard เห็นได้ทุกบทบาท — ใช้เป็นหน้าแรกของ member ด้วย)
-const HIDE_FROM_MEMBER_NAV = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads', 'ads-benchmark', 'ads-audience', 'ads-campaigns', 'sso']);
+const HIDE_FROM_MEMBER_NAV = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc-dashboard', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads', 'ads-benchmark', 'ads-audience', 'ads-campaigns', 'sso']);
 // v1.9.162 — IAM: route → module ที่ต้องมีสิทธิ์ (member ที่ถูก grant ถึงเข้าได้)
 const ROUTE_MODULE = { platforms: 'platform', ads: 'ads', 'ads-benchmark': 'ads', 'ads-audience': 'ads', 'ads-campaigns': 'ads', calendar: 'customer', domains: 'customer', websites: 'customer', 'services-config': 'customer', 'domains-config': 'customer', tv: 'tv', 'tv-scheduling': 'tv' };
 let currentModules = new Set();   // module ที่ผู้ใช้ปัจจุบันเข้าถึงได้ (member)
@@ -1294,6 +1294,7 @@ const routes = {
   'websites':         () => renderCustomerPage('websites'),
   'services-config':  () => renderCustomerPage('services-config'),
   'sites':            () => renderDeviceSoftwarePage('sites'),
+  'hardware-pc-dashboard': () => renderDeviceSoftwarePage('hardware-pc-dashboard'),
   'hardware-pc':      () => renderDeviceSoftwarePage('hardware-pc'),
   'hardware-pc-unassigned': () => renderDeviceSoftwarePage('hardware-pc-unassigned'),
   'hardware-device':  () => renderDeviceSoftwarePage('hardware-device'),
@@ -10791,6 +10792,154 @@ function showFinDocAddPageModal(docId) {
   }, 10);
 }
 
+// v1.9.235 — PC Dashboard: ภาพรวมคอมทั้งบริษัท + ปฏิทินการซื้อ + รายการควรพิจารณาเปลี่ยน (notebook>3ปี / mac>5ปี)
+function _pcDashAgeMonths(p) {
+  const m = /^(\d{4})-(\d{2})/.exec(String(p.purchased_at || ''));
+  if (!m) return null;
+  const now = new Date();
+  const mo = (now.getFullYear() - (+m[1])) * 12 + (now.getMonth() - ((+m[2]) - 1));
+  return mo < 0 ? 0 : mo;
+}
+function _pcDashIsMac(p) {
+  return /\bmac\b|macos|mac ?os|os ?x|osx|macbook|imac|mac ?mini|mac ?studio/i.test((p.os || '') + ' ' + (p.model || '') + ' ' + (p.name || ''));
+}
+async function renderPcDashboard() {
+  const root = _subMain();
+  if (!root) return;
+  root.innerHTML = '<div class="empty">กำลังโหลดข้อมูลคอมพิวเตอร์…</div>';
+  let pcs;
+  try { pcs = (await fetchJson('/api/admin/hardware?type=pc')).hardware || []; }
+  catch (e) { root.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`; return; }
+
+  const SHORT = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  pcs.forEach(p => {
+    p._age = _pcDashAgeMonths(p);
+    p._mac = _pcDashIsMac(p);
+    p._thr = p._mac ? 60 : 36;                 // mac 5 ปี / notebook 3 ปี
+    p._retired = p.status === 'retired';
+    p._needsReplace = !p._retired && p._age != null && p._age > p._thr;
+  });
+  const total = pcs.length;
+  const active = pcs.filter(p => !p._retired);
+  const withAge = active.filter(p => p._age != null);
+  const avgAge = withAge.length ? Math.round(withAge.reduce((s, p) => s + p._age, 0) / withAge.length) : null;
+  const needReplace = pcs.filter(p => p._needsReplace).sort((a, b) => (b._age - b._thr) - (a._age - a._thr));
+  let win = 0, mac = 0, other = 0;
+  pcs.forEach(p => { if (p._mac) mac++; else if (/win/i.test(p.os || '')) win++; else other++; });
+  let assigned = 0, central = 0, unassigned = 0;
+  pcs.forEach(p => { if (p.current_member_id) assigned++; else if (_isHwCentral(p)) central++; else unassigned++; });
+  const noDate = pcs.filter(p => p._age == null && !p._retired).length;
+
+  // ปฏิทินการซื้อ (year × month)
+  const byYm = {};
+  pcs.forEach(p => { const m = /^(\d{4})-(\d{2})/.exec(String(p.purchased_at || '')); if (m) { const k = (+m[1]) + '-' + (+m[2]); (byYm[k] = byYm[k] || []).push(p); } });
+  const years = [...new Set(Object.keys(byYm).map(k => +k.split('-')[0]))].sort((a, b) => b - a);
+  const maxMonth = Math.max(1, ...Object.values(byYm).map(a => a.length));
+
+  // การกระจายอายุ (เฉพาะที่ใช้งานอยู่ + มีวันที่ซื้อ)
+  const buckets = [
+    { label: '< 1 ปี', min: 0, max: 12, color: '#10b981' },
+    { label: '1–2 ปี', min: 12, max: 24, color: '#22c55e' },
+    { label: '2–3 ปี', min: 24, max: 36, color: '#eab308' },
+    { label: '3–5 ปี', min: 36, max: 60, color: '#f97316' },
+    { label: 'เกิน 5 ปี', min: 60, max: Infinity, color: '#dc2626' },
+  ];
+  buckets.forEach(b => b.count = withAge.filter(p => p._age >= b.min && p._age < b.max).length);
+  const maxBucket = Math.max(1, ...buckets.map(b => b.count));
+
+  const card = (label, val, color, sub) =>
+    `<div class="card" style="padding:12px 14px"><div style="font-size:11.5px;color:var(--text-muted)">${label}</div><div style="font-size:24px;font-weight:800;line-height:1.1;${color ? 'color:' + color : ''}">${val}</div>${sub ? `<div style="font-size:11px;color:var(--text-soft);margin-top:2px">${sub}</div>` : ''}</div>`;
+
+  const ownerOf = (p) => p.current_member_label ? escapeHtml(p.current_member_label) : (p._retired ? 'ปลดระวาง' : (_isHwCentral(p) ? 'ส่วนกลาง' : 'ยังไม่ผูก'));
+  const replaceRow = (p) => {
+    const over = p._age - p._thr;
+    return `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 13px;margin-bottom:6px;border-left:3px solid ${p._mac ? '#7c3aed' : '#dc2626'}">
+      <div style="min-width:0">
+        <div style="font-weight:700;font-size:13.5px">${escapeHtml(p.name)} ${p._mac ? '<span style="font-size:10px;color:#7c3aed;font-weight:700">🍎 Mac</span>' : '<span style="font-size:10px;color:var(--text-muted)">💻 Notebook</span>'}</div>
+        <div style="font-size:11.5px;color:var(--text-muted)">${escapeHtml(p.model || '—')} · ${escapeHtml(ownerOf(p))} · ${escapeHtml(p.os || '')}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-weight:800;color:#dc2626;font-size:13px">${escapeHtml(calcHwAgeStr(p.purchased_at))}</div>
+        <div style="font-size:10.5px;color:#92400e">เกินเกณฑ์ ${Math.round(over)} เดือน (เกณฑ์ ${p._thr / 12} ปี)</div>
+      </div>
+    </div>`;
+  };
+
+  // heatmap cell
+  const cellHtml = (y, mo1) => {
+    const arr = byYm[y + '-' + mo1] || [];
+    const c = arr.length;
+    const intensity = c ? (0.14 + 0.66 * c / maxMonth) : 0;
+    const bg = c ? `rgba(37,99,235,${intensity.toFixed(2)})` : 'transparent';
+    const fg = (c && intensity > 0.45) ? '#fff' : 'var(--text)';
+    return `<td style="padding:0;text-align:center"><button type="button" ${c ? `data-pcd-ym="${y}-${mo1}"` : 'disabled'} style="width:100%;height:34px;border:none;background:${bg};color:${fg};cursor:${c ? 'pointer' : 'default'};font-size:12px;font-weight:${c ? 700 : 400};font-family:inherit;border-radius:5px">${c || ''}</button></td>`;
+  };
+  const calRows = years.map(y => {
+    const yearTotal = SHORT.reduce((s, _, i) => s + ((byYm[y + '-' + (i + 1)] || []).length), 0);
+    return `<tr>
+      <td style="padding:4px 8px;font-weight:800;font-size:13px;white-space:nowrap">${y + 543}</td>
+      ${SHORT.map((_, i) => cellHtml(y, i + 1)).join('')}
+      <td style="padding:4px 8px;text-align:center;font-weight:800;color:var(--primary)">${yearTotal}</td>
+    </tr>`;
+  }).join('');
+
+  root.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      <div style="font-size:13px;color:var(--text-muted)">ภาพรวมคอมพิวเตอร์ทั้งบริษัท + ข้อมูลช่วยตัดสินใจจัดซื้อ/เปลี่ยนเครื่อง</div>
+      <button class="btn" id="pcd-refresh" style="font-size:12px">🔄 รีเฟรช</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px">
+      ${card('คอมทั้งหมด', total, '', `ใช้งานอยู่ ${active.length} · ปลดระวาง ${total - active.length}`)}
+      ${card('⚠️ ควรพิจารณาเปลี่ยน', needReplace.length, needReplace.length ? '#dc2626' : 'var(--green)', 'notebook&gt;3ปี · mac&gt;5ปี')}
+      ${card('อายุเฉลี่ย', avgAge != null ? (Math.floor(avgAge / 12) + ' ปี ' + (avgAge % 12) + ' ด.') : '—', '', `จาก ${withAge.length} เครื่องที่มีวันที่ซื้อ`)}
+      ${card('แยกตาม OS', `${win}<span style="font-size:13px;color:var(--text-muted)"> win</span> · ${mac}<span style="font-size:13px;color:var(--text-muted)"> mac</span>`, '', other ? other + ' อื่น ๆ' : '')}
+      ${card('การผูก owner', assigned, 'var(--green)', `ส่วนกลาง ${central} · ยังไม่ผูก ${unassigned}`)}
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px;align-items:start" id="pcd-2col">
+      <div>
+        <div style="font-size:13px;font-weight:800;margin-bottom:8px">⚠️ ควรพิจารณาเปลี่ยน (${needReplace.length})</div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:8px">เกณฑ์: notebook ใช้เกิน 3 ปี · Mac เกิน 5 ปี · เรียงตามที่เกินเกณฑ์มากสุด</div>
+        <div style="max-height:480px;overflow-y:auto">${needReplace.length ? needReplace.map(replaceRow).join('') : '<div class="empty" style="padding:24px">🎉 ไม่มีเครื่องที่เกินเกณฑ์</div>'}</div>
+      </div>
+      <div>
+        <div style="font-size:13px;font-weight:800;margin-bottom:8px">📅 ปฏิทินการซื้อ (ตามเดือน/ปี)</div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:8px">สีเข้ม = ซื้อเยอะ · คลิกช่องเพื่อดูว่าเดือนนั้นซื้ออะไร</div>
+        <div style="overflow-x:auto;border:1px solid var(--border);border-radius:10px;padding:6px">
+          <table style="width:100%;border-collapse:separate;border-spacing:2px;font-size:11px">
+            <thead><tr style="color:var(--text-muted)">
+              <th style="padding:2px 6px;text-align:left">ปี</th>${SHORT.map(m => `<th style="padding:2px;text-align:center;font-weight:600">${m.replace('.', '')}</th>`).join('')}<th style="padding:2px 6px">รวม</th>
+            </tr></thead>
+            <tbody>${calRows || '<tr><td colspan="14" style="padding:18px;text-align:center;color:var(--text-muted)">ยังไม่มีข้อมูลวันที่ซื้อ</td></tr>'}</tbody>
+          </table>
+        </div>
+        <div id="pcd-month-detail" style="margin-top:10px"></div>
+
+        <div style="font-size:13px;font-weight:800;margin:18px 0 8px">📊 การกระจายอายุ (เครื่องที่ใช้งานอยู่)</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${buckets.map(b => `<div style="display:flex;align-items:center;gap:8px">
+            <div style="width:64px;font-size:12px;color:var(--text-muted);flex-shrink:0">${b.label}</div>
+            <div style="flex:1;background:var(--bg-soft);border-radius:6px;height:20px;overflow:hidden"><div style="height:100%;width:${Math.round(b.count / maxBucket * 100)}%;background:${b.color};border-radius:6px;min-width:${b.count ? 3 : 0}px"></div></div>
+            <div style="width:32px;text-align:right;font-weight:700;font-size:12.5px;flex-shrink:0">${b.count}</div>
+          </div>`).join('')}
+        </div>
+        ${noDate ? `<div style="font-size:11px;color:var(--text-soft);margin-top:8px">* อีก ${noDate} เครื่องที่ใช้งานอยู่ยังไม่ได้ระบุวันที่ซื้อ — เติมข้อมูลเพื่อความแม่นยำ</div>` : ''}
+      </div>
+    </div>`;
+
+  $('pcd-refresh').onclick = () => renderPcDashboard();
+  root.querySelectorAll('[data-pcd-ym]').forEach(btn => btn.addEventListener('click', () => {
+    const arr = byYm[btn.dataset.pcdYm] || [];
+    const [yy, mm] = btn.dataset.pcdYm.split('-');
+    const det = $('pcd-month-detail');
+    det.innerHTML = `<div class="card" style="padding:10px 13px">
+      <div style="font-weight:800;font-size:13px;margin-bottom:6px">🛒 ${SHORT[(+mm) - 1]} ${(+yy) + 543} — ซื้อ ${arr.length} เครื่อง</div>
+      ${arr.map(p => `<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px"><span>${escapeHtml(p.name)} <span style="color:var(--text-muted)">${escapeHtml(p.model || '')}</span></span><span style="color:var(--text-muted);white-space:nowrap">${escapeHtml(ownerOf(p))}${p._needsReplace ? ' · <span style="color:#dc2626;font-weight:700">ควรเปลี่ยน</span>' : ''}</span></div>`).join('')}
+    </div>`;
+    det.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }));
+}
+
 async function renderHardwarePage(type) {
   if (type) _hwActiveType = type;
   _hwSearch = '';
@@ -12961,6 +13110,7 @@ async function renderDeviceSoftwarePage(active, arg) {
   } catch { /* ไม่มี badge ถ้าโหลดไม่ได้ */ }
   return renderSubmenuPage({ title: '🖥️ Device & Software', active: active || 'sites', arg, items: [
     { group: 'Software',  route: 'sites',                  ico: '🛠',  label: 'Int. Platforms Config', render: (a) => a ? renderSiteDetail(a) : renderSitesList() },
+    { group: 'Hardware',  route: 'hardware-pc-dashboard',  ico: '📊',  label: 'Dashboard',             render: () => renderPcDashboard() },
     { group: 'Hardware',  route: 'hardware-pc',            ico: '💻',  label: 'Personal Computer', badge: pcTotal, render: () => renderHardwarePage('pc') },
     { group: 'Hardware',  route: 'hardware-pc-unassigned', ico: '📦',  label: 'คอมส่วนกลาง',       badge: central, render: () => renderHardwareUnassignedPcsPage() },
     { group: 'Hardware',  route: 'hardware-device',        ico: '📱',  label: 'Device',                render: () => renderHardwarePage('device') },
