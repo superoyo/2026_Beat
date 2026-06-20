@@ -10803,6 +10803,19 @@ function _pcDashAgeMonths(p) {
 function _pcDashIsMac(p) {
   return /\bmac\b|macos|mac ?os|os ?x|osx|macbook|imac|mac ?mini|mac ?studio/i.test((p.os || '') + ' ' + (p.model || '') + ' ' + (p.name || ''));
 }
+// v1.9.241 — การ์ดคอมฯ (compact) สำหรับหน้า My Profile › Team
+function _teamPcCardHtml(p) {
+  const mac = _pcDashIsMac(p);
+  const age = _pcDashAgeMonths(p);
+  const over = (age != null && p.status !== 'retired' && age > (mac ? 60 : 36));
+  const ageStr = calcHwAgeStr(p.purchased_at);
+  const who = p.owner_name ? escapeHtml(p.owner_name) : 'ส่วนกลาง';
+  return `<div style="border:1px solid ${over ? 'rgba(220,38,38,.35)' : 'var(--border)'};border-radius:10px;padding:8px 11px;background:var(--bg-soft)">
+    <div style="font-size:12.5px;font-weight:700;line-height:1.3">${mac ? '🍎' : '💻'} ${escapeHtml(p.name)}</div>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:1px">${escapeHtml(p.model || '—')} · ${who}</div>
+    ${ageStr ? `<div style="font-size:11px;margin-top:2px;${over ? 'color:#dc2626;font-weight:700' : 'color:var(--text-soft)'}">⏱ ${escapeHtml(ageStr)}${over ? ' · ควรเปลี่ยน' : ''}</div>` : ''}
+  </div>`;
+}
 let _pcDashTeam = '';   // '' = ทุกทีม | team_id (string)
 function _pcMatchTeam(p, subtree) {
   const ownerTids = getHwOwnerTeamIds(p);
@@ -16511,7 +16524,7 @@ async function renderMemberAccountPage() {
   function renderTeamSupGrid() {
     const grid = $('m-team-grid');
     if (!grid) return;
-    let members, sites;
+    let members, sites, pcs;
     if (_teamSupActive === '__all__') {
       const byId = new Map();
       _teamSupTeams.forEach(t => t.members.forEach(m => { if (!byId.has(m.id)) byId.set(m.id, m); }));
@@ -16519,10 +16532,14 @@ async function renderMemberAccountPage() {
       const sById = new Map();
       _teamSupTeams.forEach(t => (t.sites || []).forEach(s => { if (!sById.has(s.id)) sById.set(s.id, s); }));
       sites = Array.from(sById.values());
+      const pById = new Map();
+      _teamSupTeams.forEach(t => (t.pcs || []).forEach(p => { if (!pById.has(p.id)) pById.set(p.id, p); }));
+      pcs = Array.from(pById.values());
     } else {
       const t = _teamSupTeams.find(x => String(x.id) === _teamSupActive);
       members = t ? t.members : [];
       sites = t ? (t.sites || []) : [];
+      pcs = t ? (t.pcs || []) : [];
     }
     const memberGrid = members.length === 0
       ? '<div class="empty" style="padding:24px;text-align:center;color:var(--text-muted)">— ไม่มีสมาชิกในทีมนี้ —</div>'
@@ -16564,7 +16581,15 @@ async function renderMemberAccountPage() {
             </div>`).join('')}
         </div>
       </div>`;
-    grid.innerHTML = memberGrid + platHtml;
+    // v1.9.241 — คอมฯที่ผูกกับทีม (ของสมาชิก + คอมส่วนกลางของทีม)
+    const pcHtml = `
+      <div style="margin-top:22px;border-top:1px solid var(--border);padding-top:16px">
+        <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">💻 คอมฯที่ผูกกับทีม <span style="color:var(--text-soft)">${pcs.length}</span></div>
+        ${pcs.length === 0
+          ? '<div style="font-size:12.5px;color:var(--text-muted);font-style:italic">— ไม่มีคอมฯ —</div>'
+          : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px">${pcs.map(_teamPcCardHtml).join('')}</div>`}
+      </div>`;
+    grid.innerHTML = memberGrid + platHtml + pcHtml;
     grid.querySelectorAll('.sup-member-card').forEach(c => {
       c.addEventListener('mouseenter', () => c.style.background = 'var(--bg-soft)');
       c.addEventListener('mouseleave', () => c.style.background = 'transparent');

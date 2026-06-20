@@ -7987,6 +7987,35 @@ def member_supervised(fct_member_session: Optional[str] = Cookie(default=None)) 
         for cr in cred_rows:
             if cr["username"]:
                 creds_by_site.setdefault(cr["site_id"], []).append(cr["username"])
+        # v1.9.241 — คอมฯที่ผูกกับทีม: PC ของสมาชิก + คอมส่วนกลางของทีม
+        _pc_cols = ("h.id, h.name, h.model, h.os, h.os_version, h.cpu, h.ram, h.storage, h.display, "
+                    "h.purchased_at, h.status")
+        pc_owned = conn.execute(
+            f"SELECT tm.team_id, {_pc_cols}, h.current_member_id, m.display_name AS owner_name "
+            f"FROM hardware h JOIN team_members tm ON tm.member_id = h.current_member_id "
+            f"LEFT JOIN members m ON m.id = h.current_member_id "
+            f"WHERE h.hw_type = 'pc' AND tm.team_id IN ({pl})",
+            team_ids,
+        ).fetchall()
+        pc_central = conn.execute(
+            f"SELECT h.unassigned_team_id AS team_id, {_pc_cols}, h.current_member_id, NULL AS owner_name "
+            f"FROM hardware h "
+            f"WHERE h.hw_type = 'pc' AND h.current_member_id IS NULL AND h.unassigned_team_id IN ({pl})",
+            team_ids,
+        ).fetchall()
+    pcs_by_team: dict[int, list] = {}
+    _seen_pc: set = set()
+    for r in list(pc_owned) + list(pc_central):
+        key = (r["team_id"], r["id"])
+        if key in _seen_pc:
+            continue
+        _seen_pc.add(key)
+        pcs_by_team.setdefault(r["team_id"], []).append({
+            "id": r["id"], "name": r["name"], "model": r["model"], "os": r["os"], "os_version": r["os_version"],
+            "cpu": r["cpu"], "ram": r["ram"], "storage": r["storage"], "display": r["display"],
+            "purchased_at": r["purchased_at"], "status": r["status"],
+            "current_member_id": r["current_member_id"], "owner_name": r["owner_name"],
+        })
     mem_by_team: dict[int, list] = {}
     for r in mem_rows:
         ph = r["phone"]
@@ -8011,7 +8040,8 @@ def member_supervised(fct_member_session: Optional[str] = Cookie(default=None)) 
     return {
         "teams": [
             {"id": t["id"], "name": t["name"], "description": t["description"],
-             "members": mem_by_team.get(t["id"], []), "sites": site_by_team.get(t["id"], [])}
+             "members": mem_by_team.get(t["id"], []), "sites": site_by_team.get(t["id"], []),
+             "pcs": pcs_by_team.get(t["id"], [])}
             for t in teams
         ]
     }

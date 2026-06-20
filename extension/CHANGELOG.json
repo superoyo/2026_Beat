@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.241",
+      "date": "2026-06-20",
+      "title": "My Profile › Team — เพิ่มส่วน ‘คอมฯที่ผูกกับทีม’ ต่อจาก platform",
+      "summary": "หน้า My Profile › Team แสดงคอมฯที่ผูกกับทีมที่เลือก (คอมของสมาชิก + คอมส่วนกลางของทีม) ต่อจากส่วนแพลตฟอร์ม — แต่ละการ์ดบอก ชื่อ/รุ่น/เจ้าของ/อายุ + ป้าย ‘ควรเปลี่ยน’ (notebook>3ปี/mac>5ปี)",
+      "changes": [
+        "/api/member/supervised เพิ่ม pcs ต่อทีม (PC ของสมาชิก + คอมส่วนกลาง unassigned_team_id)",
+        "renderTeamSupGrid แสดงส่วน 💻 คอมฯที่ผูกกับทีม (รวมตามทีม/ทุกทีม)",
+        "การ์ดคอมฯ compact + flag ควรเปลี่ยนตามเกณฑ์อายุ"
+      ]
+    },
+    {
       "version": "1.9.240",
       "date": "2026-06-20",
       "title": "PC Dashboard — fix การ์ดสรุป ตัวเลข/ข้อความรองเรียงคนละบรรทัด",
