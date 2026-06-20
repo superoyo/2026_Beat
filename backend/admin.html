@@ -10882,7 +10882,7 @@ async function renderPcDashboard() {
   const ownerOf = (p) => p.current_member_label ? escapeHtml(p.current_member_label) : (p._retired ? 'ปลดระวาง' : (_isHwCentral(p) ? 'ส่วนกลาง' : 'ยังไม่ผูก'));
   const replaceRow = (p) => {
     const over = p._age - p._thr;
-    return `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 13px;margin-bottom:6px;border-left:3px solid ${p._mac ? '#7c3aed' : '#dc2626'}">
+    return `<div class="card hw-card" data-pcd-replace="${p.id}" title="คลิกดูรายละเอียด + แก้ไข" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 13px;margin-bottom:6px;border-left:3px solid ${p._mac ? '#7c3aed' : '#dc2626'}">
       <div style="min-width:0">
         <div style="font-weight:700;font-size:13.5px">${escapeHtml(p.name)} ${p._mac ? '<span style="font-size:10px;color:#7c3aed;font-weight:700">🍎 Mac</span>' : '<span style="font-size:10px;color:var(--text-muted)">💻 Notebook</span>'}</div>
         <div style="font-size:11.5px;color:var(--text-muted)">${escapeHtml(p.model || '—')} · ${escapeHtml(ownerOf(p))} · ${escapeHtml(p.os || '')}</div>
@@ -10972,6 +10972,11 @@ async function renderPcDashboard() {
   $('pcd-refresh').onclick = () => renderPcDashboard();
   const _pcdTeamSel = $('pcd-team');
   if (_pcdTeamSel) _pcdTeamSel.onchange = () => { _pcDashTeam = _pcdTeamSel.value; renderPcDashboard(); };
+  // คลิกการ์ด "ควรเปลี่ยน" → เปิด slide-in รายละเอียดเครื่อง (แก้/ลบแล้ว refresh dashboard)
+  root.querySelectorAll('[data-pcd-replace]').forEach(el => el.addEventListener('click', () => {
+    const p = needReplace.find(x => x.id === parseInt(el.dataset.pcdReplace, 10));
+    if (p) showHardwareDetail(p, renderPcDashboard);
+  }));
   root.querySelectorAll('[data-pcd-ym]').forEach(btn => btn.addEventListener('click', () => {
     const arr = byYm[btn.dataset.pcdYm] || [];
     const [yy, mm] = btn.dataset.pcdYm.split('-');
@@ -11397,7 +11402,7 @@ function renderHardwareRow(h) {
 }
 
 // v1.9.217 — Slide-in รายละเอียดอุปกรณ์ (คลิกการ์ด) + ปุ่ม ประวัติ/แก้ไข/ลบ อยู่ข้างใน
-function showHardwareDetail(h) {
+function showHardwareDetail(h, onChange) {
   document.querySelectorAll('.sup-panel-wrap').forEach(e => e.remove());
   const statusMap = {
     active:  ['background:rgba(16,185,129,.12);color:var(--green)', '✓ ใช้งาน'],
@@ -11463,10 +11468,10 @@ function showHardwareDetail(h) {
   wrap.querySelector('.sup-panel-backdrop').addEventListener('click', close);
   wrap.querySelector('.sup-panel-close').addEventListener('click', close);
   wrap.querySelector('[data-detail-act="history"]').addEventListener('click', () => { close(); showHardwareHistoryModal(h.id, h.name); });
-  wrap.querySelector('[data-detail-act="edit"]').addEventListener('click', () => { close(); showHardwareModal(h, h.hw_type); });
+  wrap.querySelector('[data-detail-act="edit"]').addEventListener('click', () => { close(); showHardwareModal(h, h.hw_type, onChange); });
   wrap.querySelector('[data-detail-act="delete"]').addEventListener('click', async () => {
     if (!confirm(`ลบ "${h.name}"?\n\n(ประวัติการครอบครองจะถูกลบด้วย)`)) return;
-    try { await fetchJson('/api/admin/hardware/' + h.id, { method: 'DELETE' }); close(); await loadHardware(); }
+    try { await fetchJson('/api/admin/hardware/' + h.id, { method: 'DELETE' }); close(); await (onChange || loadHardware)(); }
     catch (e) { alert('ลบไม่สำเร็จ: ' + e.message); }
   });
 }

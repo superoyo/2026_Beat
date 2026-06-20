@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.239",
+      "date": "2026-06-20",
+      "title": "PC Dashboard — คลิกการ์ด ‘ควรพิจารณาเปลี่ยน’ เปิดรายละเอียดเครื่องได้",
+      "summary": "การ์ดในรายการควรพิจารณาเปลี่ยน คลิกแล้วเปิด slide-in รายละเอียดเครื่อง (รุ่น/OS/CPU/RAM/ฯลฯ + ปุ่ม ประวัติ/แก้ไข/ลบ) เหมือนหน้า Personal Computer · แก้/ลบแล้ว dashboard refresh เอง",
+      "changes": [
+        "showHardwareDetail รับ onChange (default loadHardware) → ใช้ refresh context ที่เปิด",
+        "การ์ดควรเปลี่ยนเป็น hw-card คลิกได้ → showHardwareDetail(p, renderPcDashboard)"
+      ]
+    },
+    {
       "version": "1.9.238",
       "date": "2026-06-20",
       "title": "PC Dashboard — fix รายการที่ซื้อล้นแนวนอน + จำกัดความสูง/scroll",
