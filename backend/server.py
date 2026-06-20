@@ -6387,6 +6387,65 @@ def admin_hardware_history(
     return {"history": [dict(r) for r in rows]}
 
 
+# v1.9.247 — เพิ่มประวัติการครอบครองเอง (manual) ว่าใครเคยถือเครื่องนี้
+class HardwareAssignmentAddIn(BaseModel):
+    member_id: int
+    assigned_at: str = Field(..., max_length=40)
+    unassigned_at: Optional[str] = Field(None, max_length=40)
+    note: Optional[str] = Field(None, max_length=500)
+
+
+@app.post("/api/admin/hardware/{hw_id}/history")
+def admin_add_hardware_history(hw_id: int, payload: HardwareAssignmentAddIn,
+                               _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    with db_conn() as conn:
+        if not conn.execute("SELECT 1 FROM hardware WHERE id=?", (hw_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="ไม่พบอุปกรณ์")
+        m = conn.execute("SELECT display_name, email FROM members WHERE id=?", (payload.member_id,)).fetchone()
+        if not m:
+            raise HTTPException(status_code=400, detail="member ไม่มีอยู่จริง")
+        if not (payload.assigned_at or "").strip():
+            raise HTTPException(status_code=400, detail="ต้องระบุวันที่เริ่มครอบครอง")
+        conn.execute(
+            "INSERT INTO hardware_assignments(hardware_id, member_id, member_label, assigned_at, unassigned_at, note) "
+            "VALUES (?,?,?,?,?,?)",
+            (hw_id, payload.member_id, m["display_name"] or m["email"],
+             _normalize_assignment_ts(payload.assigned_at),
+             _normalize_assignment_ts(payload.unassigned_at) if (payload.unassigned_at or "").strip() else None,
+             (payload.note or "").strip() or None))
+    return {"ok": True}
+
+
+@app.get("/api/admin/members/{mid}/device-history")
+def admin_member_device_history(mid: int, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    """อุปกรณ์ที่ member นี้เคยถือแต่ปัจจุบันไม่ใช่ owner แล้ว + อยู่ที่ไหนตอนนี้"""
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT a.hardware_id, MAX(a.assigned_at) AS assigned_at, MAX(a.unassigned_at) AS unassigned_at, "
+            "       h.name, h.model, h.hw_type, h.status, h.current_member_id, h.unassigned_team_id, h.storage_location, "
+            "       cm.display_name AS cur_name, cm.email AS cur_email "
+            "FROM hardware_assignments a JOIN hardware h ON h.id = a.hardware_id "
+            "LEFT JOIN members cm ON cm.id = h.current_member_id "
+            "WHERE a.member_id = ? AND a.unassigned_at IS NOT NULL "
+            "  AND (h.current_member_id IS NULL OR h.current_member_id != ?) "
+            "GROUP BY a.hardware_id ORDER BY MAX(a.unassigned_at) DESC",
+            (mid, mid)).fetchall()
+    prev = []
+    for r in rows:
+        if r["current_member_id"]:
+            where = "อยู่กับ " + (r["cur_name"] or r["cur_email"] or "ผู้ใช้อื่น")
+        elif r["status"] == "retired":
+            where = "ปลดระวาง"
+        else:
+            where = "คอมส่วนกลาง" + (" · " + r["storage_location"] if r["storage_location"] else "")
+        prev.append({
+            "hardware_id": r["hardware_id"], "name": r["name"], "model": r["model"], "hw_type": r["hw_type"],
+            "assigned_at": r["assigned_at"], "unassigned_at": r["unassigned_at"], "where_now": where,
+            "current_member_id": r["current_member_id"], "status": r["status"],
+        })
+    return {"previous": prev}
+
+
 # v1.9.64 — admin แก้ไข/ลบ record ประวัติการครอบครองได้
 class HardwareAssignmentPatchIn(BaseModel):
     member_id: Optional[int] = None         # null = clear; omitted = no change

@@ -10835,6 +10835,7 @@ function _pcdOwnerPanel(memberId) {
         </div>
         <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">💻 อุปกรณ์ที่ผูกอยู่ (${devices.length})</div>
         ${devices.length ? devices.map(devCard).join('') : '<div class="empty" style="font-size:12px">— ไม่มีอุปกรณ์ —</div>'}
+        <div id="pcd-prev-dev" style="margin-top:18px"><div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">🔄 Previous Device</div><div class="empty" style="font-size:12px;padding:12px">กำลังโหลด…</div></div>
       </div>
     </div>`;
   document.body.appendChild(wrap);
@@ -10848,6 +10849,29 @@ function _pcdOwnerPanel(memberId) {
     const p = devices.find(x => x.id === parseInt(el.dataset.pcdDev, 10));
     if (p) showHardwareDetail(p, renderPcDashboard);
   }));
+  // v1.9.247 — Previous Device: เครื่องที่เคยใช้ + ตอนนี้อยู่ไหน
+  (async () => {
+    const box = wrap.querySelector('#pcd-prev-dev');
+    if (!box) return;
+    let prev = [];
+    try { prev = (await fetchJson('/api/admin/members/' + memberId + '/device-history')).previous || []; }
+    catch (e) { box.innerHTML = '<div style="font-size:11.5px;color:var(--text-muted)">โหลดประวัติเครื่องไม่ได้</div>'; return; }
+    box.innerHTML = `<div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">🔄 Previous Device (${prev.length})</div>`
+      + (prev.length ? prev.map(p => {
+          const fr = (p.assigned_at || '').slice(0, 7), to = (p.unassigned_at || '').slice(0, 7);
+          const inFleet = _pcdAllPcs.some(x => x.id === p.hardware_id);
+          const attrs = inFleet ? `class="hw-card" data-pcd-prev="${p.hardware_id}" title="คลิกดูรายละเอียดเครื่อง"` : '';
+          return `<div ${attrs} style="${inFleet ? 'cursor:pointer;' : ''}border:1px solid var(--border);border-radius:10px;padding:8px 11px;margin-bottom:6px">
+            <div style="font-size:12.5px;font-weight:700">${escapeHtml(p.name)}</div>
+            <div style="font-size:11px;color:var(--text-muted)">${escapeHtml(p.model || '—')}${fr ? ' · ' + escapeHtml(fmtMonthYearThai(fr)) : ''}${to ? ' – ' + escapeHtml(fmtMonthYearThai(to)) : ''}</div>
+            <div style="font-size:11px;color:var(--primary);margin-top:2px">📍 ตอนนี้: ${escapeHtml(p.where_now)}</div>
+          </div>`;
+        }).join('') : '<div style="font-size:11.5px;color:var(--text-muted);font-style:italic">— ไม่เคยใช้เครื่องอื่นมาก่อน —</div>');
+    box.querySelectorAll('[data-pcd-prev]').forEach(el => el.addEventListener('click', () => {
+      const dev = _pcdAllPcs.find(x => x.id === parseInt(el.dataset.pcdPrev, 10));
+      if (dev) showHardwareDetail(dev, renderPcDashboard);
+    }));
+  })();
 }
 function _pcMatchTeam(p, subtree) {
   const ownerTids = getHwOwnerTeamIds(p);
@@ -12398,6 +12422,7 @@ async function showHardwareModal(hw, type, afterSubmit) {
 
           ${isEdit ? `
             ${sect('📜', 'ประวัติการครอบครอง')}
+            <button type="button" class="btn" onclick="_addOwnershipHistory(${hw.id})" style="font-size:12px;margin-bottom:8px">+ เพิ่มผู้เคยครอบครอง (ย้อนหลัง)</button>
             <div id="hm-history-list" style="display:flex;flex-direction:column;gap:6px"><div class="empty" style="padding:18px;font-size:12.5px">กำลังโหลด…</div></div>
           ` : `
             <div class="hint" style="margin-top:14px;font-size:12px;color:var(--text-muted);font-style:italic">📜 ประวัติการครอบครองจะปรากฏหลังบันทึกครั้งแรก</div>
@@ -13052,6 +13077,35 @@ function showAssignmentEditModal(hwId, record) {
       await loadHmHistory(hwId);
     },
   });
+}
+
+// v1.9.247 — เพิ่มประวัติการครอบครองเอง (ระบุผู้เคยครอบครองย้อนหลัง)
+function _addOwnershipHistory(hwId) {
+  const opts = _hwMembersCache.map(m => ({ id: m.id, name: m.display_name || m.email || ('member#' + m.id), avatar: m.avatar_data, team: (m.teams && m.teams[0]) ? m.teams[0].name : '' }));
+  showModal({
+    title: '+ เพิ่มประวัติการครอบครอง',
+    body: `
+      <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px">บันทึกย้อนหลังว่าใครเคยครอบครองเครื่องนี้ (ไม่กระทบ owner ปัจจุบัน)</div>
+      <div class="field"><label>ผู้ครอบครอง</label>${_memberPickerHtml('aoh-member', null, '— เลือกผู้ครอบครอง —')}</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div class="field" style="flex:1;min-width:150px"><label>เริ่มครอบครอง (เดือน/ปี)</label><input id="aoh-from" type="month" style="width:100%" /></div>
+        <div class="field" style="flex:1;min-width:150px"><label>สิ้นสุด (ว่าง = ปัจจุบัน)</label><input id="aoh-to" type="month" style="width:100%" /></div>
+      </div>
+      <div class="field"><label>หมายเหตุ (optional)</label><input id="aoh-note" placeholder="เช่น โอนให้ทีมอื่น / เครื่องเดิม" style="width:100%" /></div>
+    `,
+    onSubmit: async () => {
+      const mid = $('aoh-member').value;
+      const from = $('aoh-from').value;
+      if (!mid) throw new Error('เลือกผู้ครอบครอง');
+      if (!from) throw new Error('ระบุวันที่เริ่มครอบครอง');
+      await fetchJson('/api/admin/hardware/' + hwId + '/history', {
+        method: 'POST',
+        body: JSON.stringify({ member_id: parseInt(mid, 10), assigned_at: from, unassigned_at: $('aoh-to').value || null, note: $('aoh-note').value.trim() || null }),
+      });
+      loadHmHistory(hwId);
+    },
+  });
+  setTimeout(() => _initMemberPicker('aoh-member', opts, '— เลือกผู้ครอบครอง —'), 0);
 }
 
 async function showHardwareHistoryModal(hwId, hwName) {

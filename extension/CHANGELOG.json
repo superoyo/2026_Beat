@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.247",
+      "date": "2026-06-20",
+      "title": "PC — เพิ่มประวัติการครอบครองเอง + Previous Device ใน owner panel",
+      "summary": "ฟอร์มแก้ไข PC แท็บประวัติ เพิ่มปุ่ม ‘+ เพิ่มผู้เคยครอบครอง’ (ระบุคน/ช่วงเวลา/หมายเหตุย้อนหลัง) · owner panel (จาก dashboard) เพิ่มส่วน ‘🔄 Previous Device’ บอกว่าเคยใช้เครื่องอะไร + ตอนนี้เครื่องนั้นอยู่ที่ไหน",
+      "changes": [
+        "Backend POST /api/admin/hardware/{id}/history (เพิ่มประวัติเอง) + GET /api/admin/members/{id}/device-history",
+        "ฟอร์มประวัติ: ปุ่ม + เพิ่มผู้เคยครอบครอง (member picker + เดือน/ปี + หมายเหตุ)",
+        "owner panel: Previous Device — เครื่องเก่า + 📍 ตอนนี้อยู่กับใคร/ส่วนกลาง (คลิกดูรายละเอียดได้)"
+      ]
+    },
+    {
       "version": "1.9.246",
       "date": "2026-06-20",
       "title": "PC หมายเหตุ — เพิ่มหมวด ‘ได้เครื่องใหม่แล้ว — transfer ข้อมูล’",
