@@ -2,6 +2,15 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.240",
+      "date": "2026-06-20",
+      "title": "PC Dashboard — fix การ์ดสรุป ตัวเลข/ข้อความรองเรียงคนละบรรทัด",
+      "summary": "การ์ดสรุปด้านบนใช้ class .card (display:flex) ทำให้ label/ตัวเลข/ข้อความรองเรียงแถวเดียวดูรก → override เป็น display:block เรียงลงบรรทัดให้อ่านง่าย",
+      "changes": [
+        "card helper override display:block + ระยะบรรทัด → label / ตัวเลขใหญ่ / ข้อความรอง คนละบรรทัด"
+      ]
+    },
+    {
       "version": "1.9.239",
       "date": "2026-06-20",
       "title": "PC Dashboard — คลิกการ์ด ‘ควรพิจารณาเปลี่ยน’ เปิดรายละเอียดเครื่องได้",
