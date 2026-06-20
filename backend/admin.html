@@ -11070,6 +11070,8 @@ async function renderHardwarePage(type) {
   _hwLinkFilter = '';
   const tab = HW_TYPES.find(t => t.id === _hwActiveType) || HW_TYPES[0];
   const isPc = _hwActiveType === 'pc';
+  // v1.9.250 — filter เป็น dropdown ด้านบน (ประหยัดที่)
+  const selS = 'padding:7px 11px;border:1px solid var(--border);border-radius:8px;font-size:12.5px;font-family:inherit;background:var(--bg-card);color:var(--text);cursor:pointer;max-width:260px;font-weight:600;box-sizing:border-box';
   _subMain().innerHTML = `
     <div class="page-head">
       <h2 class="page-title">${tab.icon} ${escapeHtml(tab.label)}</h2>
@@ -11084,19 +11086,24 @@ async function renderHardwarePage(type) {
       <span id="hw-count" style="color:var(--text-muted);font-size:12.5px;font-weight:600;white-space:nowrap">— รายการ</span>
     </div>
     ${isPc ? `
-      <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">
-        <aside id="hw-sidebar" style="width:240px;max-width:100%;display:flex;flex-direction:column;gap:12px;flex-shrink:0;position:sticky;top:14px"></aside>
-        <div id="hw-list" style="flex:1;min-width:280px"><div class="empty">กำลังโหลด…</div></div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+        <select id="hw-f-link" style="${selS}"></select>
+        <select id="hw-f-dept" style="${selS}"></select>
+        <select id="hw-f-os" style="${selS}"></select>
       </div>
-    ` : `
-      <div id="hw-list"><div class="empty">กำลังโหลด…</div></div>
-    `}
+    ` : ''}
+    <div id="hw-list"><div class="empty">กำลังโหลด…</div></div>
   `;
   $('hw-add-btn').addEventListener('click', () => showHardwareModal(null, _hwActiveType));
   $('hw-search').addEventListener('input', (e) => {
     _hwSearch = e.target.value;
     renderHardwareRows();
   });
+  if (isPc) {
+    $('hw-f-link').addEventListener('change', (e) => { _hwLinkFilter = e.target.value; renderHardwareRows(); });
+    $('hw-f-dept').addEventListener('change', (e) => { _hwDeptFilter = e.target.value; renderHardwareRows(); });
+    $('hw-f-os').addEventListener('change', (e) => { _hwOsFilter = e.target.value; renderHardwareRows(); });
+  }
   // โหลด members + teams refresh ทุกครั้ง — กัน stale cache
   // owner picker แสดง "ทุก member" ไม่ว่า is_admin หรือ enabled เป็นอะไร
   // teams cache ใช้ใน sidebar filter (แผนก = team tree)
@@ -11161,13 +11168,11 @@ function applyHwFiltersExcept(h, excludeKey, q) {
   return true;
 }
 
-// Sidebar (PC only) — แสดง list 3 กล่อง (การเชื่อมโยง / แผนก team-tree / OS) — cross-filter counts
-function renderHwSidebar() {
-  const wrap = $('hw-sidebar');
-  if (!wrap) return;
+// v1.9.250 — Filter dropdowns (PC only) — การเชื่อมโยง / แผนก team-tree / OS — cross-filter counts
+function renderHwFilters() {
   const q = _hwSearch.trim().toLowerCase();
 
-  // คำนวณชุด PCs "ที่จะเหลือ" สำหรับแต่ละกล่อง (โดยไม่นับ filter ของกล่องตัวเอง)
+  // คำนวณชุด PCs "ที่จะเหลือ" สำหรับแต่ละ filter (โดยไม่นับ filter ของตัวเอง)
   const visForLink = _hwCache.filter(h => applyHwFiltersExcept(h, 'link', q));
   const visForOs   = _hwCache.filter(h => applyHwFiltersExcept(h, 'os', q));
   const visForDept = _hwCache.filter(h => applyHwFiltersExcept(h, 'dept', q));
@@ -11190,10 +11195,8 @@ function renderHwSidebar() {
   });
 
   // === Dept (team tree) ===
-  // นับ PC ต่อ team (รวม descendant) — PC contributes ให้ทุก team ที่ owner อยู่ และ ancestor ของทีมเหล่านั้น
   const teamCounts = {};   // team_id → count
   const teamById = new Map(_hwTeamsCache.map(t => [t.id, t]));
-  // helper: walk จาก team_id ขึ้นไปทุก ancestor → add ใน set
   const walkUpToAncestors = (startId, out) => {
     let cur = startId;
     const seen = new Set();
@@ -11210,89 +11213,48 @@ function renderHwSidebar() {
     if (ownerTids && ownerTids.size > 0) {
       for (const tid of ownerTids) walkUpToAncestors(tid, contributedTo);
     } else if (h.unassigned_team_id != null) {
-      // v1.9.65 — unlinked PC: ใช้ unassigned_team_id
       walkUpToAncestors(h.unassigned_team_id, contributedTo);
     }
     contributedTo.forEach(tid => { teamCounts[tid] = (teamCounts[tid] || 0) + 1; });
   });
-  // ถ้า team filter ปัจจุบันเป็น id ที่ไม่มีในระบบแล้ว → reset
   if (_hwDeptFilter && !teamById.has(parseInt(_hwDeptFilter, 10))) _hwDeptFilter = '';
 
-  const itemHtml = (key, label, count, isActive, indentPx) => `
-    <button type="button" data-filter-key="${escapeHtml(key)}"
-       style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 10px 7px ${indentPx || 10}px;border:1px solid ${isActive ? 'var(--primary)' : 'transparent'};background:${isActive ? 'var(--primary)' : 'transparent'};color:${isActive ? '#fff' : 'var(--text)'};border-radius:6px;cursor:pointer;font-family:inherit;font-size:13px;text-align:left;font-weight:${isActive ? 600 : 500};width:100%;box-sizing:border-box;transition:background .12s">
-      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0">${label}</span>
-      <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:${isActive ? 'rgba(255,255,255,.25)' : 'var(--bg-soft)'};color:${isActive ? '#fff' : 'var(--text-muted)'};flex-shrink:0;font-variant-numeric:tabular-nums">${count}</span>
-    </button>
-  `;
-
-  const linkItems = [
-    itemHtml('link:', '📋 ทั้งหมด', visForLink.length, _hwLinkFilter === ''),
-    itemHtml('link:linked', '✅ เชื่อมแล้ว', linkedCount, _hwLinkFilter === 'linked'),
-    itemHtml('link:central', '📦 คอมฯส่วนกลาง', centralCount, _hwLinkFilter === 'central'),
-    itemHtml('link:unlinked', '🔓 ยังไม่ได้เชื่อม', unlinkedCount, _hwLinkFilter === 'unlinked'),
-  ];
-  const osItems = [
-    itemHtml('os:', '💿 ทุก OS', visForOs.length, _hwOsFilter === ''),
-    ...['mac', 'windows', 'linux', 'other'].filter(k => osCounts[k] > 0)
-      .map(k => itemHtml(`os:${k}`, osLabels[k], osCounts[k], _hwOsFilter === k))
-  ];
-
-  // Team tree items (DFS) — แสดงเฉพาะทีมที่ count > 0 หรือทีมที่ ancestor ของ active filter
-  const tree = buildTeamTree(_hwTeamsCache);
-  const flat = flattenTeamTreeDFS(tree);
-  const deptItems = [
-    itemHtml('dept:', '📋 ทุกแผนก', visForDept.length, _hwDeptFilter === '')
-  ];
-  flat.forEach(({ team: t, depth, hasChildren }) => {
-    const count = teamCounts[t.id] || 0;
-    // ซ่อนทีมที่ไม่มี PC เลย เพื่อ list สั้นลง
-    if (count === 0) return;
-    const indent = 10 + depth * 14;
-    const icon = hasChildren ? '📂' : (depth > 0 ? '└─' : '🏢');
-    const label = `<span style="color:${_hwDeptFilter === String(t.id) ? '#fff' : 'var(--text-soft)'};margin-right:5px;font-size:11px">${icon}</span>${escapeHtml(t.name)}`;
-    deptItems.push(itemHtml(`dept:${t.id}`, label, count, _hwDeptFilter === String(t.id), indent));
-  });
-
-  const sectStyle = 'background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:6px;box-shadow:var(--shadow-sm)';
-  const headStyle = 'font-size:11.5px;font-weight:700;color:var(--primary-dark);text-transform:uppercase;letter-spacing:.5px;padding:4px 10px';
-  const scrollItems = (items, maxH) =>
-    `<div style="display:flex;flex-direction:column;gap:3px;${maxH ? `max-height:${maxH}px;overflow-y:auto;` : ''}padding-right:2px">${items.join('')}</div>`;
-  wrap.innerHTML = `
-    <section style="${sectStyle}">
-      <div style="${headStyle}">🔗 การเชื่อมโยง</div>
-      ${scrollItems(linkItems, 0)}
-    </section>
-    <section style="${sectStyle}">
-      <div style="${headStyle}">🏢 แผนก (ทีม)</div>
-      ${scrollItems(deptItems, 320)}
-    </section>
-    <section style="${sectStyle}">
-      <div style="${headStyle}">💿 OS</div>
-      ${scrollItems(osItems, 0)}
-    </section>
-  `;
-
-  wrap.querySelectorAll('button[data-filter-key]').forEach(btn => {
-    btn.addEventListener('mouseenter', () => {
-      if (btn.style.background === 'transparent' || btn.style.background === '')
-        btn.style.background = 'var(--bg-soft)';
+  // populate <select>s (ถ้ามีในหน้า)
+  const linkSel = $('hw-f-link');
+  if (linkSel) {
+    linkSel.innerHTML = [
+      `<option value="">🔗 การเชื่อมโยง: ทั้งหมด (${visForLink.length})</option>`,
+      `<option value="linked">✅ เชื่อมแล้ว (${linkedCount})</option>`,
+      `<option value="central">📦 คอมฯส่วนกลาง (${centralCount})</option>`,
+      `<option value="unlinked">🔓 ยังไม่ได้เชื่อม (${unlinkedCount})</option>`,
+    ].join('');
+    linkSel.value = _hwLinkFilter;
+  }
+  const osSel = $('hw-f-os');
+  if (osSel) {
+    osSel.innerHTML = [
+      `<option value="">💿 ทุก OS (${visForOs.length})</option>`,
+      ...['mac', 'windows', 'linux', 'other']
+        .filter(k => osCounts[k] > 0 || _hwOsFilter === k)
+        .map(k => `<option value="${k}">${osLabels[k]} (${osCounts[k]})</option>`),
+    ].join('');
+    osSel.value = _hwOsFilter;
+  }
+  const deptSel = $('hw-f-dept');
+  if (deptSel) {
+    const tree = buildTeamTree(_hwTeamsCache);
+    const flat = flattenTeamTreeDFS(tree);
+    const opts = [`<option value="">🏢 ทุกแผนก (${visForDept.length})</option>`];
+    flat.forEach(({ team: t, depth }) => {
+      const count = teamCounts[t.id] || 0;
+      if (count === 0 && _hwDeptFilter !== String(t.id)) return;   // ซ่อนทีมที่ไม่มี PC
+      const indent = '   '.repeat(depth);
+      const prefix = depth > 0 ? '└ ' : '';
+      opts.push(`<option value="${t.id}">${indent}${prefix}${escapeHtml(t.name)} (${count})</option>`);
     });
-    btn.addEventListener('mouseleave', () => {
-      const k = btn.dataset.filterKey;
-      const isActive = (k.startsWith('os:') && k.slice(3) === _hwOsFilter)
-                    || (k.startsWith('dept:') && k.slice(5) === _hwDeptFilter)
-                    || (k.startsWith('link:') && k.slice(5) === _hwLinkFilter);
-      if (!isActive) btn.style.background = 'transparent';
-    });
-    btn.addEventListener('click', () => {
-      const k = btn.dataset.filterKey;
-      if (k.startsWith('os:')) _hwOsFilter = k.slice(3);
-      else if (k.startsWith('dept:')) _hwDeptFilter = k.slice(5);
-      else if (k.startsWith('link:')) _hwLinkFilter = k.slice(5);
-      renderHardwareRows();
-    });
-  });
+    deptSel.innerHTML = opts.join('');
+    deptSel.value = _hwDeptFilter;
+  }
 }
 
 async function loadHardware() {
@@ -11313,8 +11275,8 @@ function renderHardwareRows() {
   const tab = HW_TYPES.find(t => t.id === _hwActiveType);
   const isPc = _hwActiveType === 'pc';
 
-  // Re-render sidebar (PC only) — counts + active state
-  if (isPc) renderHwSidebar();
+  // Re-render filter dropdowns (PC only) — counts + active state
+  if (isPc) renderHwFilters();
 
   const q = _hwSearch.trim().toLowerCase();
   // v1.9.61 — list = ผ่าน filter ทุกตัว (PC) หรือ search อย่างเดียว (Device/Network)
@@ -11351,7 +11313,11 @@ function renderHardwareRows() {
     listEl.innerHTML = `<div class="empty">ไม่พบรายการที่ตรงกับ ${reasons.join(' + ')}</div>`;
     return;
   }
-  listEl.innerHTML = list.map(h => renderHardwareRow(h)).join('');
+  // v1.9.250 — PC แสดงเป็น card grid (เหมือนหน้าคอมส่วนกลาง) · Device/Network แสดงเป็น list เดิม
+  const cardsHtml = list.map(h => renderHardwareRow(h)).join('');
+  listEl.innerHTML = isPc
+    ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:8px">${cardsHtml}</div>`
+    : cardsHtml;
   // v1.9.217 — คลิกที่การ์ดทั้งใบ → เปิด slide-in รายละเอียด (ปุ่มดูรูปยังคลิกได้)
   listEl.querySelectorAll('.hw-card[data-hw-card]').forEach(card => {
     card.addEventListener('click', (e) => {
@@ -11378,7 +11344,61 @@ function renderHwAssetLine(assetNumber, opts) {
   </div>`;
 }
 
+// v1.9.250 — การ์ด PC แบบ compact grid (เหมือนหน้าคอมส่วนกลาง) + owner/อายุ/รูป
+function _renderPcGridCard(h) {
+  const isMac = (typeof _pcDashIsMac === 'function') ? _pcDashIsMac(h) : /mac/i.test((h.os || '') + (h.model || '') + (h.name || ''));
+  const ageStr = calcHwAgeStr(h.purchased_at);
+  const typeBadge = isMac
+    ? '<span style="font-size:10px;color:#7c3aed;font-weight:700">🍎 Mac</span>'
+    : '<span style="font-size:10px;color:var(--text-muted)">💻 PC</span>';
+  const statusMap = {
+    active:  ['✓ ใช้งาน', 'var(--green)'],
+    repair:  ['🔧 ซ่อม', '#92400e'],
+    stock:   ['📦 Stock', '#3730a3'],
+    retired: ['⚠ ปลดระวาง', 'var(--critical)'],
+  };
+  const st = h.status ? statusMap[h.status] : null;
+  let ownerHtml;
+  if (h.current_member_label) {
+    const m = _hwMembersCache.find(x => x.id === h.current_member_id);
+    const av = (m && m.avatar_data)
+      ? `<img src="${m.avatar_data}" alt="" style="width:18px;height:18px;border-radius:50%;object-fit:cover;flex-shrink:0" />`
+      : `<span style="width:18px;height:18px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml((h.current_member_label.trim().charAt(0) || '?').toUpperCase())}</span>`;
+    ownerHtml = `<span style="display:inline-flex;align-items:center;gap:5px;color:var(--green);font-weight:600;min-width:0"><span style="flex-shrink:0;display:inline-flex">${av}</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(h.current_member_label)}</span></span>`;
+  } else if (_isHwCentral(h)) {
+    ownerHtml = `<span style="color:#3730a3;font-weight:600">📦 ส่วนกลาง${h.storage_location ? ' · ' + escapeHtml(h.storage_location) : ''}</span>`;
+  } else {
+    ownerHtml = '<span style="color:var(--text-muted)">🔓 ยังไม่ผูก</span>';
+  }
+  const sub = [h.model, h.os, h.cpu, h.ram, h.storage].filter(Boolean).map(escapeHtml).join(' · ');
+  const assetTag = h.asset_number
+    ? `<span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--primary);background:rgba(37,99,235,.1);padding:1px 6px;border-radius:4px;white-space:nowrap">🔖 ${escapeHtml(h.asset_number)}</span>`
+    : '';
+  const photoBtn = h.photo_data
+    ? `<button type="button" data-hw-act="preview-photo" data-hw-id="${h.id}" data-hw-name="${escapeHtml(h.name)}" title="ดูรูป" style="background:transparent;border:none;padding:0;cursor:pointer;display:block"><img src="${h.photo_data}" alt="" style="width:46px;height:35px;object-fit:cover;border-radius:6px;border:1px solid var(--border);display:block" /></button>`
+    : '';
+  return `
+    <div class="card hw-card" data-hw-card="${h.id}" title="คลิกดูรายละเอียด + แก้ไข"
+      style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:9px 13px;margin-bottom:0;border-left:3px solid ${isMac ? '#7c3aed' : '#6366f1'};cursor:pointer">
+      <div style="min-width:0;flex:1">
+        <div style="font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+          <span style="overflow:hidden;text-overflow:ellipsis">${escapeHtml(h.name)}</span> ${typeBadge}
+          ${st ? `<span style="font-size:10px;font-weight:700;color:${st[1]}">${st[0]}</span>` : ''}
+        </div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">${sub || '—'}</div>
+        <div style="font-size:11px;margin-top:4px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">${ownerHtml} ${assetTag}</div>
+      </div>
+      <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+        ${photoBtn}
+        ${ageStr ? `<div style="font-size:11px;color:var(--accent);font-weight:600;white-space:nowrap">⏱ ${escapeHtml(ageStr)}</div>` : ''}
+      </div>
+    </div>
+  `;
+}
+
 function renderHardwareRow(h) {
+  // v1.9.250 — PC ใช้การ์ด compact grid · Device/Network ใช้ row เดิม
+  if (h.hw_type === 'pc') return _renderPcGridCard(h);
   // v1.9.217 — spec line สะอาด: ตัด emoji ต่อรายการ + แยก meta รอง (SN/วันที่/ที่เก็บ) เป็นบรรทัดจาง
   const specs = [];
   if (h.hw_type === 'pc') {

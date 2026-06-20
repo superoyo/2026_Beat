@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.250",
+      "date": "2026-06-20",
+      "title": "Personal Computer — filter เป็น dropdown ด้านบน + การ์ดแบบ grid",
+      "summary": "หน้า Personal Computer: ย้าย filter การเชื่อมโยง/แผนก/OS จาก sidebar ซ้าย → dropdown 3 ตัวด้านบน (มี count กำกับ) ประหยัดพื้นที่ · รายการเครื่องเปลี่ยนเป็น card grid แบบเดียวกับหน้าคอมส่วนกลาง (compact, เส้นซ้ายสี, owner+อายุ)",
+      "changes": [
+        "ย้าย filter 3 อย่างเป็น dropdown ด้านบน (cross-filter count ในแต่ละ option · dept เป็น tree แบบ indent)",
+        "ตัด sidebar ซ้าย → list เต็มความกว้าง",
+        "การ์ด PC: compact grid auto-fill 330px · ชื่อ+Mac/PC+สถานะ · รุ่น·OS·CPU·RAM · owner(+avatar)/ส่วนกลาง/ยังไม่ผูก · มุมขวารูป+⏱ อายุ",
+        "คลิกการ์ด → slide-in detail เหมือนเดิม · ปุ่มดูรูปยังคลิกได้"
+      ]
+    },
+    {
       "version": "1.9.249",
       "date": "2026-06-20",
       "title": "คอมส่วนกลาง — คลิกการ์ดแล้วสไลด์ด้านข้าง (เหมือน Dashboard)",
