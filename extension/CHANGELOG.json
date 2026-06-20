@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.234",
+      "date": "2026-06-20",
+      "title": "Device & Software — เมนู Personal Computer / คอมส่วนกลาง แสดงจำนวนเครื่อง",
+      "summary": "เมนูย่อย Personal Computer แสดง badge จำนวนคอมทั้งหมด · คอมส่วนกลาง แสดง badge จำนวนเครื่องส่วนกลาง (ดึงจาก /api/hardware/pc-stats)",
+      "changes": [
+        "renderSubmenuPage รองรับ field badge (chip ตัวเลขท้ายเมนู)",
+        "renderDeviceSoftwarePage ดึง pc-stats → ใส่ badge total ที่ Personal Computer + central ที่ คอมส่วนกลาง",
+        "CSS .acc-menu-badge"
+      ]
+    },
+    {
       "version": "1.9.233",
       "date": "2026-06-20",
       "title": "Dashboard — ‘เครื่องยังไม่ผูก’ นับเฉพาะที่ยังไม่ผูกจริง ๆ (ไม่รวมคอมส่วนกลาง)",

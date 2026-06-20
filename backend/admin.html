@@ -386,6 +386,13 @@
       background: var(--primary-soft); color: var(--primary-dark);
       font-weight: 600; border-color: rgba(37,99,235,.20);
     }
+    /* v1.9.234 — ตัวเลข badge ท้ายเมนูย่อย */
+    .acc-menu-item .acc-menu-badge {
+      margin-left: auto; flex-shrink: 0; font-size: 12px; font-weight: 700;
+      font-variant-numeric: tabular-nums; padding: 1px 9px; border-radius: 999px;
+      background: var(--bg-soft); color: var(--text-muted);
+    }
+    .acc-menu-item.active .acc-menu-badge { background: rgba(37,99,235,.15); color: var(--primary-dark); }
     /* v1.9.155 — group header ใน submenu */
     .acc-menu-group {
       font-size: 11px; font-weight: 700; color: var(--text-soft);
@@ -12916,7 +12923,11 @@ async function loadLogsList() {
 // child render functions ใช้ _subMain() (= #sub-detail ถ้ามี, ไม่งั้น #main) เป็น target
 function _subMain() { return document.getElementById('sub-detail') || $('main'); }
 async function renderSubmenuPage(cfg) {
-  const link = (it) => `<a href="#/${it.route}" class="acc-menu-item${it.route === cfg.active ? ' active' : ''}" style="text-decoration:none"><span class="acc-menu-ico">${it.ico}</span> ${it.label}</a>`;
+  const link = (it) => {
+    const badge = (it.badge !== undefined && it.badge !== null && it.badge !== '')
+      ? `<span class="acc-menu-badge" id="acc-badge-${escapeHtml(it.route)}">${escapeHtml(String(it.badge))}</span>` : '';
+    return `<a href="#/${it.route}" class="acc-menu-item${it.route === cfg.active ? ' active' : ''}" style="text-decoration:none"><span class="acc-menu-ico">${it.ico}</span> ${it.label}${badge}</a>`;
+  };
   // v1.9.155 — รองรับ group header (ใส่ field group ใน item)
   const menuHtml = cfg.items.map((it, i) => {
     const prev = cfg.items[i - 1];
@@ -12940,11 +12951,18 @@ function renderCustomerPage(active, arg) {
     { route: 'services-config', ico: '🛠️', label: 'Services Config',  render: () => renderServicesConfigPage() },
   ]});
 }
-function renderDeviceSoftwarePage(active, arg) {
+async function renderDeviceSoftwarePage(active, arg) {
+  // v1.9.234 — badge ตัวเลข: Personal Computer = ทั้งหมด, คอมส่วนกลาง = central
+  let pcTotal = '', central = '';
+  try {
+    const s = await fetchJson('/api/hardware/pc-stats');
+    pcTotal = s.total;
+    central = (s.by_assignment && s.by_assignment.central != null) ? s.by_assignment.central : '';
+  } catch { /* ไม่มี badge ถ้าโหลดไม่ได้ */ }
   return renderSubmenuPage({ title: '🖥️ Device & Software', active: active || 'sites', arg, items: [
     { group: 'Software',  route: 'sites',                  ico: '🛠',  label: 'Int. Platforms Config', render: (a) => a ? renderSiteDetail(a) : renderSitesList() },
-    { group: 'Hardware',  route: 'hardware-pc',            ico: '💻',  label: 'Personal Computer',     render: () => renderHardwarePage('pc') },
-    { group: 'Hardware',  route: 'hardware-pc-unassigned', ico: '📦',  label: 'คอมส่วนกลาง',           render: () => renderHardwareUnassignedPcsPage() },
+    { group: 'Hardware',  route: 'hardware-pc',            ico: '💻',  label: 'Personal Computer', badge: pcTotal, render: () => renderHardwarePage('pc') },
+    { group: 'Hardware',  route: 'hardware-pc-unassigned', ico: '📦',  label: 'คอมส่วนกลาง',       badge: central, render: () => renderHardwareUnassignedPcsPage() },
     { group: 'Hardware',  route: 'hardware-device',        ico: '📱',  label: 'Device',                render: () => renderHardwarePage('device') },
     { group: 'Hardware',  route: 'hardware-network',       ico: '📡',  label: 'Network',               render: () => renderHardwarePage('network') },
     { group: 'Document',  route: 'financial-documents',    ico: '💰',  label: 'Financial Document',    render: () => renderFinancialDocumentsPage() },
