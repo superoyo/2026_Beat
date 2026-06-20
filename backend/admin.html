@@ -16532,7 +16532,7 @@ async function renderMemberAccountPage() {
     const pcsByMember = {};
     pcs.forEach(p => { if (p.current_member_id) (pcsByMember[p.current_member_id] = pcsByMember[p.current_member_id] || []).push(p); });
     const centralPcs = pcs.filter(p => !p.current_member_id);
-    const _pcLine = (p) => `💻 ${escapeHtml(p.model || p.name || '')}${calcHwAgeStr(p.purchased_at) ? ' <span style="color:var(--text-muted)">(' + escapeHtml(calcHwAgeStr(p.purchased_at)) + ')</span>' : ''}`;
+    const _pcLine = (p) => { const _a = calcHwAgeStr(p.purchased_at); return `💻 ${escapeHtml(p.model || p.name || '')}${_a ? `<br><span style="color:var(--text-muted)">⏱ ${escapeHtml(_a)}</span>` : ''}`; };
     const memberGrid = members.length === 0
       ? '<div class="empty" style="padding:24px;text-align:center;color:var(--text-muted)">— ไม่มีสมาชิกในทีมนี้ —</div>'
       : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px">` +
