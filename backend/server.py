@@ -602,6 +602,8 @@ def init_db() -> None:
                 # v1.9.65
                 ("unassigned_team_id", "INTEGER REFERENCES teams(id) ON DELETE SET NULL"),
                 ("storage_location", "TEXT"),
+                # v1.9.245 — หมวดหมายเหตุ: 'general' | 'keep' (ยังไม่เปลี่ยน) | 'procuring' (อยู่ระหว่างจัดหา)
+                ("note_category", "TEXT"),
             ]
             for col_name, col_type in extra_cols:
                 if hw_cols and col_name not in hw_cols:
@@ -6118,6 +6120,8 @@ class HardwareIn(BaseModel):
     # v1.9.65 — สำหรับเครื่องที่ยังไม่มี owner: ระบุทีม/แผนกที่สังกัด + ตำแหน่งเก็บ
     unassigned_team_id: Optional[int] = None
     storage_location: Optional[str] = Field(None, max_length=200)
+    # v1.9.245 — หมวดหมายเหตุ
+    note_category: Optional[str] = Field(None, max_length=20)
 
     @field_validator("hw_type")
     @classmethod
@@ -6161,6 +6165,8 @@ class HardwarePatchIn(BaseModel):
     # v1.9.65 — unlinked fields: null = clear, int/string = set, omitted = no change
     unassigned_team_id: Optional[int] = None
     storage_location: Optional[str] = Field(None, max_length=200)
+    # v1.9.245 — หมวดหมายเหตุ
+    note_category: Optional[str] = Field(None, max_length=20)
     _set_owner: bool = False    # internal flag (not used yet)
 
 
@@ -6240,8 +6246,8 @@ def admin_create_hardware(
             "                     serial_number, display, department, location, os_version, model, "
             "                     mainboard, gpu, battery, ups, status, quotation, "
             "                     device_subtype, capacity, current_member_id, photo_data, asset_photo_data, "
-            "                     unassigned_team_id, storage_location) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "                     unassigned_team_id, storage_location, note_category) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 payload.hw_type,
                 payload.name.strip(),
@@ -6272,6 +6278,7 @@ def admin_create_hardware(
                 payload.asset_photo_data or None,
                 payload.unassigned_team_id,
                 s(payload.storage_location),
+                s(payload.note_category),
             ),
         )
         hw_id = cur.lastrowid
@@ -6303,8 +6310,8 @@ def admin_update_hardware(
               "storage", "device_subtype", "capacity",
               "serial_number", "display", "department", "location", "os_version",
               "model", "mainboard", "gpu", "battery", "ups", "status", "quotation",
-              # v1.9.65
-              "storage_location"):
+              # v1.9.65 / v1.9.245
+              "storage_location", "note_category"):
         if f in raw_body:
             v = raw_body[f]
             updates[f] = (v.strip() if isinstance(v, str) else v) or None

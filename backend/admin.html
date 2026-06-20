@@ -10926,12 +10926,14 @@ async function renderPcDashboard() {
     `<div class="card" style="display:block;padding:12px 14px;margin-bottom:0"><div style="font-size:11.5px;color:var(--text-muted);margin-bottom:3px">${label}</div><div style="font-size:24px;font-weight:800;line-height:1.15;${color ? 'color:' + color : ''}">${val}</div>${sub ? `<div style="font-size:11px;color:var(--text-soft);margin-top:4px;line-height:1.4">${sub}</div>` : ''}</div>`;
 
   const ownerOf = (p) => p.current_member_label ? escapeHtml(p.current_member_label) : (p._retired ? 'ปลดระวาง' : (_isHwCentral(p) ? 'ส่วนกลาง' : 'ยังไม่ผูก'));
-  const replaceRow = (p) => {
+  const replaceRow = (p, showNote) => {
     const over = p._age - p._thr;
-    return `<div class="card hw-card" data-pcd-replace="${p.id}" title="คลิกดูรายละเอียด + แก้ไข" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 13px;margin-bottom:6px;border-left:3px solid ${p._mac ? '#7c3aed' : '#dc2626'}">
+    const noteHtml = (showNote && p.notes) ? `<div style="font-size:11px;color:#92400e;margin-top:4px;background:rgba(245,158,11,.1);padding:3px 8px;border-radius:6px;line-height:1.45">📝 ${escapeHtml(p.notes)}</div>` : '';
+    return `<div class="card hw-card" data-pcd-replace="${p.id}" title="คลิกดูรายละเอียด + แก้ไข" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:9px 13px;margin-bottom:6px;border-left:3px solid ${p._mac ? '#7c3aed' : '#dc2626'}">
       <div style="min-width:0">
         <div style="font-weight:700;font-size:13.5px">${escapeHtml(p.name)} ${p._mac ? '<span style="font-size:10px;color:#7c3aed;font-weight:700">🍎 Mac</span>' : '<span style="font-size:10px;color:var(--text-muted)">💻 Notebook</span>'}</div>
         <div style="font-size:11.5px;color:var(--text-muted)">${escapeHtml(p.model || '—')} · ${escapeHtml(ownerOf(p))} · ${escapeHtml(p.os || '')}</div>
+        ${noteHtml}
       </div>
       <div style="text-align:right;flex-shrink:0">
         <div style="font-weight:800;color:#dc2626;font-size:13px">${escapeHtml(calcHwAgeStr(p.purchased_at))}</div>
@@ -10939,6 +10941,16 @@ async function renderPcDashboard() {
       </div>
     </div>`;
   };
+  // v1.9.245 — แยกกลุ่มตามหมวดหมายเหตุ: ทั่วไป (ไม่มี header/note) → ยังไม่เปลี่ยน → อยู่ระหว่างจัดหา (แสดง note)
+  const _replByCat = { general: [], keep: [], procuring: [] };
+  needReplace.forEach(p => { const c = (p.note_category === 'keep' || p.note_category === 'procuring') ? p.note_category : 'general'; _replByCat[c].push(p); });
+  const _replGrid = (arr, showNote) => `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px">${arr.map(p => replaceRow(p, showNote)).join('')}</div>`;
+  const _replSection = (arr, label, color) => arr.length ? `<div style="margin-top:16px"><div style="font-size:12.5px;font-weight:800;margin-bottom:8px;color:${color}">${label} (${arr.length})</div>${_replGrid(arr, true)}</div>` : '';
+  const replaceBody = needReplace.length === 0
+    ? '<div class="empty" style="padding:24px">🎉 ไม่มีเครื่องที่เกินเกณฑ์</div>'
+    : (_replGrid(_replByCat.general, false)
+       + _replSection(_replByCat.keep, '🔸 ยังไม่เปลี่ยน', '#92400e')
+       + _replSection(_replByCat.procuring, '🛒 อยู่ระหว่างจัดหา', '#3730a3'));
 
   // heatmap cell
   const cellHtml = (y, mo1) => {
@@ -11011,8 +11023,8 @@ async function renderPcDashboard() {
     <!-- ควรพิจารณาเปลี่ยน (ล่างสุด เต็มความกว้าง) -->
     <div>
       <div style="font-size:13px;font-weight:800;margin-bottom:4px">⚠️ ควรพิจารณาเปลี่ยน (${needReplace.length})</div>
-      <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:8px">เกณฑ์: notebook ใช้เกิน 3 ปี · Mac เกิน 5 ปี · เรียงตามที่เกินเกณฑ์มากสุด</div>
-      ${needReplace.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px">${needReplace.map(replaceRow).join('')}</div>` : '<div class="empty" style="padding:24px">🎉 ไม่มีเครื่องที่เกินเกณฑ์</div>'}
+      <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:8px">เกณฑ์: notebook ใช้เกิน 3 ปี · Mac เกิน 5 ปี · แยกกลุ่มตามหมวดหมายเหตุ</div>
+      ${replaceBody}
     </div>`;
 
   $('pcd-refresh').onclick = () => renderPcDashboard();
@@ -12334,7 +12346,13 @@ async function showHardwareModal(hw, type, afterSubmit) {
 
         ${sect('📝', 'หมายเหตุ')}
         <div class="field">
-          <textarea id="hm-notes" rows="3" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical" placeholder="หมายเหตุเพิ่มเติม (optional)">${isEdit ? escapeHtml(hw.notes || '') : ''}</textarea>
+          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">หมวดหมายเหตุ</label>
+          <select id="hm-note-category" onchange="(function(s){var t=document.getElementById('hm-notes');if(t)t.placeholder=({general:'หมายเหตุเพิ่มเติม (optional)',keep:'เหตุผลที่ยังไม่เปลี่ยน',procuring:'เหตุผลที่อยู่ระหว่างจัดหา'})[s.value]||'';})(this)" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;margin-bottom:8px">
+            <option value="general" ${(!isEdit || !hw.note_category || hw.note_category === 'general') ? 'selected' : ''}>ทั่วไป — กรอกอะไรก็ได้</option>
+            <option value="keep" ${(isEdit && hw.note_category === 'keep') ? 'selected' : ''}>ยังไม่เปลี่ยน — กรอกเหตุผลที่ยังไม่เปลี่ยน</option>
+            <option value="procuring" ${(isEdit && hw.note_category === 'procuring') ? 'selected' : ''}>อยู่ระหว่างจัดหา — กรอกเหตุผล</option>
+          </select>
+          <textarea id="hm-notes" rows="3" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical" placeholder="${isEdit && hw.note_category === 'keep' ? 'เหตุผลที่ยังไม่เปลี่ยน' : (isEdit && hw.note_category === 'procuring' ? 'เหตุผลที่อยู่ระหว่างจัดหา' : 'หมายเหตุเพิ่มเติม (optional)')}">${isEdit ? escapeHtml(hw.notes || '') : ''}</textarea>
         </div>
           </div><!-- /right column -->
         </div><!-- /2-col flex -->
@@ -12460,6 +12478,7 @@ async function showHardwareModal(hw, type, afterSubmit) {
         asset_number: $('hm-asset').value.trim() || null,
         purchased_at: $('hm-purchased').value || null,
         notes: $('hm-notes').value.trim() || null,
+        note_category: $('hm-note-category') ? $('hm-note-category').value : null,
         current_member_id: $('hm-owner').value ? parseInt($('hm-owner').value, 10) : null,
       };
       if (showPC) {
