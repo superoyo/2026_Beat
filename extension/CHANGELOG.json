@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.258",
+      "date": "2026-06-20",
+      "title": "Personal Computer — แสดงหมายเหตุใต้การ์ดเครื่อง",
+      "summary": "การ์ดในหน้า Personal Computer เพิ่มบรรทัด 📝 หมายเหตุ (+ หมวด เช่น ยังไม่เปลี่ยน/อยู่ระหว่างจัดหา/transfer) ใต้ owner — แสดงเฉพาะเครื่องที่มีหมายเหตุ",
+      "changes": [
+        "การ์ด PC เพิ่ม 📝 หมายเหตุ + หมวด (กล่องเหลือง) ใต้ owner",
+        "สไตล์เดียวกับ owner panel + Dashboard"
+      ]
+    },
+    {
       "version": "1.9.257",
       "date": "2026-06-20",
       "title": "Dashboard ควรพิจารณาเปลี่ยน — toggle Mac / Windows",

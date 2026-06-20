@@ -11505,6 +11505,12 @@ function _renderPcGridCard(h) {
   const personalBadge = h.is_personal_owned
     ? '<span style="font-size:10px;font-weight:700;color:#7c3aed;background:rgba(124,58,237,.12);padding:1px 7px;border-radius:999px;white-space:nowrap">🙋 เครื่องตนเอง</span>'
     : '';
+  // v1.9.258 — หมายเหตุ (+ หมวด) ใต้การ์ด
+  const _pcCatLabel = { keep: '🔸 ยังไม่เปลี่ยน', procuring: '🛒 อยู่ระหว่างจัดหา', transferring: '🔄 ได้เครื่องใหม่ — transfer' };
+  const _pcCat = _pcCatLabel[h.note_category];
+  const noteHtml = (h.notes || _pcCat)
+    ? `<div style="font-size:10.5px;color:#92400e;margin-top:5px;background:rgba(245,158,11,.1);padding:3px 8px;border-radius:6px;line-height:1.4">📝 ${_pcCat ? `<b>${_pcCat}</b>${h.notes ? ' · ' : ''}` : ''}${escapeHtml(h.notes || '')}</div>`
+    : '';
   const photoBtn = h.photo_data
     ? `<button type="button" data-hw-act="preview-photo" data-hw-id="${h.id}" data-hw-name="${escapeHtml(h.name)}" title="ดูรูป" style="background:transparent;border:none;padding:0;cursor:pointer;display:block"><img src="${h.photo_data}" alt="" style="width:46px;height:35px;object-fit:cover;border-radius:6px;border:1px solid var(--border);display:block" /></button>`
     : '';
@@ -11519,6 +11525,7 @@ function _renderPcGridCard(h) {
         ${(h.model && h.name && h.name !== h.model) ? `<div style="font-size:10.5px;color:var(--text-soft);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🖥 ${escapeHtml(h.name)}</div>` : ''}
         <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">${sub || '—'}</div>
         <div style="font-size:11px;margin-top:4px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">${ownerHtml} ${assetTag} ${personalBadge}</div>
+        ${noteHtml}
       </div>
       <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
         ${photoBtn}
