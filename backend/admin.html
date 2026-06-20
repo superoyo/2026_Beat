@@ -10942,15 +10942,16 @@ async function renderPcDashboard() {
     </div>`;
   };
   // v1.9.245 — แยกกลุ่มตามหมวดหมายเหตุ: ทั่วไป (ไม่มี header/note) → ยังไม่เปลี่ยน → อยู่ระหว่างจัดหา (แสดง note)
-  const _replByCat = { general: [], keep: [], procuring: [] };
-  needReplace.forEach(p => { const c = (p.note_category === 'keep' || p.note_category === 'procuring') ? p.note_category : 'general'; _replByCat[c].push(p); });
+  const _replByCat = { general: [], keep: [], procuring: [], transferring: [] };
+  needReplace.forEach(p => { const c = ['keep', 'procuring', 'transferring'].includes(p.note_category) ? p.note_category : 'general'; _replByCat[c].push(p); });
   const _replGrid = (arr, showNote) => `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px">${arr.map(p => replaceRow(p, showNote)).join('')}</div>`;
   const _replSection = (arr, label, color) => arr.length ? `<div style="margin-top:16px"><div style="font-size:12.5px;font-weight:800;margin-bottom:8px;color:${color}">${label} (${arr.length})</div>${_replGrid(arr, true)}</div>` : '';
   const replaceBody = needReplace.length === 0
     ? '<div class="empty" style="padding:24px">🎉 ไม่มีเครื่องที่เกินเกณฑ์</div>'
     : (_replGrid(_replByCat.general, false)
        + _replSection(_replByCat.keep, '🔸 ยังไม่เปลี่ยน', '#92400e')
-       + _replSection(_replByCat.procuring, '🛒 อยู่ระหว่างจัดหา', '#3730a3'));
+       + _replSection(_replByCat.procuring, '🛒 อยู่ระหว่างจัดหา', '#3730a3')
+       + _replSection(_replByCat.transferring, '🔄 ได้เครื่องใหม่แล้ว — transfer ข้อมูล', '#15803d'));
 
   // heatmap cell
   const cellHtml = (y, mo1) => {
@@ -12347,12 +12348,13 @@ async function showHardwareModal(hw, type, afterSubmit) {
         ${sect('📝', 'หมายเหตุ')}
         <div class="field">
           <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">หมวดหมายเหตุ</label>
-          <select id="hm-note-category" onchange="(function(s){var t=document.getElementById('hm-notes');if(t)t.placeholder=({general:'หมายเหตุเพิ่มเติม (optional)',keep:'เหตุผลที่ยังไม่เปลี่ยน',procuring:'เหตุผลที่อยู่ระหว่างจัดหา'})[s.value]||'';})(this)" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;margin-bottom:8px">
+          <select id="hm-note-category" onchange="(function(s){var t=document.getElementById('hm-notes');if(t)t.placeholder=({general:'หมายเหตุเพิ่มเติม (optional)',keep:'เหตุผลที่ยังไม่เปลี่ยน',procuring:'เหตุผลที่อยู่ระหว่างจัดหา',transferring:'ความคืบหน้าการ transfer ข้อมูล (เครื่องใหม่มาแล้ว)'})[s.value]||'';})(this)" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;margin-bottom:8px">
             <option value="general" ${(!isEdit || !hw.note_category || hw.note_category === 'general') ? 'selected' : ''}>ทั่วไป — กรอกอะไรก็ได้</option>
             <option value="keep" ${(isEdit && hw.note_category === 'keep') ? 'selected' : ''}>ยังไม่เปลี่ยน — กรอกเหตุผลที่ยังไม่เปลี่ยน</option>
             <option value="procuring" ${(isEdit && hw.note_category === 'procuring') ? 'selected' : ''}>อยู่ระหว่างจัดหา — กรอกเหตุผล</option>
+            <option value="transferring" ${(isEdit && hw.note_category === 'transferring') ? 'selected' : ''}>ได้เครื่องใหม่แล้ว — อยู่ระหว่าง transfer ข้อมูล</option>
           </select>
-          <textarea id="hm-notes" rows="3" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical" placeholder="${isEdit && hw.note_category === 'keep' ? 'เหตุผลที่ยังไม่เปลี่ยน' : (isEdit && hw.note_category === 'procuring' ? 'เหตุผลที่อยู่ระหว่างจัดหา' : 'หมายเหตุเพิ่มเติม (optional)')}">${isEdit ? escapeHtml(hw.notes || '') : ''}</textarea>
+          <textarea id="hm-notes" rows="3" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical" placeholder="${isEdit && hw.note_category === 'keep' ? 'เหตุผลที่ยังไม่เปลี่ยน' : (isEdit && hw.note_category === 'procuring' ? 'เหตุผลที่อยู่ระหว่างจัดหา' : (isEdit && hw.note_category === 'transferring' ? 'ความคืบหน้าการ transfer ข้อมูล (เครื่องใหม่มาแล้ว)' : 'หมายเหตุเพิ่มเติม (optional)'))}">${isEdit ? escapeHtml(hw.notes || '') : ''}</textarea>
         </div>
           </div><!-- /right column -->
         </div><!-- /2-col flex -->
