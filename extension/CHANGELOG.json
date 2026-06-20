@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.248",
+      "date": "2026-06-20",
+      "title": "คอมส่วนกลาง — การ์ดแบบ grid (เหมือนหน้า Dashboard)",
+      "summary": "หน้าคอมส่วนกลาง เปลี่ยนการ์ดเป็น compact grid 3 คอลัมน์ แบบเดียวกับการ์ด ‘ควรพิจารณาเปลี่ยน’ ในหน้า Dashboard · ชื่อ + Mac/Notebook + รุ่น/OS · ที่เก็บแทน owner · มุมขวาแสดงสถานะ + อายุเครื่อง",
+      "changes": [
+        "การ์ด compact: เส้นซ้ายสี (Mac ม่วง / Notebook คราม) + ชื่อ + รุ่น · OS",
+        "ใช้ 📍 ที่เก็บ (storage_location) แทนช่อง owner",
+        "มุมขวา: สถานะ + ⏱ อายุเครื่อง · จัดเป็น grid auto-fill 300px",
+        "ยังจัดกลุ่มตามทีม + คลิกการ์ดเพื่อดู/แก้ไขได้เหมือนเดิม"
+      ]
+    },
+    {
       "version": "1.9.247",
       "date": "2026-06-20",
       "title": "PC — เพิ่มประวัติการครอบครองเอง + Previous Device ใน owner panel",

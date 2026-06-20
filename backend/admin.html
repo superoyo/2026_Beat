@@ -10149,10 +10149,10 @@ function renderUnassignedPcsList() {
         🏢 ${escapeHtml(teamName)}
         <span style="background:var(--bg-soft);color:var(--text-muted);font-size:11px;padding:1px 8px;border-radius:999px;font-weight:600">${items.length}</span>
       </div>
-      ${items.map(pc => renderHwUnassignedPcCard(pc)).join('')}
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px">${items.map(pc => renderHwUnassignedPcCard(pc)).join('')}</div>
     </div>
   `).join('');
-  listEl.querySelectorAll('button[data-hu-pc-id]').forEach(b => {
+  listEl.querySelectorAll('[data-hu-pc-id]').forEach(b => {
     b.addEventListener('click', () => {
       const id = parseInt(b.dataset.huPcId, 10);
       const pc = _hwUnassignedCache.find(x => x.id === id);
@@ -10165,56 +10165,36 @@ function renderUnassignedPcsList() {
 }
 
 function renderHwUnassignedPcCard(pc) {
-  const tile = renderMyDevicePurchaseTile(pc.purchased_at);
+  // v1.9.248 — compact card grid style (เหมือนการ์ด Dashboard) · ใช้ที่เก็บ แทน owner
+  const isMac = (typeof _pcDashIsMac === 'function') ? _pcDashIsMac(pc) : /mac/i.test((pc.os || '') + (pc.model || '') + (pc.name || ''));
   const ageStr = calcHwAgeStr(pc.purchased_at);
-  const specs = [];
-  if (pc.cpu) specs.push(`🔧 ${escapeHtml(pc.cpu)}`);
-  if (pc.ram) specs.push(`🧠 ${escapeHtml(pc.ram)}`);
-  if (pc.storage) specs.push(`💾 ${escapeHtml(pc.storage)}`);
-  if (pc.os) specs.push(`💿 ${escapeHtml(pc.os)}${pc.os_version ? ' ' + escapeHtml(pc.os_version) : ''}`);
-  let statusBadge = '';
-  if (pc.status) {
-    const map = {
-      active:  { c: 'rgba(16,185,129,.12);color:var(--green)',     l: '✓ ใช้งาน' },
-      repair:  { c: 'rgba(245,158,11,.15);color:#92400e',          l: '🔧 ซ่อม' },
-      stock:   { c: 'rgba(99,102,241,.10);color:#3730a3',          l: '📦 Stock' },
-      retired: { c: 'rgba(220,38,38,.10);color:var(--critical)',   l: '⚠ ปลดระวาง' },
-    };
-    const mp = map[pc.status];
-    if (mp) statusBadge = `<span style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:700;background:${mp.c};white-space:nowrap">${mp.l}</span>`;
-  }
-  const headLine = pc.model
-    ? `${escapeHtml(pc.name)} <span style="color:var(--text-muted);font-weight:500;font-size:12px">— ${escapeHtml(pc.model)}</span>`
-    : escapeHtml(pc.name);
-  const photoBlock = pc.photo_data
-    ? `<img src="${pc.photo_data}" alt="" style="width:72px;height:54px;object-fit:cover;border-radius:6px;border:1px solid var(--border);flex-shrink:0;display:block" />`
-    : `<div style="width:72px;height:54px;border-radius:6px;border:1px dashed var(--border);background:var(--bg-soft);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:22px">📦</div>`;
-  const storageChip = pc.storage_location
-    ? `<div style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:600;background:rgba(99,102,241,.12);color:#3730a3;border:1px solid rgba(99,102,241,.25)">📍 ${escapeHtml(pc.storage_location)}</div>`
-    : `<span style="font-size:11px;color:var(--critical);font-style:italic">⚠ ยังไม่ระบุที่เก็บ</span>`;
-
+  const typeBadge = isMac
+    ? '<span style="font-size:10px;color:#7c3aed;font-weight:700">🍎 Mac</span>'
+    : '<span style="font-size:10px;color:var(--text-muted)">💻 Notebook/PC</span>';
+  const statusMap = {
+    active:  ['✓ ใช้งาน', 'var(--green)'],
+    repair:  ['🔧 ซ่อม', '#92400e'],
+    stock:   ['📦 Stock', '#3730a3'],
+    retired: ['⚠ ปลดระวาง', 'var(--critical)'],
+  };
+  const st = statusMap[pc.status];
+  const loc = pc.storage_location
+    ? `<span style="color:#3730a3;font-weight:600">📍 ${escapeHtml(pc.storage_location)}</span>`
+    : '<span style="color:var(--critical);font-style:italic">⚠ ยังไม่ระบุที่เก็บ</span>';
+  const sub = [escapeHtml(pc.model || '—'), pc.os ? escapeHtml(pc.os) : null].filter(Boolean).join(' · ');
   return `
-    <button type="button" data-hu-pc-id="${pc.id}" title="คลิกดูรายละเอียด + แก้ไข"
-       style="display:flex;gap:12px;align-items:flex-start;background:var(--bg-card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin-bottom:6px;width:100%;text-align:left;font-family:inherit;cursor:pointer;transition:background .12s,border-color .12s"
-       onmouseenter="this.style.background='var(--bg-hover)';this.style.borderColor='var(--primary)'"
-       onmouseleave="this.style.background='var(--bg-card)';this.style.borderColor='var(--border)'">
-      ${photoBlock}
-      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
-        ${renderHwAssetLine(pc.asset_number)}
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span style="font-weight:700;font-size:13.5px;color:var(--text)">💻 ${headLine}</span>
-          ${statusBadge}
-          <span style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:700;background:rgba(245,158,11,.10);color:#92400e">🔓 ไม่ระบุผู้ดูแล</span>
-          <span style="font-size:10.5px;color:var(--primary);font-weight:600">📖 รายละเอียด</span>
-        </div>
-        ${specs.length ? `<div style="font-size:11.5px;color:var(--text-muted);line-height:1.5">${specs.join(' · ')}</div>` : ''}
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:2px">
-          ${storageChip}
-          ${ageStr ? `<span style="font-size:11px;color:var(--accent);font-weight:600">⏱ ${escapeHtml(ageStr)}</span>` : ''}
-        </div>
+    <div class="card hw-card" data-hu-pc-id="${pc.id}" title="คลิกดูรายละเอียด + แก้ไข"
+      style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:9px 13px;margin-bottom:0;border-left:3px solid ${isMac ? '#7c3aed' : '#6366f1'};cursor:pointer">
+      <div style="min-width:0">
+        <div style="font-weight:700;font-size:13.5px">${escapeHtml(pc.name)} ${typeBadge}</div>
+        <div style="font-size:11.5px;color:var(--text-muted)">${sub}</div>
+        <div style="font-size:11px;margin-top:3px">${loc}</div>
       </div>
-      ${tile}
-    </button>
+      <div style="text-align:right;flex-shrink:0">
+        ${st ? `<div style="font-size:10.5px;font-weight:700;color:${st[1]};white-space:nowrap">${st[0]}</div>` : ''}
+        ${ageStr ? `<div style="font-size:11px;color:var(--accent);font-weight:600;margin-top:3px;white-space:nowrap">⏱ ${escapeHtml(ageStr)}</div>` : ''}
+      </div>
+    </div>
   `;
 }
 
