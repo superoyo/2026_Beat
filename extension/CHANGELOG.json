@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.253",
+      "date": "2026-06-20",
+      "title": "Skeleton loading — Device & Software / Peoples / My Profile",
+      "summary": "แทนข้อความ ‘กำลังโหลด…’ ด้วย skeleton (โครงร่างเทา shimmer) ทุกเมนูใน Device & Software (Dashboard, Personal Computer, คอมส่วนกลาง, Device, Network, Int. Platforms Config, Financial Document) + Peoples (Members/Teams/Access) + My Profile (My Device/Team) — ทำให้รู้สึกโหลดไวขึ้น",
+      "changes": [
+        "CSS .skel shimmer (เคารพ prefers-reduced-motion) + helper skelCard/skelGrid/skelStack/skelDashboard/skelProfile",
+        "Device & Software: ทุก list/grid + Dashboard ใช้ skeleton",
+        "Peoples: Members, Teams, Access Requests",
+        "My Profile: My Device, Team",
+        "ลดความรู้สึกหน่วงตอนเปลี่ยนเมนู (perceived performance)"
+      ]
+    },
+    {
       "version": "1.9.252",
       "date": "2026-06-20",
       "title": "คอมพิวเตอร์ของตนเอง (BYOD) — checkbox + badge + filter",

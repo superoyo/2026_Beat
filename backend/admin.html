@@ -617,6 +617,24 @@
       border-radius: 12px;
     }
 
+    /* v1.9.253 — Skeleton loading */
+    @keyframes skel-shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }
+    .skel {
+      background: linear-gradient(90deg, var(--bg-soft) 25%, var(--bg-hover) 37%, var(--bg-soft) 63%);
+      background-size: 200% 100%;
+      animation: skel-shimmer 1.4s ease-in-out infinite;
+      border-radius: 6px;
+    }
+    @media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
+    .skel-line { height: 11px; }
+    .skel-card {
+      display: flex; gap: 13px; align-items: center;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 11px; padding: 11px 14px; margin-bottom: 0;
+    }
+    .skel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 8px; }
+    .skel-stack { display: flex; flex-direction: column; gap: 8px; }
+
     /* Modal */
     .modal-bg {
       position: fixed; inset: 0;
@@ -1179,6 +1197,45 @@ const API = '';
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// v1.9.253 — Skeleton loading helpers — แสดงโครงร่างเทา ๆ ระหว่างโหลด (ดูไวขึ้น)
+function _skelLine(w, h) { return `<div class="skel skel-line" style="width:${w};${h ? 'height:' + h + ';' : ''}"></div>`; }
+function skelCard() {
+  return `<div class="skel-card">
+    <div class="skel" style="width:46px;height:46px;border-radius:9px;flex-shrink:0"></div>
+    <div style="flex:1;display:flex;flex-direction:column;gap:8px;min-width:0">
+      ${_skelLine('38%')}${_skelLine('72%')}${_skelLine('28%')}
+    </div>
+    <div class="skel" style="width:40px;height:30px;border-radius:6px;flex-shrink:0"></div>
+  </div>`;
+}
+function skelGrid(n) {
+  return `<div class="skel-grid">${Array.from({ length: n || 6 }, skelCard).join('')}</div>`;
+}
+function skelStack(n) {
+  return `<div class="skel-stack">${Array.from({ length: n || 5 }, skelCard).join('')}</div>`;
+}
+// Dashboard: summary cards + แท่งกราฟ + การ์ดรายการ
+function skelDashboard() {
+  const stat = `<div class="card" style="display:block;padding:14px"><div class="skel skel-line" style="width:50%;margin-bottom:10px"></div><div class="skel" style="width:60px;height:26px;border-radius:6px"></div></div>`;
+  const bar = (w) => `<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px"><div class="skel skel-line" style="width:54px"></div><div class="skel" style="height:16px;width:${w};border-radius:5px"></div></div>`;
+  return `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:18px">${stat}${stat}${stat}${stat}</div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap">
+      <div class="card" style="flex:1;min-width:300px;padding:16px">${_skelLine('40%', '13px')}<div style="height:12px"></div>${bar('70%')}${bar('55%')}${bar('85%')}${bar('40%')}${bar('60%')}</div>
+      <div class="card" style="flex:1;min-width:280px;padding:16px">${_skelLine('45%', '13px')}<div style="height:12px"></div>${skelStack(4)}</div>
+    </div>`;
+}
+// Profile: avatar กลม + ชื่อ + การ์ดข้อมูล
+function skelProfile() {
+  return `
+    <div style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:10px 0 22px">
+      <div class="skel" style="width:96px;height:96px;border-radius:50%"></div>
+      <div class="skel skel-line" style="width:160px;height:16px"></div>
+      <div class="skel skel-line" style="width:110px"></div>
+    </div>
+    <div class="card" style="padding:6px 16px">${Array.from({ length: 4 }, () => `<div style="display:flex;gap:14px;padding:11px 0;border-bottom:1px solid var(--border)">${_skelLine('22%')}<div style="flex:1"></div>${_skelLine('40%')}</div>`).join('')}</div>`;
 }
 
 // v1.9.83 — Wazzup SSO helpers (token เก็บใน sessionStorage)
@@ -3838,7 +3895,7 @@ async function renderSitesList() {
       <h2 class="page-title">🌐 Websites</h2>
       <button class="btn primary" id="add-site-btn">+ เพิ่มเว็บใหม่</button>
     </div>
-    <div id="sites-list"></div>
+    <div id="sites-list">${skelStack(5)}</div>
   `;
   $('add-site-btn').addEventListener('click', showAddSiteModal);
   await loadSites();
@@ -5842,7 +5899,7 @@ async function renderTeamsPage(selectedTeamId, mount) {
 
       <!-- RIGHT: team detail -->
       <div id="team-panel" style="min-width:0">
-        ${selectedTeamId ? '<div class="empty">กำลังโหลด…</div>' : '<div class="empty">เลือกทีมจากด้านซ้าย</div>'}
+        ${selectedTeamId ? skelStack(4) : '<div class="empty">เลือกทีมจากด้านซ้าย</div>'}
       </div>
     </div>
   `;
@@ -7013,7 +7070,7 @@ async function renderAccessRequestsPage(mount) {
     </div>
 
     <div id="ar-list">
-      <div class="empty">กำลังโหลด…</div>
+      ${skelStack(4)}
     </div>
   `;
 
@@ -7030,7 +7087,7 @@ async function renderAccessRequestsPage(mount) {
 
 async function loadAccessRequests() {
   const listEl = $('ar-list');
-  listEl.innerHTML = '<div class="empty">กำลังโหลด…</div>';
+  listEl.innerHTML = skelStack(4);
 
   let data;
   try {
@@ -10066,7 +10123,7 @@ async function renderHardwareUnassignedPcsPage() {
       <input id="hu-search" type="text" placeholder="🔍 ค้นหาชื่อ / asset / ทีม / ที่เก็บ..." autocomplete="off"
         style="flex:1;min-width:240px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--bg-card);color:var(--text);box-sizing:border-box" />
     </div>
-    <div id="hu-list"><div class="empty">กำลังโหลด…</div></div>
+    <div id="hu-list">${skelGrid(6)}</div>
   `;
   // โหลด members + teams cache (ใช้ใน edit modal)
   if (_hwMembersCache.length === 0 || _hwTeamsCache.length === 0) {
@@ -10332,7 +10389,7 @@ async function renderFinDocListPage() {
       เอกสารการสั่งซื้อ (ใบสั่งจ่าย/ใบเสร็จ/อื่น ๆ) — 1 ชุดมีหลายหน้า อัพโหลดทีละหน้าหรือถ่ายจากมือถือ
       OCR จะอ่าน "ใบสั่งจ่าย" อัตโนมัติแล้ว auto-fill ชื่อ/วันที่/จำนวนเงิน
     </div>
-    <div id="fd-list"><div class="empty">กำลังโหลด…</div></div>
+    <div id="fd-list">${skelStack(5)}</div>
   `;
   $('fd-add-btn').addEventListener('click', () => showFinDocCreateModal());
   await loadFinDocList();
@@ -10406,7 +10463,7 @@ async function renderFinDocDetailPage(docId) {
         <button class="btn danger" id="fd-del" style="font-size:12.5px;padding:5px 12px">🗑 ลบ</button>
       </div>
     </div>
-    <div id="fd-detail-body"><div class="empty">กำลังโหลด…</div></div>
+    <div id="fd-detail-body">${skelStack(4)}</div>
   `;
   // v1.9.77 — กลับโดยเรียก render ตรง ๆ (hash ไม่เปลี่ยน → router ไม่ fire)
   $('fd-back').addEventListener('click', () => {
@@ -10864,7 +10921,7 @@ function _pcMatchTeam(p, subtree) {
 async function renderPcDashboard() {
   const root = _subMain();
   if (!root) return;
-  root.innerHTML = '<div class="empty">กำลังโหลดข้อมูลคอมพิวเตอร์…</div>';
+  root.innerHTML = skelDashboard();
   let pcs;
   try { pcs = (await fetchJson('/api/admin/hardware?type=pc')).hardware || []; }
   catch (e) { root.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`; return; }
@@ -11099,7 +11156,7 @@ async function renderHardwarePage(type) {
         </select>
       </div>
     ` : ''}
-    <div id="hw-list"><div class="empty">กำลังโหลด…</div></div>
+    <div id="hw-list">${isPc ? skelGrid(6) : skelStack(5)}</div>
   `;
   $('hw-add-btn').addEventListener('click', () => showHardwareModal(null, _hwActiveType));
   $('hw-search').addEventListener('input', (e) => {
@@ -11649,7 +11706,7 @@ async function renderMyDevicePage() {
     <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px">
       อุปกรณ์ทั้งหมดที่ผูกกับคุณ — แก้ไขข้อมูลไม่ได้ แต่<strong>อัพโหลดรูปอุปกรณ์</strong>เองได้
     </div>
-    <div id="md-list"><div class="empty">กำลังโหลด…</div></div>
+    <div id="md-list">${skelStack(2)}</div>
   `;
   await loadMyDevice();
 }
@@ -13328,7 +13385,7 @@ async function renderSubmenuPage(cfg) {
     <div class="page-head"><h2 class="page-title">${cfg.title}</h2></div>
     <div class="acc-layout">
       <div class="acc-menu">${menuHtml}</div>
-      <div class="acc-detail"><div id="sub-detail"><div class="empty">กำลังโหลด…</div></div></div>
+      <div class="acc-detail"><div id="sub-detail">${skelStack(5)}</div></div>
     </div>`;
   const active = cfg.items.find(it => it.route === cfg.active) || cfg.items[0];
   if (active && active.render) await active.render(cfg.arg);
@@ -14317,7 +14374,7 @@ async function renderPeoplesPage(activeTab, teamId) {
         ${item('teams', '👨‍👩‍👧', 'Teams')}
         ${item('access-requests', '📨', 'Access Requests', ' <span id="peoples-req-badge" style="display:none;margin-left:auto;background:var(--critical);color:#fff;font-size:10.5px;padding:1px 7px;border-radius:999px;font-weight:700"></span>')}
       </div>
-      <div class="acc-detail"><div id="peoples-detail"><div class="empty">กำลังโหลด…</div></div></div>
+      <div class="acc-detail"><div id="peoples-detail">${skelStack(5)}</div></div>
     </div>
   `;
   const mount = $('peoples-detail');
@@ -14364,7 +14421,7 @@ async function renderMembersPage(mount) {
     </div>
     <div id="m-filter-info" style="font-size:12px;color:var(--text-muted);margin-bottom:8px"></div>
     <div id="m-list">
-      <div class="empty">กำลังโหลด…</div>
+      ${skelStack(6)}
     </div>
   `;
   const beaconAllBtn = $('m-beacon-all-btn');
@@ -16081,7 +16138,7 @@ async function renderMemberAccountPage() {
           <!-- v1.9.131 — ไม่มี header, grid scroll ภายในตัวเอง (menu+tabs อยู่นิ่ง) -->
           <div data-acc-panel="team" style="display:none">
             <div id="m-team-tabs" style="display:flex;gap:8px;overflow-x:auto;padding:2px 2px 10px;scroll-behavior:smooth;flex-shrink:0"></div>
-            <div id="m-team-grid" style="overflow-y:auto;max-height:calc(100vh - 170px);padding-right:4px"><div class="empty">กำลังโหลด…</div></div>
+            <div id="m-team-grid" style="overflow-y:auto;max-height:calc(100vh - 170px);padding-right:4px">${skelStack(4)}</div>
           </div>
 
           <!-- ============ My Device ============ -->
@@ -16092,7 +16149,7 @@ async function renderMemberAccountPage() {
                 อุปกรณ์ทั้งหมดที่ผูกกับคุณ — แก้ไขข้อมูลไม่ได้ แต่<strong>อัพโหลดรูปอุปกรณ์</strong>เองได้
               </div>
             </div>
-            <div id="md-list"><div class="empty">กำลังโหลด…</div></div>
+            <div id="md-list">${skelStack(2)}</div>
           </div>
 
           <!-- ============ Check-in (Beacon) ============ -->
