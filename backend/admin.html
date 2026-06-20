@@ -11446,15 +11446,16 @@ function _renderPcGridCard(h) {
   if (h.current_member_label) {
     const m = _hwMembersCache.find(x => x.id === h.current_member_id);
     const av = (m && m.avatar_data)
-      ? `<img src="${m.avatar_data}" alt="" style="width:18px;height:18px;border-radius:50%;object-fit:cover;flex-shrink:0" />`
-      : `<span style="width:18px;height:18px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml((h.current_member_label.trim().charAt(0) || '?').toUpperCase())}</span>`;
-    ownerHtml = `<span style="display:inline-flex;align-items:center;gap:5px;color:var(--green);font-weight:600;min-width:0"><span style="flex-shrink:0;display:inline-flex">${av}</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(h.current_member_label)}</span></span>`;
+      ? `<img src="${m.avatar_data}" alt="" style="width:15px;height:15px;border-radius:50%;object-fit:cover;flex-shrink:0" />`
+      : `<span style="width:15px;height:15px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-size:9px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml((h.current_member_label.trim().charAt(0) || '?').toUpperCase())}</span>`;
+    ownerHtml = `<span style="display:inline-flex;align-items:center;gap:4px;color:var(--text-soft);font-weight:500;font-size:10px;min-width:0"><span style="flex-shrink:0;display:inline-flex">${av}</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(h.current_member_label)}</span></span>`;
   } else if (_isHwCentral(h)) {
     ownerHtml = `<span style="color:#3730a3;font-weight:600">📦 ส่วนกลาง${h.storage_location ? ' · ' + escapeHtml(h.storage_location) : ''}</span>`;
   } else {
     ownerHtml = '<span style="color:var(--text-muted)">🔓 ยังไม่ผูก</span>';
   }
-  const sub = [h.model, h.os, h.cpu, h.ram, h.storage].filter(Boolean).map(escapeHtml).join(' · ');
+  // v1.9.254 — รุ่นเป็น headline ตัวหน้า → sub ตัด model ออก (เหลือ OS/CPU/RAM/Storage)
+  const sub = [h.os, h.cpu, h.ram, h.storage].filter(Boolean).map(escapeHtml).join(' · ');
   const assetTag = h.asset_number
     ? `<span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--primary);background:rgba(37,99,235,.1);padding:1px 6px;border-radius:4px;white-space:nowrap">🔖 ${escapeHtml(h.asset_number)}</span>`
     : '';
@@ -11469,9 +11470,10 @@ function _renderPcGridCard(h) {
       style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:9px 13px;margin-bottom:0;border-left:3px solid ${isMac ? '#7c3aed' : '#6366f1'};cursor:pointer">
       <div style="min-width:0;flex:1">
         <div style="font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">
-          <span style="overflow:hidden;text-overflow:ellipsis">${escapeHtml(h.name)}</span> ${typeBadge}
+          <span style="overflow:hidden;text-overflow:ellipsis">${escapeHtml(h.model || h.name || '—')}</span> ${typeBadge}
           ${st ? `<span style="font-size:10px;font-weight:700;color:${st[1]}">${st[0]}</span>` : ''}
         </div>
+        ${(h.model && h.name && h.name !== h.model) ? `<div style="font-size:10.5px;color:var(--text-soft);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🖥 ${escapeHtml(h.name)}</div>` : ''}
         <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">${sub || '—'}</div>
         <div style="font-size:11px;margin-top:4px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">${ownerHtml} ${assetTag} ${personalBadge}</div>
       </div>

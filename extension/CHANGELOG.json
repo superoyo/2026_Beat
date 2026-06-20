@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.254",
+      "date": "2026-06-20",
+      "title": "Personal Computer — รุ่นเป็น headline ตัวหน้า + ชื่อเจ้าของเล็กลง",
+      "summary": "การ์ดหน้า Personal Computer: ใช้ field รุ่น (model) เป็นหัวเรื่องตัวหน้า (ถ้าไม่มีรุ่นใช้ชื่อแทน) · ชื่อเครื่องเดิมแสดงเป็นบรรทัดเล็กใต้รุ่น (เฉพาะเมื่อต่างจากรุ่น) · ชื่อเจ้าของ + avatar ปรับเล็กลง",
+      "changes": [
+        "headline = รุ่น (model) · fallback เป็นชื่อเครื่องถ้าไม่มีรุ่น",
+        "ชื่อเครื่อง (เช่น Bovon's MAC) ย้ายเป็นบรรทัดเล็กจาง 🖥 ใต้รุ่น",
+        "sub line ตัด model ออก (เหลือ OS/CPU/RAM/Storage)",
+        "ชื่อเจ้าของเล็กลง (10px) + avatar 18→15px"
+      ]
+    },
+    {
       "version": "1.9.253",
       "date": "2026-06-20",
       "title": "Skeleton loading — Device & Software / Peoples / My Profile",
