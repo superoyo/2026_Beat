@@ -10934,7 +10934,7 @@ async function renderPcDashboard() {
       <div>
         <div style="font-size:13px;font-weight:800;margin-bottom:8px">📅 ปฏิทินการซื้อ (ตามเดือน/ปี)</div>
         <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:8px">สีเข้ม = ซื้อเยอะ · คลิกช่องเพื่อดูว่าเดือนนั้นซื้ออะไร (แสดงคอลัมน์ขวา)</div>
-        <div style="overflow-x:auto;border:1px solid var(--border);border-radius:10px;padding:6px">
+        <div id="pcd-cal-wrap" style="overflow-x:auto;border:1px solid var(--border);border-radius:10px;padding:6px">
           <table style="width:100%;border-collapse:separate;border-spacing:2px;font-size:11px">
             <thead><tr style="color:var(--text-muted)">
               <th style="padding:2px 6px;text-align:left">ปี</th>${SHORT.map(m => `<th style="padding:2px;text-align:center;font-weight:600">${m.replace('.', '')}</th>`).join('')}<th style="padding:2px 6px">รวม</th>
@@ -10976,11 +10976,17 @@ async function renderPcDashboard() {
     const arr = byYm[btn.dataset.pcdYm] || [];
     const [yy, mm] = btn.dataset.pcdYm.split('-');
     const det = $('pcd-month-detail');
-    det.innerHTML = `<div class="card" style="padding:10px 13px">
-      <div style="font-weight:800;font-size:13px;margin-bottom:6px">🛒 ${SHORT[(+mm) - 1]} ${(+yy) + 543} — ซื้อ ${arr.length} เครื่อง</div>
-      ${arr.map(p => `<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px"><span>${escapeHtml(p.name)} <span style="color:var(--text-muted)">${escapeHtml(p.model || '')}</span></span><span style="color:var(--text-muted);white-space:nowrap">${escapeHtml(ownerOf(p))}${p._needsReplace ? ' · <span style="color:#dc2626;font-weight:700">ควรเปลี่ยน</span>' : ''}</span></div>`).join('')}
+    const calEl = document.getElementById('pcd-cal-wrap');
+    const calH = (calEl && calEl.offsetHeight) ? calEl.offsetHeight : 520;
+    det.innerHTML = `<div style="border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:column;max-height:${calH}px;overflow:hidden">
+      <div style="font-weight:800;font-size:13px;padding:10px 13px;border-bottom:1px solid var(--border);flex-shrink:0">🛒 ${SHORT[(+mm) - 1]} ${(+yy) + 543} — ซื้อ ${arr.length} เครื่อง</div>
+      <div style="overflow-y:auto;padding:2px 13px 6px">
+        ${arr.map(p => `<div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px">
+          <span style="flex:1;min-width:0"><span style="font-weight:600">${escapeHtml(p.name)}</span> <span style="color:var(--text-muted)">${escapeHtml(p.model || '')}</span></span>
+          <span style="color:var(--text-muted);white-space:nowrap;flex-shrink:0;text-align:right">${escapeHtml(ownerOf(p))}${p._needsReplace ? '<br><span style="color:#dc2626;font-weight:700">⚠ ควรเปลี่ยน</span>' : ''}</span>
+        </div>`).join('')}
+      </div>
     </div>`;
-    det.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }));
 }
 

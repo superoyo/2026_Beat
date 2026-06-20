@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.238",
+      "date": "2026-06-20",
+      "title": "PC Dashboard — fix รายการที่ซื้อล้นแนวนอน + จำกัดความสูง/scroll",
+      "summary": "แก้ panel ‘รายการที่ซื้อ’ ที่ใช้ class .card (display:flex) ทำให้รายการเรียงแนวนอนทะลุขวา → เปลี่ยนเป็น flex-column เรียงลงล่าง + จำกัดความสูงไม่เกินกล่องปฏิทิน มี scrollbar เมื่อรายการเยอะ",
+      "changes": [
+        "เลิกใช้ .card (เป็น flex) ในกล่องรายการ → flex-direction:column เรียงตรงลงล่าง",
+        "max-height = ความสูงกล่องปฏิทิน + body overflow-y:auto (scroll)",
+        "ชื่อ wrap ได้ / เจ้าของชิดขวา + ‘ควรเปลี่ยน’ ขึ้นบรรทัดใหม่"
+      ]
+    },
+    {
       "version": "1.9.237",
       "date": "2026-06-20",
       "title": "PC Dashboard — เพิ่ม filter ตามโครงสร้างทีม",
