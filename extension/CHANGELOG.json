@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.237",
+      "date": "2026-06-20",
+      "title": "PC Dashboard — เพิ่ม filter ตามโครงสร้างทีม",
+      "summary": "หน้า Dashboard คอมพิวเตอร์เพิ่ม dropdown เลือกทีม (โครงสร้างทีมแบบ indent รวมทีมย่อย) → กรองทั้งหน้า (ปฏิทินการซื้อ/สรุป/ควรเปลี่ยน/อายุ) ให้เหลือเฉพาะคอมของทีมนั้น",
+      "changes": [
+        "dropdown ทีม (indent ตามลำดับชั้น) ที่หัวหน้า Dashboard",
+        "กรอง PC ตาม subtree ของทีม (จาก owner's teams หรือ unassigned_team_id)",
+        "ทุกส่วน (ปฏิทิน/การ์ดสรุป/รายการควรเปลี่ยน/การกระจายอายุ) คำนวณใหม่ตามทีมที่เลือก"
+      ]
+    },
+    {
       "version": "1.9.236",
       "date": "2026-06-20",
       "title": "PC Dashboard — จัด layout ใหม่: ปฏิทินซ้าย / รายการขวา / ควรเปลี่ยนล่างสุด",

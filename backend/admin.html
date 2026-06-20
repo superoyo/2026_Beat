@@ -10803,6 +10803,16 @@ function _pcDashAgeMonths(p) {
 function _pcDashIsMac(p) {
   return /\bmac\b|macos|mac ?os|os ?x|osx|macbook|imac|mac ?mini|mac ?studio/i.test((p.os || '') + ' ' + (p.model || '') + ' ' + (p.name || ''));
 }
+let _pcDashTeam = '';   // '' = ทุกทีม | team_id (string)
+function _pcMatchTeam(p, subtree) {
+  const ownerTids = getHwOwnerTeamIds(p);
+  if (ownerTids && ownerTids.size > 0) {
+    for (const t of ownerTids) if (subtree.has(t)) return true;
+    return false;
+  }
+  if (p.unassigned_team_id != null) return subtree.has(p.unassigned_team_id);
+  return false;   // ไม่มี owner + ไม่มีทีมที่สังกัด → ไม่เข้าทีมใด
+}
 async function renderPcDashboard() {
   const root = _subMain();
   if (!root) return;
@@ -10810,6 +10820,25 @@ async function renderPcDashboard() {
   let pcs;
   try { pcs = (await fetchJson('/api/admin/hardware?type=pc')).hardware || []; }
   catch (e) { root.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`; return; }
+
+  // โหลด teams + members (ใช้จับ PC เข้าทีม) ถ้ายังไม่มีใน cache
+  if (_hwTeamsCache.length === 0 || _hwMembersCache.length === 0) {
+    try {
+      const [td, md] = await Promise.all([fetchJson('/api/admin/teams'), fetchJson('/api/admin/members')]);
+      _hwTeamsCache = td.teams || _hwTeamsCache;
+      _hwMembersCache = md.members || _hwMembersCache;
+    } catch { /* ไม่มี team filter ก็ยังดู dashboard ได้ */ }
+  }
+  if (_pcDashTeam && !_hwTeamsCache.some(t => String(t.id) === _pcDashTeam)) _pcDashTeam = '';
+  // dropdown ทีม (โครงสร้าง indent)
+  const _teamFlat = flattenTeamTreeDFS(buildTeamTree(_hwTeamsCache));
+  const teamOpts = `<option value="">— ทุกทีม —</option>` + _teamFlat.map(({ team, depth }) =>
+    `<option value="${team.id}" ${String(team.id) === _pcDashTeam ? 'selected' : ''}>${escapeHtml('  '.repeat(depth) + (depth > 0 ? '↳ ' : '') + team.name)}</option>`).join('');
+  // filter ตามทีม (รวมทีมย่อย) — ผ่าน owner's teams หรือ unassigned_team_id
+  if (_pcDashTeam) {
+    const sub = getTeamDescendantIds(_hwTeamsCache, parseInt(_pcDashTeam, 10));
+    pcs = pcs.filter(p => _pcMatchTeam(p, sub));
+  }
 
   const SHORT = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
   pcs.forEach(p => {
@@ -10885,8 +10914,12 @@ async function renderPcDashboard() {
 
   root.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
-      <div style="font-size:13px;color:var(--text-muted)">ภาพรวมคอมพิวเตอร์ทั้งบริษัท + ข้อมูลช่วยตัดสินใจจัดซื้อ/เปลี่ยนเครื่อง</div>
-      <button class="btn" id="pcd-refresh" style="font-size:12px">🔄 รีเฟรช</button>
+      <div style="font-size:13px;color:var(--text-muted)">ภาพรวมคอมพิวเตอร์ทั้งบริษัท + ข้อมูลช่วยตัดสินใจจัดซื้อ/เปลี่ยนเครื่อง${_pcDashTeam ? ' · <strong style="color:var(--primary)">กรองตามทีม</strong>' : ''}</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:12px;color:var(--text-muted)">ทีม:</span>
+        <select id="pcd-team" style="padding:7px 11px;font-size:12.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);max-width:260px;cursor:pointer">${teamOpts}</select>
+        <button class="btn" id="pcd-refresh" style="font-size:12px">🔄 รีเฟรช</button>
+      </div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px">
       ${card('คอมทั้งหมด', total, '', `ใช้งานอยู่ ${active.length} · ปลดระวาง ${total - active.length}`)}
@@ -10937,6 +10970,8 @@ async function renderPcDashboard() {
     </div>`;
 
   $('pcd-refresh').onclick = () => renderPcDashboard();
+  const _pcdTeamSel = $('pcd-team');
+  if (_pcdTeamSel) _pcdTeamSel.onchange = () => { _pcDashTeam = _pcdTeamSel.value; renderPcDashboard(); };
   root.querySelectorAll('[data-pcd-ym]').forEach(btn => btn.addEventListener('click', () => {
     const arr = byYm[btn.dataset.pcdYm] || [];
     const [yy, mm] = btn.dataset.pcdYm.split('-');
