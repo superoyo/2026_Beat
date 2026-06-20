@@ -604,6 +604,8 @@ def init_db() -> None:
                 ("storage_location", "TEXT"),
                 # v1.9.245 — หมวดหมายเหตุ: 'general' | 'keep' (ยังไม่เปลี่ยน) | 'procuring' (อยู่ระหว่างจัดหา)
                 ("note_category", "TEXT"),
+                # v1.9.252 — เครื่องเป็นของพนักงานเอง (BYOD)
+                ("is_personal_owned", "INTEGER NOT NULL DEFAULT 0"),
             ]
             for col_name, col_type in extra_cols:
                 if hw_cols and col_name not in hw_cols:
@@ -6122,6 +6124,8 @@ class HardwareIn(BaseModel):
     storage_location: Optional[str] = Field(None, max_length=200)
     # v1.9.245 — หมวดหมายเหตุ
     note_category: Optional[str] = Field(None, max_length=20)
+    # v1.9.252 — เครื่องเป็นของพนักงานเอง (BYOD)
+    is_personal_owned: bool = False
 
     @field_validator("hw_type")
     @classmethod
@@ -6167,6 +6171,8 @@ class HardwarePatchIn(BaseModel):
     storage_location: Optional[str] = Field(None, max_length=200)
     # v1.9.245 — หมวดหมายเหตุ
     note_category: Optional[str] = Field(None, max_length=20)
+    # v1.9.252 — เครื่องเป็นของพนักงานเอง (BYOD): null = no change
+    is_personal_owned: Optional[bool] = None
     _set_owner: bool = False    # internal flag (not used yet)
 
 
@@ -6246,8 +6252,8 @@ def admin_create_hardware(
             "                     serial_number, display, department, location, os_version, model, "
             "                     mainboard, gpu, battery, ups, status, quotation, "
             "                     device_subtype, capacity, current_member_id, photo_data, asset_photo_data, "
-            "                     unassigned_team_id, storage_location, note_category) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "                     unassigned_team_id, storage_location, note_category, is_personal_owned) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 payload.hw_type,
                 payload.name.strip(),
@@ -6279,6 +6285,7 @@ def admin_create_hardware(
                 payload.unassigned_team_id,
                 s(payload.storage_location),
                 s(payload.note_category),
+                1 if payload.is_personal_owned else 0,
             ),
         )
         hw_id = cur.lastrowid
@@ -6326,6 +6333,9 @@ def admin_update_hardware(
     # v1.9.65 — unassigned_team_id: null = clear, int = set, omitted = unchanged
     if "unassigned_team_id" in raw_body:
         updates["unassigned_team_id"] = raw_body["unassigned_team_id"]
+    # v1.9.252 — is_personal_owned: bool → 0/1, omitted = unchanged
+    if "is_personal_owned" in raw_body:
+        updates["is_personal_owned"] = 1 if raw_body["is_personal_owned"] else 0
 
     with db_conn() as conn:
         existing = conn.execute("SELECT * FROM hardware WHERE id = ?", (hw_id,)).fetchone()
@@ -6599,6 +6609,35 @@ def my_hardware_update_photo(
         conn.execute(
             "UPDATE hardware SET photo_data = ? WHERE id = ?",
             (new_photo, hw_id),
+        )
+    return {"ok": True}
+
+
+# v1.9.252 — Member ระบุว่าเครื่องของตัวเองเป็น "คอมพิวเตอร์ของตนเอง" (BYOD)
+class MyHardwarePersonalIn(BaseModel):
+    is_personal_owned: bool
+
+
+@app.patch("/api/my-hardware/{hw_id}/personal")
+def my_hardware_set_personal(
+    hw_id: int,
+    payload: MyHardwarePersonalIn,
+    fct_member_session: Optional[str] = Cookie(default=None),
+) -> dict[str, Any]:
+    """Member ติ๊ก/ยกเลิก 'คอมพิวเตอร์ของตนเอง' บนอุปกรณ์ของตัวเอง — verify ownership ก่อน"""
+    sess = _require_member_session(fct_member_session)
+    member_id = sess["member_id"]
+    with db_conn() as conn:
+        existing = conn.execute(
+            "SELECT current_member_id FROM hardware WHERE id = ?", (hw_id,)
+        ).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="hardware not found")
+        if existing["current_member_id"] != member_id:
+            raise HTTPException(status_code=403, detail="อุปกรณ์นี้ไม่ได้ผูกกับคุณ")
+        conn.execute(
+            "UPDATE hardware SET is_personal_owned = ? WHERE id = ?",
+            (1 if payload.is_personal_owned else 0, hw_id),
         )
     return {"ok": True}
 
@@ -8055,7 +8094,7 @@ def member_supervised(fct_member_session: Optional[str] = Cookie(default=None)) 
                 creds_by_site.setdefault(cr["site_id"], []).append(cr["username"])
         # v1.9.241 — คอมฯที่ผูกกับทีม: PC ของสมาชิก + คอมส่วนกลางของทีม
         _pc_cols = ("h.id, h.name, h.model, h.os, h.os_version, h.cpu, h.ram, h.storage, h.display, "
-                    "h.purchased_at, h.status")
+                    "h.purchased_at, h.status, h.is_personal_owned")
         pc_owned = conn.execute(
             f"SELECT tm.team_id, {_pc_cols}, h.current_member_id, m.display_name AS owner_name "
             f"FROM hardware h JOIN team_members tm ON tm.member_id = h.current_member_id "
@@ -8080,6 +8119,7 @@ def member_supervised(fct_member_session: Optional[str] = Cookie(default=None)) 
             "id": r["id"], "name": r["name"], "model": r["model"], "os": r["os"], "os_version": r["os_version"],
             "cpu": r["cpu"], "ram": r["ram"], "storage": r["storage"], "display": r["display"],
             "purchased_at": r["purchased_at"], "status": r["status"],
+            "is_personal_owned": r["is_personal_owned"],
             "current_member_id": r["current_member_id"], "owner_name": r["owner_name"],
         })
     mem_by_team: dict[int, list] = {}

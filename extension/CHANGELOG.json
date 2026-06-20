@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.252",
+      "date": "2026-06-20",
+      "title": "คอมพิวเตอร์ของตนเอง (BYOD) — checkbox + badge + filter",
+      "summary": "เพิ่มธง ‘คอมพิวเตอร์ของตนเอง’ บนเครื่อง PC · My Profile › My Device ติ๊กเองได้ · หน้าที่แสดงชื่อ+คอมฯ ขึ้น badge ‘🙋 ใช้คอมพิวเตอร์ของตนเอง’ · filter Personal Computer เพิ่มตัวเลือก ‘ใช้เครื่องตนเอง’",
+      "changes": [
+        "DB: hardware.is_personal_owned + endpoint member PATCH /api/my-hardware/{id}/personal (verify ownership)",
+        "My Device: checkbox 🙋 คอมพิวเตอร์ของตนเอง (ติ๊กเองได้) + badge",
+        "badge แสดงใน: การ์ด PC list, แผง slide-in รายละเอียด, My Profile › Team, owner panel ใน Dashboard",
+        "ฟอร์มแก้ไข PC (admin): checkbox 🙋 คอมพิวเตอร์ของตนเอง",
+        "filter การเชื่อมโยง เพิ่มตัวเลือก 🙋 ใช้เครื่องตนเอง (พร้อม count)"
+      ]
+    },
+    {
       "version": "1.9.251",
       "date": "2026-06-20",
       "title": "Personal Computer — เพิ่ม dropdown เรียงตามวันสั่งซื้อ",
