@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.255",
+      "date": "2026-06-20",
+      "title": "แผงรายละเอียดเครื่อง — เจ้าของเป็นการ์ดรูป+ชื่อ คลิกดูโปรไฟล์ได้",
+      "summary": "ในแผง slide-in รายละเอียดเครื่อง เปลี่ยน badge เจ้าของตัวเล็ก → การ์ดใหญ่แสดงรูป + ชื่อ มีกรอบคลิกได้ → เปิดโปรไฟล์เจ้าของ (เบอร์/อีเมล/ทีม + อุปกรณ์ที่ผูก + Previous Device)",
+      "changes": [
+        "owner เป็นการ์ดคลิกได้: avatar 48px + ชื่อใหญ่ + ลูกศร ›",
+        "คลิก → เปิด owner profile panel (_pcdOwnerPanel)",
+        "_pcdOwnerPanel เปิดจากหน้า PC ได้ (fallback _hwCache เมื่อยังไม่เข้า Dashboard)",
+        "เครื่องส่วนกลาง/ยังไม่ผูก ยังเป็น badge เหมือนเดิม"
+      ]
+    },
+    {
       "version": "1.9.254",
       "date": "2026-06-20",
       "title": "Personal Computer — รุ่นเป็น headline ตัวหน้า + ชื่อเจ้าของเล็กลง",

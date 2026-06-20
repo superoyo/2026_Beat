@@ -10842,10 +10842,12 @@ function _pcDashIsMac(p) {
 let _pcDashTeam = '';   // '' = ทุกทีม | team_id (string)
 let _pcdAllPcs = [];    // PC list เต็ม (ก่อน filter ทีม) — ใช้ใน owner panel
 // v1.9.244 — panel เจ้าของเครื่อง (จากข้อมูลที่ dashboard โหลดไว้ — ใช้บน admin ได้) + คลิกดู device
-function _pcdOwnerPanel(memberId) {
+function _pcdOwnerPanel(memberId, onChange) {
   document.querySelectorAll('.sup-panel-wrap').forEach(e => e.remove());
   const m = _hwMembersCache.find(x => x.id === memberId);
-  const devices = _pcdAllPcs.filter(p => p.current_member_id === memberId);
+  // v1.9.255 — เปิดจากหน้า PC ได้ด้วย → ถ้ายังไม่เข้า Dashboard ใช้ _hwCache แทน
+  const _ownerSrc = (_pcdAllPcs && _pcdAllPcs.length) ? _pcdAllPcs : ((typeof _hwCache !== 'undefined' && _hwCache.length) ? _hwCache : []);
+  const devices = _ownerSrc.filter(p => p.current_member_id === memberId);
   const name = (m && (m.display_name || m.email)) || 'ผู้ใช้';
   const avatar = (m && m.avatar_data)
     ? `<img src="${m.avatar_data}" style="width:84px;height:84px;border-radius:50%;object-fit:cover;display:block;margin:0 auto" />`
@@ -10883,7 +10885,7 @@ function _pcdOwnerPanel(memberId) {
   wrap.querySelector('.sup-panel-close').addEventListener('click', close);
   wrap.querySelectorAll('[data-pcd-dev]').forEach(el => el.addEventListener('click', () => {
     const p = devices.find(x => x.id === parseInt(el.dataset.pcdDev, 10));
-    if (p) showHardwareDetail(p, renderPcDashboard);
+    if (p) showHardwareDetail(p, onChange || renderPcDashboard);
   }));
   // v1.9.247 — Previous Device: เครื่องที่เคยใช้ + ตอนนี้อยู่ไหน
   (async () => {
@@ -10895,7 +10897,7 @@ function _pcdOwnerPanel(memberId) {
     box.innerHTML = `<div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">🔄 Previous Device (${prev.length})</div>`
       + (prev.length ? prev.map(p => {
           const fr = (p.assigned_at || '').slice(0, 7), to = (p.unassigned_at || '').slice(0, 7);
-          const inFleet = _pcdAllPcs.some(x => x.id === p.hardware_id);
+          const inFleet = _ownerSrc.some(x => x.id === p.hardware_id);
           const attrs = inFleet ? `class="hw-card" data-pcd-prev="${p.hardware_id}" title="คลิกดูรายละเอียดเครื่อง"` : '';
           return `<div ${attrs} style="${inFleet ? 'cursor:pointer;' : ''}border:1px solid var(--border);border-radius:10px;padding:8px 11px;margin-bottom:6px">
             <div style="font-size:12.5px;font-weight:700">${escapeHtml(p.name)}</div>
@@ -10904,8 +10906,8 @@ function _pcdOwnerPanel(memberId) {
           </div>`;
         }).join('') : '<div style="font-size:11.5px;color:var(--text-muted);font-style:italic">— ไม่เคยใช้เครื่องอื่นมาก่อน —</div>');
     box.querySelectorAll('[data-pcd-prev]').forEach(el => el.addEventListener('click', () => {
-      const dev = _pcdAllPcs.find(x => x.id === parseInt(el.dataset.pcdPrev, 10));
-      if (dev) showHardwareDetail(dev, renderPcDashboard);
+      const dev = _ownerSrc.find(x => x.id === parseInt(el.dataset.pcdPrev, 10));
+      if (dev) showHardwareDetail(dev, onChange || renderPcDashboard);
     }));
   })();
 }
@@ -11591,9 +11593,31 @@ function showHardwareDetail(h, onChange) {
     const [st, lb] = statusMap[h.status];
     statusBadge = `<span style="display:inline-flex;align-items:center;padding:3px 11px;border-radius:999px;font-size:11.5px;font-weight:700;${st}">${lb}</span>`;
   }
-  const ownerBadge = h.current_member_label
-    ? `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:999px;font-size:11.5px;font-weight:600;background:rgba(16,185,129,.10);color:var(--green)">👤 ${escapeHtml(h.current_member_label)}</span>`
-    : `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--bg-soft);color:var(--text-muted)">🔓 ยังไม่ผูก</span>`;
+  // v1.9.255 — เจ้าของ = การ์ดคลิกได้ (รูป+ชื่อ) → เปิดโปรไฟล์ · ไม่มี owner = badge เดิม
+  let ownerCardHtml = '', ownerBadge = '';
+  if (h.current_member_id) {
+    const om = _hwMembersCache.find(x => x.id === h.current_member_id);
+    const oname = h.current_member_label || (om && (om.display_name || om.email)) || 'ผู้ใช้';
+    const oav = (om && om.avatar_data)
+      ? `<img src="${om.avatar_data}" alt="" style="width:48px;height:48px;border-radius:50%;object-fit:cover;flex-shrink:0" />`
+      : `<span style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-size:20px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml((String(oname).trim().charAt(0) || '?').toUpperCase())}</span>`;
+    ownerCardHtml = `<button type="button" data-detail-act="owner" title="คลิกดูโปรไฟล์เจ้าของ"
+      style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--bg-card);border:1px solid var(--border);border-radius:13px;padding:11px 14px;margin-bottom:16px;cursor:pointer;font-family:inherit;transition:border-color .12s,background .12s,box-shadow .12s"
+      onmouseenter="this.style.borderColor='var(--primary)';this.style.background='var(--bg-hover)';this.style.boxShadow='var(--shadow-sm)'"
+      onmouseleave="this.style.borderColor='var(--border)';this.style.background='var(--bg-card)';this.style.boxShadow='none'">
+      ${oav}
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:1px">👤 เจ้าของเครื่อง · คลิกดูโปรไฟล์</div>
+        <div style="font-size:15.5px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(oname)}</div>
+      </div>
+      <span style="font-size:22px;color:var(--text-muted);flex-shrink:0;line-height:1">›</span>
+    </button>`;
+  } else if (_isHwCentral(h)) {
+    ownerBadge = `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:999px;font-size:11.5px;font-weight:600;background:rgba(99,102,241,.12);color:#3730a3">📦 ส่วนกลาง${h.storage_location ? ' · ' + escapeHtml(h.storage_location) : ''}</span>`;
+  } else {
+    ownerBadge = `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--bg-soft);color:var(--text-muted)">🔓 ยังไม่ผูก</span>`;
+  }
+  const personalBadge = h.is_personal_owned ? '<span style="display:inline-flex;align-items:center;padding:3px 11px;border-radius:999px;font-size:11.5px;font-weight:700;background:rgba(124,58,237,.12);color:#7c3aed">🙋 ใช้คอมพิวเตอร์ของตนเอง</span>' : '';
   const rows = [];
   const add = (label, val) => {
     if (val == null || String(val).trim() === '') return;
@@ -11626,7 +11650,8 @@ function showHardwareDetail(h, onChange) {
       <div class="sup-panel-body" style="padding:4px 24px 28px">
         ${renderHwAssetLine(h.asset_number)}
         <div style="font-size:18px;font-weight:800;margin:6px 0 8px">${escapeHtml(h.name)}</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">${statusBadge}${ownerBadge}${h.is_personal_owned ? '<span style="display:inline-flex;align-items:center;padding:3px 11px;border-radius:999px;font-size:11.5px;font-weight:700;background:rgba(124,58,237,.12);color:#7c3aed">🙋 ใช้คอมพิวเตอร์ของตนเอง</span>' : ''}</div>
+        ${(statusBadge || ownerBadge || personalBadge) ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:${ownerCardHtml ? '12px' : '16px'}">${statusBadge}${ownerBadge}${personalBadge}</div>` : ''}
+        ${ownerCardHtml}
         ${photo}
         <div style="border:1px solid var(--border);border-radius:12px;padding:4px 14px;margin-bottom:18px">${rows.join('') || '<div style="padding:14px 0;color:var(--text-muted);font-style:italic">— ไม่มีรายละเอียด —</div>'}</div>
         <div style="display:flex;gap:8px">
@@ -11643,6 +11668,8 @@ function showHardwareDetail(h, onChange) {
   document.addEventListener('keydown', onKey);
   wrap.querySelector('.sup-panel-backdrop').addEventListener('click', close);
   wrap.querySelector('.sup-panel-close').addEventListener('click', close);
+  const _ownerBtn = wrap.querySelector('[data-detail-act="owner"]');
+  if (_ownerBtn) _ownerBtn.addEventListener('click', () => { _pcdOwnerPanel(h.current_member_id, onChange); });
   wrap.querySelector('[data-detail-act="history"]').addEventListener('click', () => { close(); showHardwareHistoryModal(h.id, h.name); });
   wrap.querySelector('[data-detail-act="edit"]').addEventListener('click', () => { close(); showHardwareModal(h, h.hw_type, onChange); });
   wrap.querySelector('[data-detail-act="delete"]').addEventListener('click', async () => {
