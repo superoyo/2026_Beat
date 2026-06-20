@@ -10156,10 +10156,8 @@ function renderUnassignedPcsList() {
     b.addEventListener('click', () => {
       const id = parseInt(b.dataset.huPcId, 10);
       const pc = _hwUnassignedCache.find(x => x.id === id);
-      if (pc) {
-        // เปิด detail modal — afterEdit reload list หน้านี้
-        showTeamPcDetailModal(pc, null, async () => { await loadUnassignedPcs(); });
-      }
+      // v1.9.249 — slide-in detail (เหมือนหน้า Dashboard) แทน popup
+      if (pc) showHardwareDetail(pc, async () => { await loadUnassignedPcs(); });
     });
   });
 }
