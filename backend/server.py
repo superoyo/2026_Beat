@@ -7038,6 +7038,18 @@ def admin_list_services(
     return {"services": [dict(r) for r in rows]}
 
 
+@app.get("/api/admin/services/{service_id}/domains")
+def admin_service_domains(service_id: int, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    """v1.9.269 — รายชื่อ domain ที่ผูกกับ service นี้"""
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT d.id, d.name, d.expire_date, d.provider "
+            "FROM domain_services ds JOIN domains d ON d.id = ds.domain_id "
+            "WHERE ds.service_id = ? ORDER BY d.name COLLATE NOCASE", (service_id,),
+        ).fetchall()
+    return {"domains": [dict(r) for r in rows]}
+
+
 @app.post("/api/admin/services")
 def admin_create_service(
     payload: ServiceIn,

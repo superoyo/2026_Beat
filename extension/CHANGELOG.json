@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.269",
+      "date": "2026-06-21",
+      "title": "Services Config (Hosting/SSL/Others) — คลิกบรรทัด=แก้ไข + tab Domain ที่ผูก",
+      "summary": "แถว Hosting/SSL/Others คลิกตรงไหนก็เป็นการแก้ไข (สไลด์จากขวา) · ย้ายปุ่มลบเข้าไปใน modal · ในโหมดแก้ไขมีแท็บ ‘🔗 Domain ที่ผูก’ แสดงว่ามี domain อะไรผูกกับ service นั้น",
+      "changes": [
+        "renderServiceRow คลิกทั้งบรรทัด → showServiceModal (เอาปุ่มแก้ไข/ลบออกจากแถว + chevron)",
+        "showServiceModal เพิ่มแท็บ ข้อมูล / 🔗 Domain ที่ผูก (โหลดจาก endpoint ใหม่)",
+        "ปุ่ม 🗑 ลบ service ย้ายเข้าไปใน modal",
+        "Backend GET /api/admin/services/{id}/domains"
+      ]
+    },
+    {
       "version": "1.9.268",
       "date": "2026-06-21",
       "title": "My Profile › Team — แสดงส่วน ‘คอมฯที่ผูกในอดีต’ เสมอ",

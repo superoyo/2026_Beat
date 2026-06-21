@@ -9567,8 +9567,13 @@ function renderServicesRows() {
   }
   const today = new Date(); today.setHours(0, 0, 0, 0);
   listEl.innerHTML = list.map(s => renderServiceRow(s, today, tab.icon)).join('');
-  listEl.querySelectorAll('button[data-svc-act]').forEach(btn => {
-    btn.addEventListener('click', () => handleServiceAction(btn));
+  // v1.9.269 — คลิกทั้งบรรทัด = แก้ไข (ปุ่มลบย้ายเข้าใน modal)
+  listEl.querySelectorAll('[data-svc-row]').forEach(row => {
+    row.addEventListener('click', () => {
+      const id = parseInt(row.dataset.svcRow, 10);
+      const s = (_svcCache[_scActiveTab] || []).find(x => x.id === id);
+      if (s) showServiceModal(s, _scActiveTab);
+    });
   });
 }
 
@@ -9596,7 +9601,7 @@ function renderServiceRow(s, today, typeIcon) {
   }
   const metaLine = meta.length ? meta.join(' <span style="color:var(--border)">·</span> ') : '<span style="color:var(--text-muted);font-style:italic">— ไม่มีข้อมูลเพิ่มเติม</span>';
   return `
-    <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px;padding:10px 14px">
+    <div class="card hw-card" data-svc-row="${s.id}" title="คลิกเพื่อแก้ไข" style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px;padding:10px 14px;cursor:pointer">
       <div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:3px;overflow:hidden">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <span style="font-weight:700;font-size:14.5px;color:var(--text)">${typeIcon} ${escapeHtml(s.name)}</span>
@@ -9604,10 +9609,7 @@ function renderServiceRow(s, today, typeIcon) {
         </div>
         <div style="font-size:12px;color:var(--text-muted);line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${metaLine}</div>
       </div>
-      <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
-        <button class="btn" data-svc-act="edit" data-svc-id="${s.id}" style="font-size:12px;padding:5px 10px">✏️ แก้ไข</button>
-        <button class="btn danger" data-svc-act="delete" data-svc-id="${s.id}" data-svc-name="${escapeHtml(s.name)}" data-svc-linked="${s.linked_domains || 0}" style="font-size:12px;padding:5px 10px">🗑 ลบ</button>
-      </div>
+      <span class="hw-chev" style="flex-shrink:0;font-size:22px;line-height:1;color:var(--text-muted)">›</span>
     </div>
   `;
 }
@@ -9640,10 +9642,16 @@ async function handleServiceAction(btn) {
 function showServiceModal(svc, defaultType) {
   const isEdit = !!svc;
   const t = svc ? svc.service_type : (defaultType || 'hosting');
+  let _svcmDomLoaded = false;   // v1.9.269
   showModal({
     slide: true,
     title: isEdit ? `แก้ไข ${SERVICE_TYPES.find(x => x.id === svc.service_type)?.label || 'Service'}: ${svc.name}` : '+ เพิ่ม Service ใหม่',
     body: `
+      ${isEdit ? `<div style="display:flex;gap:18px;border-bottom:1px solid var(--border);margin-bottom:14px">
+        <button type="button" class="svcm-tab" data-svcm-tab="form" style="background:none;border:none;border-bottom:2px solid var(--primary);color:var(--text);font-weight:600;font-size:13px;padding:8px 2px;cursor:pointer;font-family:inherit">ข้อมูล</button>
+        <button type="button" class="svcm-tab" data-svcm-tab="domains" style="background:none;border:none;border-bottom:2px solid transparent;color:var(--text-muted);font-weight:600;font-size:13px;padding:8px 2px;cursor:pointer;font-family:inherit">🔗 Domain ที่ผูก (${svc.linked_domains || 0})</button>
+      </div>` : ''}
+      <div data-svcm-pane="form">
       <div class="field">
         <label>ประเภท *</label>
         <select id="sm-type" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
@@ -9680,6 +9688,12 @@ function showServiceModal(svc, defaultType) {
         <label>หมายเหตุ</label>
         <textarea id="sm-notes" rows="2" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical">${isEdit ? escapeHtml(svc.notes || '') : ''}</textarea>
       </div>
+      </div><!-- /form pane -->
+      ${isEdit ? `
+      <div data-svcm-pane="domains" style="display:none"><div id="svcm-domains"><div class="empty" style="padding:16px;font-size:12.5px">กำลังโหลด…</div></div></div>
+      <div style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px">
+        <button type="button" id="svcm-delete" class="btn danger" style="font-size:12.5px;padding:7px 14px">🗑 ลบ service นี้</button>
+      </div>` : ''}
     `,
     onSubmit: async () => {
       const data = {
@@ -9704,6 +9718,41 @@ function showServiceModal(svc, defaultType) {
       await renderActiveScContent();
     },
   });
+  // v1.9.269 — แท็บ Domain ที่ผูก + ปุ่มลบ (edit เท่านั้น)
+  if (isEdit) setTimeout(() => {
+    const tabs = Array.from(document.querySelectorAll('.svcm-tab'));
+    const panes = {
+      form: document.querySelector('[data-svcm-pane="form"]'),
+      domains: document.querySelector('[data-svcm-pane="domains"]'),
+    };
+    const loadDomains = async () => {
+      const box = document.querySelector('#svcm-domains');
+      if (!box) return;
+      let doms = [];
+      try { doms = (await fetchJson('/api/admin/services/' + svc.id + '/domains')).domains || []; }
+      catch (e) { box.innerHTML = '<div class="empty" style="padding:14px;font-size:12.5px">โหลดไม่สำเร็จ</div>'; return; }
+      box.innerHTML = doms.length
+        ? doms.map(d => `<div style="display:flex;align-items:center;gap:9px;padding:9px 11px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px"><span style="font-size:15px;flex-shrink:0">🌐</span><div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px;font-family:ui-monospace,Menlo,monospace">${escapeHtml(d.name)}</div>${d.expire_date ? `<div style="font-size:11px;color:var(--text-muted)">⏰ หมด ${escapeHtml(fmtDateThai(d.expire_date))}</div>` : ''}</div></div>`).join('')
+        : '<div class="empty" style="padding:18px;font-size:12.5px">— ยังไม่มี domain ผูกกับ service นี้ —<br><span style="font-size:11px">ผูก domain ได้ที่หน้า Websites</span></div>';
+    };
+    tabs.forEach(tb => tb.addEventListener('click', () => {
+      const key = tb.dataset.svcmTab;
+      tabs.forEach(x => { const on = x === tb; x.style.borderBottomColor = on ? 'var(--primary)' : 'transparent'; x.style.color = on ? 'var(--text)' : 'var(--text-muted)'; });
+      Object.entries(panes).forEach(([k, el]) => { if (el) el.style.display = k === key ? '' : 'none'; });
+      if (key === 'domains' && !_svcmDomLoaded) { _svcmDomLoaded = true; loadDomains(); }
+    }));
+    const delBtn = document.querySelector('#svcm-delete');
+    if (delBtn) delBtn.addEventListener('click', async () => {
+      const linked = svc.linked_domains || 0;
+      const warn = linked > 0 ? `\n\n⚠ ผูกอยู่กับ ${linked} domain — การลบจะตัดความเชื่อมโยงทั้งหมด` : '';
+      if (!confirm(`ลบ service "${svc.name}"?${warn}`)) return;
+      try {
+        await fetchJson('/api/admin/services/' + svc.id, { method: 'DELETE' });
+        const bg = delBtn.closest('.modal-bg'); if (bg) bg.querySelector('#m-cancel').click();
+        await renderActiveScContent();
+      } catch (e) { alert('ลบไม่สำเร็จ: ' + e.message); }
+    });
+  }, 0);
 }
 
 
