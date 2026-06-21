@@ -8384,6 +8384,7 @@ function renderDomainsConfigRows() {
     const d = _dcCache.find(x => x.id === parseInt(btn.dataset.dKebab, 10));
     if (!d) return;
     _kebabMenu(btn, [
+      { icon: '↗', label: 'เปิดเว็บไซต์', onClick: () => window.open('https://' + d.name, '_blank', 'noopener') },
       { icon: '✏️', label: 'แก้ไข', onClick: () => showDomainModal(d) },
       { icon: '🔍', label: 'Lookup (WHOIS)', onClick: () => _domainAct(d, 'lookup') },
       { icon: '🔄', label: 'Renew', onClick: () => _domainAct(d, 'renew') },
@@ -8458,7 +8459,10 @@ function renderDomainConfigRow(d, today) {
         <div style="display:flex;align-items:center;gap:11px;min-width:200px">
           ${domainLogoHTML(d, 34)}
           <div style="min-width:0">
-            <div style="font-weight:700;font-size:13.5px;font-family:ui-monospace,Menlo,monospace;color:var(--text)">${escapeHtml(d.name)}</div>
+            <div style="display:flex;align-items:center;gap:6px;min-width:0">
+              <span style="font-weight:700;font-size:13.5px;font-family:ui-monospace,Menlo,monospace;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(d.name)}</span>
+              <a href="https://${escapeHtml(d.name)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="เปิดเว็บไซต์ ${escapeHtml(d.name)}" style="flex-shrink:0;color:var(--primary);text-decoration:none;font-size:13px;font-weight:700;padding:0 4px;border-radius:5px;line-height:1.2">↗</a>
+            </div>
             ${subLine ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px">${subLine}</div>` : ''}
           </div>
         </div>
