@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.265",
+      "date": "2026-06-21",
+      "title": "My Profile › Team — แผง member แสดง Previous Device",
+      "summary": "คลิก member ใน My Profile › Team → แท็บ Device เพิ่มส่วน 🔄 Previous Device (เครื่องที่เคยใช้ + ช่วงเวลา + ตอนนี้อยู่ไหนแบบไม่เผยชื่อเจ้าของใหม่)",
+      "changes": [
+        "member-side /api/member/supervised/{id} คืน previous_devices (verify supervise)",
+        "renderSupPanel แท็บ Device เพิ่มส่วน Previous Device",
+        "where_now แบบ generic (ใช้งานโดยคนอื่น/คอมส่วนกลาง/ปลดระวาง) เพื่อ privacy"
+      ]
+    },
+    {
       "version": "1.9.264",
       "date": "2026-06-21",
       "title": "My Profile › Team — โซน Alumni ด้านล่าง (ภาพเล็ก ไม่เด่น)",

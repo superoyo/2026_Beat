@@ -8264,6 +8264,15 @@ def member_supervised_detail(
             "FROM hardware WHERE current_member_id = ? "
             "ORDER BY hw_type ASC, name COLLATE NOCASE ASC", (target_id,),
         ).fetchall()
+        # v1.9.265 — Previous Device: เครื่องที่เคยถือแต่ตอนนี้ไม่ใช่ของเขาแล้ว (member-side ไม่เผยชื่อเจ้าของใหม่)
+        prev_rows = conn.execute(
+            "SELECT a.hardware_id, MAX(a.assigned_at) AS assigned_at, MAX(a.unassigned_at) AS unassigned_at, "
+            "       h.name, h.model, h.hw_type, h.status, h.current_member_id "
+            "FROM hardware_assignments a JOIN hardware h ON h.id = a.hardware_id "
+            "WHERE a.member_id = ? AND a.unassigned_at IS NOT NULL "
+            "  AND (h.current_member_id IS NULL OR h.current_member_id != ?) "
+            "GROUP BY a.hardware_id ORDER BY MAX(a.unassigned_at) DESC", (target_id, target_id),
+        ).fetchall()
     ph = row["phone"]
     # v1.9.147 — เคารพ privacy: ผู้ดูแลเห็นเฉพาะข้อมูลที่เจ้าของยอมแชร์
     phone_val = None if (ph and str(ph).startswith("email:")) else ph
@@ -8273,6 +8282,18 @@ def member_supervised_detail(
     birth_val = row["birthdate"] if _row_share(row, "share_birthdate") == 1 else None
     # เฉพาะทีมที่ผู้ขอ supervise ได้ (ไม่เปิดเผยทีมอื่น)
     visible_teams = [{"id": r["team_id"], "name": r["name"]} for r in target_teams_rows if r["team_id"] in sup_teams]
+    prev_devices = []
+    for r in prev_rows:
+        if r["current_member_id"]:
+            where = "ใช้งานโดยคนอื่นแล้ว"
+        elif r["status"] == "retired":
+            where = "ปลดระวาง"
+        else:
+            where = "คอมส่วนกลาง"
+        prev_devices.append({
+            "name": r["name"], "model": r["model"], "hw_type": r["hw_type"],
+            "assigned_at": r["assigned_at"], "unassigned_at": r["unassigned_at"], "where_now": where,
+        })
     return {
         "profile": {
             "id": row["id"],
@@ -8287,6 +8308,7 @@ def member_supervised_detail(
             "teams": visible_teams,
         },
         "devices": [dict(r) for r in hw_rows],
+        "previous_devices": prev_devices,
     }
 
 
