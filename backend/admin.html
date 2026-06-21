@@ -14554,12 +14554,12 @@ function renderSupPanel(body, data, memberId) {
           <div style="font-size:11.5px;color:var(--text-muted)">${escapeHtml(HW_LABEL[d.hw_type] || d.hw_type)}${d.os ? ' · ' + escapeHtml(d.os) : ''}${d.model ? ' · ' + escapeHtml(d.model) : ''}</div>
         </div>
       </div>`).join('');
-  // v1.9.265 — Previous Device: เครื่องที่เคยใช้ + ตอนนี้อยู่ไหน
+  // v1.9.265/268 — คอมฯที่ผูกในอดีต (Previous Device) — แสดง section เสมอ (มีหรือไม่มีก็เห็น)
   const prevDevs = data.previous_devices || [];
-  const prevHtml = prevDevs.length ? `
-    <div style="margin-top:18px">
-      <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">🔄 Previous Device <span style="color:var(--text-soft)">${prevDevs.length}</span></div>
-      ${prevDevs.map(d => {
+  const prevHtml = `
+    <div style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px">
+      <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">🔄 คอมฯที่ผูกในอดีต <span style="color:var(--text-soft)">${prevDevs.length}</span></div>
+      ${prevDevs.length ? prevDevs.map(d => {
         const fr = (d.assigned_at || '').slice(0, 7), to = (d.unassigned_at || '').slice(0, 7);
         return `<div style="display:flex;gap:12px;align-items:center;padding:9px 11px;border:1px solid var(--border);border-radius:10px;margin-bottom:7px">
           <div style="width:42px;height:42px;border-radius:8px;background:var(--bg-soft);display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0;opacity:.7">${(HW_LABEL[d.hw_type] || '🖥️').split(' ')[0]}</div>
@@ -14569,8 +14569,8 @@ function renderSupPanel(body, data, memberId) {
             <div style="font-size:11px;color:var(--primary);margin-top:1px">📍 ตอนนี้: ${escapeHtml(d.where_now)}</div>
           </div>
         </div>`;
-      }).join('')}
-    </div>` : '';
+      }).join('') : '<div style="font-size:12px;color:var(--text-muted);font-style:italic;padding:4px 0">— ไม่เคยผูกเครื่องอื่นมาก่อน —</div>'}
+    </div>`;
   body.innerHTML = `
     <div style="text-align:center;margin-bottom:18px">
       ${photo}
