@@ -675,6 +675,9 @@ def init_db() -> None:
             # v1.9.229 — Temporary Staff: สร้างก่อนเจ้าตัว login (placeholder firebase_uid) → ผูกอุปกรณ์/แผนกชั่วคราว
             ("is_temp",                "INTEGER NOT NULL DEFAULT 0"),
             ("temp_department",        "TEXT"),
+            # v1.9.261 — ใช้คอมพิวเตอร์ของตนเอง (BYOD) สำหรับคนที่ไม่มีเครื่องบริษัท + ระบุว่าเป็นคอมฯอะไร
+            ("uses_own_computer",      "INTEGER NOT NULL DEFAULT 0"),
+            ("own_computer_info",      "TEXT"),
         ]:
             if col_name not in member_cols:
                 conn.execute(f"ALTER TABLE members ADD COLUMN {col_name} {col_def}")
@@ -6454,6 +6457,36 @@ def admin_member_device_history(mid: int, _sess: dict = Depends(require_admin)) 
             "current_member_id": r["current_member_id"], "status": r["status"],
         })
     return {"previous": prev}
+
+
+# v1.9.261 — ใช้คอมพิวเตอร์ของตนเอง (member-level) สำหรับคนที่ไม่มีเครื่องบริษัท
+class MemberOwnComputerIn(BaseModel):
+    uses_own_computer: bool
+    own_computer_info: Optional[str] = Field(None, max_length=300)
+
+
+@app.get("/api/admin/members/{mid}/own-computer")
+def admin_get_member_own_computer(mid: int, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    with db_conn() as conn:
+        r = conn.execute(
+            "SELECT uses_own_computer, own_computer_info FROM members WHERE id = ?", (mid,)
+        ).fetchone()
+    if not r:
+        raise HTTPException(status_code=404, detail="member not found")
+    return {"uses_own_computer": bool(r["uses_own_computer"]), "own_computer_info": r["own_computer_info"]}
+
+
+@app.patch("/api/admin/members/{mid}/own-computer")
+def admin_set_member_own_computer(mid: int, payload: MemberOwnComputerIn,
+                                  _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    info = (payload.own_computer_info or "").strip() or None
+    with db_conn() as conn:
+        if not conn.execute("SELECT 1 FROM members WHERE id = ?", (mid,)).fetchone():
+            raise HTTPException(status_code=404, detail="member not found")
+        conn.execute(
+            "UPDATE members SET uses_own_computer = ?, own_computer_info = ? WHERE id = ?",
+            (1 if payload.uses_own_computer else 0, info, mid))
+    return {"ok": True}
 
 
 # v1.9.64 — admin แก้ไข/ลบ record ประวัติการครอบครองได้

@@ -10893,6 +10893,7 @@ function _pcdOwnerPanel(memberId, onChange, memberObj, deviceList) {
         </div>
         <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">💻 อุปกรณ์ที่ผูกอยู่ (${devices.length})</div>
         ${devices.length ? devices.map(devCard).join('') : '<div class="empty" style="font-size:12px">— ไม่มีอุปกรณ์ —</div>'}
+        <div id="pcd-own-comp" style="margin-top:18px"></div>
         <div id="pcd-prev-dev" style="margin-top:18px"><div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">🔄 Previous Device</div><div class="empty" style="font-size:12px;padding:12px">กำลังโหลด…</div></div>
       </div>
     </div>`;
@@ -10907,6 +10908,42 @@ function _pcdOwnerPanel(memberId, onChange, memberObj, deviceList) {
     const p = devices.find(x => x.id === parseInt(el.dataset.pcdDev, 10));
     if (p) showHardwareDetail(p, onChange || renderPcDashboard);
   }));
+  // v1.9.261 — ใช้คอมพิวเตอร์ของตนเอง (member-level) + ระบุว่าเป็นคอมฯอะไร
+  (async () => {
+    const box = wrap.querySelector('#pcd-own-comp');
+    if (!box) return;
+    let st = { uses_own_computer: false, own_computer_info: '' };
+    try { st = await fetchJson('/api/admin/members/' + memberId + '/own-computer'); } catch (e) { /* default */ }
+    const on = !!st.uses_own_computer;
+    box.innerHTML = `
+      <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">🙋 คอมพิวเตอร์ของตนเอง</div>
+      <div id="ocomp-box" style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;${on ? 'background:rgba(124,58,237,.05)' : ''}">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13.5px;font-weight:600">
+          <input type="checkbox" id="ocomp-toggle" ${on ? 'checked' : ''} style="width:17px;height:17px;accent-color:#7c3aed;cursor:pointer" />
+          <span>ใช้คอมพิวเตอร์ของตนเอง <span style="font-weight:500;color:var(--text-muted);font-size:11.5px">(เครื่องส่วนตัว / BYOD)</span></span>
+        </label>
+        <div id="ocomp-info-wrap" style="margin-top:10px;${on ? '' : 'display:none'}">
+          <label style="display:block;font-size:11.5px;color:var(--text-muted);margin-bottom:4px">เป็นคอมฯอะไร</label>
+          <input id="ocomp-info" type="text" maxlength="300" value="${escapeHtml(st.own_computer_info || '')}" placeholder="เช่น Macbook Pro M2 ส่วนตัว / Dell XPS ของตัวเอง" style="width:100%;padding:8px 11px;font-size:13px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;box-sizing:border-box" />
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:11px"><button type="button" id="ocomp-save" class="btn primary" style="font-size:12.5px;padding:6px 16px">บันทึก</button></div>
+      </div>`;
+    const toggle = box.querySelector('#ocomp-toggle');
+    const infoWrap = box.querySelector('#ocomp-info-wrap');
+    toggle.addEventListener('change', () => { infoWrap.style.display = toggle.checked ? '' : 'none'; });
+    box.querySelector('#ocomp-save').addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const uses = toggle.checked;
+      const info = (box.querySelector('#ocomp-info') ? box.querySelector('#ocomp-info').value : '').trim();
+      btn.disabled = true; btn.textContent = 'กำลังบันทึก…';
+      try {
+        await fetchJson('/api/admin/members/' + memberId + '/own-computer', { method: 'PATCH', body: JSON.stringify({ uses_own_computer: uses, own_computer_info: info || null }) });
+        const ocb = box.querySelector('#ocomp-box'); if (ocb) ocb.style.background = uses ? 'rgba(124,58,237,.05)' : '';
+        btn.textContent = '✓ บันทึกแล้ว';
+        setTimeout(() => { btn.disabled = false; btn.textContent = 'บันทึก'; }, 1200);
+      } catch (err) { alert('บันทึกไม่สำเร็จ: ' + (err.message || err)); btn.disabled = false; btn.textContent = 'บันทึก'; }
+    });
+  })();
   // v1.9.247 — Previous Device: เครื่องที่เคยใช้ + ตอนนี้อยู่ไหน
   (async () => {
     const box = wrap.querySelector('#pcd-prev-dev');

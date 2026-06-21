@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.261",
+      "date": "2026-06-21",
+      "title": "แผงข้อมูลส่วนบุคคล — toggle ‘ใช้คอมพิวเตอร์ของตนเอง’ + ระบุคอมฯ",
+      "summary": "ในแผง slide-in โปรไฟล์ (owner/team member) เพิ่ม toggle ‘ใช้คอมพิวเตอร์ของตนเอง’ ระดับ member + ช่องระบุว่าเป็นคอมฯอะไร — เหมาะกับคนที่ไม่มีเครื่องบริษัท",
+      "changes": [
+        "DB: members.uses_own_computer + own_computer_info",
+        "endpoint GET/PATCH /api/admin/members/{id}/own-computer (require_admin)",
+        "แผงโปรไฟล์: toggle + ช่องระบุคอมฯ + ปุ่มบันทึก (โหลด/บันทึกแยกจาก member object)"
+      ]
+    },
+    {
       "version": "1.9.260",
       "date": "2026-06-21",
       "title": "Peoples › Teams — คลิกชื่อ member สไลด์ข้อมูลส่วนบุคคล",
