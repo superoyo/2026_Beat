@@ -15074,6 +15074,90 @@ function _daysUntilBirthday(birthdate) {
   return Math.round((next - today) / 86400000);
 }
 
+// v1.9.273 — Birthday Calendar (ปฏิทินวันเกิดสมาชิกทีม)
+let _bdayCalView = null;
+function _bdayAvatar(m, px) {
+  px = px || 30;
+  return m.avatar
+    ? `<img src="${m.avatar}" alt="" style="width:${px}px;height:${px}px;border-radius:50%;object-fit:cover;border:1.5px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.18)" />`
+    : `<span style="width:${px}px;height:${px}px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-size:${Math.round(px * 0.42)}px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;border:1.5px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.18)">${escapeHtml((String(m.name).trim().charAt(0) || '?').toUpperCase())}</span>`;
+}
+function showBirthdayCalendar(members) {
+  const now = new Date();
+  _bdayCalView = { year: now.getFullYear(), month: now.getMonth() };
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `<div class="modal" style="max-width:1080px;width:96vw;padding:0;overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:15px 22px;border-bottom:1px solid var(--border)">
+      <h3 style="margin:0;font-size:17px;font-weight:800">🎂 Birthday Calendar</h3>
+      <button class="btn" id="bcal-close" style="font-size:13px;padding:6px 14px">✕ ปิด</button>
+    </div>
+    <div id="bcal-root" style="padding:18px 22px 24px"></div>
+  </div>`;
+  document.body.appendChild(bg);
+  const close = () => bg.remove();
+  bg.querySelector('#bcal-close').addEventListener('click', close);
+  bg.addEventListener('click', e => { if (e.target === bg) close(); });
+  const render = () => _renderBirthdayCal(bg.querySelector('#bcal-root'), members, render);
+  render();
+}
+function _renderBirthdayCal(root, members, rerender) {
+  const { year, month } = _bdayCalView;
+  const MONTHS = (typeof _MONTHS_TH !== 'undefined' && _MONTHS_TH.length === 12) ? _MONTHS_TH : ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+  const DOW = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+  const parsed = members.map(m => { const p = (m.birthdate || '').split('-'); return { ...m, bm: parseInt(p[1], 10), bd: parseInt(p[2], 10) }; })
+    .filter(m => m.bm >= 1 && m.bm <= 12 && m.bd >= 1 && m.bd <= 31);
+  const inMonth = parsed.filter(m => m.bm === month + 1);
+  const byDay = {};
+  inMonth.forEach(m => { (byDay[m.bd] = byDay[m.bd] || []).push(m); });
+  const now = new Date();
+  const isThisMonth = now.getFullYear() === year && now.getMonth() === month;
+  const todayD = now.getDate();
+  const firstDow = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  let cells = '';
+  for (let i = 0; i < firstDow; i++) cells += `<div style="min-height:80px;background:var(--bg-soft);opacity:.45"></div>`;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const bs = byDay[d] || [];
+    const isToday = isThisMonth && d === todayD;
+    const avatars = bs.slice(0, 4).map(m => `<span title="${escapeHtml(m.name)}">${_bdayAvatar(m, 27)}</span>`).join('');
+    const more = bs.length > 4 ? `<span style="font-size:10px;color:var(--text-muted);font-weight:700;align-self:center">+${bs.length - 4}</span>` : '';
+    cells += `<div style="min-height:80px;padding:5px 6px;background:${bs.length ? 'rgba(236,72,153,.06)' : 'var(--bg-card)'};${isToday ? 'box-shadow:inset 0 0 0 2px var(--primary)' : ''}">
+      <div style="font-size:12px;font-weight:${isToday ? 800 : 600};color:${isToday ? 'var(--primary)' : 'var(--text)'}">${d}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:3px">${avatars}${more}</div>
+    </div>`;
+  }
+  const upcoming = parsed.map(m => ({ ...m, du: _daysUntilBirthday(m.birthdate) })).filter(m => m.du != null).sort((a, b) => a.du - b.du).slice(0, 8);
+  const upHtml = upcoming.map(m => `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
+    ${_bdayAvatar(m, 34)}
+    <div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(m.name)}</div><div style="font-size:11px;color:var(--text-muted)">${m.bd} ${MONTHS[m.bm - 1]} · ${m.du === 0 ? '<span style="color:#be185d;font-weight:700">วันนี้ 🎉</span>' : 'ใน ' + m.du + ' วัน'}</div></div>
+  </div>`).join('') || '<div style="font-size:12.5px;color:var(--text-muted);padding:10px 0;font-style:italic">— ไม่มีข้อมูลวันเกิด —</div>';
+
+  root.innerHTML = `
+    <div style="display:flex;gap:22px;flex-wrap:wrap">
+      <div style="flex:2;min-width:340px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;gap:10px;flex-wrap:wrap">
+          <div><div style="font-size:18px;font-weight:800">${MONTHS[month]} ${year + 543}</div><div style="font-size:12px;color:var(--text-muted)">🎂 มีวันเกิด ${inMonth.length} คนในเดือนนี้</div></div>
+          <div style="display:flex;gap:6px;flex-shrink:0"><button class="btn" data-bcal-nav="-1" style="font-size:14px;padding:5px 12px">‹</button><button class="btn" data-bcal-nav="today" style="font-size:13px;padding:5px 13px">วันนี้</button><button class="btn" data-bcal-nav="1" style="font-size:14px;padding:5px 12px">›</button></div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+          ${DOW.map(d => `<div style="text-align:center;font-size:11px;font-weight:700;color:var(--text-muted);padding:8px 0;background:var(--bg-soft)">${d}</div>`).join('')}
+          ${cells}
+        </div>
+      </div>
+      <div style="flex:1;min-width:230px">
+        <div style="font-size:13px;font-weight:800;margin-bottom:8px">🎈 วันเกิดที่กำลังมาถึง</div>
+        ${upHtml}
+      </div>
+    </div>`;
+  root.querySelectorAll('[data-bcal-nav]').forEach(b => b.addEventListener('click', () => {
+    const nav = b.dataset.bcalNav;
+    if (nav === 'today') { const n = new Date(); _bdayCalView = { year: n.getFullYear(), month: n.getMonth() }; }
+    else { let mo = _bdayCalView.month + parseInt(nav, 10), yr = _bdayCalView.year; if (mo < 0) { mo = 11; yr--; } if (mo > 11) { mo = 0; yr++; } _bdayCalView = { year: yr, month: mo }; }
+    rerender();
+  }));
+}
+
 async function loadMembersList() {
   let data, teamsData;
   try {
@@ -16567,6 +16651,9 @@ async function renderMemberAccountPage() {
           <!-- ============ Team (supervise — รูป+ชื่อ แบ่งตามทีม) ============ -->
           <!-- v1.9.131 — ไม่มี header, grid scroll ภายในตัวเอง (menu+tabs อยู่นิ่ง) -->
           <div data-acc-panel="team" style="display:none">
+            <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+              <button type="button" id="bday-cal-btn" class="btn" style="font-size:12.5px;padding:7px 14px;background:rgba(236,72,153,.10);color:#be185d;border-color:rgba(236,72,153,.30)">🎂 Birthday Calendar</button>
+            </div>
             <div id="m-team-tabs" style="display:flex;gap:8px;overflow-x:auto;padding:2px 2px 10px;scroll-behavior:smooth;flex-shrink:0"></div>
             <div id="m-team-grid" style="overflow-y:auto;max-height:calc(100vh - 170px);padding-right:4px">${skelStack(4)}</div>
           </div>
@@ -17162,6 +17249,15 @@ async function renderMemberAccountPage() {
     _teamSupActive = '__all__';
     renderTeamSupTabs();
     renderTeamSupGrid();
+    // v1.9.273 — Birthday Calendar
+    const _bdayBtn = $('bday-cal-btn');
+    if (_bdayBtn) _bdayBtn.onclick = () => {
+      const byId = new Map();
+      _teamSupTeams.forEach(t => t.members.forEach(m => {
+        if (m.birthdate && !byId.has(m.id)) byId.set(m.id, { id: m.id, name: m.display_name || m.email || 'ไม่ระบุชื่อ', avatar: m.avatar_data, birthdate: m.birthdate });
+      }));
+      showBirthdayCalendar(Array.from(byId.values()));
+    };
   }
   function renderTeamSupTabs() {
     const bar = $('m-team-tabs');

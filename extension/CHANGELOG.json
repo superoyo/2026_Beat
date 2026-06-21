@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.273",
+      "date": "2026-06-21",
+      "title": "My Profile › Team — ปุ่ม Birthday Calendar",
+      "summary": "เพิ่มปุ่ม 🎂 Birthday Calendar ด้านบนเมนู Team · กดแล้วเปิดปฏิทินแสดงวันเกิดสมาชิกทีม (avatar ในแต่ละวัน + เลื่อนเดือน + รายการวันเกิดที่กำลังมาถึง)",
+      "changes": [
+        "ปุ่ม 🎂 Birthday Calendar ในแผง Team",
+        "ปฏิทินรายเดือน: avatar ของคนเกิดในแต่ละวัน + วันนี้ไฮไลต์ + นับวันเกิดในเดือน",
+        "แผงข้าง: วันเกิดที่กำลังมาถึง (เรียงตามใกล้สุด · วันนี้ 🎉)",
+        "เคารพ privacy (เฉพาะคนที่แชร์วันเกิด)"
+      ]
+    },
+    {
       "version": "1.9.272",
       "date": "2026-06-21",
       "title": "Domain — คอลัมน์สถานะลูกค้า (ปัจจุบัน/อดีต) + toggle filter",
