@@ -8815,6 +8815,7 @@ function showDomainModal(domain) {
     whoisAppliedExpire:   null,
   };
   showModal({
+    slide: true,
     title: isEdit ? `แก้ไข Domain: ${domain.name}` : 'เพิ่ม Domain ใหม่',
     body: `
       <div class="field">
@@ -9570,6 +9571,7 @@ function showServiceModal(svc, defaultType) {
   const isEdit = !!svc;
   const t = svc ? svc.service_type : (defaultType || 'hosting');
   showModal({
+    slide: true,
     title: isEdit ? `แก้ไข ${SERVICE_TYPES.find(x => x.id === svc.service_type)?.label || 'Service'}: ${svc.name}` : '+ เพิ่ม Service ใหม่',
     body: `
       <div class="field">
