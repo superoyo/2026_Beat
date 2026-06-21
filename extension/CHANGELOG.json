@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.272",
+      "date": "2026-06-21",
+      "title": "Domain — คอลัมน์สถานะลูกค้า (ปัจจุบัน/อดีต) + toggle filter",
+      "summary": "ตาราง Domain เพิ่มคอลัมน์ ‘ลูกค้า’ (🟢 ลูกค้าปัจจุบัน / ⚪ อดีตลูกค้า) ระหว่าง Domain กับ สถานะ · ด้านบนมี toggle filter (ทั้งหมด/ปัจจุบัน/อดีต พร้อม count) · ตั้งค่าได้ในแผงแก้ไขแต่ละ domain",
+      "changes": [
+        "DB: domains.customer_status ('current'|'former') + DomainIn/Patch + create/update",
+        "คอลัมน์ใหม่ ‘ลูกค้า’ พร้อม badge",
+        "toggle filter เหนือตาราง (ทั้งหมด / 🟢 ลูกค้าปัจจุบัน / ⚪ อดีตลูกค้า + count)",
+        "showDomainModal เพิ่ม dropdown สถานะลูกค้า"
+      ]
+    },
+    {
       "version": "1.9.271",
       "date": "2026-06-21",
       "title": "Services Config — ปรับเป็น table layout (Domain + Hosting/SSL/Others)",

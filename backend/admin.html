@@ -8205,6 +8205,7 @@ function showCalDayPopup(day, month, year, anchor) {
 let _dcCache = [];
 let _dcSearch = '';
 let _dcSort = 'expire-asc';   // expire-asc | name-asc | name-desc | created-desc
+let _dcCustomerFilter = '';   // v1.9.272 '' (ทั้งหมด) | 'current' | 'former'
 
 // Domain Config — เดิมเคยเป็นหน้าแยก ตอนนี้ถูกรวมเข้า Services Config เป็น tab แรก
 // renderDomainsConfigPage = legacy alias → ส่งต่อไป Services Config (Domain tab)
@@ -8303,13 +8304,20 @@ function renderDomainsConfigRows() {
     return;
   }
 
-  // filter
+  // filter (search ก่อน → ใช้คำนวณ count ของ toggle ลูกค้า)
   const q = _dcSearch.trim().toLowerCase();
-  let list = !q ? _dcCache.slice() : _dcCache.filter(d => {
+  const baseList = !q ? _dcCache.slice() : _dcCache.filter(d => {
     return (d.name || '').toLowerCase().includes(q)
         || (d.provider || '').toLowerCase().includes(q)
         || (d.notes || '').toLowerCase().includes(q);
   });
+  // v1.9.272 — count + filter สถานะลูกค้า (default 'current' ถ้าไม่มีค่า)
+  const _isFormer = d => d.customer_status === 'former';
+  const _curN = baseList.filter(d => !_isFormer(d)).length;
+  const _formerN = baseList.filter(_isFormer).length;
+  let list = baseList;
+  if (_dcCustomerFilter === 'current') list = baseList.filter(d => !_isFormer(d));
+  else if (_dcCustomerFilter === 'former') list = baseList.filter(_isFormer);
 
   // sort
   const FAR = 9e15;
@@ -8336,21 +8344,28 @@ function renderDomainsConfigRows() {
       : `${_dcCache.length} รายการ`;
   }
 
+  // v1.9.272 — toggle filter ลูกค้าปัจจุบัน / อดีตลูกค้า
+  const _tgl = (key, label, n) => `<button type="button" data-dc-cust="${key}" style="border:none;background:${_dcCustomerFilter === key ? 'var(--bg-card)' : 'transparent'};color:${_dcCustomerFilter === key ? 'var(--text)' : 'var(--text-muted)'};font-weight:${_dcCustomerFilter === key ? 700 : 500};font-size:12px;padding:6px 13px;border-radius:7px;cursor:pointer;font-family:inherit;box-shadow:${_dcCustomerFilter === key ? 'var(--shadow-sm)' : 'none'};transition:.12s">${label} <span style="opacity:.7">(${n})</span></button>`;
+  const toggleHtml = `<div style="display:inline-flex;gap:2px;background:var(--bg-soft);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:12px">${_tgl('', 'ทั้งหมด', baseList.length)}${_tgl('current', '🟢 ลูกค้าปัจจุบัน', _curN)}${_tgl('former', '⚪ อดีตลูกค้า', _formerN)}</div>`;
+  const _wireToggle = () => listEl.querySelectorAll('[data-dc-cust]').forEach(b => b.addEventListener('click', () => { _dcCustomerFilter = b.dataset.dcCust; renderDomainsConfigRows(); }));
+
   // empty after filter
   if (list.length === 0) {
-    listEl.innerHTML = `<div class="empty">ไม่พบ domain ที่ตรงกับ "<strong>${escapeHtml(_dcSearch)}</strong>"</div>`;
+    listEl.innerHTML = toggleHtml + `<div class="empty">${q ? `ไม่พบ domain ที่ตรงกับ "<strong>${escapeHtml(_dcSearch)}</strong>"` : '— ไม่มี domain ในกลุ่มนี้ —'}</div>`;
+    _wireToggle();
     return;
   }
 
   // v1.9.271 — table layout
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  listEl.innerHTML = `<div class="cfg-table-wrap"><div class="cfg-table-scroll"><table class="cfg-table">
+  listEl.innerHTML = toggleHtml + `<div class="cfg-table-wrap"><div class="cfg-table-scroll"><table class="cfg-table">
     <thead><tr>
-      <th>Domain</th><th>สถานะ</th><th>วันจดทะเบียน</th><th>วันหมดอายุ</th><th style="text-align:right">จัดการ</th>
+      <th>Domain</th><th>ลูกค้า</th><th>สถานะ</th><th>วันจดทะเบียน</th><th>วันหมดอายุ</th><th style="text-align:right">จัดการ</th>
     </tr></thead>
     <tbody>${list.map(d => renderDomainConfigRow(d, today)).join('')}</tbody>
   </table></div></div>`;
+  _wireToggle();
   // คลิกทั้งแถว = แก้ไข · ⋮ kebab = เมนูแอ็กชัน (Lookup/Renew/ประวัติ/ลบ)
   listEl.querySelectorAll('tr[data-d-row]').forEach(row => {
     row.addEventListener('click', () => {
@@ -8424,6 +8439,10 @@ function renderDomainConfigRow(d, today) {
   let subLine = '';
   if (d.provider) subLine = `🏢 ${escapeHtml(d.provider)}`;
   else if (d.notes) subLine = `<span title="${escapeHtml(d.notes)}">📝 ${escapeHtml(d.notes.length > 40 ? d.notes.slice(0, 37) + '…' : d.notes)}</span>`;
+  // v1.9.272 — badge สถานะลูกค้า
+  const custBadge = d.customer_status === 'former'
+    ? '<span style="display:inline-flex;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;background:var(--bg-soft);color:var(--text-muted);white-space:nowrap">⚪ อดีตลูกค้า</span>'
+    : '<span style="display:inline-flex;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(37,99,235,.10);color:var(--primary);white-space:nowrap">🟢 ลูกค้าปัจจุบัน</span>';
   const regCell = d.register_date ? `${escapeHtml(fmtDateThai(d.register_date))}${whoisBadge(d.register_whois_synced_at)}` : '—';
   const expCell = d.expire_date ? `${escapeHtml(fmtDateThai(d.expire_date))}${whoisBadge(d.expire_whois_synced_at)}${d.renewal_count > 0 ? ` <span style="font-size:10px;color:var(--text-muted)" title="renew ${d.renewal_count} ครั้ง">🔄${d.renewal_count}</span>` : ''}` : '—';
 
@@ -8438,6 +8457,7 @@ function renderDomainConfigRow(d, today) {
           </div>
         </div>
       </td>
+      <td>${custBadge}</td>
       <td>${statusBadge}</td>
       <td style="white-space:nowrap;color:var(--text-muted)">${regCell}</td>
       <td style="white-space:nowrap;${expStyle}">${expCell}</td>
@@ -9016,6 +9036,13 @@ function showDomainModal(domain) {
         </div>
       </div>
       <div class="field">
+        <label>สถานะลูกค้า</label>
+        <select id="dm-customer-status" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit">
+          <option value="current" ${(!isEdit || domain.customer_status !== 'former') ? 'selected' : ''}>🟢 ลูกค้าปัจจุบัน</option>
+          <option value="former" ${(isEdit && domain.customer_status === 'former') ? 'selected' : ''}>⚪ อดีตลูกค้า</option>
+        </select>
+      </div>
+      <div class="field">
         <label>หมายเหตุ</label>
         <textarea id="dm-notes" rows="2" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical">${isEdit ? escapeHtml(domain.notes || '') : ''}</textarea>
       </div>
@@ -9040,6 +9067,7 @@ function showDomainModal(domain) {
         register_date: $('dm-register').value || null,
         expire_date: $('dm-expire').value || null,
         notes: $('dm-notes').value.trim() || null,
+        customer_status: $('dm-customer-status') ? $('dm-customer-status').value : 'current',
       };
       if (!data.name) throw new Error('กรอก domain name');
 

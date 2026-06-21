@@ -576,6 +576,9 @@ def init_db() -> None:
         # v1.9.30 — logo (base64 data URL) สำหรับ Website/Domain card
         if "logo_data" not in domain_cols:
             conn.execute("ALTER TABLE domains ADD COLUMN logo_data TEXT")
+        # v1.9.272 — สถานะลูกค้า: 'current' (ลูกค้าปัจจุบัน) | 'former' (อดีตลูกค้า)
+        if "customer_status" not in domain_cols:
+            conn.execute("ALTER TABLE domains ADD COLUMN customer_status TEXT NOT NULL DEFAULT 'current'")
 
         # v1.9.37 — photo + v1.9.38 — extended PC fields (serial, display, dept,
         # location, os_version, model, mainboard, gpu, battery, ups, status, quotation)
@@ -5860,6 +5863,7 @@ class DomainIn(BaseModel):
     provider: Optional[str] = Field(None, max_length=120)
     notes: Optional[str] = Field(None, max_length=2000)
     logo_data: Optional[str] = Field(None, max_length=700_000)   # base64 data URL (cropped 256x256)
+    customer_status: Optional[str] = Field(None, max_length=20)   # v1.9.272 'current' | 'former'
     # WHOIS sync flags — frontend sends:
     #   True  = "this date is fresh from WHOIS" (set timestamp = now)
     #   False = "user manually edited this date" (clear timestamp)
@@ -5875,6 +5879,7 @@ class DomainPatchIn(BaseModel):
     provider: Optional[str] = Field(None, max_length=120)
     notes: Optional[str] = Field(None, max_length=2000)
     logo_data: Optional[str] = Field(None, max_length=700_000)   # '' = clear, NULL = unchanged
+    customer_status: Optional[str] = Field(None, max_length=20)   # v1.9.272 'current' | 'former'
     register_from_whois: Optional[bool] = None
     expire_from_whois: Optional[bool] = None
 
@@ -5940,11 +5945,12 @@ def admin_create_domain(payload: DomainIn, _sess: dict = Depends(require_admin))
         try:
             cur = conn.execute(
                 "INSERT INTO domains(name, register_date, expire_date, provider, notes, created_at, "
-                "                    register_whois_synced_at, expire_whois_synced_at, logo_data) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "                    register_whois_synced_at, expire_whois_synced_at, logo_data, customer_status) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (name, payload.register_date or None, payload.expire_date or None,
                  payload.provider or None, payload.notes or None, now_iso,
-                 reg_ts, exp_ts, payload.logo_data or None),
+                 reg_ts, exp_ts, payload.logo_data or None,
+                 'former' if (payload.customer_status == 'former') else 'current'),
             )
         except sqlite3.IntegrityError:
             raise HTTPException(status_code=409, detail=f"domain '{name}' มีอยู่แล้ว")
@@ -5974,6 +5980,8 @@ def admin_update_domain(
     if payload.logo_data is not None:
         # '' = clear, non-empty = set new image
         updates["logo_data"] = payload.logo_data or None
+    if payload.customer_status is not None:
+        updates["customer_status"] = 'former' if (payload.customer_status == 'former') else 'current'
     # WHOIS sync timestamps
     now_iso = utc_now().isoformat()
     reg_should, reg_val = _resolve_whois_sync_ts(payload.register_from_whois, now_iso)
