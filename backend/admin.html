@@ -6087,9 +6087,9 @@ async function showAddTempStaffModal() {
         <input id="ts-name" type="text" placeholder="เช่น สมชาย ใจดี" />
       </div>
       <div class="field">
-        <label>เบอร์มือถือ</label>
-        <input id="ts-phone" type="tel" inputmode="numeric" placeholder="0812345678" />
-        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">ต้องเป็นเบอร์ที่เจ้าตัวจะใช้ login OTP (เริ่มด้วย 0 ได้ ระบบแปลงให้)</div>
+        <label>เบอร์มือถือ — optional</label>
+        <input id="ts-phone" type="tel" inputmode="numeric" placeholder="0812345678 (เว้นว่างได้)" />
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">ไม่ใส่ก็ได้ · ถ้าใส่ (เบอร์ที่เจ้าตัวจะใช้ login OTP) เมื่อ login สำเร็จ ระบบจะดึงอุปกรณ์/ทีมที่ผูกไว้ → account จริงให้อัตโนมัติ</div>
       </div>
       <div class="field">
         <label>แผนก (ชั่วคราว) — optional</label>
@@ -6102,13 +6102,14 @@ async function showAddTempStaffModal() {
       const name = $('ts-name').value.trim();
       const phone = $('ts-phone').value.trim();
       if (!name) throw new Error('กรอกชื่อ');
-      if (phone.replace(/\D/g, '').length < 9) throw new Error('กรอกเบอร์มือถือให้ครบ');
+      // v1.9.263 — เบอร์ optional · ถ้าใส่ต้องครบ
+      if (phone && phone.replace(/\D/g, '').length < 9) throw new Error('เบอร์ไม่ครบ (หรือเว้นว่างไว้ก็ได้)');
       const r = await fetchJson('/api/admin/temp-staff', {
         method: 'POST',
-        body: JSON.stringify({ name, phone, department: $('ts-dept').value.trim() || null }),
+        body: JSON.stringify({ name, phone: phone || null, department: $('ts-dept').value.trim() || null }),
       });
       _hwMembersCache = []; _membersCache = [];   // ให้ owner picker / members list โหลดใหม่ (เห็น temp staff)
-      showSavedToast('✓ สร้าง Temporary Staff: ' + name + ' (' + (r.phone || phone) + ')');
+      showSavedToast('✓ สร้าง Temporary Staff: ' + name + (r.phone ? ' (' + r.phone + ')' : ' (ไม่มีเบอร์)'));
     },
   });
 }
@@ -6463,21 +6464,71 @@ function sortTeamMembers(members, key) {
   return members;
 }
 
+// v1.9.263 — แผง slide-out รายชื่อ Alumni (อดีตพนักงาน) — เรียงตามวันสุดท้ายล่าสุด · คลิกดูโปรไฟล์
+function _showTeamAlumniPanel(list) {
+  document.querySelectorAll('.sup-panel-wrap').forEach(e => e.remove());
+  const wrap = document.createElement('div');
+  wrap.className = 'sup-panel-wrap';
+  const rowHtml = (m) => {
+    const display = m.display_name || m.email || m.phone || 'ไม่ระบุชื่อ';
+    const initial = ((display || '?').trim().charAt(0) || '?').toUpperCase();
+    const av = m.avatar_data
+      ? `<img src="${m.avatar_data}" alt="" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0" />`
+      : `<div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:16px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(initial)}</div>`;
+    const lwd = m.last_working_day ? fmtDateThai(m.last_working_day) : '—';
+    return `<div class="hw-card" data-alum-id="${m.id}" title="คลิกดูข้อมูลส่วนบุคคล" style="display:flex;align-items:center;gap:11px;border:1px solid var(--border);border-radius:11px;padding:9px 12px;margin-bottom:7px;cursor:pointer">
+      ${av}
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(display)}</div>
+        <div style="font-size:11.5px;color:var(--text-muted)">📅 วันทำงานวันสุดท้าย: ${escapeHtml(lwd)}</div>
+      </div>
+      <span style="font-size:18px;color:var(--text-muted);flex-shrink:0">›</span>
+    </div>`;
+  };
+  wrap.innerHTML = `
+    <div class="sup-panel-backdrop"></div>
+    <div class="sup-panel" style="width:420px">
+      <div class="sup-panel-head"><button class="sup-panel-close" title="ปิด">✕</button></div>
+      <div class="sup-panel-body" style="padding:4px 24px 28px">
+        <div style="font-size:18px;font-weight:800;margin:6px 0 4px">🎓 Alumni (${list.length})</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">อดีตพนักงาน · เรียงจากวันทำงานวันสุดท้ายล่าสุด · คลิกเพื่อดูรายละเอียด</div>
+        ${list.length ? list.map(rowHtml).join('') : '<div class="empty">— ไม่มี Alumni —</div>'}
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  requestAnimationFrame(() => wrap.classList.add('is-open'));
+  const close = () => { wrap.classList.remove('is-open'); document.removeEventListener('keydown', onKey); setTimeout(() => wrap.remove(), 260); };
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  wrap.querySelector('.sup-panel-backdrop').addEventListener('click', close);
+  wrap.querySelector('.sup-panel-close').addEventListener('click', close);
+  wrap.querySelectorAll('[data-alum-id]').forEach(el => el.addEventListener('click', () => {
+    const id = parseInt(el.dataset.alumId, 10);
+    const mem = list.find(x => x.id === id);
+    if (mem) _pcdOwnerPanel(id, () => loadTeamDetail(_lastTeamMembersTeamId), mem, mem.pcs || []);
+  }));
+}
+
 function renderTeamMembers(teamId, members) {
   // v1.9.57 — เก็บ state สำหรับ re-sort
   _lastTeamMembersTeamId = teamId;
   _lastTeamMembersData = members;
-  const sortedMembers = sortTeamMembers(members, _teamMembersSort);
+  // v1.9.263 — แยก Alumni (อดีตพนักงาน) ออกจากรายชื่อหลัก
+  const activeMembers = (members || []).filter(m => !m.is_alumni);
+  const alumniMembers = (members || []).filter(m => m.is_alumni)
+    .sort((a, b) => (b.last_working_day || '').localeCompare(a.last_working_day || ''));
+  const sortedMembers = sortTeamMembers(activeMembers, _teamMembersSort);
   const sortSelectStyle = 'padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text);font-family:inherit';
   const html = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <span class="card-sub">${members.length} member</span>
+        <span class="card-sub">${activeMembers.length} member</span>
         <select id="tm-sort" title="เรียงรายชื่อ" style="${sortSelectStyle}">
           <option value="default"${_teamMembersSort === 'default' ? ' selected' : ''}>🕒 วันที่เพิ่ม (ล่าสุด)</option>
           <option value="name"${_teamMembersSort === 'name' ? ' selected' : ''}>🔤 ชื่อ (A-Z)</option>
           <option value="pc-age"${_teamMembersSort === 'pc-age' ? ' selected' : ''}>⏱ อายุคอมฯ (เก่าสุดก่อน)</option>
         </select>
+        ${alumniMembers.length ? `<button type="button" id="tm-alumni-btn" title="ดูอดีตพนักงาน" style="font-size:11.5px;padding:5px 11px;border:1px solid var(--border);border-radius:7px;background:var(--bg-soft);color:var(--text-muted);cursor:pointer;font-family:inherit;font-weight:600">🎓 Alumni (${alumniMembers.length})</button>` : ''}
       </div>
       <button class="btn primary" id="add-member-btn" style="font-size:12.5px;padding:6px 12px">+ เพิ่ม Member</button>
     </div>
@@ -6584,6 +6635,9 @@ function renderTeamMembers(teamId, members) {
     const mem = (_lastTeamMembersData || []).find(x => x.id === id);
     if (mem) _pcdOwnerPanel(id, () => loadTeamDetail(_lastTeamMembersTeamId), mem, mem.pcs || []);
   }));
+  // v1.9.263 — ปุ่ม Alumni → slide-out รายชื่ออดีตพนักงาน
+  const _alumBtn = $('tm-alumni-btn');
+  if (_alumBtn) _alumBtn.addEventListener('click', () => _showTeamAlumniPanel(alumniMembers));
 
   $('add-member-btn').addEventListener('click', () => showAddMemberToTeamModal(teamId, members));
   document.querySelectorAll('#tab-members button[data-rm]').forEach(b => {
@@ -10902,6 +10956,7 @@ function _pcdOwnerPanel(memberId, onChange, memberObj, deviceList) {
         <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">💻 อุปกรณ์ที่ผูกอยู่ (${devices.length})</div>
         ${devices.length ? devices.map(devCard).join('') : '<div class="empty" style="font-size:12px">— ไม่มีอุปกรณ์ —</div>'}
         <div id="pcd-own-comp" style="margin-top:18px"></div>
+        <div id="pcd-alumni" style="margin-top:18px"></div>
         <div id="pcd-prev-dev" style="margin-top:18px"><div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">🔄 Previous Device</div><div class="empty" style="font-size:12px;padding:12px">กำลังโหลด…</div></div>
       </div>
     </div>`;
@@ -10951,6 +11006,39 @@ function _pcdOwnerPanel(memberId, onChange, memberObj, deviceList) {
         setTimeout(() => { btn.disabled = false; btn.textContent = 'บันทึก'; }, 1200);
       } catch (err) { alert('บันทึกไม่สำเร็จ: ' + (err.message || err)); btn.disabled = false; btn.textContent = 'บันทึก'; }
     });
+    // v1.9.263 — Alumni (อดีตพนักงาน) + วันทำงานวันสุดท้าย
+    const abox = wrap.querySelector('#pcd-alumni');
+    if (abox) {
+      const aon = !!st.is_alumni;
+      abox.innerHTML = `
+        <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">🎓 สถานะพนักงาน</div>
+        <div id="alum-box" style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;${aon ? 'background:rgba(245,158,11,.06)' : ''}">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13.5px;font-weight:600">
+            <input type="checkbox" id="alum-toggle" ${aon ? 'checked' : ''} style="width:17px;height:17px;accent-color:#d97706;cursor:pointer" />
+            <span>เป็น Alumni <span style="font-weight:500;color:var(--text-muted);font-size:11.5px">(อดีตพนักงาน — ไม่นับรวมจำนวนพนักงาน)</span></span>
+          </label>
+          <div id="alum-date-wrap" style="margin-top:10px;${aon ? '' : 'display:none'}">
+            <label style="display:block;font-size:11.5px;color:var(--text-muted);margin-bottom:4px">วันทำงานวันสุดท้าย</label>
+            <input id="alum-date" type="date" value="${escapeHtml(st.last_working_day || '')}" style="width:100%;padding:8px 11px;font-size:13px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;box-sizing:border-box" />
+          </div>
+          <div style="display:flex;justify-content:flex-end;margin-top:11px"><button type="button" id="alum-save" class="btn primary" style="font-size:12.5px;padding:6px 16px">บันทึก</button></div>
+        </div>`;
+      const at = abox.querySelector('#alum-toggle');
+      const adw = abox.querySelector('#alum-date-wrap');
+      at.addEventListener('change', () => { adw.style.display = at.checked ? '' : 'none'; });
+      abox.querySelector('#alum-save').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        const lwd = abox.querySelector('#alum-date') ? abox.querySelector('#alum-date').value : '';
+        btn.disabled = true; btn.textContent = 'กำลังบันทึก…';
+        try {
+          await fetchJson('/api/admin/members/' + memberId + '/alumni', { method: 'PATCH', body: JSON.stringify({ is_alumni: at.checked, last_working_day: lwd || null }) });
+          const ab = abox.querySelector('#alum-box'); if (ab) ab.style.background = at.checked ? 'rgba(245,158,11,.06)' : '';
+          if (typeof onChange === 'function') { try { onChange(); } catch (_) { /* refresh นับ/ปุ่มข้างหลัง */ } }
+          btn.textContent = '✓ บันทึกแล้ว';
+          setTimeout(() => { btn.disabled = false; btn.textContent = 'บันทึก'; }, 1200);
+        } catch (err) { alert('บันทึกไม่สำเร็จ: ' + (err.message || err)); btn.disabled = false; btn.textContent = 'บันทึก'; }
+      });
+    }
   })();
   // v1.9.247 — Previous Device: เครื่องที่เคยใช้ + ตอนนี้อยู่ไหน
   (async () => {
@@ -14735,11 +14823,14 @@ function applyMemberFilter() {
   renderMembersTable(filtered);
 
   const total = _membersCache.length;
+  // v1.9.263 — นับจำนวนพนักงาน ไม่รวม Alumni
+  const alumniN = _membersCache.filter(m => m.is_alumni).length;
+  const employees = total - alumniN;
   let count;
   if (filter || q) {
     count = `${filtered.length} / ${total} คน`;
   } else {
-    count = `รวม ${total} คน`;
+    count = `รวม ${employees} คน` + (alumniN ? ` · 🎓 ${alumniN} alumni` : '');
   }
   $('m-count').textContent = count;
 

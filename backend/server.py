@@ -678,6 +678,9 @@ def init_db() -> None:
             # v1.9.261 — ใช้คอมพิวเตอร์ของตนเอง (BYOD) สำหรับคนที่ไม่มีเครื่องบริษัท + ระบุว่าเป็นคอมฯอะไร
             ("uses_own_computer",      "INTEGER NOT NULL DEFAULT 0"),
             ("own_computer_info",      "TEXT"),
+            # v1.9.263 — Alumni (อดีตพนักงาน) + วันทำงานวันสุดท้าย — ไม่นับรวมจำนวนพนักงาน
+            ("is_alumni",              "INTEGER NOT NULL DEFAULT 0"),
+            ("last_working_day",       "TEXT"),
         ]:
             if col_name not in member_cols:
                 conn.execute(f"ALTER TABLE members ADD COLUMN {col_name} {col_def}")
@@ -2347,7 +2350,7 @@ def admin_list_teams(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
         rows = conn.execute(
             "SELECT t.id, t.name, t.description, t.created_at, t.display_order, "
             "  t.parent_team_id, "
-            "  (SELECT COUNT(*) FROM team_members WHERE team_id = t.id) AS member_count, "
+            "  (SELECT COUNT(*) FROM team_members tm JOIN members m ON m.id = tm.member_id WHERE tm.team_id = t.id AND m.is_alumni = 0) AS member_count, "
             "  (SELECT COUNT(*) FROM team_sites   WHERE team_id = t.id) AS site_count "
             "FROM teams t ORDER BY t.display_order ASC, t.name COLLATE NOCASE ASC"
         ).fetchall()
@@ -2436,6 +2439,7 @@ def admin_get_team(team_id: int, _sess: dict = Depends(require_admin)) -> dict[s
             pl_sub = ",".join("?" * len(subtree_ids))
             member_rows = conn.execute(
                 f"SELECT m.id, m.phone, m.email, m.display_name, m.enabled, m.avatar_data, "
+                f"  m.is_alumni, m.last_working_day, "
                 f"  tm.team_id AS source_team_id, tm.added_at "
                 f"FROM team_members tm JOIN members m ON m.id = tm.member_id "
                 f"WHERE tm.team_id IN ({pl_sub}) "
@@ -2465,6 +2469,8 @@ def admin_get_team(team_id: int, _sess: dict = Depends(require_admin)) -> dict[s
                     "enabled": r["enabled"],
                     "avatar_data": r["avatar_data"],
                     "added_at": r["added_at"],
+                    "is_alumni": bool(r["is_alumni"]),
+                    "last_working_day": r["last_working_day"],
                     "direct": False,
                     "sub_team_names": [],
                 }
@@ -2576,7 +2582,7 @@ def admin_get_team(team_id: int, _sess: dict = Depends(require_admin)) -> dict[s
             cur_pid = prow["parent_team_id"]
         sub_rows = conn.execute(
             "SELECT id, name, "
-            "  (SELECT COUNT(*) FROM team_members WHERE team_id = teams.id) AS member_count, "
+            "  (SELECT COUNT(*) FROM team_members tm JOIN members m ON m.id = tm.member_id WHERE tm.team_id = teams.id AND m.is_alumni = 0) AS member_count, "
             "  (SELECT COUNT(*) FROM team_sites   WHERE team_id = teams.id) AS site_count "
             "FROM teams WHERE parent_team_id = ? "
             "ORDER BY display_order ASC, name COLLATE NOCASE ASC",
@@ -2924,7 +2930,7 @@ def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
             "SELECT id, phone, email, display_name, enabled, is_admin, avatar_data, "
             "       extension_version, extension_last_used_at, firebase_uid, "
             "       (pw_hash IS NOT NULL) AS has_password, "
-            "       wazzup_emp_code, is_temp, temp_department, "
+            "       wazzup_emp_code, is_temp, temp_department, is_alumni, last_working_day, "
             "       (wazzup_profile_url IS NOT NULL AND wazzup_profile_url != '') AS has_wazzup_photo, "
             "       created_at, last_login_at "
             "FROM members ORDER BY created_at DESC"
@@ -2952,7 +2958,7 @@ def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
         )
     # v1.9.82 — strip placeholder phone (email:...) สำหรับ email-signup user
     def _phone_clean(p):
-        return None if (p and p.startswith("email:")) else p
+        return None if (p and (p.startswith("email:") or p.startswith("nophone:"))) else p
     # v1.9.86/87/88/98 — ใช้ shared helper _build_login_methods + _aliases_for_display
     def _login_methods(r, aliases):
         return _build_login_methods(
@@ -2986,6 +2992,8 @@ def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
                 "last_login_at": r["last_login_at"],
                 "is_temp": bool(r["is_temp"]) if "is_temp" in r.keys() else False,
                 "temp_department": r["temp_department"] if "temp_department" in r.keys() else None,
+                "is_alumni": bool(r["is_alumni"]) if "is_alumni" in r.keys() else False,
+                "last_working_day": r["last_working_day"] if "last_working_day" in r.keys() else None,
                 "teams": teams_by_member.get(r["id"], []),
             }
             for r in rows
@@ -3007,31 +3015,38 @@ def _normalize_th_phone(raw: str) -> str:
 
 class TempStaffIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
-    phone: str = Field(..., min_length=4, max_length=30)
+    # v1.9.263 — เบอร์ optional: ถ้าใส่ → ใช้ merge ตอน login OTP / ถ้าไม่ใส่ → placeholder
+    phone: Optional[str] = Field(None, max_length=30)
     department: Optional[str] = Field(None, max_length=120)
 
 
 @app.post("/api/admin/temp-staff")
 def admin_create_temp_staff(payload: TempStaffIn, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
-    """v1.9.229 — สร้างพนักงานชั่วคราว (ชื่อ+เบอร์) เป็น member row (firebase_uid placeholder, is_temp=1)
+    """v1.9.229 — สร้างพนักงานชั่วคราว (ชื่อ + เบอร์ optional) เป็น member row (firebase_uid placeholder, is_temp=1)
     เมื่อเจ้าของเบอร์ login OTP จริง → re-link by phone จะเซ็ต firebase_uid + is_temp=0 ให้ row เดิม
-    (= account จริง โดย id ไม่เปลี่ยน → อุปกรณ์/ทีมที่ผูกไว้ติดไปอัตโนมัติ)"""
-    phone = _normalize_th_phone(payload.phone)
-    if len(re.sub(r"\D", "", phone)) < 11:
-        raise HTTPException(status_code=400, detail="เบอร์โทรไม่ถูกต้อง (ต้องเป็นเบอร์มือถือไทย)")
+    (= account จริง โดย id ไม่เปลี่ยน → อุปกรณ์/ทีมที่ผูกไว้ติดไปอัตโนมัติ)
+    ไม่ใส่เบอร์ก็ได้ แต่จะ merge อัตโนมัติไม่ได้ (phone เป็น NOT NULL UNIQUE → ใส่ placeholder)"""
+    raw_phone = (payload.phone or "").strip()
     now = utc_now().isoformat()
     with db_conn() as conn:
-        ex = conn.execute("SELECT id, is_temp, display_name FROM members WHERE phone = ?", (phone,)).fetchone()
-        if ex:
-            kind = "พนักงานชั่วคราว" if ex["is_temp"] else "ผู้ใช้จริง"
-            raise HTTPException(status_code=409, detail=f"เบอร์นี้มีอยู่แล้ว ({kind}: {ex['display_name'] or phone})")
+        if raw_phone:
+            phone = _normalize_th_phone(raw_phone)
+            if len(re.sub(r"\D", "", phone)) < 11:
+                raise HTTPException(status_code=400, detail="เบอร์โทรไม่ถูกต้อง (ต้องเป็นเบอร์มือถือไทย)")
+            ex = conn.execute("SELECT id, is_temp, display_name FROM members WHERE phone = ?", (phone,)).fetchone()
+            if ex:
+                kind = "พนักงานชั่วคราว" if ex["is_temp"] else "ผู้ใช้จริง"
+                raise HTTPException(status_code=409, detail=f"เบอร์นี้มีอยู่แล้ว ({kind}: {ex['display_name'] or phone})")
+        else:
+            # ไม่มีเบอร์ → placeholder ที่ไม่ตรงกับ OTP ใด ๆ (กัน NOT NULL UNIQUE)
+            phone = "nophone:" + secrets.token_hex(8)
         fake_uid = "temp:" + secrets.token_hex(12)
         cur = conn.execute(
             "INSERT INTO members(phone, firebase_uid, display_name, is_temp, temp_department, created_at) "
             "VALUES (?, ?, ?, 1, ?, ?)",
             (phone, fake_uid, payload.name.strip(), (payload.department or "").strip() or None, now))
         mid = cur.lastrowid
-    return {"ok": True, "id": mid, "phone": phone}
+    return {"ok": True, "id": mid, "phone": (phone if raw_phone else None)}
 
 
 class MemberTeamsPatch(BaseModel):
@@ -6467,13 +6482,20 @@ class MemberOwnComputerIn(BaseModel):
 
 @app.get("/api/admin/members/{mid}/own-computer")
 def admin_get_member_own_computer(mid: int, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    """v1.9.263 — รวม flag ส่วนตัว: own-computer + alumni (panel โหลดครั้งเดียว)"""
     with db_conn() as conn:
         r = conn.execute(
-            "SELECT uses_own_computer, own_computer_info FROM members WHERE id = ?", (mid,)
+            "SELECT uses_own_computer, own_computer_info, is_alumni, last_working_day "
+            "FROM members WHERE id = ?", (mid,)
         ).fetchone()
     if not r:
         raise HTTPException(status_code=404, detail="member not found")
-    return {"uses_own_computer": bool(r["uses_own_computer"]), "own_computer_info": r["own_computer_info"]}
+    return {
+        "uses_own_computer": bool(r["uses_own_computer"]),
+        "own_computer_info": r["own_computer_info"],
+        "is_alumni": bool(r["is_alumni"]),
+        "last_working_day": r["last_working_day"],
+    }
 
 
 @app.patch("/api/admin/members/{mid}/own-computer")
@@ -6486,6 +6508,25 @@ def admin_set_member_own_computer(mid: int, payload: MemberOwnComputerIn,
         conn.execute(
             "UPDATE members SET uses_own_computer = ?, own_computer_info = ? WHERE id = ?",
             (1 if payload.uses_own_computer else 0, info, mid))
+    return {"ok": True}
+
+
+# v1.9.263 — Alumni (อดีตพนักงาน) + วันทำงานวันสุดท้าย
+class MemberAlumniIn(BaseModel):
+    is_alumni: bool
+    last_working_day: Optional[str] = Field(None, max_length=20)   # ISO YYYY-MM-DD
+
+
+@app.patch("/api/admin/members/{mid}/alumni")
+def admin_set_member_alumni(mid: int, payload: MemberAlumniIn,
+                            _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    lwd = (payload.last_working_day or "").strip() or None
+    with db_conn() as conn:
+        if not conn.execute("SELECT 1 FROM members WHERE id = ?", (mid,)).fetchone():
+            raise HTTPException(status_code=404, detail="member not found")
+        conn.execute(
+            "UPDATE members SET is_alumni = ?, last_working_day = ? WHERE id = ?",
+            (1 if payload.is_alumni else 0, lwd, mid))
     return {"ok": True}
 
 
@@ -7821,7 +7862,7 @@ def teams_overview(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
     with db_conn() as conn:
         teams = conn.execute(
             "SELECT id, name, description, "
-            "  (SELECT COUNT(*) FROM team_members tm WHERE tm.team_id = t.id) AS member_count "
+            "  (SELECT COUNT(*) FROM team_members tm JOIN members m ON m.id = tm.member_id WHERE tm.team_id = t.id AND m.is_alumni = 0) AS member_count "
             "FROM teams t ORDER BY display_order ASC, name COLLATE NOCASE ASC"
         ).fetchall()
         ts_rows = conn.execute(

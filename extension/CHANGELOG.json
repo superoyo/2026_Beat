@@ -2,6 +2,20 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.263",
+      "date": "2026-06-21",
+      "title": "Temp Staff เบอร์ optional + Alumni (อดีตพนักงาน) แยกส่วน",
+      "summary": "สร้าง Temporary Staff ไม่ต้องใส่เบอร์ก็ได้ (ใส่ = merge ตอน login OTP) · เพิ่มสถานะ Alumni + วันทำงานวันสุดท้าย (ในแผงโปรไฟล์) · จำนวนพนักงาน/สมาชิกทีม ไม่นับ Alumni · ทีมมีปุ่ม 🎓 Alumni เปิดแถบสไลด์รายชื่อ (เรียงวันล่าสุด) คลิกดูโปรไฟล์ได้",
+      "changes": [
+        "Temporary Staff: เบอร์ optional (ไม่ใส่ = placeholder, ไม่ auto-merge)",
+        "members.is_alumni + last_working_day · GET own-computer คืน alumni ด้วย + PATCH /alumni",
+        "แผงโปรไฟล์ (คลิกชื่อ/เจ้าของ): toggle เป็น Alumni + วันทำงานวันสุดท้าย",
+        "จำนวนพนักงาน + member_count ของทีม ไม่รวม Alumni (SQL exclude is_alumni)",
+        "Team Members: ปุ่ม 🎓 Alumni (N) แบบไม่เด่น → slide-out รายชื่อ เรียงวันสุดท้ายล่าสุด → คลิกดูโปรไฟล์",
+        "Members page: count แสดงพนักงาน + แยก 🎓 N alumni"
+      ]
+    },
+    {
       "version": "1.9.262",
       "date": "2026-06-21",
       "title": "Temporary Staff — แผนกเลือกจากรายชื่อทีม หรือพิมพ์เองได้",
