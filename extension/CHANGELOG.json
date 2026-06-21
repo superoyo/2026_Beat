@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.262",
+      "date": "2026-06-21",
+      "title": "Temporary Staff — แผนกเลือกจากรายชื่อทีม หรือพิมพ์เองได้",
+      "summary": "modal สร้าง Temporary Staff: ช่อง ‘แผนก (ชั่วคราว)’ เปลี่ยนเป็น combobox (datalist) — เลือกจากรายชื่อทีมที่มีอยู่ หรือพิมพ์ชื่อแผนกใหม่เองก็ได้",
+      "changes": [
+        "ช่องแผนกใช้ <input list> + <datalist> รวมรายชื่อทีม (distinct, เรียง ก-ฮ)",
+        "ยังพิมพ์ชื่อแผนกใหม่ได้ (free text)",
+        "โหลดทีมจาก _teamsCache หรือ fetch ถ้ายังว่าง"
+      ]
+    },
+    {
       "version": "1.9.261",
       "date": "2026-06-21",
       "title": "แผงข้อมูลส่วนบุคคล — toggle ‘ใช้คอมพิวเตอร์ของตนเอง’ + ระบุคอมฯ",

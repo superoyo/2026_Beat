@@ -6068,7 +6068,13 @@ function getTeamDescendantIds(teams, rootId) {
 }
 
 // v1.9.229 — สร้างพนักงานชั่วคราว (ชื่อ+เบอร์) → member row (is_temp), ผูกอุปกรณ์/แผนกได้, claim เป็นจริงตอน login OTP
-function showAddTempStaffModal() {
+async function showAddTempStaffModal() {
+  // v1.9.262 — แผนกเลือกจากรายชื่อทีม หรือพิมพ์เองได้ (datalist)
+  let _tsTeams = (_teamsCache && _teamsCache.length) ? _teamsCache : [];
+  if (!_tsTeams.length) { try { _tsTeams = (await fetchJson('/api/admin/teams')).teams || []; } catch { _tsTeams = []; } }
+  const _tsDeptOptions = [...new Set(_tsTeams.map(t => t.name).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'th'))
+    .map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
   showModal({
     title: '🕓 สร้าง Temporary Staff',
     body: `
@@ -6087,7 +6093,9 @@ function showAddTempStaffModal() {
       </div>
       <div class="field">
         <label>แผนก (ชั่วคราว) — optional</label>
-        <input id="ts-dept" type="text" placeholder="เช่น Event ชั่วคราว / Outsource" />
+        <input id="ts-dept" type="text" list="ts-dept-list" autocomplete="off" placeholder="เลือกแผนก หรือพิมพ์เอง เช่น Event ชั่วคราว / Outsource" />
+        <datalist id="ts-dept-list">${_tsDeptOptions}</datalist>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">เลือกจากรายชื่อทีมที่มี หรือพิมพ์ชื่อแผนกใหม่ได้</div>
       </div>
     `,
     onSubmit: async () => {
