@@ -2439,7 +2439,7 @@ def admin_get_team(team_id: int, _sess: dict = Depends(require_admin)) -> dict[s
             pl_sub = ",".join("?" * len(subtree_ids))
             member_rows = conn.execute(
                 f"SELECT m.id, m.phone, m.email, m.display_name, m.enabled, m.avatar_data, "
-                f"  m.is_alumni, m.last_working_day, "
+                f"  m.is_alumni, m.last_working_day, m.uses_own_computer, m.own_computer_info, "
                 f"  tm.team_id AS source_team_id, tm.added_at "
                 f"FROM team_members tm JOIN members m ON m.id = tm.member_id "
                 f"WHERE tm.team_id IN ({pl_sub}) "
@@ -2471,6 +2471,8 @@ def admin_get_team(team_id: int, _sess: dict = Depends(require_admin)) -> dict[s
                     "added_at": r["added_at"],
                     "is_alumni": bool(r["is_alumni"]),
                     "last_working_day": r["last_working_day"],
+                    "uses_own_computer": bool(r["uses_own_computer"]),
+                    "own_computer_info": r["own_computer_info"],
                     "direct": False,
                     "sub_team_names": [],
                 }

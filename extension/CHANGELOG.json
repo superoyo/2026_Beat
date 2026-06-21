@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.267",
+      "date": "2026-06-21",
+      "title": "Peoples › Teams — แสดง ‘ใช้คอมพิวเตอร์ของตนเอง’ ใน member card",
+      "summary": "ในหน้า Teams (Members tab) คนที่ตั้ง BYOD (uses_own_computer) แสดงป้าย 🙋 ใช้คอมพิวเตอร์ของตนเอง + รายละเอียดคอมฯ ใต้การ์ด (ใต้รายการอุปกรณ์)",
+      "changes": [
+        "admin_get_team คืน uses_own_computer + own_computer_info",
+        "member card แสดงป้าย 🙋 ใช้คอมพิวเตอร์ของตนเอง (+ ข้อมูลคอมฯ)"
+      ]
+    },
+    {
       "version": "1.9.266",
       "date": "2026-06-21",
       "title": "My Profile › Team — แสดง ‘ใช้เครื่องตนเอง’ ใต้ชื่อ",
