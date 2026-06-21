@@ -635,6 +635,20 @@
     .skel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 8px; }
     .skel-stack { display: flex; flex-direction: column; gap: 8px; }
 
+    /* v1.9.271 — Config table (Domain / Hosting / SSL / Others) */
+    .cfg-table-wrap { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg-card); box-shadow: var(--shadow-sm); }
+    .cfg-table-scroll { overflow-x: auto; }
+    .cfg-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .cfg-table thead th { text-align: left; font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; padding: 11px 14px; background: var(--bg-soft); white-space: nowrap; }
+    .cfg-table tbody td { padding: 10px 14px; border-top: 1px solid var(--border); vertical-align: middle; }
+    .cfg-table tbody tr { cursor: pointer; transition: background .12s; }
+    .cfg-table tbody tr:hover { background: var(--bg-soft); }
+    .kebab-btn { background: none; border: none; cursor: pointer; font-size: 18px; color: var(--text-muted); padding: 3px 9px; border-radius: 7px; line-height: 1; }
+    .kebab-btn:hover { background: var(--bg-hover); color: var(--text); }
+    .kebab-pop { position: fixed; z-index: 2200; background: var(--bg-card); border: 1px solid var(--border); border-radius: 11px; box-shadow: 0 10px 30px rgba(15,23,42,.2); padding: 5px; min-width: 178px; }
+    .kebab-pop button { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; background: none; border: none; padding: 8px 11px; border-radius: 7px; cursor: pointer; font-family: inherit; font-size: 13px; }
+    .kebab-pop button:hover { background: var(--bg-soft); }
+
     /* Modal */
     .modal-bg {
       position: fixed; inset: 0;
@@ -8256,6 +8270,27 @@ async function loadDomainsConfigList() {
   renderDomainsConfigRows();
 }
 
+// v1.9.271 — kebab dropdown menu (⋮) — reusable
+function _kebabMenu(btn, items) {
+  document.querySelectorAll('.kebab-pop').forEach(e => e.remove());
+  const r = btn.getBoundingClientRect();
+  const pop = document.createElement('div');
+  pop.className = 'kebab-pop';
+  pop.style.top = (r.bottom + 4) + 'px';
+  pop.style.left = Math.max(8, Math.min(r.right - 178, window.innerWidth - 186)) + 'px';
+  pop.innerHTML = items.map((it, i) => `<button type="button" data-ki="${i}" style="color:${it.danger ? 'var(--critical)' : 'var(--text)'}"><span style="width:18px;text-align:center">${it.icon || ''}</span> ${escapeHtml(it.label)}</button>`).join('');
+  document.body.appendChild(pop);
+  pop.querySelectorAll('button[data-ki]').forEach(b => b.addEventListener('click', (e) => {
+    e.stopPropagation(); pop.remove(); document.removeEventListener('click', closer, true);
+    items[parseInt(b.dataset.ki, 10)].onClick();
+  }));
+  const closer = (e) => { if (!pop.contains(e.target)) { pop.remove(); document.removeEventListener('click', closer, true); } };
+  setTimeout(() => document.addEventListener('click', closer, true), 0);
+}
+function _domainAct(d, act) {
+  handleDomainAction({ dataset: { dId: String(d.id), dAct: act, dName: d.name, dExpire: d.expire_date || '' } }, _dcCache);
+}
+
 function renderDomainsConfigRows() {
   const listEl = $('dc-list');
   if (!listEl) return;
@@ -8307,21 +8342,34 @@ function renderDomainsConfigRows() {
     return;
   }
 
-  // render compact 2-line rows
+  // v1.9.271 — table layout
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  listEl.innerHTML = list.map(d => renderDomainConfigRow(d, today)).join('');
-
-  // v1.9.270 — คลิกทั้งแถว = แก้ไข (ปุ่ม Lookup/Renew/ประวัติ ยังกดได้ + stopPropagation)
-  listEl.querySelectorAll('[data-d-row]').forEach(row => {
+  listEl.innerHTML = `<div class="cfg-table-wrap"><div class="cfg-table-scroll"><table class="cfg-table">
+    <thead><tr>
+      <th>Domain</th><th>สถานะ</th><th>วันจดทะเบียน</th><th>วันหมดอายุ</th><th style="text-align:right">จัดการ</th>
+    </tr></thead>
+    <tbody>${list.map(d => renderDomainConfigRow(d, today)).join('')}</tbody>
+  </table></div></div>`;
+  // คลิกทั้งแถว = แก้ไข · ⋮ kebab = เมนูแอ็กชัน (Lookup/Renew/ประวัติ/ลบ)
+  listEl.querySelectorAll('tr[data-d-row]').forEach(row => {
     row.addEventListener('click', () => {
       const d = _dcCache.find(x => x.id === parseInt(row.dataset.dRow, 10));
       if (d) showDomainModal(d);
     });
   });
-  listEl.querySelectorAll('button[data-d-act]').forEach(btn => {
-    btn.addEventListener('click', (e) => { e.stopPropagation(); handleDomainAction(btn, _dcCache); });
-  });
+  listEl.querySelectorAll('[data-d-kebab]').forEach(btn => btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const d = _dcCache.find(x => x.id === parseInt(btn.dataset.dKebab, 10));
+    if (!d) return;
+    _kebabMenu(btn, [
+      { icon: '✏️', label: 'แก้ไข', onClick: () => showDomainModal(d) },
+      { icon: '🔍', label: 'Lookup (WHOIS)', onClick: () => _domainAct(d, 'lookup') },
+      { icon: '🔄', label: 'Renew', onClick: () => _domainAct(d, 'renew') },
+      { icon: '📜', label: 'ประวัติ', onClick: () => _domainAct(d, 'history') },
+      { icon: '🗑', label: 'ลบ', danger: true, onClick: () => _domainAct(d, 'delete') },
+    ]);
+  }));
 }
 
 // Render circular logo (or initial fallback) for a domain object
@@ -8342,17 +8390,21 @@ function domainLogoHTML(d, size) {
 }
 
 function renderDomainConfigRow(d, today) {
-  // status badge
+  // status badge + สีของช่องวันหมดอายุ
   let statusBadge = '<span style="color:var(--text-muted);font-size:11px">— ไม่มีวันหมดอายุ</span>';
+  let expStyle = 'color:var(--text-muted)';
   if (d.expire_date) {
     const exp = new Date(d.expire_date);
     const days = Math.floor((exp - today) / 86400000);
     if (days < 0) {
       statusBadge = `<span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(220,38,38,.10);color:var(--critical)">⛔ หมด ${-days} วันแล้ว</span>`;
+      expStyle = 'color:var(--critical);font-weight:700';
     } else if (days <= 30) {
       statusBadge = `<span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(245,158,11,.12);color:#92400e">⚠ เหลือ ${days} วัน</span>`;
+      expStyle = 'color:#b45309;font-weight:600';
     } else {
       statusBadge = `<span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(16,185,129,.12);color:var(--green)">✓ เหลือ ${days} วัน</span>`;
+      expStyle = 'color:var(--text)';
     }
   }
 
@@ -8368,34 +8420,29 @@ function renderDomainConfigRow(d, today) {
     return `<span title="${escapeHtml(tooltip)}" style="display:inline-block;margin-left:3px;font-size:10px;color:#2563eb;cursor:help;vertical-align:baseline" aria-label="from WHOIS">🌐</span>`;
   };
 
-  const metaParts = [];
-  if (d.provider)         metaParts.push(`🏢 ${escapeHtml(d.provider)}`);
-  if (d.register_date)    metaParts.push(`📅 จด ${escapeHtml(fmtDateThai(d.register_date))}${whoisBadge(d.register_whois_synced_at)}`);
-  if (d.expire_date)      metaParts.push(`⏰ หมด ${escapeHtml(fmtDateThai(d.expire_date))}${whoisBadge(d.expire_whois_synced_at)}`);
-  if (d.renewal_count > 0) metaParts.push(`🔄 ${d.renewal_count} ครั้ง`);
-  if (d.notes) {
-    const truncated = d.notes.length > 50 ? d.notes.slice(0, 47) + '…' : d.notes;
-    metaParts.push(`<span title="${escapeHtml(d.notes)}">📝 ${escapeHtml(truncated)}</span>`);
-  }
-  const metaLine = metaParts.length ? metaParts.join(' <span style="color:var(--border)">·</span> ') : '<span style="color:var(--text-muted);font-style:italic">— ไม่มีข้อมูลเพิ่มเติม</span>';
+  // sub-line ใต้ชื่อ domain: provider หรือ notes
+  let subLine = '';
+  if (d.provider) subLine = `🏢 ${escapeHtml(d.provider)}`;
+  else if (d.notes) subLine = `<span title="${escapeHtml(d.notes)}">📝 ${escapeHtml(d.notes.length > 40 ? d.notes.slice(0, 37) + '…' : d.notes)}</span>`;
+  const regCell = d.register_date ? `${escapeHtml(fmtDateThai(d.register_date))}${whoisBadge(d.register_whois_synced_at)}` : '—';
+  const expCell = d.expire_date ? `${escapeHtml(fmtDateThai(d.expire_date))}${whoisBadge(d.expire_whois_synced_at)}${d.renewal_count > 0 ? ` <span style="font-size:10px;color:var(--text-muted)" title="renew ${d.renewal_count} ครั้ง">🔄${d.renewal_count}</span>` : ''}` : '—';
 
   return `
-    <div class="card hw-card" data-d-row="${d.id}" title="คลิกเพื่อแก้ไข" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px;padding:10px 14px;cursor:pointer">
-      ${domainLogoHTML(d, 36)}
-      <div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:3px;overflow:hidden">
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <span style="font-weight:700;font-size:14.5px;font-family:ui-monospace,Menlo,monospace;color:var(--text)">${escapeHtml(d.name)}</span>
-          ${statusBadge}
+    <tr data-d-row="${d.id}" title="คลิกเพื่อแก้ไข">
+      <td>
+        <div style="display:flex;align-items:center;gap:11px;min-width:200px">
+          ${domainLogoHTML(d, 34)}
+          <div style="min-width:0">
+            <div style="font-weight:700;font-size:13.5px;font-family:ui-monospace,Menlo,monospace;color:var(--text)">${escapeHtml(d.name)}</div>
+            ${subLine ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px">${subLine}</div>` : ''}
+          </div>
         </div>
-        <div style="font-size:12px;color:var(--text-muted);line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${metaLine}</div>
-      </div>
-      <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;align-items:center">
-        <button class="btn" data-d-act="lookup" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" style="font-size:12px;padding:5px 10px" title="WHOIS / nslookup / DNS">🔍 Lookup</button>
-        <button class="btn primary" data-d-act="renew" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" data-d-expire="${escapeHtml(d.expire_date || '')}" style="font-size:12px;padding:5px 10px">🔄 Renew</button>
-        <button class="btn" data-d-act="history" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" style="font-size:12px;padding:5px 10px">📜 ประวัติ</button>
-        <span class="hw-chev" style="flex-shrink:0;font-size:22px;line-height:1;color:var(--text-muted)">›</span>
-      </div>
-    </div>
+      </td>
+      <td>${statusBadge}</td>
+      <td style="white-space:nowrap;color:var(--text-muted)">${regCell}</td>
+      <td style="white-space:nowrap;${expStyle}">${expCell}</td>
+      <td style="text-align:right;white-space:nowrap"><button type="button" class="kebab-btn" data-d-kebab="${d.id}" title="เมนู">⋮</button></td>
+    </tr>
   `;
 }
 
@@ -9606,51 +9653,68 @@ function renderServicesRows() {
     return;
   }
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  listEl.innerHTML = list.map(s => renderServiceRow(s, today, tab.icon)).join('');
-  // v1.9.269 — คลิกทั้งบรรทัด = แก้ไข (ปุ่มลบย้ายเข้าใน modal)
-  listEl.querySelectorAll('[data-svc-row]').forEach(row => {
+  // v1.9.271 — table layout
+  listEl.innerHTML = `<div class="cfg-table-wrap"><div class="cfg-table-scroll"><table class="cfg-table">
+    <thead><tr>
+      <th>บริการ</th><th>สถานะ</th><th>ราคา</th><th>วันหมดอายุ</th><th>Domain ที่ผูก</th><th style="text-align:right">จัดการ</th>
+    </tr></thead>
+    <tbody>${list.map(s => renderServiceRow(s, today, tab.icon)).join('')}</tbody>
+  </table></div></div>`;
+  // คลิกแถว = แก้ไข · ⋮ kebab = แก้ไข/ลบ
+  listEl.querySelectorAll('tr[data-svc-row]').forEach(row => {
     row.addEventListener('click', () => {
-      const id = parseInt(row.dataset.svcRow, 10);
-      const s = (_svcCache[_scActiveTab] || []).find(x => x.id === id);
+      const s = (_svcCache[_scActiveTab] || []).find(x => x.id === parseInt(row.dataset.svcRow, 10));
       if (s) showServiceModal(s, _scActiveTab);
     });
   });
+  listEl.querySelectorAll('[data-svc-kebab]').forEach(btn => btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const s = (_svcCache[_scActiveTab] || []).find(x => x.id === parseInt(btn.dataset.svcKebab, 10));
+    if (!s) return;
+    _kebabMenu(btn, [
+      { icon: '✏️', label: 'แก้ไข', onClick: () => showServiceModal(s, _scActiveTab) },
+      { icon: '🗑', label: 'ลบ', danger: true, onClick: () => handleServiceAction({ dataset: { svcId: String(s.id), svcAct: 'delete', svcName: s.name, svcLinked: String(s.linked_domains || 0) } }) },
+    ]);
+  }));
 }
 
 function renderServiceRow(s, today, typeIcon) {
   let statusBadge = '<span style="color:var(--text-muted);font-size:11px">— ไม่มีวันหมดอายุ</span>';
+  let expStyle = 'color:var(--text-muted)';
   if (s.expire_date) {
     const exp = new Date(s.expire_date);
     const days = Math.floor((exp - today) / 86400000);
     if (days < 0) {
       statusBadge = `<span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(220,38,38,.10);color:var(--critical)">⛔ หมด ${-days} วันแล้ว</span>`;
+      expStyle = 'color:var(--critical);font-weight:700';
     } else if (days <= 30) {
       statusBadge = `<span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(245,158,11,.12);color:#92400e">⚠ เหลือ ${days} วัน</span>`;
+      expStyle = 'color:#b45309;font-weight:600';
     } else {
       statusBadge = `<span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(16,185,129,.12);color:var(--green)">✓ เหลือ ${days} วัน</span>`;
+      expStyle = 'color:var(--text)';
     }
   }
-  const meta = [];
-  if (s.provider) meta.push(`🏢 ${escapeHtml(s.provider)}`);
-  if (s.price != null) meta.push(`💰 ${fmtMoneyOrNumber(s.price)} ${escapeHtml(s.currency || 'THB')}`);
-  if (s.expire_date) meta.push(`⏰ หมด ${escapeHtml(fmtDateThai(s.expire_date))}`);
-  if (s.linked_domains > 0) meta.push(`🔗 ผูก ${s.linked_domains} domain`);
-  if (s.notes) {
-    const n = s.notes.length > 50 ? s.notes.slice(0, 47) + '…' : s.notes;
-    meta.push(`<span title="${escapeHtml(s.notes)}">📝 ${escapeHtml(n)}</span>`);
-  }
-  const metaLine = meta.length ? meta.join(' <span style="color:var(--border)">·</span> ') : '<span style="color:var(--text-muted);font-style:italic">— ไม่มีข้อมูลเพิ่มเติม</span>';
+  let subLine = '';
+  if (s.provider) subLine = `🏢 ${escapeHtml(s.provider)}`;
+  else if (s.notes) subLine = `<span title="${escapeHtml(s.notes)}">📝 ${escapeHtml(s.notes.length > 40 ? s.notes.slice(0, 37) + '…' : s.notes)}</span>`;
   return `
-    <div class="card hw-card" data-svc-row="${s.id}" title="คลิกเพื่อแก้ไข" style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px;padding:10px 14px;cursor:pointer">
-      <div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:3px;overflow:hidden">
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <span style="font-weight:700;font-size:14.5px;color:var(--text)">${typeIcon} ${escapeHtml(s.name)}</span>
-          ${statusBadge}
+    <tr data-svc-row="${s.id}" title="คลิกเพื่อแก้ไข">
+      <td>
+        <div style="display:flex;align-items:center;gap:10px;min-width:190px">
+          <span style="font-size:20px;flex-shrink:0">${typeIcon}</span>
+          <div style="min-width:0">
+            <div style="font-weight:700;font-size:13.5px;color:var(--text)">${escapeHtml(s.name)}</div>
+            ${subLine ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:230px">${subLine}</div>` : ''}
+          </div>
         </div>
-        <div style="font-size:12px;color:var(--text-muted);line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${metaLine}</div>
-      </div>
-      <span class="hw-chev" style="flex-shrink:0;font-size:22px;line-height:1;color:var(--text-muted)">›</span>
-    </div>
+      </td>
+      <td>${statusBadge}</td>
+      <td style="white-space:nowrap;color:var(--text-muted)">${s.price != null ? escapeHtml(fmtMoneyOrNumber(s.price)) + ' ' + escapeHtml(s.currency || 'THB') : '—'}</td>
+      <td style="white-space:nowrap;${expStyle}">${s.expire_date ? escapeHtml(fmtDateThai(s.expire_date)) : '—'}</td>
+      <td style="white-space:nowrap">${s.linked_domains > 0 ? `<span style="color:var(--primary);font-weight:600">🔗 ${s.linked_domains}</span>` : '<span style="color:var(--text-muted)">—</span>'}</td>
+      <td style="text-align:right;white-space:nowrap"><button type="button" class="kebab-btn" data-svc-kebab="${s.id}" title="เมนู">⋮</button></td>
+    </tr>
   `;
 }
 

@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.271",
+      "date": "2026-06-21",
+      "title": "Services Config — ปรับเป็น table layout (Domain + Hosting/SSL/Others)",
+      "summary": "Domain/Hosting/SSL/Others เปลี่ยนจากการ์ดเป็นตารางสะอาด (คอลัมน์ชัด + วันหมดอายุสีแดงเมื่อใกล้หมด) · คลิกแถว→แก้ไข (สไลด์) · ย้ายปุ่มต่าง ๆ เข้า ⋮ kebab menu + ในแผง",
+      "changes": [
+        "ตาราง: Domain (ชื่อ/สถานะ/วันจด/วันหมดอายุ/⋮) · Service (บริการ/สถานะ/ราคา/วันหมดอายุ/Domain ที่ผูก/⋮)",
+        "วันหมดอายุเป็นสีแดง/ส้มเมื่อหมด/ใกล้หมด",
+        "คลิกแถว → แก้ไข (slide panel) · ⋮ kebab = แก้ไข/Lookup/Renew/ประวัติ/ลบ",
+        "_kebabMenu (dropdown) reusable + click-outside ปิด"
+      ]
+    },
+    {
       "version": "1.9.270",
       "date": "2026-06-21",
       "title": "Customer ทั้ง 3 เมนู — คลิกแถว=แก้ไข (สไลด์) + ปุ่มลบเข้าใน panel",
