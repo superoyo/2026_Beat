@@ -2,6 +2,19 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.270",
+      "date": "2026-06-21",
+      "title": "Customer ทั้ง 3 เมนู — คลิกแถว=แก้ไข (สไลด์) + ปุ่มลบเข้าใน panel",
+      "summary": "ใช้เทคนิคเดียวกันกับ Hosting/SSL/Others ครบทั้ง Customer: Domain tab, Websites, Calendar — คลิกแถว/รายการ → สไลด์แก้ไขจากขวา · ย้ายปุ่มแก้ไข+ลบเข้าไปในแผง · reload หน้าที่เปิดอยู่หลังแก้/ลบ",
+      "changes": [
+        "Domain tab: คลิกแถว→แก้ไข (เก็บ Lookup/Renew/ประวัติ + stopPropagation) · ปุ่มลบเข้า modal",
+        "Websites: คลิกชื่อ domain→แก้ไข (เก็บ Lookup/chips) · ปุ่มลบใน modal",
+        "Calendar: คลิกรายการ event→แก้ไข domain/service ที่เกี่ยว",
+        "showDomainModal เพิ่มปุ่ม 🗑 ลบ domain",
+        "_reloadCustomerAfterEdit reload Calendar/Websites/Services Config ตามหน้าที่เปิด"
+      ]
+    },
+    {
       "version": "1.9.269",
       "date": "2026-06-21",
       "title": "Services Config (Hosting/SSL/Others) — คลิกบรรทัด=แก้ไข + tab Domain ที่ผูก",

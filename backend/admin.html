@@ -7628,6 +7628,7 @@ function renderCalendarDetailPanel() {
       ${filtered.map(e => _renderCalEventRow(e, today)).join('')}
     </div>
   `;
+  _wireCalEventRows(wrap);   // v1.9.270 — คลิก event → แก้ไข
   if (_calSelectedDay && $('d-clear-day')) {
     $('d-clear-day').addEventListener('click', () => { _calSelectedDay = null; renderCalendarDetailPanel(); refreshCalSelectionHighlight(); });
   }
@@ -7666,7 +7667,7 @@ function _renderCalEventRow(e, today) {
   const typePill = `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700;background:${meta.color}1a;color:${meta.color};white-space:nowrap">${meta.icon} ${escapeHtml(meta.label)}</span>`;
 
   return `
-    <div class="card" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px">
+    <div class="card hw-card" data-cal-domain="${e.domain.id}"${e.service ? ` data-cal-service="${e.service.id}"` : ''} title="คลิกเพื่อแก้ไข" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;cursor:pointer">
       ${domainLogoHTML(e.domain, 36)}
       <div style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:3px;overflow:hidden">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -7677,8 +7678,28 @@ function _renderCalEventRow(e, today) {
         ${subParts.length ? `<div style="font-size:11.5px;color:var(--text-muted);line-height:1.4">${subParts.join(' <span style="color:var(--border)">·</span> ')}</div>` : ''}
       </div>
       <div style="font-size:12.5px;font-weight:600;color:var(--text-muted);white-space:nowrap">${escapeHtml(fmtDateThai(e.date))}</div>
+      <span class="hw-chev" style="flex-shrink:0;font-size:20px;line-height:1;color:var(--text-muted)">›</span>
     </div>
   `;
+}
+
+// v1.9.270 — wire คลิก event row → แก้ไข domain/service (slide)
+function _wireCalEventRows(container) {
+  if (!container) return;
+  container.querySelectorAll('[data-cal-domain]').forEach(row => {
+    row.addEventListener('click', () => {
+      const did = parseInt(row.dataset.calDomain, 10);
+      const sid = row.dataset.calService ? parseInt(row.dataset.calService, 10) : null;
+      const w = _websitesCache.find(x => x.domain && x.domain.id === did);
+      if (!w) return;
+      if (sid) {
+        const s = (w.services || []).find(x => x.id === sid);
+        if (s) showServiceModal(s, s.service_type);
+      } else {
+        showDomainModal(w.domain);
+      }
+    });
+  });
 }
 
 // Highlight ของ cell ที่ user คลิก — รอบ ๆ cell มี ring สีน้ำเงิน
@@ -8291,9 +8312,15 @@ function renderDomainsConfigRows() {
   today.setHours(0, 0, 0, 0);
   listEl.innerHTML = list.map(d => renderDomainConfigRow(d, today)).join('');
 
-  // wire actions (use _dcCache so handler can find by id even if filtered)
+  // v1.9.270 — คลิกทั้งแถว = แก้ไข (ปุ่ม Lookup/Renew/ประวัติ ยังกดได้ + stopPropagation)
+  listEl.querySelectorAll('[data-d-row]').forEach(row => {
+    row.addEventListener('click', () => {
+      const d = _dcCache.find(x => x.id === parseInt(row.dataset.dRow, 10));
+      if (d) showDomainModal(d);
+    });
+  });
   listEl.querySelectorAll('button[data-d-act]').forEach(btn => {
-    btn.addEventListener('click', () => handleDomainAction(btn, _dcCache));
+    btn.addEventListener('click', (e) => { e.stopPropagation(); handleDomainAction(btn, _dcCache); });
   });
 }
 
@@ -8353,7 +8380,7 @@ function renderDomainConfigRow(d, today) {
   const metaLine = metaParts.length ? metaParts.join(' <span style="color:var(--border)">·</span> ') : '<span style="color:var(--text-muted);font-style:italic">— ไม่มีข้อมูลเพิ่มเติม</span>';
 
   return `
-    <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px;padding:10px 14px">
+    <div class="card hw-card" data-d-row="${d.id}" title="คลิกเพื่อแก้ไข" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px;padding:10px 14px;cursor:pointer">
       ${domainLogoHTML(d, 36)}
       <div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:3px;overflow:hidden">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -8362,12 +8389,11 @@ function renderDomainConfigRow(d, today) {
         </div>
         <div style="font-size:12px;color:var(--text-muted);line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${metaLine}</div>
       </div>
-      <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
+      <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;align-items:center">
         <button class="btn" data-d-act="lookup" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" style="font-size:12px;padding:5px 10px" title="WHOIS / nslookup / DNS">🔍 Lookup</button>
         <button class="btn primary" data-d-act="renew" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" data-d-expire="${escapeHtml(d.expire_date || '')}" style="font-size:12px;padding:5px 10px">🔄 Renew</button>
         <button class="btn" data-d-act="history" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" style="font-size:12px;padding:5px 10px">📜 ประวัติ</button>
-        <button class="btn" data-d-act="edit" data-d-id="${d.id}" style="font-size:12px;padding:5px 10px">✏️ แก้ไข</button>
-        <button class="btn danger" data-d-act="delete" data-d-id="${d.id}" data-d-name="${escapeHtml(d.name)}" style="font-size:12px;padding:5px 10px">🗑 ลบ</button>
+        <span class="hw-chev" style="flex-shrink:0;font-size:22px;line-height:1;color:var(--text-muted)">›</span>
       </div>
     </div>
   `;
@@ -8875,6 +8901,13 @@ let _domainModalWhois = {
   whoisAppliedExpire:   null,
 };
 
+// v1.9.270 — reload หน้า Customer ที่เปิดอยู่ (Calendar / Websites / Services Config) หลังแก้/ลบ
+async function _reloadCustomerAfterEdit() {
+  if ($('cal-grid')) { if (typeof loadDomainsList === 'function') await loadDomainsList(); }
+  else if ($('ws-list')) { if (typeof loadWebsites === 'function') await loadWebsites(); }
+  else if ($('sc-content')) { if (typeof renderActiveScContent === 'function') await renderActiveScContent(); }
+}
+
 function showDomainModal(domain) {
   const isEdit = !!domain;
   // Reset modal state — record initial values to detect manual edits later
@@ -8939,6 +8972,7 @@ function showDomainModal(domain) {
         <label>หมายเหตุ</label>
         <textarea id="dm-notes" rows="2" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical">${isEdit ? escapeHtml(domain.notes || '') : ''}</textarea>
       </div>
+      ${isEdit ? `<div style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px"><button type="button" id="dm-delete" class="btn danger" style="font-size:12.5px;padding:7px 14px">🗑 ลบ domain นี้</button></div>` : ''}
     `,
     onSubmit: async () => {
       // Provider — เลือกจาก dropdown หรือกรอกเอง (โหมด '__other')
@@ -8999,15 +9033,21 @@ function showDomainModal(domain) {
         method: isEdit ? 'PATCH' : 'POST',
         body: JSON.stringify(data),
       });
-      await loadDomainsConfigList();
-      // ถ้ากำลังอยู่หน้า Websites → reload เพื่อให้เห็น logo/provider/dates ใหม่
-      if ($('ws-list') && typeof loadWebsites === 'function') {
-        await loadWebsites();
-      }
+      await _reloadCustomerAfterEdit();
     },
   });
   // wire the WHOIS-sync button (after modal is in DOM)
   $('dm-whois-btn').addEventListener('click', () => fetchWhoisAndPreview());
+  // v1.9.270 — ปุ่มลบ domain (ย้ายจากแถวเข้ามาในแผง)
+  const _dmDel = $('dm-delete');
+  if (_dmDel) _dmDel.addEventListener('click', async () => {
+    if (!confirm(`ลบ domain "${domain.name}"?\n\n(ประวัติการ renew ทั้งหมดจะถูกลบด้วย)`)) return;
+    try {
+      await fetchJson('/api/admin/domains/' + domain.id, { method: 'DELETE' });
+      const bg = _dmDel.closest('.modal-bg'); if (bg) bg.querySelector('#m-cancel').click();
+      await _reloadCustomerAfterEdit();
+    } catch (e) { alert('ลบไม่สำเร็จ: ' + e.message); }
+  });
 
   // ---- Provider dropdown wiring ----
   // Populate options + เลือกค่าเดิม (ถ้าค่าเดิมไม่อยู่ในรายการ → switch เป็น "อื่น ๆ")
@@ -9715,7 +9755,7 @@ function showServiceModal(svc, defaultType) {
       _scActiveTab = data.service_type;
       _updateScTabsUI();
       _updateScAddButton();
-      await renderActiveScContent();
+      await _reloadCustomerAfterEdit();
     },
   });
   // v1.9.269 — แท็บ Domain ที่ผูก + ปุ่มลบ (edit เท่านั้น)
@@ -9749,7 +9789,7 @@ function showServiceModal(svc, defaultType) {
       try {
         await fetchJson('/api/admin/services/' + svc.id, { method: 'DELETE' });
         const bg = delBtn.closest('.modal-bg'); if (bg) bg.querySelector('#m-cancel').click();
-        await renderActiveScContent();
+        await _reloadCustomerAfterEdit();
       } catch (e) { alert('ลบไม่สำเร็จ: ' + e.message); }
     });
   }, 0);
@@ -9948,6 +9988,14 @@ function renderWebsitesList() {
   listEl.querySelectorAll('button[data-ws-act]').forEach(btn => {
     btn.addEventListener('click', () => handleWebsiteAction(btn));
   });
+  // v1.9.270 — คลิกชื่อ/ข้อมูล domain → แก้ไข (slide) + ลบในแผง
+  listEl.querySelectorAll('[data-ws-row]').forEach(row => {
+    row.addEventListener('click', () => {
+      const id = parseInt(row.dataset.wsRow, 10);
+      const w = _wsCache.find(x => x.domain && x.domain.id === id);
+      if (w) showDomainModal(w.domain);
+    });
+  });
 }
 
 function renderWebsiteCard(w, today) {
@@ -10013,17 +10061,17 @@ function renderWebsiteCard(w, today) {
           style="background:transparent;border:none;padding:0;cursor:pointer;flex-shrink:0">
           ${domainLogoHTML(d, 40)}
         </button>
-        <div style="flex:1;min-width:220px;display:flex;flex-direction:column;gap:2px;overflow:hidden">
+        <div class="hw-card" data-ws-row="${d.id}" title="คลิกเพื่อแก้ไข domain" style="flex:1;min-width:220px;display:flex;flex-direction:column;gap:2px;overflow:hidden;cursor:pointer;border-radius:8px;padding:2px 4px;margin:-2px -4px">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span style="font-weight:700;font-size:14.5px;font-family:ui-monospace,Menlo,monospace;color:var(--text)">${escapeHtml(d.name)}</span>
             ${domStatus}
             <span style="font-size:11px;color:var(--text-muted)">${w.service_count} svc</span>
+            <span style="font-size:13px;color:var(--text-muted)">›</span>
           </div>
           ${metaLine ? `<div style="font-size:11.5px;color:var(--text-muted);line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${metaLine}</div>` : ''}
         </div>
         <div style="display:flex;gap:5px;flex-shrink:0;flex-wrap:wrap">
           <button class="btn" data-ws-act="lookup" data-ws-domain-id="${d.id}" data-ws-name="${escapeHtml(d.name)}" style="font-size:11.5px;padding:5px 10px" title="WHOIS / nslookup / DNS">🔍 Lookup</button>
-          <button class="btn" data-ws-act="edit" data-ws-domain-id="${d.id}" style="font-size:11.5px;padding:5px 10px" title="แก้ไข domain">✏️</button>
         </div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);align-items:center">
