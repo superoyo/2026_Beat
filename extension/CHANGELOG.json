@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.274",
+      "date": "2026-06-21",
+      "title": "Birthday Calendar — ใส่ชื่อในช่องปฏิทิน + capsule แผนกในรายการ",
+      "summary": "ในปฏิทินวันเกิด แต่ละช่องวันแสดงชื่อคนต่อจาก avatar (ไม่ใช่แค่รูป) · รายการวันเกิดที่กำลังมาถึงด้านขวา แสดงชื่อแผนก/ทีมเป็น capsule",
+      "changes": [
+        "ช่องปฏิทิน: avatar + ชื่อ (สูงสุด 3 + ‘+N คน’)",
+        "รายการขวา: capsule ชื่อแผนก/ทีม",
+        "เก็บชื่อทีมตอน collect สมาชิก"
+      ]
+    },
+    {
       "version": "1.9.273",
       "date": "2026-06-21",
       "title": "My Profile › Team — ปุ่ม Birthday Calendar",

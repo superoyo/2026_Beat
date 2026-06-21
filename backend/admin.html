@@ -15120,17 +15120,18 @@ function _renderBirthdayCal(root, members, rerender) {
   for (let d = 1; d <= daysInMonth; d++) {
     const bs = byDay[d] || [];
     const isToday = isThisMonth && d === todayD;
-    const avatars = bs.slice(0, 4).map(m => `<span title="${escapeHtml(m.name)}">${_bdayAvatar(m, 27)}</span>`).join('');
-    const more = bs.length > 4 ? `<span style="font-size:10px;color:var(--text-muted);font-weight:700;align-self:center">+${bs.length - 4}</span>` : '';
-    cells += `<div style="min-height:80px;padding:5px 6px;background:${bs.length ? 'rgba(236,72,153,.06)' : 'var(--bg-card)'};${isToday ? 'box-shadow:inset 0 0 0 2px var(--primary)' : ''}">
+    const ppl = bs.slice(0, 3).map(m => `<div style="display:flex;align-items:center;gap:4px;min-width:0" title="${escapeHtml(m.name)}">${_bdayAvatar(m, 19)}<span style="font-size:10px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(m.name)}</span></div>`).join('');
+    const more = bs.length > 3 ? `<span style="font-size:9.5px;color:#be185d;font-weight:700">+${bs.length - 3} คน</span>` : '';
+    cells += `<div style="min-height:88px;padding:5px 6px;background:${bs.length ? 'rgba(236,72,153,.06)' : 'var(--bg-card)'};${isToday ? 'box-shadow:inset 0 0 0 2px var(--primary)' : ''}">
       <div style="font-size:12px;font-weight:${isToday ? 800 : 600};color:${isToday ? 'var(--primary)' : 'var(--text)'}">${d}</div>
-      <div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:3px">${avatars}${more}</div>
+      <div style="display:flex;flex-direction:column;gap:2px;margin-top:3px;min-width:0">${ppl}${more}</div>
     </div>`;
   }
   const upcoming = parsed.map(m => ({ ...m, du: _daysUntilBirthday(m.birthdate) })).filter(m => m.du != null).sort((a, b) => a.du - b.du).slice(0, 8);
   const upHtml = upcoming.map(m => `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
     ${_bdayAvatar(m, 34)}
     <div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(m.name)}</div><div style="font-size:11px;color:var(--text-muted)">${m.bd} ${MONTHS[m.bm - 1]} · ${m.du === 0 ? '<span style="color:#be185d;font-weight:700">วันนี้ 🎉</span>' : 'ใน ' + m.du + ' วัน'}</div></div>
+    ${m.team ? `<span style="font-size:10.5px;background:rgba(37,99,235,.08);color:var(--primary);padding:3px 10px;border-radius:999px;white-space:nowrap;flex-shrink:0;font-weight:500">${escapeHtml(m.team)}</span>` : ''}
   </div>`).join('') || '<div style="font-size:12.5px;color:var(--text-muted);padding:10px 0;font-style:italic">— ไม่มีข้อมูลวันเกิด —</div>';
 
   root.innerHTML = `
@@ -17254,7 +17255,7 @@ async function renderMemberAccountPage() {
     if (_bdayBtn) _bdayBtn.onclick = () => {
       const byId = new Map();
       _teamSupTeams.forEach(t => t.members.forEach(m => {
-        if (m.birthdate && !byId.has(m.id)) byId.set(m.id, { id: m.id, name: m.display_name || m.email || 'ไม่ระบุชื่อ', avatar: m.avatar_data, birthdate: m.birthdate });
+        if (m.birthdate && !byId.has(m.id)) byId.set(m.id, { id: m.id, name: m.display_name || m.email || 'ไม่ระบุชื่อ', avatar: m.avatar_data, birthdate: m.birthdate, team: t.name });
       }));
       showBirthdayCalendar(Array.from(byId.values()));
     };
