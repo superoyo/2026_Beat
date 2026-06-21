@@ -6531,7 +6531,7 @@ function renderTeamMembers(teamId, members) {
             <div class="card" style="display:flex;align-items:flex-start;gap:12px${isIndirect ? ';background:rgba(245,158,11,.04)' : ''}">
               ${avatarHtml}
               <div style="flex:1;min-width:0">
-                <div class="card-title">${escapeHtml(display)}</div>
+                <div class="card-title" data-mprofile="${m.id}" style="cursor:pointer;display:inline-block" title="คลิกดูข้อมูลส่วนบุคคล" onmouseenter="this.style.color='var(--primary)'" onmouseleave="this.style.color=''">${escapeHtml(display)} <span style="font-size:11px;color:var(--text-muted);font-weight:400">›</span></div>
                 <div class="card-sub">${escapeHtml(m.phone)}${m.email ? ' · ' + escapeHtml(m.email) : ''}${m.enabled === 0 ? ' · <span style="color:var(--critical)">⛔ ระงับ</span>' : ''}</div>
                 ${fromSubteamChip}
                 ${teamChips}
@@ -6569,6 +6569,13 @@ function renderTeamMembers(teamId, members) {
       }
     });
   });
+
+  // v1.9.260 — คลิกชื่อ member → slide-in ข้อมูลส่วนบุคคล (เหมือนหน้า Members)
+  document.querySelectorAll('#tab-members [data-mprofile]').forEach(el => el.addEventListener('click', () => {
+    const id = parseInt(el.dataset.mprofile, 10);
+    const mem = (_lastTeamMembersData || []).find(x => x.id === id);
+    if (mem) _pcdOwnerPanel(id, () => loadTeamDetail(_lastTeamMembersTeamId), mem, mem.pcs || []);
+  }));
 
   $('add-member-btn').addEventListener('click', () => showAddMemberToTeamModal(teamId, members));
   document.querySelectorAll('#tab-members button[data-rm]').forEach(b => {
@@ -10845,12 +10852,13 @@ let _pcDashTeam = '';   // '' = ทุกทีม | team_id (string)
 let _pcdReplaceFilter = 'all';   // v1.9.257 — 'all' | 'mac' | 'windows' (toggle ในส่วนควรพิจารณาเปลี่ยน)
 let _pcdAllPcs = [];    // PC list เต็ม (ก่อน filter ทีม) — ใช้ใน owner panel
 // v1.9.244 — panel เจ้าของเครื่อง (จากข้อมูลที่ dashboard โหลดไว้ — ใช้บน admin ได้) + คลิกดู device
-function _pcdOwnerPanel(memberId, onChange) {
+function _pcdOwnerPanel(memberId, onChange, memberObj, deviceList) {
   document.querySelectorAll('.sup-panel-wrap').forEach(e => e.remove());
-  const m = _hwMembersCache.find(x => x.id === memberId);
+  // v1.9.260 — รับ memberObj + deviceList ได้ (เปิดจากหน้า Teams ที่ไม่มี hardware cache)
+  const m = memberObj || _hwMembersCache.find(x => x.id === memberId);
   // v1.9.255 — เปิดจากหน้า PC ได้ด้วย → ถ้ายังไม่เข้า Dashboard ใช้ _hwCache แทน
   const _ownerSrc = (_pcdAllPcs && _pcdAllPcs.length) ? _pcdAllPcs : ((typeof _hwCache !== 'undefined' && _hwCache.length) ? _hwCache : []);
-  const devices = _ownerSrc.filter(p => p.current_member_id === memberId);
+  const devices = deviceList || _ownerSrc.filter(p => p.current_member_id === memberId);
   const name = (m && (m.display_name || m.email)) || 'ผู้ใช้';
   const avatar = (m && m.avatar_data)
     ? `<img src="${m.avatar_data}" style="width:84px;height:84px;border-radius:50%;object-fit:cover;display:block;margin:0 auto" />`

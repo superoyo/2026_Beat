@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.260",
+      "date": "2026-06-21",
+      "title": "Peoples › Teams — คลิกชื่อ member สไลด์ข้อมูลส่วนบุคคล",
+      "summary": "ในหน้าทีม (Members tab) คลิกชื่อ member → เปิด slide-in panel ข้อมูลส่วนบุคคล (รูป/เบอร์/อีเมล/ทีม + อุปกรณ์ที่ผูก + Previous Device) เหมือน owner panel",
+      "changes": [
+        "ชื่อ member ในทีมคลิกได้ (มี › + hover สีฟ้า)",
+        "_pcdOwnerPanel รับ memberObj + deviceList → ทำงานบนหน้า Teams ที่ไม่มี hardware cache",
+        "ส่ง m.pcs เป็นรายการอุปกรณ์ · แก้/ลบในแผง → reload ทีม"
+      ]
+    },
+    {
       "version": "1.9.259",
       "date": "2026-06-21",
       "title": "Customer (Services Config / Websites) — modal แก้ไขสไลด์จากข้าง",
