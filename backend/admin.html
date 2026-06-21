@@ -16963,11 +16963,11 @@ async function renderMemberAccountPage() {
       const active = key === _teamSupActive;
       return `<button type="button" class="m-team-tab" data-team-key="${key}" style="flex-shrink:0;padding:7px 14px;border-radius:999px;font-size:12.5px;font-weight:600;font-family:inherit;cursor:pointer;white-space:nowrap;border:1px solid ${active ? 'var(--primary)' : 'var(--border)'};background:${active ? 'var(--primary)' : 'var(--bg-card)'};color:${active ? '#fff' : 'var(--text-muted)'};transition:all .12s">${escapeHtml(label)} <span style="opacity:.75">${count}</span></button>`;
     };
-    // นับคนทั้งหมด (dedup by id)
+    // นับคนทั้งหมด (dedup by id) — v1.9.264 ไม่รวม Alumni
     const allIds = new Set();
-    _teamSupTeams.forEach(t => t.members.forEach(m => allIds.add(m.id)));
+    _teamSupTeams.forEach(t => t.members.forEach(m => { if (!m.is_alumni) allIds.add(m.id); }));
     let html = tabBtn('__all__', 'ทั้งหมด', allIds.size);
-    _teamSupTeams.forEach(t => { html += tabBtn(String(t.id), t.name, t.members.length); });
+    _teamSupTeams.forEach(t => { html += tabBtn(String(t.id), t.name, t.members.filter(m => !m.is_alumni).length); });
     bar.innerHTML = html;
     bar.querySelectorAll('button.m-team-tab').forEach(b => {
       b.addEventListener('click', () => { _teamSupActive = b.dataset.teamKey; renderTeamSupTabs(); renderTeamSupGrid(); });
@@ -16998,10 +16998,14 @@ async function renderMemberAccountPage() {
     pcs.forEach(p => { if (p.current_member_id) (pcsByMember[p.current_member_id] = pcsByMember[p.current_member_id] || []).push(p); });
     const centralPcs = pcs.filter(p => !p.current_member_id);
     const _pcLine = (p) => { const _a = calcHwAgeStr(p.purchased_at); return `💻 ${escapeHtml(p.model || p.name || '')}${p.is_personal_owned ? ' <span style="color:#7c3aed;font-weight:700">🙋 เครื่องตนเอง</span>' : ''}${_a ? `<br><span style="color:var(--text-muted)">⏱ ${escapeHtml(_a)}</span>` : ''}`; };
-    const memberGrid = members.length === 0
+    // v1.9.264 — แยก Alumni (อดีตพนักงาน) ไปโซนล่าง (ภาพเล็ก ไม่เด่น)
+    const activeMembers = members.filter(m => !m.is_alumni);
+    const alumniMembers = members.filter(m => m.is_alumni)
+      .sort((a, b) => (b.last_working_day || '').localeCompare(a.last_working_day || ''));
+    const memberGrid = activeMembers.length === 0
       ? '<div class="empty" style="padding:24px;text-align:center;color:var(--text-muted)">— ไม่มีสมาชิกในทีมนี้ —</div>'
       : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px">` +
-        members.map(m => {
+        activeMembers.map(m => {
           const initial = (m.display_name || m.email || '?').trim().charAt(0).toUpperCase();
           const photo = m.avatar_data
             ? `<img src="${m.avatar_data}" alt="" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;display:block" />`
@@ -17045,7 +17049,27 @@ async function renderMemberAccountPage() {
         <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">💻 คอมส่วนกลางของทีม <span style="color:var(--text-soft)">${centralPcs.length}</span></div>
         <div style="font-size:12px;color:var(--text-soft);line-height:1.8">${centralPcs.map(_pcLine).join('<br>')}</div>
       </div>` : '';
-    grid.innerHTML = memberGrid + platHtml + pcHtml;
+    // v1.9.264 — โซน Alumni (อดีตพนักงาน) ด้านล่าง · ภาพเล็ก ไม่เด่น · คลิกดูโปรไฟล์ได้ (ใช้ class เดิม)
+    const alumniHtml = alumniMembers.length ? `
+      <div style="margin-top:22px;border-top:1px solid var(--border);padding-top:16px">
+        <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">🎓 Alumni — อดีตพนักงาน <span style="color:var(--text-soft)">${alumniMembers.length}</span></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(94px,1fr));gap:10px">
+          ${alumniMembers.map(m => {
+            const initial = (m.display_name || m.email || '?').trim().charAt(0).toUpperCase();
+            const photo = m.avatar_data
+              ? `<img src="${m.avatar_data}" alt="" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;display:block;filter:grayscale(.45);opacity:.85" />`
+              : `<div style="width:100%;aspect-ratio:1;border-radius:10px;background:linear-gradient(135deg,#94a3b8,#64748b);color:#fff;font-weight:700;font-size:24px;display:flex;align-items:center;justify-content:center">${escapeHtml(initial)}</div>`;
+            const lwd = m.last_working_day ? fmtDateThai(m.last_working_day) : '';
+            return `
+              <div class="sup-member-card" data-sup-member="${m.id}" data-sup-name="${escapeHtml(m.display_name || m.email || '')}" style="display:flex;flex-direction:column;gap:3px;cursor:pointer;border-radius:10px;padding:4px;margin:-4px;transition:background .12s" title="ดูข้อมูล Profile / Device">
+                <div style="position:relative;width:100%">${photo}</div>
+                <div style="font-weight:600;font-size:11.5px;line-height:1.25;color:var(--text-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(m.display_name || '(ไม่ได้ตั้งชื่อ)')}</div>
+                ${lwd ? `<div style="font-size:9.5px;color:var(--text-muted);margin-top:-1px">📅 ${escapeHtml(lwd)}</div>` : ''}
+              </div>`;
+          }).join('')}
+        </div>
+      </div>` : '';
+    grid.innerHTML = memberGrid + platHtml + pcHtml + alumniHtml;
     grid.querySelectorAll('.sup-member-card').forEach(c => {
       c.addEventListener('mouseenter', () => c.style.background = 'var(--bg-soft)');
       c.addEventListener('mouseleave', () => c.style.background = 'transparent');

@@ -8132,7 +8132,7 @@ def member_supervised(fct_member_session: Optional[str] = Cookie(default=None)) 
         ).fetchall()
         mem_rows = conn.execute(
             f"SELECT tm.team_id, m.id, m.display_name, m.email, m.phone, m.avatar_data, "
-            f"       m.share_phone, m.birthdate, m.share_birthdate "
+            f"       m.share_phone, m.birthdate, m.share_birthdate, m.is_alumni, m.last_working_day "
             f"FROM team_members tm JOIN members m ON m.id = tm.member_id "
             f"WHERE tm.team_id IN ({pl}) ORDER BY m.display_name COLLATE NOCASE",
             team_ids,
@@ -8200,7 +8200,7 @@ def member_supervised(fct_member_session: Optional[str] = Cookie(default=None)) 
     for r in mem_rows:
         ph = r["phone"]
         # v1.9.147 — ซ่อนเบอร์ถ้าเจ้าของตั้งเป็นส่วนตัว
-        ph_out = None if (ph and str(ph).startswith("email:")) else ph
+        ph_out = None if (ph and (str(ph).startswith("email:") or str(ph).startswith("nophone:"))) else ph
         if _row_share(r, "share_phone") == 0:
             ph_out = None
         # v1.9.151 — birthdate (สำหรับ badge วันเกิด) — เคารพ privacy
@@ -8210,6 +8210,8 @@ def member_supervised(fct_member_session: Optional[str] = Cookie(default=None)) 
             "phone": ph_out,
             "avatar_data": r["avatar_data"],
             "birthdate": bday,
+            "is_alumni": bool(r["is_alumni"]),
+            "last_working_day": r["last_working_day"],
         })
     site_by_team: dict[int, list] = {}
     for r in site_rows:

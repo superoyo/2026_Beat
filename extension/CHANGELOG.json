@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.264",
+      "date": "2026-06-21",
+      "title": "My Profile › Team — โซน Alumni ด้านล่าง (ภาพเล็ก ไม่เด่น)",
+      "summary": "หน้า My Profile › Team แยก Alumni (อดีตพนักงาน) ออกจากกริดหลัก → โซนด้านล่าง ภาพเล็ก/grayscale ไม่เด่น + วันทำงานวันสุดท้าย · คลิกดูโปรไฟล์ได้ · tab count ไม่รวม alumni",
+      "changes": [
+        "member_supervised คืน is_alumni + last_working_day",
+        "กริดสมาชิกหลักไม่รวม alumni · โซน 🎓 Alumni ด้านล่าง (tile 94px, grayscale, ชื่อเล็ก + 📅 วันสุดท้าย)",
+        "คลิก alumni tile → ดูโปรไฟล์ (ใช้ .sup-member-card เดิม)",
+        "tab count ต่อทีม + ทั้งหมด ไม่รวม alumni"
+      ]
+    },
+    {
       "version": "1.9.263",
       "date": "2026-06-21",
       "title": "Temp Staff เบอร์ optional + Alumni (อดีตพนักงาน) แยกส่วน",
