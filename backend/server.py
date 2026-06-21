@@ -8132,7 +8132,8 @@ def member_supervised(fct_member_session: Optional[str] = Cookie(default=None)) 
         ).fetchall()
         mem_rows = conn.execute(
             f"SELECT tm.team_id, m.id, m.display_name, m.email, m.phone, m.avatar_data, "
-            f"       m.share_phone, m.birthdate, m.share_birthdate, m.is_alumni, m.last_working_day "
+            f"       m.share_phone, m.birthdate, m.share_birthdate, m.is_alumni, m.last_working_day, "
+            f"       m.uses_own_computer, m.own_computer_info "
             f"FROM team_members tm JOIN members m ON m.id = tm.member_id "
             f"WHERE tm.team_id IN ({pl}) ORDER BY m.display_name COLLATE NOCASE",
             team_ids,
@@ -8212,6 +8213,8 @@ def member_supervised(fct_member_session: Optional[str] = Cookie(default=None)) 
             "birthdate": bday,
             "is_alumni": bool(r["is_alumni"]),
             "last_working_day": r["last_working_day"],
+            "uses_own_computer": bool(r["uses_own_computer"]),
+            "own_computer_info": r["own_computer_info"],
         })
     site_by_team: dict[int, list] = {}
     for r in site_rows:

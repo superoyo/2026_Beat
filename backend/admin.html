@@ -17041,6 +17041,7 @@ async function renderMemberAccountPage() {
               <div style="font-weight:600;font-size:13.5px;line-height:1.3">${escapeHtml(m.display_name || '(ไม่ได้ตั้งชื่อ)')}</div>
               <div style="font-size:11.5px;color:var(--text-muted);margin-top:-4px">${m.phone ? '📞 ' + escapeHtml(m.phone) : ''}</div>
               ${(pcsByMember[m.id] || []).map(p => `<div style="font-size:11px;color:var(--text-soft);line-height:1.45;margin-top:1px">${_pcLine(p)}</div>`).join('')}
+              ${m.uses_own_computer ? `<div style="font-size:11px;color:#7c3aed;line-height:1.45;margin-top:1px;font-weight:600">🙋 ใช้เครื่องตนเอง${m.own_computer_info ? `<br><span style="color:var(--text-muted);font-weight:400">${escapeHtml(m.own_computer_info)}</span>` : ''}</div>` : ''}
             </div>`;
         }).join('') + `</div>`;
     // v1.9.148 — แพลตฟอร์มที่ทีมใช้ (ย้ายมาจากหน้า My Team เดิม)

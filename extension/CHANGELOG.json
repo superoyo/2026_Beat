@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.266",
+      "date": "2026-06-21",
+      "title": "My Profile › Team — แสดง ‘ใช้เครื่องตนเอง’ ใต้ชื่อ",
+      "summary": "คนที่ตั้งค่า uses_own_computer (BYOD) แต่ไม่มีเครื่องบริษัท → แสดง 🙋 ใช้เครื่องตนเอง + รายละเอียดคอมฯ ใต้ชื่อในกริดทีม",
+      "changes": [
+        "member_supervised คืน uses_own_computer + own_computer_info",
+        "tile ในกริดทีมแสดง 🙋 ใช้เครื่องตนเอง (+ ข้อมูลคอมฯ) ใต้ชื่อ/เบอร์"
+      ]
+    },
+    {
       "version": "1.9.265",
       "date": "2026-06-21",
       "title": "My Profile › Team — แผง member แสดง Previous Device",
