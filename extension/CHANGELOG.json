@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.275",
+      "date": "2026-06-21",
+      "title": "Domain — toggle filter สถานะลูกค้า เด่นชัดขึ้น",
+      "summary": "ปรับ toggle filter (ทั้งหมด/ลูกค้าปัจจุบัน/อดีตลูกค้า) ให้เห็นชัดเป็นปุ่มกรอง: เพิ่ม label ‘กรองตามสถานะลูกค้า:’ + ปุ่มที่เลือกเป็นพื้นสีน้ำเงินเข้ม",
+      "changes": [
+        "เพิ่ม label นำหน้า toggle",
+        "ปุ่ม active = พื้น primary ตัวขาว (ชัดกว่าเดิม)",
+        "ปุ่มใหญ่ขึ้น + 📋 ทั้งหมด"
+      ]
+    },
+    {
       "version": "1.9.274",
       "date": "2026-06-21",
       "title": "Birthday Calendar — ใส่ชื่อในช่องปฏิทิน + capsule แผนกในรายการ",

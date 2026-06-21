@@ -8344,9 +8344,15 @@ function renderDomainsConfigRows() {
       : `${_dcCache.length} รายการ`;
   }
 
-  // v1.9.272 — toggle filter ลูกค้าปัจจุบัน / อดีตลูกค้า
-  const _tgl = (key, label, n) => `<button type="button" data-dc-cust="${key}" style="border:none;background:${_dcCustomerFilter === key ? 'var(--bg-card)' : 'transparent'};color:${_dcCustomerFilter === key ? 'var(--text)' : 'var(--text-muted)'};font-weight:${_dcCustomerFilter === key ? 700 : 500};font-size:12px;padding:6px 13px;border-radius:7px;cursor:pointer;font-family:inherit;box-shadow:${_dcCustomerFilter === key ? 'var(--shadow-sm)' : 'none'};transition:.12s">${label} <span style="opacity:.7">(${n})</span></button>`;
-  const toggleHtml = `<div style="display:inline-flex;gap:2px;background:var(--bg-soft);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:12px">${_tgl('', 'ทั้งหมด', baseList.length)}${_tgl('current', '🟢 ลูกค้าปัจจุบัน', _curN)}${_tgl('former', '⚪ อดีตลูกค้า', _formerN)}</div>`;
+  // v1.9.272/275 — toggle filter ลูกค้าปัจจุบัน / อดีตลูกค้า (เด่นชัด + label)
+  const _tgl = (key, label, n) => {
+    const active = _dcCustomerFilter === key;
+    return `<button type="button" data-dc-cust="${key}" style="border:1px solid ${active ? 'var(--primary)' : 'transparent'};background:${active ? 'var(--primary)' : 'transparent'};color:${active ? '#fff' : 'var(--text-muted)'};font-weight:${active ? 700 : 600};font-size:12.5px;padding:7px 15px;border-radius:8px;cursor:pointer;font-family:inherit;transition:.12s;white-space:nowrap">${label} <span style="opacity:.85">${n}</span></button>`;
+  };
+  const toggleHtml = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+    <span style="font-size:12.5px;font-weight:600;color:var(--text-muted)">กรองตามสถานะลูกค้า:</span>
+    <div style="display:inline-flex;gap:3px;background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:3px">${_tgl('', '📋 ทั้งหมด', baseList.length)}${_tgl('current', '🟢 ลูกค้าปัจจุบัน', _curN)}${_tgl('former', '⚪ อดีตลูกค้า', _formerN)}</div>
+  </div>`;
   const _wireToggle = () => listEl.querySelectorAll('[data-dc-cust]').forEach(b => b.addEventListener('click', () => { _dcCustomerFilter = b.dataset.dcCust; renderDomainsConfigRows(); }));
 
   // empty after filter
