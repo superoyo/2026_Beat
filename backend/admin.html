@@ -11374,19 +11374,26 @@ async function renderPcDashboard() {
   }
 
   const SHORT = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  // v1.9.293 — สถานะระหว่างดำเนินการเปลี่ยนเครื่อง (โชว์บน dashboard เสมอ แม้ไม่เกินเกณฑ์อายุ/เป็นมือสอง)
+  const _IN_PROGRESS = ['procuring', 'transferring', 'transferring_rotation'];
   pcs.forEach(p => {
     p._age = _pcDashAgeMonths(p);
     p._mac = _pcDashIsMac(p);
     p._thr = p._mac ? 60 : 36;                 // mac 5 ปี / notebook 3 ปี
     p._retired = p.status === 'retired';
-    // v1.9.290 — คอมฯส่งต่อมาจากท่านอื่น (มือสอง) ไม่นำมาคิดว่าควรเปลี่ยน
-    p._needsReplace = !p._retired && !p.is_handed_down && p._age != null && p._age > p._thr;
+    // v1.9.290 — คอมฯส่งต่อมาจากท่านอื่น (มือสอง) ไม่นำมาคิดว่าควรเปลี่ยน (ตามอายุ)
+    p._overThr = !p._retired && !p.is_handed_down && p._age != null && p._age > p._thr;
+    // v1.9.293 — มี status ระหว่างจัดหา/transfer → ถือว่ากำลังดำเนินการ (โชว์เสมอ)
+    p._inProgress = !p._retired && _IN_PROGRESS.includes(p.note_category);
+    p._needsReplace = p._overThr || p._inProgress;
   });
   const total = pcs.length;
   const active = pcs.filter(p => !p._retired);
   const withAge = active.filter(p => p._age != null);
   const avgAge = withAge.length ? Math.round(withAge.reduce((s, p) => s + p._age, 0) / withAge.length) : null;
-  const needReplace = pcs.filter(p => p._needsReplace).sort((a, b) => (b._age - b._thr) - (a._age - a._thr));
+  const _replKey = (p) => (p._age != null ? p._age - p._thr : -1e9);   // เครื่องไม่มีอายุ/ไม่เกินเกณฑ์ → ท้ายสุด
+  const needReplace = pcs.filter(p => p._needsReplace).sort((a, b) => _replKey(b) - _replKey(a));
+  const _inProgOnly = needReplace.filter(p => !p._overThr).length;   // นับเฉพาะที่เข้ามาเพราะ status (ไม่เกินเกณฑ์)
   let win = 0, mac = 0, other = 0;
   pcs.forEach(p => { if (p._mac) mac++; else if (/win/i.test(p.os || '')) win++; else other++; });
   let assigned = 0, central = 0, unassigned = 0;
@@ -11421,9 +11428,11 @@ async function renderPcDashboard() {
     return (p.department || '').trim() || null;
   };
   const replaceRow = (p, showNote) => {
-    const over = p._age - p._thr;
+    const over = (p._age != null) ? p._age - p._thr : null;
+    const isOver = over != null && over > 0;
+    const borderC = isOver ? (p._mac ? '#7c3aed' : '#dc2626') : '#15803d';
     const noteHtml = (showNote && p.notes) ? `<div style="font-size:11px;color:#92400e;margin-top:4px;background:rgba(245,158,11,.1);padding:3px 8px;border-radius:6px;line-height:1.45">📝 ${escapeHtml(p.notes)}</div>` : '';
-    return `<div class="card hw-card" data-pcd-replace="${p.id}" title="คลิกดูรายละเอียด + แก้ไข" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:9px 13px;margin-bottom:6px;border-left:3px solid ${p._mac ? '#7c3aed' : '#dc2626'}">
+    return `<div class="card hw-card" data-pcd-replace="${p.id}" title="คลิกดูรายละเอียด + แก้ไข" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:9px 13px;margin-bottom:6px;border-left:3px solid ${borderC}">
       <div style="min-width:0">
         <div style="font-weight:700;font-size:13.5px">${escapeHtml(p.name)} ${p._mac ? '<span style="font-size:10px;color:#7c3aed;font-weight:700">🍎 Mac</span>' : '<span style="font-size:10px;color:var(--text-muted)">💻 Notebook</span>'}</div>
         <div style="font-size:11.5px;color:var(--text-muted)">${escapeHtml(p.model || '—')} · ${escapeHtml(ownerOf(p))} · ${escapeHtml(p.os || '')}</div>
@@ -11431,8 +11440,10 @@ async function renderPcDashboard() {
         ${noteHtml}
       </div>
       <div style="text-align:right;flex-shrink:0">
-        <div style="font-weight:800;color:#dc2626;font-size:13px">${escapeHtml(calcHwAgeStr(p.purchased_at))}</div>
-        <div style="font-size:10.5px;color:#92400e">เกินเกณฑ์ ${Math.round(over)} เดือน (เกณฑ์ ${p._thr / 12} ปี)</div>
+        <div style="font-weight:800;color:${isOver ? '#dc2626' : 'var(--text-muted)'};font-size:13px">${escapeHtml(calcHwAgeStr(p.purchased_at) || '—')}</div>
+        ${isOver
+          ? `<div style="font-size:10.5px;color:#92400e">เกินเกณฑ์ ${Math.round(over)} เดือน (เกณฑ์ ${p._thr / 12} ปี)</div>`
+          : `<div style="font-size:10.5px;color:#15803d;font-weight:700">🔧 อยู่ระหว่างดำเนินการ</div>`}
       </div>
     </div>`;
   };
@@ -11490,7 +11501,7 @@ async function renderPcDashboard() {
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px">
       ${card('คอมทั้งหมด', total, '', `ใช้งานอยู่ ${active.length} · ปลดระวาง ${total - active.length}`)}
-      ${card('⚠️ ควรพิจารณาเปลี่ยน', needReplace.length, needReplace.length ? '#dc2626' : 'var(--green)', 'notebook&gt;3ปี · mac&gt;5ปี')}
+      ${card('⚠️ ควรพิจารณาเปลี่ยน', needReplace.length, needReplace.length ? '#dc2626' : 'var(--green)', 'notebook&gt;3ปี · mac&gt;5ปี' + (_inProgOnly ? ` · +${_inProgOnly} กำลังดำเนินการ` : ''))}
       ${card('อายุเฉลี่ย', avgAge != null ? (Math.floor(avgAge / 12) + ' ปี ' + (avgAge % 12) + ' ด.') : '—', '', `จาก ${withAge.length} เครื่องที่มีวันที่ซื้อ`)}
       ${card('แยกตาม OS', `${win}<span style="font-size:13px;color:var(--text-muted)"> win</span> · ${mac}<span style="font-size:13px;color:var(--text-muted)"> mac</span>`, '', other ? other + ' อื่น ๆ' : '')}
       ${card('การผูก owner', assigned, 'var(--green)', `ส่วนกลาง ${central} · ยังไม่ผูก ${unassigned}`)}
