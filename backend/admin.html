@@ -12078,10 +12078,13 @@ function showHardwareDetail(h, onChange) {
         ${(statusBadge || ownerBadge || personalBadge) ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:${ownerCardHtml ? '12px' : '16px'}">${statusBadge}${ownerBadge}${personalBadge}</div>` : ''}
         ${ownerCardHtml}
         ${photo}
-        <div style="border:1px solid var(--border);border-radius:12px;padding:4px 14px;margin-bottom:18px">${rows.join('') || '<div style="padding:14px 0;color:var(--text-muted);font-style:italic">— ไม่มีรายละเอียด —</div>'}</div>
+        <div style="border:1px solid var(--border);border-radius:12px;padding:4px 14px;margin-bottom:16px">${rows.join('') || '<div style="padding:14px 0;color:var(--text-muted);font-style:italic">— ไม่มีรายละเอียด —</div>'}</div>
+        <div style="margin-bottom:16px">
+          <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">📜 ประวัติการครอบครอง</div>
+          <div id="hwd-history-list"><div class="empty" style="font-size:12px;padding:10px">กำลังโหลด…</div></div>
+        </div>
         <div style="display:flex;gap:8px">
-          <button class="btn" data-detail-act="history" style="flex:1;justify-content:center">📜 ประวัติ</button>
-          <button class="btn primary" data-detail-act="edit" style="flex:1;justify-content:center">✏️ แก้ไข</button>
+          <button class="btn primary" data-detail-act="edit" style="flex:1;justify-content:center">✏️ แก้ไข / จัดการประวัติ</button>
           <button class="btn danger" data-detail-act="delete" style="flex:1;justify-content:center">🗑 ลบ</button>
         </div>
       </div>
@@ -12095,8 +12098,30 @@ function showHardwareDetail(h, onChange) {
   wrap.querySelector('.sup-panel-close').addEventListener('click', close);
   const _ownerBtn = wrap.querySelector('[data-detail-act="owner"]');
   if (_ownerBtn) _ownerBtn.addEventListener('click', () => { _pcdOwnerPanel(h.current_member_id, onChange); });
-  wrap.querySelector('[data-detail-act="history"]').addEventListener('click', () => { close(); showHardwareHistoryModal(h.id, h.name); });
   wrap.querySelector('[data-detail-act="edit"]').addEventListener('click', () => { close(); showHardwareModal(h, h.hw_type, onChange); });
+  // v1.9.284 — แสดงประวัติการครอบครอง inline (read-only) ในแผงเลย
+  (async () => {
+    const box = wrap.querySelector('#hwd-history-list');
+    if (!box) return;
+    let items = [];
+    try { items = (await fetchJson('/api/admin/hardware/' + h.id + '/history')).history || []; }
+    catch (e) { box.innerHTML = '<div style="font-size:11.5px;color:var(--text-muted);padding:6px 0">โหลดประวัติไม่ได้</div>'; return; }
+    if (!items.length) { box.innerHTML = '<div style="font-size:12px;color:var(--text-muted);font-style:italic;padding:6px 0">— ยังไม่มีประวัติ —</div>'; return; }
+    box.innerHTML = items.map(r => {
+      const fromYm = (r.assigned_at || '').slice(0, 7), toYm = r.unassigned_at ? r.unassigned_at.slice(0, 7) : null;
+      const fromLabel = fromYm ? fmtMonthYearThai(fromYm) : '—';
+      const toLabel = toYm ? fmtMonthYearThai(toYm) : '<span style="color:var(--green);font-weight:700">ปัจจุบัน</span>';
+      const isActive = !r.unassigned_at;
+      return `<div style="display:flex;align-items:flex-start;gap:9px;padding:8px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:14px;flex-shrink:0">${isActive ? '⭐' : '•'}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12.5px;font-weight:700">${escapeHtml(r.member_label || '— ไม่ผูก —')}${isActive ? ' <span style="font-size:10px;color:var(--green);font-weight:700">ปัจจุบัน</span>' : ''}</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:1px">📅 ${escapeHtml(fromLabel)} → ${toLabel}</div>
+          ${r.note ? `<div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-top:2px">📝 ${escapeHtml(r.note)}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+  })();
   wrap.querySelector('[data-detail-act="delete"]').addEventListener('click', async () => {
     if (!confirm(`ลบ "${h.name}"?\n\n(ประวัติการครอบครองจะถูกลบด้วย)`)) return;
     try { await fetchJson('/api/admin/hardware/' + h.id, { method: 'DELETE' }); close(); await (onChange || loadHardware)(); }
