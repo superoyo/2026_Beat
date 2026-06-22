@@ -501,6 +501,14 @@ def init_db() -> None:
                 added_at     TEXT NOT NULL,
                 PRIMARY KEY (workflow_id, member_id)
             );
+            CREATE TABLE IF NOT EXISTS workflow_notes (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                workflow_id  INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+                member_id    INTEGER,
+                body         TEXT NOT NULL,
+                created_at   TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_wf_notes_wf ON workflow_notes(workflow_id);
 
             -- v1.13 — ขอสิทธิ์เข้าถึง site (member request → admin accept/reject)
             CREATE TABLE IF NOT EXISTS access_requests (
@@ -6607,6 +6615,12 @@ def _wf_member_brief(conn, mid: Optional[int]) -> Optional[dict]:
             "avatar": r["avatar_data"], "position": tn["name"] if tn else None}
 
 
+def _wf_note_dict(conn, r) -> dict:
+    author = _wf_member_brief(conn, r["member_id"]) if r["member_id"] else None
+    return {"id": r["id"], "body": r["body"], "created_at": r["created_at"],
+            "author": author, "author_name": author["name"] if author else "ผู้ดูแลระบบ"}
+
+
 @app.get("/api/workflows")
 def list_workflows(sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
     member_id, is_admin = _wf_actor(sess)
@@ -6687,6 +6701,9 @@ def get_workflow(wf_id: int, sess: dict = Depends(require_admin_or_member)) -> d
             data = {"nodes": [], "edges": []}
         collabs = [_wf_member_brief(conn, r["member_id"]) for r in conn.execute(
             "SELECT member_id FROM workflow_collaborators WHERE workflow_id = ?", (wf_id,)).fetchall()]
+        latest = conn.execute(
+            "SELECT * FROM workflow_notes WHERE workflow_id = ? ORDER BY created_at DESC, id DESC LIMIT 1", (wf_id,)).fetchone()
+        notes_count = conn.execute("SELECT COUNT(*) AS n FROM workflow_notes WHERE workflow_id = ?", (wf_id,)).fetchone()["n"]
         return {
             "id": w["id"], "name": w["name"], "department": w["department"],
             "is_active": bool(w["is_active"]), "data": data,
@@ -6695,6 +6712,8 @@ def get_workflow(wf_id: int, sess: dict = Depends(require_admin_or_member)) -> d
             "collaborators": [c for c in collabs if c],
             "can_edit": _wf_can_edit(conn, w, member_id, is_admin),
             "is_creator": is_admin or (member_id is not None and w["creator_member_id"] == member_id),
+            "notes_latest": _wf_note_dict(conn, latest) if latest else None,
+            "notes_count": notes_count,
         }
 
 
@@ -6762,6 +6781,34 @@ def remove_workflow_collaborator(wf_id: int, mid: int, sess: dict = Depends(requ
         if not (is_admin or (member_id is not None and w["creator_member_id"] == member_id)):
             raise HTTPException(status_code=403, detail="เฉพาะผู้สร้างเท่านั้นที่ลบ collaborator ได้")
         conn.execute("DELETE FROM workflow_collaborators WHERE workflow_id = ? AND member_id = ?", (wf_id, mid))
+    return {"ok": True}
+
+
+class WorkflowNoteIn(BaseModel):
+    body: str = Field(..., min_length=1, max_length=2000)
+
+
+@app.get("/api/workflows/{wf_id}/notes")
+def list_workflow_notes(wf_id: int, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    with db_conn() as conn:
+        if not conn.execute("SELECT 1 FROM workflows WHERE id = ?", (wf_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="ไม่พบ workflow")
+        rows = conn.execute(
+            "SELECT * FROM workflow_notes WHERE workflow_id = ? ORDER BY created_at DESC, id DESC", (wf_id,)).fetchall()
+        return {"notes": [_wf_note_dict(conn, r) for r in rows]}
+
+
+@app.post("/api/workflows/{wf_id}/notes")
+def add_workflow_note(wf_id: int, payload: WorkflowNoteIn, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    member_id, _ = _wf_actor(sess)
+    body = (payload.body or "").strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="หมายเหตุห้ามว่าง")
+    with db_conn() as conn:
+        if not conn.execute("SELECT 1 FROM workflows WHERE id = ?", (wf_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="ไม่พบ workflow")
+        conn.execute("INSERT INTO workflow_notes(workflow_id, member_id, body, created_at) VALUES (?, ?, ?, ?)",
+                     (wf_id, member_id, body, utc_now().isoformat()))
     return {"ok": True}
 
 

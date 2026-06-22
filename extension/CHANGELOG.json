@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.282",
+      "date": "2026-06-22",
+      "title": "Workflow — หมายเหตุ (note log) + ผู้กรอก + ดูย้อนหลัง",
+      "summary": "editor แสดงแถบหมายเหตุล่าสุด · กด ‘ดูทั้งหมด/เพิ่ม’ เปิด modal กรอกหมายเหตุใหม่ + ดูประวัติย้อนหลัง (บันทึกชื่อผู้กรอก + เวลาอัตโนมัติ)",
+      "changes": [
+        "DB: workflow_notes + endpoints GET/POST notes",
+        "get_workflow คืน notes_latest + notes_count",
+        "editor: แถบหมายเหตุล่าสุด (ผู้กรอก + เวลา)",
+        "modal: เพิ่มหมายเหตุ + ประวัติทั้งหมด (avatar+ชื่อ+ตำแหน่ง+เวลา)"
+      ]
+    },
+    {
       "version": "1.9.281",
       "date": "2026-06-22",
       "title": "Workflow — แก้บันทึกไม่สำเร็จ (json alias)",
