@@ -14332,7 +14332,7 @@ function _memberPickerHtml(pid, selId, emptyLabel) {
       </div>
     </div>`;
 }
-function _initMemberPicker(pid, opts, emptyLabel) {
+function _initMemberPicker(pid, opts, emptyLabel, onChange) {
   const root = document.querySelector(`[data-mpick="${pid}"]`);
   if (!root) return;
   const hidden = document.getElementById(pid);
@@ -14356,7 +14356,7 @@ function _initMemberPicker(pid, opts, emptyLabel) {
     const filtered = opts.filter(m => !q || (m.name || '').toLowerCase().includes(q) || (m.team || '').toLowerCase().includes(q));
     const head = `<div class="mpick-item" data-id="" style="padding:8px 9px;cursor:pointer;border-radius:7px;font-size:12.5px;color:var(--text-muted)">${escapeHtml(emptyLabel)}</div>`;
     lst.innerHTML = head + (filtered.length ? filtered.map(rowHtml).join('') : `<div style="padding:12px;text-align:center;color:var(--text-muted);font-size:12.5px">ไม่พบรายชื่อ</div>`);
-    lst.querySelectorAll('.mpick-item').forEach(it => it.addEventListener('click', () => { hidden.value = it.dataset.id; paintFace(); close(); }));
+    lst.querySelectorAll('.mpick-item').forEach(it => it.addEventListener('click', () => { hidden.value = it.dataset.id; paintFace(); close(); if (typeof onChange === 'function') onChange(it.dataset.id); }));
   }
   function open() { pnl.style.display = 'block'; srch.value = ''; renderList(''); setTimeout(() => srch.focus(), 10); }
   function close() { pnl.style.display = 'none'; }
@@ -16707,9 +16707,8 @@ function _wfRenderInspector() {
   if (isLogic) {
     mid = `<div class="field"><label>เงื่อนไข</label><textarea id="wf-i-cond" rows="3" ${dis} style="${inp};resize:vertical">${escapeHtml(n.condition || '')}</textarea><div style="font-size:11px;color:var(--text-muted);margin-top:4px">ลากเส้นออกหลายเส้นเพื่อแยกทาง · คลิกที่เส้น (✕) เพื่อใส่ป้าย/ลบ</div></div>`;
   } else {
-    const opts = _wfMembersCache.map(m => `<option value="${m.id}" ${n.assignee_id === m.id ? 'selected' : ''}>${escapeHtml(m.name)}${m.position ? ' · ' + escapeHtml(m.position) : ''}</option>`).join('');
     mid = `<div class="field"><label>รายละเอียดงาน</label><textarea id="wf-i-detail" rows="3" ${dis} style="${inp};resize:vertical">${escapeHtml(n.detail || '')}</textarea></div>
-      <div class="field"><label>ผู้รับผิดชอบ</label><select id="wf-i-assignee" ${dis} style="${inp};cursor:pointer"><option value="">— ยังไม่กำหนด —</option>${opts}</select></div>`;
+      <div class="field"><label>ผู้รับผิดชอบ</label>${ce ? _memberPickerHtml('wf-i-assignee', n.assignee_id, '— ยังไม่กำหนด —') : `<div style="padding:8px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px">${(() => { const m = _wfMember(n.assignee_id); return m ? escapeHtml(m.name) + (m.position ? ' · ' + escapeHtml(m.position) : '') : '— ยังไม่กำหนด —'; })()}</div>`}</div>`;
   }
   box.innerHTML = `<div style="border:1px solid var(--border);border-radius:12px;padding:14px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
@@ -16724,7 +16723,8 @@ function _wfRenderInspector() {
   if (isLogic) { $('wf-i-cond').addEventListener('input', e => { n.condition = e.target.value; _wfRefreshNode(n.id); _wfScheduleSave(); }); }
   else {
     $('wf-i-detail').addEventListener('input', e => { n.detail = e.target.value; _wfRefreshNode(n.id); _wfScheduleSave(); });
-    $('wf-i-assignee').addEventListener('change', e => { n.assignee_id = e.target.value ? parseInt(e.target.value, 10) : null; _wfRefreshNode(n.id); _wfScheduleSave(); });
+    const aopts = _wfMembersCache.map(m => ({ id: m.id, name: m.name, avatar: m.avatar, team: m.position }));
+    _initMemberPicker('wf-i-assignee', aopts, '— ยังไม่กำหนด —', (val) => { n.assignee_id = val ? parseInt(val, 10) : null; _wfRefreshNode(n.id); _wfScheduleSave(); });
   }
   $('wf-i-del').addEventListener('click', () => {
     if (!confirm('ลบกล่องนี้?')) return;
@@ -16771,6 +16771,25 @@ async function _wfCollabModal() {
       try { await fetchJson(`/api/workflows/${_wfEditor.id}/collaborators`, { method: 'POST', body: JSON.stringify({ member_id: mid }) }); const m = _wfMember(mid); if (m) _wfEditor.collaborators.push(m); refresh(); } catch (e) { alert(e.message); }
     });
   }, 0);
+}
+
+async function loadMyWorkflows() {
+  const box = $('mywf-list'); if (!box) return;
+  let list;
+  try { list = (await fetchJson('/api/my-workflows')).workflows || []; }
+  catch (e) { box.innerHTML = `<div class="empty">โหลดไม่ได้: ${escapeHtml(e.message)}</div>`; return; }
+  if (!list.length) { box.innerHTML = `<div class="empty">— ยังไม่มี workflow ที่เกี่ยวข้องกับคุณ —</div>`; return; }
+  const relLabel = { creator: '👑 ผู้สร้าง', collaborator: '🤝 collaborator', assignee: '📋 ผู้รับผิดชอบ' };
+  box.innerHTML = `<div class="cfg-table-wrap"><div class="cfg-table-scroll"><table class="cfg-table">
+    <thead><tr><th>Workflow</th><th>แผนก</th><th>บทบาท</th><th>แก้ไขล่าสุด</th><th style="text-align:right">สิทธิ์</th></tr></thead>
+    <tbody>${list.map(w => `<tr data-mywf="${w.id}" title="คลิกเปิด workflow">
+      <td style="font-weight:700">${escapeHtml(w.name)}</td>
+      <td>${w.department ? `<span style="font-size:11px;background:var(--bg-soft);padding:2px 9px;border-radius:999px">${escapeHtml(w.department)}</span>` : '<span style="color:var(--text-muted)">—</span>'}</td>
+      <td>${w.relations.map(r => `<span style="font-size:10.5px;background:rgba(37,99,235,.08);color:var(--primary);padding:2px 8px;border-radius:999px;margin:0 3px 2px 0;white-space:nowrap;display:inline-block">${relLabel[r] || r}</span>`).join('')}</td>
+      <td style="color:var(--text-muted);white-space:nowrap">${escapeHtml(_wfAgo(w.updated_at))}</td>
+      <td style="text-align:right;white-space:nowrap">${w.can_edit ? '<span style="font-size:11px;color:var(--primary);font-weight:600">✏️ แก้ไขได้</span>' : '<span style="font-size:11px;color:var(--text-muted)">🔒 ดูอย่างเดียว</span>'}</td>
+    </tr>`).join('')}</tbody></table></div></div>`;
+  box.querySelectorAll('[data-mywf]').forEach(r => r.addEventListener('click', () => renderWorkflowEditor(parseInt(r.dataset.mywf, 10))));
 }
 
 async function renderAccountPage() {
@@ -16898,6 +16917,7 @@ async function renderMemberAccountPage() {
           <button type="button" class="acc-menu-item" data-acc-tab="beacon"><span class="acc-menu-ico">📍</span> Check-in</button>
           <button type="button" class="acc-menu-item" data-acc-tab="privacy"><span class="acc-menu-ico">🔒</span> Privacy</button>
           <button type="button" class="acc-menu-item" data-acc-tab="team" id="acc-tab-team" style="display:none"><span class="acc-menu-ico">👨‍👩‍👧</span> Team</button>
+          <button type="button" class="acc-menu-item" data-acc-tab="myworkflow"><span class="acc-menu-ico">🔀</span> My Workflow</button>
         </div>
 
         <!-- รายละเอียดขวา -->
@@ -17009,6 +17029,13 @@ async function renderMemberAccountPage() {
             </div>
             <div id="m-team-tabs" style="display:flex;gap:8px;overflow-x:auto;padding:2px 2px 10px;scroll-behavior:smooth;flex-shrink:0"></div>
             <div id="m-team-grid" style="overflow-y:auto;max-height:calc(100vh - 170px);padding-right:4px">${skelStack(4)}</div>
+          </div>
+
+          <!-- ============ My Workflow ============ -->
+          <div data-acc-panel="myworkflow" style="display:none">
+            <h3 style="margin:0 0 4px;font-size:15px;font-weight:700">🔀 My Workflow</h3>
+            <div class="hint" style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px">Workflow ที่เกี่ยวข้องกับคุณ — เป็นผู้สร้าง / collaborator / ผู้รับผิดชอบงาน</div>
+            <div id="mywf-list">${skelStack(3)}</div>
           </div>
 
           <!-- ============ My Device ============ -->
@@ -17573,6 +17600,7 @@ async function renderMemberAccountPage() {
       b.classList.toggle('active', b.dataset.accTab === menuActive);
     });
     if (panel === 'beacon') loadBeacon();
+    if (panel === 'myworkflow') loadMyWorkflows();
     if (panel === 'team' && !_teamSupLoaded) { _teamSupLoaded = true; loadTeamSupervise(); }
     if (panel === 'device' && !_myDeviceLoaded) { _myDeviceLoaded = true; loadMyDevice(); }
     // v1.9.122 — Extension tab: render ลง #ext-embed + จัดการ polling

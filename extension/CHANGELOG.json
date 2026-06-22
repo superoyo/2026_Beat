@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.279",
+      "date": "2026-06-21",
+      "title": "Workflow — assignee picker ค้นหาได้ (รูป/ชื่อ/ทีม) + My Workflow ใน My Profile",
+      "summary": "ช่องผู้รับผิดชอบในกล่อง Task เปลี่ยนเป็น picker ค้นหาได้ แสดงรูป+ชื่อ+ทีม · เพิ่มเมนู My Workflow ใน My Profile แสดง workflow ที่เกี่ยวข้องกับตน (ผู้สร้าง/collaborator/ผู้รับผิดชอบ)",
+      "changes": [
+        "assignee = searchable member picker (avatar + ชื่อ + ทีม) · _initMemberPicker รองรับ onChange",
+        "My Profile เพิ่มแท็บ 🔀 My Workflow",
+        "endpoint /api/my-workflows — workflow ที่ตนเป็นผู้สร้าง/collaborator/ผู้รับผิดชอบ + บทบาท",
+        "คลิกใน My Workflow → เปิด editor"
+      ]
+    },
+    {
       "version": "1.9.278",
       "date": "2026-06-21",
       "title": "เมนูใหม่ Workflow — ตัวสร้าง workflow แบบ n8n",

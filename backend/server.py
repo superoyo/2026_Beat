@@ -6627,6 +6627,41 @@ def list_workflows(sess: dict = Depends(require_admin_or_member)) -> dict[str, A
     return {"workflows": out}
 
 
+@app.get("/api/my-workflows")
+def my_workflows(sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    """workflow ที่เกี่ยวข้องกับ member นี้ — ผู้สร้าง / collaborator / ผู้รับผิดชอบใน task"""
+    member_id, is_admin = _wf_actor(sess)
+    if member_id is None:
+        return {"workflows": []}
+    with db_conn() as conn:
+        rows = conn.execute("SELECT * FROM workflows ORDER BY updated_at DESC").fetchall()
+        collab_wf = {r["workflow_id"] for r in conn.execute(
+            "SELECT workflow_id FROM workflow_collaborators WHERE member_id = ?", (member_id,)).fetchall()}
+        out = []
+        for w in rows:
+            rels = []
+            if w["creator_member_id"] == member_id:
+                rels.append("creator")
+            if w["id"] in collab_wf:
+                rels.append("collaborator")
+            try:
+                nodes = json.loads(w["data"] or "{}").get("nodes") or []
+                if any(isinstance(n, dict) and n.get("type") == "task" and n.get("assignee_id") == member_id for n in nodes):
+                    rels.append("assignee")
+                nc = len(nodes)
+            except Exception:
+                nc = 0
+            if not rels:
+                continue
+            out.append({
+                "id": w["id"], "name": w["name"], "department": w["department"],
+                "is_active": bool(w["is_active"]), "updated_at": w["updated_at"], "node_count": nc,
+                "relations": rels, "creator": _wf_member_brief(conn, w["creator_member_id"]),
+                "can_edit": _wf_can_edit(conn, w, member_id, is_admin),
+            })
+    return {"workflows": out}
+
+
 @app.post("/api/workflows")
 def create_workflow(payload: WorkflowCreateIn, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
     member_id, _ = _wf_actor(sess)
