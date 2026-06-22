@@ -8311,6 +8311,16 @@ function _kebabMenu(btn, items) {
 function _domainAct(d, act) {
   handleDomainAction({ dataset: { dId: String(d.id), dAct: act, dName: d.name, dExpire: d.expire_date || '' } }, _dcCache);
 }
+// v1.9.283 — เพิ่ม Hosting/SSL/Others ให้ domain จาก Services Config (โหลด cache ตรง ๆ ไม่กระทบ render)
+async function _dcAddService(d, typeId) {
+  try {
+    const sd = await fetchJson('/api/admin/services');
+    _svcCache = { hosting: [], ssl: [], others: [] };
+    (sd.services || []).forEach(s => { if (_svcCache[s.service_type]) _svcCache[s.service_type].push(s); });
+  } catch (e) { alert('โหลด services ไม่ได้: ' + e.message); return; }
+  try { _wsCache = (await fetchJson('/api/admin/websites')).websites || []; } catch (_) { /* linkedIds จะว่าง — candidates ครบ */ }
+  showLinkServiceModal(d.id, typeId);
+}
 
 function renderDomainsConfigRows() {
   const listEl = $('dc-list');
@@ -8406,6 +8416,9 @@ function renderDomainsConfigRows() {
     _kebabMenu(btn, [
       { icon: '↗', label: 'เปิดเว็บไซต์', onClick: () => window.open('https://' + d.name, '_blank', 'noopener') },
       { icon: '✏️', label: 'แก้ไข', onClick: () => showDomainModal(d) },
+      { icon: '🖥', label: 'เพิ่ม Hosting', onClick: () => _dcAddService(d, 'hosting') },
+      { icon: '🔒', label: 'เพิ่ม SSL', onClick: () => _dcAddService(d, 'ssl') },
+      { icon: '📦', label: 'เพิ่ม Others', onClick: () => _dcAddService(d, 'others') },
       { icon: '🔍', label: 'Lookup (WHOIS)', onClick: () => _domainAct(d, 'lookup') },
       { icon: '🔄', label: 'Renew', onClick: () => _domainAct(d, 'renew') },
       { icon: '📜', label: 'ประวัติ', onClick: () => _domainAct(d, 'history') },
@@ -10352,7 +10365,8 @@ function showLinkServiceModal(domainId, typeId) {
       const sid = parseInt($('ls-id').value, 10);
       if (!sid) throw new Error('เลือก service ก่อน');
       await fetchJson(`/api/admin/domains/${domainId}/services/${sid}`, { method: 'POST' });
-      await loadWebsites();
+      // v1.9.283 — reload เฉพาะหน้าที่เปิดอยู่ (Websites มี #ws-list · Domain tab ไม่ต้อง)
+      if ($('ws-list') && typeof loadWebsites === 'function') await loadWebsites();
     },
   });
 }

@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.283",
+      "date": "2026-06-22",
+      "title": "Services Config › Domain — เพิ่ม Hosting/SSL/Others ใน ⋮ menu",
+      "summary": "ย้ายการเพิ่ม/ผูก Hosting/SSL/Others จากหน้า Websites มาไว้ในปุ่ม ⋮ (Manage) ของแต่ละ domain ในแท็บ Domain — เลือก service ที่มีอยู่มาผูกกับ domain ได้เลย",
+      "changes": [
+        "Domain kebab ⋮ เพิ่ม: 🖥 เพิ่ม Hosting · 🔒 เพิ่ม SSL · 📦 เพิ่ม Others",
+        "reuse showLinkServiceModal · โหลด services/websites cache ตรง ๆ ไม่กระทบ render",
+        "reload เฉพาะหน้าที่เปิด (กัน error ข้ามหน้า)"
+      ]
+    },
+    {
       "version": "1.9.282",
       "date": "2026-06-22",
       "title": "Workflow — หมายเหตุ (note log) + ผู้กรอก + ดูย้อนหลัง",
