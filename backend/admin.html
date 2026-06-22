@@ -11379,7 +11379,8 @@ async function renderPcDashboard() {
     p._mac = _pcDashIsMac(p);
     p._thr = p._mac ? 60 : 36;                 // mac 5 ปี / notebook 3 ปี
     p._retired = p.status === 'retired';
-    p._needsReplace = !p._retired && p._age != null && p._age > p._thr;
+    // v1.9.290 — คอมฯส่งต่อมาจากท่านอื่น (มือสอง) ไม่นำมาคิดว่าควรเปลี่ยน
+    p._needsReplace = !p._retired && !p.is_handed_down && p._age != null && p._age > p._thr;
   });
   const total = pcs.length;
   const active = pcs.filter(p => !p._retired);
@@ -13032,6 +13033,12 @@ async function showHardwareModal(hw, type, afterSubmit) {
             🆕 คอมฯสำหรับตำแหน่งเปิดใหม่ <span style="font-weight:500;color:var(--text-muted);font-size:12px">(สำรองรอพนักงานใหม่)</span>
           </label>
         </div>
+        <div class="field" style="margin-top:4px">
+          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-weight:600;font-size:13.5px">
+            <input type="checkbox" id="hm-handed-down" ${isEdit && hw.is_handed_down ? 'checked' : ''} style="width:17px;height:17px;accent-color:#16a34a;cursor:pointer" />
+            🔄 คอมฯส่งต่อมาจากท่านอื่น <span style="font-weight:500;color:var(--text-muted);font-size:12px">(มือสอง — ไม่นำไปคำนวณว่าควรเปลี่ยน)</span>
+          </label>
+        </div>
           </div><!-- /right column -->
         </div><!-- /2-col flex -->
         </div><!-- /details pane -->
@@ -13180,6 +13187,7 @@ async function showHardwareModal(hw, type, afterSubmit) {
         data.quotation = $('hm-quotation').value.trim() || null;
         data.is_personal_owned = $('hm-personal-owned') ? $('hm-personal-owned').checked : false;
         data.for_new_position = $('hm-for-new-position') ? $('hm-for-new-position').checked : false;
+        data.is_handed_down = $('hm-handed-down') ? $('hm-handed-down').checked : false;
         // v1.9.65 — unlinked fields: ส่งเฉพาะ unassigned_team_id + storage_location
         // (เก็บเสมอ ไม่ว่าจะมี owner หรือไม่ — ถ้ามี owner ก็ยังเก็บเผื่อ admin ระบุไว้)
         const untSel = $('hm-unassigned-team');
