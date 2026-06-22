@@ -16588,7 +16588,7 @@ function _wfScheduleSave(extra) {
   if (extra) Object.assign(body, extra);
   _wfEditor.saveTimer = setTimeout(async () => {
     try { await fetchJson('/api/workflows/' + _wfEditor.id, { method: 'PATCH', body: JSON.stringify(body) }); _wfSaveStatus('✓ บันทึกแล้ว'); }
-    catch (e) { _wfSaveStatus('⚠ บันทึกไม่สำเร็จ'); }
+    catch (e) { _wfSaveStatus('⚠ ' + (e.message || 'บันทึกไม่สำเร็จ')); }
   }, 700);
 }
 let _wfNodeSeq = 0;

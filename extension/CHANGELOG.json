@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.280",
+      "date": "2026-06-22",
+      "title": "Workflow — แสดงสาเหตุ ‘บันทึกไม่สำเร็จ’ จริง + harden",
+      "summary": "สถานะบันทึก workflow แสดงข้อความ error จริง (แทน ‘บันทึกไม่สำเร็จ’ เฉย ๆ) เพื่อ debug · WorkflowPatchIn.data เปลี่ยนเป็น dict (กัน Pydantic แปลก)",
+      "changes": [
+        "save status โชว์ error message จริง",
+        "WorkflowPatchIn.data: Optional[Any] → Optional[dict]"
+      ]
+    },
+    {
       "version": "1.9.279",
       "date": "2026-06-21",
       "title": "Workflow — assignee picker ค้นหาได้ (รูป/ชื่อ/ทีม) + My Workflow ใน My Profile",

@@ -6569,7 +6569,7 @@ class WorkflowCreateIn(BaseModel):
 class WorkflowPatchIn(BaseModel):
     name: Optional[str] = Field(None, max_length=200)
     department: Optional[str] = Field(None, max_length=120)
-    data: Optional[Any] = None                # {nodes:[], edges:[]}
+    data: Optional[dict] = None                # {nodes:[], edges:[]}
     is_active: Optional[bool] = None
 
 
