@@ -13933,7 +13933,7 @@ function _addOwnershipHistory(hwId) {
       loadHmHistory(hwId);
     },
   });
-  setTimeout(() => _initMemberPicker('aoh-member', opts, '— เลือกผู้ครอบครอง —'), 0);
+  setTimeout(() => _initMemberPicker('aoh-member', opts, '— เลือกผู้ครอบครอง —', null, _addNewMemberFromPicker), 0);
 }
 
 async function showHardwareHistoryModal(hwId, hwName) {
@@ -14605,7 +14605,7 @@ function _memberPickerHtml(pid, selId, emptyLabel) {
       </div>
     </div>`;
 }
-function _initMemberPicker(pid, opts, emptyLabel, onChange) {
+function _initMemberPicker(pid, opts, emptyLabel, onChange, addNew) {
   const root = document.querySelector(`[data-mpick="${pid}"]`);
   if (!root) return;
   const hidden = document.getElementById(pid);
@@ -14624,12 +14624,26 @@ function _initMemberPicker(pid, opts, emptyLabel, onChange) {
     const sub = m.team ? `<span style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(m.team)}</span>` : '';
     return `<div class="mpick-item" data-id="${m.id}" style="display:flex;align-items:center;gap:9px;padding:6px 9px;cursor:pointer;border-radius:7px">${_mpickAvatar(m, 30)}<span style="display:flex;flex-direction:column;min-width:0;line-height:1.3"><span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(m.name)}</span>${sub}</span></div>`;
   }
-  function renderList(q) {
-    q = (q || '').toLowerCase().trim();
+  function renderList(rawQ) {
+    const q = (rawQ || '').toLowerCase().trim();
     const filtered = opts.filter(m => !q || (m.name || '').toLowerCase().includes(q) || (m.team || '').toLowerCase().includes(q));
     const head = `<div class="mpick-item" data-id="" style="padding:8px 9px;cursor:pointer;border-radius:7px;font-size:12.5px;color:var(--text-muted)">${escapeHtml(emptyLabel)}</div>`;
-    lst.innerHTML = head + (filtered.length ? filtered.map(rowHtml).join('') : `<div style="padding:12px;text-align:center;color:var(--text-muted);font-size:12.5px">ไม่พบรายชื่อ</div>`);
+    let html = head + (filtered.length ? filtered.map(rowHtml).join('') : `<div style="padding:12px;text-align:center;color:var(--text-muted);font-size:12.5px">ไม่พบรายชื่อ</div>`);
+    // v1.9.299 — พิมพ์ชื่อใหม่ที่ไม่มีในระบบ → ปุ่มเพิ่มสมาชิกใหม่ (opt-in ผ่าน addNew)
+    const typed = (rawQ || '').trim();
+    if (typeof addNew === 'function' && typed && !opts.some(m => (m.name || '').toLowerCase() === q)) {
+      html += `<div class="mpick-addnew" style="display:flex;align-items:center;gap:8px;padding:9px;margin-top:4px;border-top:1px solid var(--border);cursor:pointer;border-radius:7px;color:var(--primary);font-size:13px;font-weight:600">＋ <span>เพิ่ม "<b>${escapeHtml(typed)}</b>" เป็นสมาชิกใหม่</span></div>`;
+    }
+    lst.innerHTML = html;
     lst.querySelectorAll('.mpick-item').forEach(it => it.addEventListener('click', () => { hidden.value = it.dataset.id; paintFace(); close(); if (typeof onChange === 'function') onChange(it.dataset.id); }));
+    const addBtn = lst.querySelector('.mpick-addnew');
+    if (addBtn) addBtn.addEventListener('click', async () => {
+      const newOpt = await addNew(typed);
+      if (!newOpt) return;
+      opts.push(newOpt); byId[String(newOpt.id)] = newOpt;
+      hidden.value = String(newOpt.id); paintFace(); close();
+      if (typeof onChange === 'function') onChange(String(newOpt.id));
+    });
   }
   function open() { pnl.style.display = 'block'; srch.value = ''; renderList(''); setTimeout(() => srch.focus(), 10); }
   function close() { pnl.style.display = 'none'; }
@@ -14641,6 +14655,47 @@ function _initMemberPicker(pid, opts, emptyLabel, onChange) {
   });
   paintFace();
 }
+// v1.9.299 — เลือกสถานะสมาชิกใหม่ (พนักงานใหม่ / alumni) — คืน 'new' | 'alumni' | null
+function _pickNewMemberKind(name) {
+  return new Promise(resolve => {
+    const bg = document.createElement('div');
+    bg.className = 'modal-bg';
+    bg.style.zIndex = '4000';
+    bg.innerHTML = `
+      <div class="modal" style="max-width:380px">
+        <h3 style="margin:0 0 6px;font-size:16px;font-weight:700">＋ เพิ่มสมาชิกใหม่</h3>
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px">สร้างโปรไฟล์ "<b style="color:var(--text)">${escapeHtml(name)}</b>" — เลือกสถานะ</div>
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <button type="button" id="nmk-new" class="btn primary" style="width:100%;padding:12px;font-size:14px">🙋 พนักงานใหม่</button>
+          <button type="button" id="nmk-alum" class="btn" style="width:100%;padding:12px;font-size:14px">🎓 Alumni (อดีตพนักงาน)</button>
+          <button type="button" id="nmk-cancel" class="btn" style="width:100%;padding:8px;color:var(--text-muted);font-size:12.5px">ยกเลิก</button>
+        </div>
+      </div>`;
+    document.body.appendChild(bg);
+    const done = (v) => { bg.remove(); resolve(v); };
+    bg.querySelector('#nmk-new').onclick = () => done('new');
+    bg.querySelector('#nmk-alum').onclick = () => done('alumni');
+    bg.querySelector('#nmk-cancel').onclick = () => done(null);
+    bg.addEventListener('click', e => { if (e.target === bg) done(null); });
+  });
+}
+
+// v1.9.299 — addNew callback: สร้าง member (temp-staff) + ตั้ง alumni → คืน option ใหม่ (หรือ null)
+async function _addNewMemberFromPicker(name) {
+  const kind = await _pickNewMemberKind(name);
+  if (!kind) return null;
+  try {
+    const res = await fetchJson('/api/admin/temp-staff', { method: 'POST', body: JSON.stringify({ name }) });
+    const newId = res.id;
+    if (kind === 'alumni') {
+      await fetchJson('/api/admin/members/' + newId + '/alumni', { method: 'PATCH', body: JSON.stringify({ is_alumni: true, last_working_day: null }) });
+    }
+    if (Array.isArray(_hwMembersCache)) _hwMembersCache.push({ id: newId, display_name: name, email: null, avatar_data: null, teams: [], is_alumni: kind === 'alumni' });
+    showSavedToast(kind === 'alumni' ? '✓ เพิ่ม Alumni แล้ว' : '✓ เพิ่มพนักงานใหม่แล้ว');
+    return { id: newId, name, avatar: null, team: kind === 'alumni' ? '🎓 Alumni' : '🙋 พนักงานใหม่' };
+  } catch (e) { alert('สร้างสมาชิกไม่สำเร็จ: ' + (e.message || e)); return null; }
+}
+
 function _skillFormBody(s, memberOpts) {
   const catOpts = _cats().map(c => `<option value="${c.key}" ${s && s.category === c.key ? 'selected' : ''}>${c.icon} ${c.label}</option>`).join('');
   const selStyle = 'padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit';
