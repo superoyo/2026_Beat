@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.296",
+      "date": "2026-06-22",
+      "title": "แผงรายละเอียดอุปกรณ์ (ทีม): เพิ่ม tab ‘ประวัติการใช้เครื่อง’",
+      "summary": "modal รายละเอียดอุปกรณ์ (เปิดจากหน้า Teams) เพิ่ม tab 📜 ประวัติการใช้เครื่อง — แสดงเป็นการ์ด period ซ้าย/ชื่อขวา + capsule current/previous (lazy-load)",
+      "changes": [
+        "showTeamPcDetailModal: tab รายละเอียด | ประวัติการใช้เครื่อง",
+        "ประวัติเป็นการ์ด period ซ้าย/ชื่อขวา + capsule"
+      ]
+    },
+    {
       "version": "1.9.295",
       "date": "2026-06-22",
       "title": "แผงอุปกรณ์: ประวัติการครอบครอง redesign เป็นการ์ด (period ซ้าย/ชื่อขวา)",

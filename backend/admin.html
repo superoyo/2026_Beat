@@ -12618,19 +12618,29 @@ function showTeamPcDetailModal(pc, teamId, afterEdit) {
           ${tile}
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:300px 1fr;gap:18px;align-items:flex-start">
-        <div>
-          ${photoBlock}
-          ${assetPhotoBlock}
+      <!-- v1.9.296 — Tab strip: รายละเอียด | ประวัติการใช้เครื่อง -->
+      <div class="tpdm-tabs" style="display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px;flex-wrap:wrap">
+        <button type="button" class="tpdm-tab" data-tpdm-tab="detail" style="background:none;border:none;border-bottom:2px solid var(--primary);padding:9px 14px;font-size:13.5px;color:var(--primary);font-weight:600;cursor:pointer">📋 รายละเอียด</button>
+        <button type="button" class="tpdm-tab" data-tpdm-tab="history" style="background:none;border:none;padding:9px 14px;font-size:13.5px;color:var(--text-muted);font-weight:500;cursor:pointer">📜 ประวัติการใช้เครื่อง</button>
+      </div>
+      <div class="tpdm-pane" data-tpdm-pane="detail">
+        <div style="display:grid;grid-template-columns:300px 1fr;gap:18px;align-items:flex-start">
+          <div>
+            ${photoBlock}
+            ${assetPhotoBlock}
+          </div>
+          <div>
+            ${ownerSection}
+            ${sect('📋', 'ข้อมูลทั่วไป', generalContent)}
+            ${sect('🔧', 'Specification', specContent)}
+            ${sect('💿', 'ระบบปฏิบัติการ', osContent)}
+            ${sect('🏢', 'การจัดสรร', allocContent)}
+            ${sect('📝', 'หมายเหตุ', notesContent)}
+          </div>
         </div>
-        <div>
-          ${ownerSection}
-          ${sect('📋', 'ข้อมูลทั่วไป', generalContent)}
-          ${sect('🔧', 'Specification', specContent)}
-          ${sect('💿', 'ระบบปฏิบัติการ', osContent)}
-          ${sect('🏢', 'การจัดสรร', allocContent)}
-          ${sect('📝', 'หมายเหตุ', notesContent)}
-        </div>
+      </div>
+      <div class="tpdm-pane" data-tpdm-pane="history" style="display:none">
+        <div id="tpdm-history"><div class="empty" style="padding:24px;font-size:12.5px">กำลังโหลด…</div></div>
       </div>
     </div>
   `;
@@ -12649,6 +12659,49 @@ function showTeamPcDetailModal(pc, teamId, afterEdit) {
       }
     });
   });
+  // v1.9.296 — tab switching + lazy-load ประวัติการใช้เครื่อง
+  bg.querySelectorAll('.tpdm-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.tpdmTab;
+      bg.querySelectorAll('.tpdm-tab').forEach(b => {
+        const active = b === btn;
+        b.style.color = active ? 'var(--primary)' : 'var(--text-muted)';
+        b.style.fontWeight = active ? '600' : '500';
+        b.style.borderBottom = active ? '2px solid var(--primary)' : '';
+      });
+      bg.querySelectorAll('.tpdm-pane').forEach(p => { p.style.display = (p.dataset.tpdmPane === target) ? '' : 'none'; });
+      if (target === 'history' && !btn.dataset.loaded) { btn.dataset.loaded = '1'; _tpdmLoadHistory(bg, pc.id); }
+    });
+  });
+}
+
+// v1.9.296 — ประวัติการใช้เครื่อง (การ์ด: period ซ้าย / ชื่อขวา + capsule) ใน showTeamPcDetailModal
+async function _tpdmLoadHistory(bg, hwId) {
+  const box = bg.querySelector('#tpdm-history');
+  if (!box) return;
+  let items = [];
+  try { items = (await fetchJson('/api/admin/hardware/' + hwId + '/history')).history || []; }
+  catch (e) { box.innerHTML = '<div class="empty" style="padding:20px;font-size:12.5px">โหลดประวัติไม่ได้</div>'; return; }
+  if (!items.length) { box.innerHTML = '<div class="empty" style="padding:20px;font-size:12.5px">— ยังไม่มีประวัติการใช้เครื่อง —</div>'; return; }
+  box.innerHTML = items.map(r => {
+    const fromYm = (r.assigned_at || '').slice(0, 7), toYm = r.unassigned_at ? r.unassigned_at.slice(0, 7) : null;
+    const fromLabel = fromYm ? fmtMonthYearThai(fromYm) : '—';
+    const isActive = !r.unassigned_at;
+    const toLabel = toYm ? fmtMonthYearThai(toYm) : 'ปัจจุบัน';
+    const cap = isActive
+      ? '<span style="flex-shrink:0;font-size:10px;font-weight:700;background:rgba(16,185,129,.12);color:var(--green);padding:2px 8px;border-radius:999px">current</span>'
+      : '<span style="flex-shrink:0;font-size:10px;font-weight:700;background:var(--bg-soft);color:var(--text-muted);padding:2px 8px;border-radius:999px">previous</span>';
+    return `<div style="border:1px solid var(--border);border-radius:10px;padding:9px 12px;margin-bottom:7px;${isActive ? '' : 'opacity:.92'}">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <span style="font-size:12.5px;font-weight:600;min-width:0">${escapeHtml(fromLabel)} → ${escapeHtml(toLabel)}</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;flex-shrink:0;text-align:right">
+          <span style="font-size:13px;font-weight:700">${escapeHtml(r.member_label || '— ไม่ผูก —')}</span>
+          ${cap}
+        </span>
+      </div>
+      ${r.note ? `<div style="font-size:11.5px;color:var(--text-muted);font-style:italic;margin-top:5px">📝 ${escapeHtml(r.note)}</div>` : ''}
+    </div>`;
+  }).join('');
 }
 
 async function uploadMyDevicePhoto(hwId, dataUrl) {
