@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.295",
+      "date": "2026-06-22",
+      "title": "แผงอุปกรณ์: ประวัติการครอบครอง redesign เป็นการ์ด (period ซ้าย/ชื่อขวา)",
+      "summary": "ปรับ design ประวัติการครอบครองในแผงรายละเอียดอุปกรณ์ ให้เป็นการ์ดมีกรอบเหมือนกล่อง Devices · period อยู่ซ้าย · ชื่อผู้ครอบครองอยู่ขวา + capsule current/previous · เอา icon ปฏิทินออก",
+      "changes": [
+        "ประวัติการครอบครองเป็นการ์ดมีกรอบ",
+        "period ซ้าย → ชื่อขวา",
+        "capsule current (เขียว) / previous (เทา)",
+        "ตัด icon 📅"
+      ]
+    },
+    {
       "version": "1.9.294",
       "date": "2026-06-22",
       "title": "Dashboard: บล็อกแยก ‘ได้เครื่องใหม่ (หมุนเวียน) — กำลัง transfer’",

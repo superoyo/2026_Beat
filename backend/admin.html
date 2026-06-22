@@ -12183,18 +12183,24 @@ function showHardwareDetail(h, onChange) {
     try { items = (await fetchJson('/api/admin/hardware/' + h.id + '/history')).history || []; }
     catch (e) { box.innerHTML = '<div style="font-size:11.5px;color:var(--text-muted);padding:6px 0">โหลดประวัติไม่ได้</div>'; return; }
     if (!items.length) { box.innerHTML = '<div style="font-size:12px;color:var(--text-muted);font-style:italic;padding:6px 0">— ยังไม่มีประวัติ —</div>'; return; }
+    // v1.9.295 — การ์ดมีกรอบเหมือนกล่อง Devices · period ซ้าย · ชื่อขวา + capsule (ไม่มี icon ปฏิทิน)
     box.innerHTML = items.map(r => {
       const fromYm = (r.assigned_at || '').slice(0, 7), toYm = r.unassigned_at ? r.unassigned_at.slice(0, 7) : null;
       const fromLabel = fromYm ? fmtMonthYearThai(fromYm) : '—';
-      const toLabel = toYm ? fmtMonthYearThai(toYm) : '<span style="color:var(--green);font-weight:700">ปัจจุบัน</span>';
       const isActive = !r.unassigned_at;
-      return `<div style="display:flex;align-items:flex-start;gap:9px;padding:8px 0;border-bottom:1px solid var(--border)">
-        <span style="font-size:14px;flex-shrink:0">${isActive ? '⭐' : '•'}</span>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:12.5px;font-weight:700">${escapeHtml(r.member_label || '— ไม่ผูก —')}${isActive ? ' <span style="font-size:10px;color:var(--green);font-weight:700">ปัจจุบัน</span>' : ''}</div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:1px">📅 ${escapeHtml(fromLabel)} → ${toLabel}</div>
-          ${r.note ? `<div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-top:2px">📝 ${escapeHtml(r.note)}</div>` : ''}
+      const toLabel = toYm ? fmtMonthYearThai(toYm) : 'ปัจจุบัน';
+      const cap = isActive
+        ? '<span style="flex-shrink:0;font-size:10px;font-weight:700;background:rgba(16,185,129,.12);color:var(--green);padding:2px 8px;border-radius:999px">current</span>'
+        : '<span style="flex-shrink:0;font-size:10px;font-weight:700;background:var(--bg-soft);color:var(--text-muted);padding:2px 8px;border-radius:999px">previous</span>';
+      return `<div style="border:1px solid var(--border);border-radius:10px;padding:8px 11px;margin-bottom:6px;${isActive ? '' : 'opacity:.92'}">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+          <span style="font-size:12px;font-weight:600;min-width:0">${escapeHtml(fromLabel)} → ${escapeHtml(toLabel)}</span>
+          <span style="display:inline-flex;align-items:center;gap:6px;flex-shrink:0;text-align:right">
+            <span style="font-size:12.5px;font-weight:700">${escapeHtml(r.member_label || '— ไม่ผูก —')}</span>
+            ${cap}
+          </span>
         </div>
+        ${r.note ? `<div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-top:5px">📝 ${escapeHtml(r.note)}</div>` : ''}
       </div>`;
     }).join('');
   })();
