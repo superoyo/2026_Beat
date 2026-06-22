@@ -13877,11 +13877,11 @@ function showAssignmentEditModal(hwId, record) {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div class="field">
           <label>วันที่เริ่ม (เดือน/ปี) *</label>
-          <input id="hae-start" type="month" value="${escapeHtml(fromYm)}" />
+          ${_monthPickerHtml('hae-start', fromYm, '— เลือกเดือน/ปี —')}
         </div>
         <div class="field">
           <label>วันที่สิ้นสุด (เว้นว่าง = ปัจจุบัน)</label>
-          <input id="hae-end" type="month" value="${escapeHtml(toYm)}" />
+          ${_monthPickerHtml('hae-end', toYm, '— ปัจจุบัน —')}
         </div>
       </div>
       <div class="field">
@@ -13905,6 +13905,10 @@ function showAssignmentEditModal(hwId, record) {
       await loadHmHistory(hwId);
     },
   });
+  setTimeout(() => {
+    _initMonthPicker('hae-start', '— เลือกเดือน/ปี —', false);
+    _initMonthPicker('hae-end', '— ปัจจุบัน —', true);
+  }, 0);
 }
 
 // v1.9.247 — เพิ่มประวัติการครอบครองเอง (ระบุผู้เคยครอบครองย้อนหลัง)
@@ -13916,8 +13920,8 @@ function _addOwnershipHistory(hwId) {
       <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px">บันทึกย้อนหลังว่าใครเคยครอบครองเครื่องนี้ (ไม่กระทบ owner ปัจจุบัน)</div>
       <div class="field"><label>ผู้ครอบครอง</label>${_memberPickerHtml('aoh-member', null, '— เลือกผู้ครอบครอง —')}</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <div class="field" style="flex:1;min-width:150px"><label>เริ่มครอบครอง (เดือน/ปี)</label><input id="aoh-from" type="month" style="width:100%" /></div>
-        <div class="field" style="flex:1;min-width:150px"><label>สิ้นสุด (ว่าง = ปัจจุบัน)</label><input id="aoh-to" type="month" style="width:100%" /></div>
+        <div class="field" style="flex:1;min-width:150px"><label>เริ่มครอบครอง (เดือน/ปี)</label>${_monthPickerHtml('aoh-from', '', '— เลือกเดือน/ปี —')}</div>
+        <div class="field" style="flex:1;min-width:150px"><label>สิ้นสุด (ว่าง = ปัจจุบัน)</label>${_monthPickerHtml('aoh-to', '', '— ปัจจุบัน —')}</div>
       </div>
       <div class="field"><label>หมายเหตุ (optional)</label><input id="aoh-note" placeholder="เช่น โอนให้ทีมอื่น / เครื่องเดิม" style="width:100%" /></div>
     `,
@@ -13933,7 +13937,11 @@ function _addOwnershipHistory(hwId) {
       loadHmHistory(hwId);
     },
   });
-  setTimeout(() => _initMemberPicker('aoh-member', opts, '— เลือกผู้ครอบครอง —', null, _addNewMemberFromPicker), 0);
+  setTimeout(() => {
+    _initMemberPicker('aoh-member', opts, '— เลือกผู้ครอบครอง —', null, _addNewMemberFromPicker);
+    _initMonthPicker('aoh-from', '— เลือกเดือน/ปี —', false);
+    _initMonthPicker('aoh-to', '— ปัจจุบัน —', true);
+  }, 0);
 }
 
 async function showHardwareHistoryModal(hwId, hwName) {
@@ -14655,6 +14663,59 @@ function _initMemberPicker(pid, opts, emptyLabel, onChange, addNew) {
   });
   paintFace();
 }
+// v1.9.300 — Month-Year calendar picker (custom — รองรับทุก browser รวม Safari ที่ไม่ support input type=month)
+const _MTH_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+function _monthPickerHtml(pid, value, placeholder) {
+  return `
+    <div class="mthpick" data-mthpick="${pid}" style="position:relative">
+      <input type="hidden" id="${pid}" value="${value || ''}" />
+      <button type="button" id="${pid}-trg" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);cursor:pointer;text-align:left;font-family:inherit;font-size:13.5px;min-height:42px;box-sizing:border-box">
+        <span class="mthpick-face"></span>
+        <span style="font-size:14px">📅</span>
+      </button>
+      <div class="mthpick-pnl" id="${pid}-pnl" style="display:none;position:absolute;z-index:50;top:calc(100% + 5px);left:0;right:0;min-width:230px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);box-shadow:0 8px 24px rgba(15,23,42,.18);padding:10px"></div>
+    </div>`;
+}
+function _initMonthPicker(pid, placeholder, allowClear) {
+  const root = document.querySelector(`[data-mthpick="${pid}"]`);
+  if (!root) return;
+  const hidden = document.getElementById(pid);
+  const trg = document.getElementById(pid + '-trg');
+  const pnl = document.getElementById(pid + '-pnl');
+  const face = trg.querySelector('.mthpick-face');
+  const valid = (v) => v && /^\d{4}-\d{2}$/.test(v);
+  let navYear = valid(hidden.value) ? parseInt(hidden.value.slice(0, 4), 10) : new Date().getFullYear();
+  function paintFace() {
+    const v = hidden.value;
+    face.innerHTML = valid(v)
+      ? `<span style="color:var(--text);font-weight:600">${_MTH_SHORT[parseInt(v.slice(5, 7), 10) - 1]} ${parseInt(v.slice(0, 4), 10) + 543}</span>`
+      : `<span style="color:var(--text-muted)">${escapeHtml(placeholder)}</span>`;
+  }
+  function renderPanel() {
+    const v = hidden.value;
+    const selY = valid(v) ? parseInt(v.slice(0, 4), 10) : null;
+    const selM = valid(v) ? parseInt(v.slice(5, 7), 10) : null;
+    pnl.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <button type="button" data-mth-nav="-1" style="border:none;background:var(--bg-soft);border-radius:6px;width:30px;height:30px;cursor:pointer;font-size:16px;font-family:inherit">‹</button>
+        <span style="font-weight:700;font-size:14.5px">${navYear + 543}</span>
+        <button type="button" data-mth-nav="1" style="border:none;background:var(--bg-soft);border-radius:6px;width:30px;height:30px;cursor:pointer;font-size:16px;font-family:inherit">›</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+        ${_MTH_SHORT.map((mn, i) => { const sel = selY === navYear && selM === i + 1; return `<button type="button" data-mth="${i + 1}" style="border:1px solid ${sel ? 'var(--primary)' : 'var(--border)'};background:${sel ? 'var(--primary)' : 'var(--bg-card)'};color:${sel ? '#fff' : 'var(--text)'};border-radius:7px;padding:9px 4px;cursor:pointer;font-size:12.5px;font-family:inherit;font-weight:${sel ? 700 : 500}">${mn}</button>`; }).join('')}
+      </div>
+      ${allowClear ? `<button type="button" data-mth-clear="1" style="width:100%;margin-top:8px;border:none;background:var(--bg-soft);border-radius:7px;padding:7px;cursor:pointer;font-size:12px;color:var(--text-muted);font-family:inherit">✕ ล้าง (= ปัจจุบัน)</button>` : ''}`;
+    pnl.querySelectorAll('[data-mth-nav]').forEach(b => b.addEventListener('click', () => { navYear += parseInt(b.dataset.mthNav, 10); renderPanel(); }));
+    pnl.querySelectorAll('[data-mth]').forEach(b => b.addEventListener('click', () => { hidden.value = navYear + '-' + String(parseInt(b.dataset.mth, 10)).padStart(2, '0'); paintFace(); close(); }));
+    const clr = pnl.querySelector('[data-mth-clear]'); if (clr) clr.addEventListener('click', () => { hidden.value = ''; paintFace(); close(); });
+  }
+  function open() { navYear = valid(hidden.value) ? parseInt(hidden.value.slice(0, 4), 10) : new Date().getFullYear(); renderPanel(); pnl.style.display = 'block'; }
+  function close() { pnl.style.display = 'none'; }
+  trg.addEventListener('click', (e) => { e.stopPropagation(); pnl.style.display === 'block' ? close() : open(); });
+  document.addEventListener('click', (e) => { if (!root.contains(e.target)) close(); });
+  paintFace();
+}
+
 // v1.9.299 — เลือกสถานะสมาชิกใหม่ (พนักงานใหม่ / alumni) — คืน 'new' | 'alumni' | null
 function _pickNewMemberKind(name) {
   return new Promise(resolve => {

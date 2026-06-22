@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.300",
+      "date": "2026-06-22",
+      "title": "ประวัติการครอบครอง: เปลี่ยนช่องวันที่เป็น Month-Year calendar picker",
+      "summary": "ช่องวันที่เริ่ม/สิ้นสุด ในเพิ่ม+แก้ไขประวัติการครอบครอง เปลี่ยนจาก input type=month (Safari ไม่ support → กลายเป็น text) → เป็น calendar picker เลือกเดือน-ปี แบบ custom (ปุ่ม 📅 + ตารางเดือน + เลื่อนปี) แสดงปี พ.ศ.",
+      "changes": [
+        "custom Month-Year picker (_monthPickerHtml/_initMonthPicker) รองรับทุก browser",
+        "ใช้ใน showAssignmentEditModal + _addOwnershipHistory",
+        "ปุ่มล้าง = ปัจจุบัน สำหรับช่องสิ้นสุด"
+      ]
+    },
+    {
       "version": "1.9.299",
       "date": "2026-06-22",
       "title": "เพิ่มประวัติการครอบครอง: พิมพ์ชื่อใหม่ → Add → พนักงานใหม่/Alumni (สร้าง profile อัตโนมัติ)",
