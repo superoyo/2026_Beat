@@ -671,6 +671,16 @@ def init_db() -> None:
         except sqlite3.OperationalError:
             pass
 
+        # v1.9.301 — financial_documents: tags (หมวดหมู่ — comma-separated)
+        try:
+            fd_cols = {
+                row["name"] for row in conn.execute("PRAGMA table_info(financial_documents)").fetchall()
+            }
+            if fd_cols and "tags" not in fd_cols:
+                conn.execute("ALTER TABLE financial_documents ADD COLUMN tags TEXT")
+        except sqlite3.OperationalError:
+            pass
+
         # credentials table — billing/lifecycle fields ย้ายมาจาก sites (v1.10)
         # หลังจากนี้ user จะ config ที่ระดับ credential แทน site
         cred_cols = {
@@ -7123,6 +7133,7 @@ class FinDocPatchIn(BaseModel):
     currency: Optional[str] = Field(None, max_length=10)
     vendor: Optional[str] = Field(None, max_length=200)
     notes: Optional[str] = Field(None, max_length=2000)
+    tags: Optional[str] = Field(None, max_length=500)        # v1.9.301 — comma-separated
 
 
 class FinDocPageIn(BaseModel):
@@ -7141,6 +7152,7 @@ def _findoc_row(r: sqlite3.Row) -> dict[str, Any]:
         "currency": r["currency"],
         "vendor": r["vendor"],
         "notes": r["notes"],
+        "tags": (r["tags"] if "tags" in r.keys() else None) or "",
         "created_at": r["created_at"],
     }
 
@@ -7150,7 +7162,7 @@ def admin_list_findocs(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
     """List financial documents — รวม page_count + first_page_image (ใช้ thumb_data ถ้ามี ถอย fallback image_data)"""
     with db_conn() as conn:
         rows = conn.execute(
-            "SELECT d.id, d.name, d.doc_date, d.amount, d.currency, d.vendor, d.notes, "
+            "SELECT d.id, d.name, d.doc_date, d.amount, d.currency, d.vendor, d.notes, d.tags, "
             "  d.created_at, "
             "  (SELECT COUNT(*) FROM financial_document_pages WHERE document_id = d.id) AS page_count, "
             "  (SELECT COALESCE(thumb_data, image_data) FROM financial_document_pages WHERE document_id = d.id "
@@ -7220,6 +7232,14 @@ def admin_update_findoc(
         if f in raw:
             v = raw[f]
             updates[f] = (v.strip() if isinstance(v, str) else v) or None
+    # v1.9.301 — tags: normalize (trim/dedupe, comma-separated), '' = clear
+    if "tags" in raw:
+        parts = [t.strip() for t in (raw["tags"] or "").split(",")]
+        seen, clean = set(), []
+        for t in parts:
+            if t and t.lower() not in seen:
+                seen.add(t.lower()); clean.append(t)
+        updates["tags"] = ",".join(clean) or None
     if "amount" in raw:
         updates["amount"] = raw["amount"]
     if not updates:

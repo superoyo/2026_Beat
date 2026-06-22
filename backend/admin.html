@@ -10568,6 +10568,7 @@ let _findocCurrentDoc = null;
 let _findocCurrentPages = [];
 let _findocViewMode = 'list';   // 'list' | 'detail'
 let _findocCurrentId = null;
+let _fdTagFilter = [];   // v1.9.301 — tag ที่เลือก filter (OR)
 
 // v1.9.80 — Read file → data URL (preserve original — no recompress/crop)
 async function fileToDataUrl(file) {
@@ -10671,19 +10672,24 @@ async function renderFinDocListPage() {
   _findocCurrentId = null;
   _subMain().innerHTML = `
     <style id="fd-style">
-      .fd-grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); }
-      .fd-card { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:10px; cursor:pointer; transition:border-color .12s, box-shadow .12s; display:flex; flex-direction:column; gap:8px; }
+      /* v1.9.301 — preview เล็กลง ~ครึ่ง (เห็นได้หลายอันต่อแถว) */
+      .fd-grid { display:grid; gap:10px; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); }
+      .fd-card { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:8px; transition:border-color .12s, box-shadow .12s; display:flex; flex-direction:column; gap:6px; }
       .fd-card:hover { border-color:var(--primary); box-shadow:0 2px 8px rgba(0,0,0,.08); }
-      .fd-thumb { width:100%; aspect-ratio:3/4; background:#0f172a; border-radius:8px; overflow:hidden; display:flex; align-items:center; justify-content:center; color:#64748b; font-size:36px; }
+      .fd-thumb { width:100%; aspect-ratio:3/4; background:#0f172a; border-radius:7px; overflow:hidden; display:flex; align-items:center; justify-content:center; color:#64748b; font-size:28px; }
       .fd-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
-      .fd-name { font-weight:700; font-size:14px; color:var(--text); line-height:1.4; word-break:break-word; }
-      .fd-meta { font-size:12px; color:var(--text-muted); line-height:1.5; }
-      .fd-amount { font-weight:700; color:var(--green); font-variant-numeric:tabular-nums; }
+      .fd-name { font-weight:700; font-size:12.5px; color:var(--text); line-height:1.35; word-break:break-word; }
+      .fd-meta { font-size:11px; color:var(--text-muted); line-height:1.5; }
+      .fd-amount { font-weight:700; font-size:12px; color:var(--green); font-variant-numeric:tabular-nums; }
+      .fd-tag { display:inline-flex; align-items:center; gap:3px; font-size:10px; font-weight:600; background:rgba(37,99,235,.1); color:var(--primary); padding:2px 6px 2px 8px; border-radius:999px; }
+      .fd-tag .fd-rm { cursor:pointer; opacity:.6; font-size:9px; }
+      .fd-tag .fd-rm:hover { opacity:1; color:var(--critical); }
+      .fd-addtag { border:1px dashed var(--border); background:transparent; color:var(--text-muted); font-size:10px; font-weight:600; padding:2px 8px; border-radius:999px; cursor:pointer; font-family:inherit; }
+      .fd-addtag:hover { border-color:var(--primary); color:var(--primary); }
+      .fd-fchip { border:1px solid var(--border); background:var(--bg-card); color:var(--text-muted); font-size:12px; font-weight:600; padding:4px 12px; border-radius:999px; cursor:pointer; font-family:inherit; transition:.12s; }
+      .fd-fchip.on { background:var(--primary); color:#fff; border-color:var(--primary); }
       @media (max-width: 768px) {
-        .fd-grid { grid-template-columns:1fr; }
-        .fd-thumb { aspect-ratio:4/3; }
-        .fd-card { padding:14px; }
-        .fd-card .btn { font-size:14px; padding:10px 14px; min-height:42px; }
+        .fd-grid { grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); }
         #fd-add-btn { font-size:15px; padding:11px 18px; min-height:44px; width:100%; }
       }
     </style>
@@ -10726,22 +10732,77 @@ function renderFinDocList() {
     `;
     return;
   }
-  el.innerHTML = `<div class="fd-grid">${_findocList.map(d => `
-    <button type="button" class="fd-card" data-fd-id="${d.id}" style="text-align:left;font-family:inherit;border:1px solid var(--border)">
-      <div class="fd-thumb">${d.first_page_image ? `<img src="${d.first_page_image}" alt="" />` : '📄'}</div>
-      <div class="fd-name">${escapeHtml(d.name)}</div>
-      <div class="fd-meta">📅 ${escapeHtml(fmtFinDocDate(d.doc_date))} · 📃 ${d.page_count} หน้า</div>
-      <div class="fd-amount">${escapeHtml(fmtFinDocAmount(d.amount, d.currency))}</div>
-    </button>
-  `).join('')}</div>`;
-  el.querySelectorAll('button[data-fd-id]').forEach(b => {
-    b.addEventListener('click', () => {
-      const id = parseInt(b.dataset.fdId, 10);
-      _findocViewMode = 'detail';
-      _findocCurrentId = id;
-      renderFinDocDetailPage(id);
-    });
+  // v1.9.301 — filter bar (capsule) + cards พร้อม tag chips
+  const allTags = [...new Set(_findocList.flatMap(_fdTagsOf))].sort((a, b) => a.localeCompare(b, 'th'));
+  _fdTagFilter = _fdTagFilter.filter(t => allTags.includes(t));   // ตัด tag ที่หายไปแล้ว
+  const docs = _fdTagFilter.length
+    ? _findocList.filter(d => { const ts = _fdTagsOf(d); return _fdTagFilter.some(f => ts.includes(f)); })
+    : _findocList;
+  const filterBar = allTags.length ? `
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;align-items:center">
+      <span style="font-size:12px;color:var(--text-muted);font-weight:700">🏷️ กรอง:</span>
+      <button type="button" class="fd-fchip ${_fdTagFilter.length === 0 ? 'on' : ''}" data-fd-fall="1">ทั้งหมด</button>
+      ${allTags.map(t => `<button type="button" class="fd-fchip ${_fdTagFilter.includes(t) ? 'on' : ''}" data-fd-ftag="${encodeURIComponent(t)}">${escapeHtml(t)}</button>`).join('')}
+    </div>` : '';
+  const card = (d) => {
+    const tags = _fdTagsOf(d);
+    return `<div class="fd-card" data-fd-id="${d.id}">
+      <div data-fd-open="${d.id}" style="cursor:pointer;display:flex;flex-direction:column;gap:5px">
+        <div class="fd-thumb">${d.first_page_image ? `<img src="${d.first_page_image}" alt="" />` : '📄'}</div>
+        <div class="fd-name">${escapeHtml(d.name)}</div>
+        <div class="fd-meta">📅 ${escapeHtml(fmtFinDocDate(d.doc_date))} · 📃 ${d.page_count} หน้า</div>
+        <div class="fd-amount">${escapeHtml(fmtFinDocAmount(d.amount, d.currency))}</div>
+      </div>
+      <div class="fd-tags" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;border-top:1px solid var(--border);padding-top:6px">
+        ${tags.map(t => `<span class="fd-tag">${escapeHtml(t)}<span class="fd-rm" data-fd-rmtag="${d.id}" data-fd-tag="${encodeURIComponent(t)}" title="ลบ tag">✕</span></span>`).join('')}
+        <button type="button" class="fd-addtag" data-fd-addtag="${d.id}">＋ tag</button>
+      </div>
+    </div>`;
+  };
+  el.innerHTML = filterBar + (docs.length
+    ? `<div class="fd-grid">${docs.map(card).join('')}</div>`
+    : '<div class="empty" style="padding:28px;text-align:center">— ไม่มีเอกสารในหมวดที่เลือก —</div>');
+  el.querySelectorAll('[data-fd-open]').forEach(b => b.addEventListener('click', () => {
+    const id = parseInt(b.dataset.fdOpen, 10);
+    _findocViewMode = 'detail'; _findocCurrentId = id; renderFinDocDetailPage(id);
+  }));
+  el.querySelectorAll('[data-fd-fall]').forEach(b => b.addEventListener('click', () => { _fdTagFilter = []; renderFinDocList(); }));
+  el.querySelectorAll('[data-fd-ftag]').forEach(b => b.addEventListener('click', () => {
+    const t = decodeURIComponent(b.dataset.fdFtag);
+    const i = _fdTagFilter.indexOf(t);
+    if (i >= 0) _fdTagFilter.splice(i, 1); else _fdTagFilter.push(t);
+    renderFinDocList();
+  }));
+  el.querySelectorAll('[data-fd-rmtag]').forEach(b => b.addEventListener('click', (e) => {
+    e.stopPropagation(); _fdRemoveTag(parseInt(b.dataset.fdRmtag, 10), decodeURIComponent(b.dataset.fdTag));
+  }));
+  el.querySelectorAll('[data-fd-addtag]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); _fdStartAddTag(b); }));
+}
+
+// v1.9.301 — helpers สำหรับ tag ของ Financial Document
+function _fdTagsOf(d) { return (d.tags || '').split(',').map(t => t.trim()).filter(Boolean); }
+async function _fdSetTags(id, tagsArr) {
+  const tags = [...new Set(tagsArr.map(t => t.replace(/,/g, ' ').trim()).filter(Boolean))].join(',');
+  const d = _findocList.find(x => x.id === id); if (d) d.tags = tags;   // optimistic
+  renderFinDocList();
+  try { await fetchJson('/api/admin/financial-documents/' + id, { method: 'PATCH', body: JSON.stringify({ tags }) }); }
+  catch (e) { alert('บันทึก tag ไม่สำเร็จ: ' + (e.message || e)); await loadFinDocList(); }
+}
+function _fdAddTag(id, tag) { const d = _findocList.find(x => x.id === id); if (d) _fdSetTags(id, [..._fdTagsOf(d), tag]); }
+function _fdRemoveTag(id, tag) { const d = _findocList.find(x => x.id === id); if (d) _fdSetTags(id, _fdTagsOf(d).filter(t => t !== tag)); }
+function _fdStartAddTag(btn) {
+  const id = parseInt(btn.dataset.fdAddtag, 10);
+  const inp = document.createElement('input');
+  inp.type = 'text'; inp.placeholder = 'หมวด…'; inp.maxLength = 30;
+  inp.style.cssText = 'width:84px;padding:2px 8px;font-size:10.5px;border:1px solid var(--primary);border-radius:999px;font-family:inherit;outline:none;background:var(--bg-input);color:var(--text)';
+  btn.replaceWith(inp); inp.focus();
+  let done = false;
+  const commit = (save) => { if (done) return; done = true; const v = inp.value.trim(); if (save && v) _fdAddTag(id, v); else renderFinDocList(); };
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); commit(false); }
   });
+  inp.addEventListener('blur', () => commit(true));
 }
 
 async function renderFinDocDetailPage(docId) {

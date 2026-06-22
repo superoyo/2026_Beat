@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.301",
+      "date": "2026-06-22",
+      "title": "Financial Document: tag หมวดหมู่ (capsule) + filter + preview เล็กลง",
+      "summary": "แต่ละเอกสารเพิ่ม tag หมวดหมู่ได้หลายอันจากหน้าการ์ดเลย (capsule + ปุ่ม ＋tag + ✕ ลบ) · ด้านบนมี filter capsule (เลือกได้หลาย, OR) · ลดขนาด preview ลง ~ครึ่ง เห็นได้หลายอันต่อแถว",
+      "changes": [
+        "DB: financial_documents.tags (comma-separated)",
+        "การ์ด: เพิ่ม/ลบ tag เป็น capsule ได้จากด้านหน้า",
+        "filter bar capsule ด้านบน (ทั้งหมด + แต่ละ tag)",
+        "preview เล็กลง (grid 260→150px)"
+      ]
+    },
+    {
       "version": "1.9.300",
       "date": "2026-06-22",
       "title": "ประวัติการครอบครอง: เปลี่ยนช่องวันที่เป็น Month-Year calendar picker",
