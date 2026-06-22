@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.291",
+      "date": "2026-06-22",
+      "title": "คอมฯ: tab ‘สถานะ’ — ประวัติหมายเหตุ/checkbox + ผู้กรอก",
+      "summary": "ฟอร์มแก้ไขคอมฯ เพิ่ม tab 📊 สถานะ · บันทึกทุกครั้งที่แก้หมายเหตุ หรือติ๊ก checkbox (คอมฯของตนเอง/ตำแหน่งเปิดใหม่/ส่งต่อมา) · รายการใหม่อยู่บนสุด (= ปัจจุบัน) พร้อมชื่อผู้กรอก + เวลา",
+      "changes": [
+        "DB: hardware_status_log (note/checkbox snapshot + created_by)",
+        "auto-log ใน create + patch เมื่อสถานะเปลี่ยน",
+        "GET /api/admin/hardware/{id}/status-log (synthesize ปัจจุบันถ้ายังไม่มี log)",
+        "tab 📊 สถานะ: timeline ใหม่บนสุด + chip + ผู้กรอก"
+      ]
+    },
+    {
       "version": "1.9.290",
       "date": "2026-06-22",
       "title": "คอมฯส่งต่อมาจากท่านอื่น — ไม่นำไปคำนวณว่าควรเปลี่ยน",

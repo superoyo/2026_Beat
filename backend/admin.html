@@ -12852,6 +12852,7 @@ async function showHardwareModal(hw, type, afterSubmit) {
           <button type="button" class="hm-tab" data-hm-tab="details" style="background:none;border:none;border-bottom:2px solid var(--primary);padding:10px 14px;font-size:13.5px;color:var(--primary);font-weight:600;cursor:pointer">📋 รายละเอียดอุปกรณ์</button>
           <button type="button" class="hm-tab" data-hm-tab="owner" style="background:none;border:none;padding:10px 14px;font-size:13.5px;color:var(--text-muted);font-weight:500;cursor:pointer">👤 ผู้ดูแลปัจจุบัน${isEdit ? ' + ประวัติ' : ''}</button>
           ${isEdit ? `<button type="button" class="hm-tab" data-hm-tab="findoc" style="background:none;border:none;padding:10px 14px;font-size:13.5px;color:var(--text-muted);font-weight:500;cursor:pointer">💰 Financial Document</button>` : ''}
+          ${isEdit ? `<button type="button" class="hm-tab" data-hm-tab="status" style="background:none;border:none;padding:10px 14px;font-size:13.5px;color:var(--text-muted);font-weight:500;cursor:pointer">📊 สถานะ</button>` : ''}
         </div>
 
         <div class="hm-tab-pane" data-hm-pane="details">
@@ -13099,6 +13100,15 @@ async function showHardwareModal(hw, type, afterSubmit) {
           <div id="hm-findoc-list" style="display:flex;flex-direction:column;gap:6px"><div class="empty" style="padding:18px;font-size:12.5px">กำลังโหลด…</div></div>
         </div>
         ` : ''}
+
+        <!-- v1.9.291 — Tab: สถานะ (ประวัติหมายเหตุ + checkbox ใหม่บนสุด + ผู้กรอก) -->
+        ${isEdit ? `
+        <div class="hm-tab-pane" data-hm-pane="status" style="display:none">
+          ${sect('📊', 'ประวัติสถานะ')}
+          <div class="hint" style="font-size:12px;color:var(--text-muted);margin:0 0 12px">บันทึกทุกครั้งที่แก้ไข <b>หมายเหตุ</b> หรือติ๊ก checkbox สถานะ (คอมฯของตนเอง / ตำแหน่งเปิดใหม่ / ส่งต่อมา) — รายการใหม่อยู่บนสุด พร้อมชื่อผู้กรอก</div>
+          <div id="hm-status-list" style="display:flex;flex-direction:column;gap:8px"><div class="empty" style="padding:18px;font-size:12.5px">กำลังโหลด…</div></div>
+        </div>
+        ` : ''}
       ` : `
         <!-- Device / Network — keep simpler form -->
         <div class="field">
@@ -13293,6 +13303,11 @@ async function showHardwareModal(hw, type, afterSubmit) {
           btn.dataset.hmFindocLoaded = '1';
           loadHmFinDocs(hw.id);
         }
+        // v1.9.291 — โหลด tab สถานะ (lazy)
+        if (target === 'status' && isEdit && hw && hw.id && !btn.dataset.hmStatusLoaded) {
+          btn.dataset.hmStatusLoaded = '1';
+          loadHmStatusLog(hw.id);
+        }
       });
     });
     // โหลด history เลยเพื่อให้ user ที่กด tab เห็นทันที (background — ไม่ block)
@@ -13481,6 +13496,40 @@ async function loadHmFinDocs(hwId) {
     items = d.documents || [];
   } catch (_) { /* ignore */ }
   renderHmFinDocList(hwId, items);
+}
+
+// v1.9.291 — ประวัติสถานะ (หมายเหตุ + checkbox) ใหม่บนสุด + ผู้กรอก
+async function loadHmStatusLog(hwId) {
+  const el = $('hm-status-list');
+  if (!el) return;
+  let log = [];
+  try {
+    const d = await fetchJson(`/api/admin/hardware/${hwId}/status-log`);
+    log = d.log || [];
+  } catch (e) { el.innerHTML = '<div class="empty" style="padding:16px;font-size:12.5px">โหลดประวัติสถานะไม่ได้</div>'; return; }
+  if (!log.length) { el.innerHTML = '<div class="empty" style="padding:16px;font-size:12.5px">ยังไม่มีประวัติสถานะ — จะเริ่มบันทึกเมื่อมีการแก้ไขหมายเหตุ/สถานะครั้งถัดไป</div>'; return; }
+  const catLabel = { keep: '🔸 ยังไม่เปลี่ยน', procuring: '🛒 อยู่ระหว่างจัดหา', transferring: '🔄 ได้เครื่องใหม่ — transfer' };
+  const chip = (bg, c, t) => `<span style="display:inline-flex;align-items:center;font-size:10.5px;font-weight:700;background:${bg};color:${c};padding:2px 9px;border-radius:999px">${t}</span>`;
+  const fmtTime = (iso) => { if (!iso) return '—'; const d = new Date(iso); return isNaN(d.getTime()) ? escapeHtml(String(iso)) : d.toLocaleString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); };
+  el.innerHTML = log.map((e, i) => {
+    const isCurrent = i === 0;
+    const chips = [];
+    if (e.note_category && catLabel[e.note_category]) chips.push(chip('var(--bg-soft)', 'var(--text)', catLabel[e.note_category]));
+    if (e.is_personal_owned) chips.push(chip('rgba(124,58,237,.12)', '#7c3aed', '🙋 คอมฯของตนเอง'));
+    if (e.for_new_position) chips.push(chip('rgba(14,165,233,.12)', '#0284c7', '🆕 ตำแหน่งเปิดใหม่'));
+    if (e.is_handed_down) chips.push(chip('rgba(22,163,74,.12)', '#16a34a', '🔄 ส่งต่อมาจากท่านอื่น'));
+    const who = e.created_by ? escapeHtml(e.created_by) : (e.synthetic ? 'ยังไม่มีประวัติการแก้ไข' : '—');
+    return `
+      <div class="card" style="padding:11px 13px;border-left:3px solid ${isCurrent ? 'var(--primary)' : 'var(--border)'}">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:${(chips.length || e.notes) ? '7' : '0'}px">
+          ${isCurrent ? '<span style="font-size:10.5px;font-weight:800;background:rgba(37,99,235,.12);color:var(--primary);padding:2px 9px;border-radius:999px">● ปัจจุบัน</span>' : '<span style="font-size:10.5px;color:var(--text-muted)">ประวัติ</span>'}
+          <span style="font-size:11px;color:var(--text-muted);white-space:nowrap">🕒 ${fmtTime(e.created_at)}</span>
+        </div>
+        ${chips.length ? `<div style="display:flex;flex-wrap:wrap;gap:5px;${e.notes ? 'margin-bottom:7px' : ''}">${chips.join('')}</div>` : ''}
+        ${e.notes ? `<div style="font-size:12.5px;color:var(--text);background:var(--bg-soft);padding:7px 10px;border-radius:7px;line-height:1.5;white-space:pre-wrap">📝 ${escapeHtml(e.notes)}</div>` : (chips.length ? '' : '<div style="font-size:12px;color:var(--text-muted);font-style:italic">— ไม่มีหมายเหตุ/สถานะ —</div>')}
+        <div style="font-size:11px;color:var(--text-muted);margin-top:7px">✍️ ${who}</div>
+      </div>`;
+  }).join('');
 }
 
 function renderHmFinDocList(hwId, items) {

@@ -510,6 +510,20 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_wf_notes_wf ON workflow_notes(workflow_id);
 
+            -- v1.9.291 — ประวัติสถานะคอมฯ (หมายเหตุ + checkbox) — แทรกใหม่บนสุด เก็บผู้กรอก
+            CREATE TABLE IF NOT EXISTS hardware_status_log (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                hardware_id       INTEGER NOT NULL REFERENCES hardware(id) ON DELETE CASCADE,
+                note_category     TEXT,
+                notes             TEXT,
+                is_personal_owned INTEGER NOT NULL DEFAULT 0,
+                for_new_position  INTEGER NOT NULL DEFAULT 0,
+                is_handed_down    INTEGER NOT NULL DEFAULT 0,
+                created_by        TEXT,
+                created_at        TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_hw_status_log_hw ON hardware_status_log(hardware_id);
+
             -- v1.13 — ขอสิทธิ์เข้าถึง site (member request → admin accept/reject)
             CREATE TABLE IF NOT EXISTS access_requests (
                 id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -6248,6 +6262,30 @@ def _hardware_row_to_dict(r: sqlite3.Row, member_lookup: dict[int, dict] = None)
     return out
 
 
+# v1.9.291 — ประวัติสถานะคอมฯ
+_HW_STATUS_FIELDS = ("note_category", "notes", "is_personal_owned", "for_new_position", "is_handed_down")
+
+
+def _hw_actor_name(conn: sqlite3.Connection, sess: dict) -> str:
+    """ชื่อผู้กรอก: member → display_name/email, super admin → username"""
+    mid = sess.get("member_id")
+    if mid:
+        r = conn.execute("SELECT display_name, email FROM members WHERE id = ?", (mid,)).fetchone()
+        if r and (r["display_name"] or r["email"]):
+            return r["display_name"] or r["email"]
+    return sess.get("username") or "ผู้ดูแลระบบ"
+
+
+def _hw_log_status(conn: sqlite3.Connection, hw_id: int, snap: dict, actor: str) -> None:
+    conn.execute(
+        "INSERT INTO hardware_status_log(hardware_id, note_category, notes, is_personal_owned, "
+        "for_new_position, is_handed_down, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (hw_id, snap.get("note_category"), snap.get("notes"),
+         1 if snap.get("is_personal_owned") else 0, 1 if snap.get("for_new_position") else 0,
+         1 if snap.get("is_handed_down") else 0, actor, utc_now().isoformat()),
+    )
+
+
 def _change_hardware_owner(conn: sqlite3.Connection, hw_id: int, new_member_id: Optional[int]) -> None:
     """ปิด assignment เก่า + เปิดใหม่ + อัพเดท current_member_id"""
     now = utc_now().isoformat()
@@ -6365,6 +6403,13 @@ def admin_create_hardware(
                 "VALUES (?, ?, ?, ?)",
                 (hw_id, payload.current_member_id, member_label, now),
             )
+        # v1.9.291 — log baseline สถานะ (ถ้ามีหมายเหตุ/checkbox ตั้งแต่สร้าง)
+        if payload.note_category or payload.notes or payload.is_personal_owned or payload.for_new_position or payload.is_handed_down:
+            _hw_log_status(conn, hw_id, {
+                "note_category": s(payload.note_category), "notes": s(payload.notes),
+                "is_personal_owned": payload.is_personal_owned, "for_new_position": payload.for_new_position,
+                "is_handed_down": payload.is_handed_down,
+            }, _hw_actor_name(conn, _sess))
     return {"ok": True, "id": hw_id}
 
 
@@ -6423,7 +6468,34 @@ def admin_update_hardware(
             new_owner = raw_body["current_member_id"]
             if new_owner != existing["current_member_id"]:
                 _change_hardware_owner(conn, hw_id, new_owner)
+        # v1.9.291 — บันทึกประวัติสถานะ (หมายเหตุ/checkbox) ถ้ามีการเปลี่ยน
+        if any(f in raw_body for f in _HW_STATUS_FIELDS):
+            eff = {f: updates.get(f, existing[f]) for f in _HW_STATUS_FIELDS}
+            if any(eff[f] != existing[f] for f in _HW_STATUS_FIELDS):
+                _hw_log_status(conn, hw_id, eff, _hw_actor_name(conn, _sess))
     return {"ok": True}
+
+
+@app.get("/api/admin/hardware/{hw_id}/status-log")
+def admin_hardware_status_log(hw_id: int, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    """v1.9.291 — ประวัติสถานะ (หมายเหตุ + checkbox) ใหม่บนสุด · ถ้ายังไม่มี log → สังเคราะห์สถานะปัจจุบัน"""
+    with db_conn() as conn:
+        hw = conn.execute("SELECT * FROM hardware WHERE id = ?", (hw_id,)).fetchone()
+        if not hw:
+            raise HTTPException(status_code=404, detail="hardware not found")
+        rows = conn.execute(
+            "SELECT * FROM hardware_status_log WHERE hardware_id = ? ORDER BY id DESC", (hw_id,)
+        ).fetchall()
+        log = [dict(r) for r in rows]
+        if not log:
+            log = [{
+                "id": None, "hardware_id": hw_id,
+                "note_category": hw["note_category"], "notes": hw["notes"],
+                "is_personal_owned": hw["is_personal_owned"], "for_new_position": hw["for_new_position"],
+                "is_handed_down": hw["is_handed_down"],
+                "created_by": None, "created_at": hw["created_at"], "synthetic": True,
+            }]
+    return {"log": log}
 
 
 @app.delete("/api/admin/hardware/{hw_id}")
