@@ -12245,6 +12245,8 @@ function showHardwareDetail(h, onChange) {
     try { items = (await fetchJson('/api/admin/hardware/' + h.id + '/history')).history || []; }
     catch (e) { box.innerHTML = '<div style="font-size:11.5px;color:var(--text-muted);padding:6px 0">โหลดประวัติไม่ได้</div>'; return; }
     if (!items.length) { box.innerHTML = '<div style="font-size:12px;color:var(--text-muted);font-style:italic;padding:6px 0">— ยังไม่มีประวัติ —</div>'; return; }
+    // v1.9.302 — current (ยังครอบครองอยู่) ต้องอยู่บนสุด → เรียง active ก่อน แล้วตาม assigned ใหม่→เก่า
+    items.sort((a, b) => { const aA = !a.unassigned_at, bA = !b.unassigned_at; if (aA !== bA) return aA ? -1 : 1; return (b.assigned_at || '').localeCompare(a.assigned_at || ''); });
     // v1.9.295/297 — การ์ด: period ซ้าย · ขวา = avatar + ชื่อ + แผนก(ใต้ชื่อ) + capsule
     const _miniAv = (m, nm) => (m && m.avatar_data)
       ? `<img src="${m.avatar_data}" alt="" style="width:30px;height:30px;border-radius:50%;object-fit:cover;flex-shrink:0" />`
@@ -12767,6 +12769,8 @@ async function _tpdmLoadHistory(bg, hwId) {
   try { items = (await fetchJson('/api/admin/hardware/' + hwId + '/history')).history || []; }
   catch (e) { box.innerHTML = '<div class="empty" style="padding:20px;font-size:12.5px">โหลดประวัติไม่ได้</div>'; return; }
   if (!items.length) { box.innerHTML = '<div class="empty" style="padding:20px;font-size:12.5px">— ยังไม่มีประวัติการใช้เครื่อง —</div>'; return; }
+  // v1.9.302 — current อยู่บนสุด
+  items.sort((a, b) => { const aA = !a.unassigned_at, bA = !b.unassigned_at; if (aA !== bA) return aA ? -1 : 1; return (b.assigned_at || '').localeCompare(a.assigned_at || ''); });
   const _miniAv = (m, nm) => (m && m.avatar_data)
     ? `<img src="${m.avatar_data}" alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0" />`
     : `<span style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-size:13px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml((String(nm).trim().charAt(0) || '?').toUpperCase())}</span>`;
@@ -13770,6 +13774,7 @@ function showHmFinDocPickerModal(hwId, currentLinkedIds) {
       <div class="hint" style="margin-bottom:10px;color:var(--text-muted);font-size:12px">เลือกเอกสารที่ต้องการผูกกับอุปกรณ์นี้ (เลือกได้หลายชุด)</div>
       <input id="hmfdp-search" type="text" placeholder="🔍 ค้นหาชื่อ / vendor..." autocomplete="off"
         style="width:100%;padding:8px 12px;font-size:13px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;box-sizing:border-box" />
+      <div id="hmfdp-tags" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
       <div id="hmfdp-count" style="font-size:11.5px;color:var(--text-muted);margin-top:6px">กำลังโหลด...</div>
       <div id="hmfdp-list" style="margin-top:8px;max-height:380px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);padding:6px;display:flex;flex-direction:column;gap:4px">
         <div class="empty" style="padding:14px;font-size:12.5px">กำลังโหลด...</div>
@@ -13784,8 +13789,11 @@ function showHmFinDocPickerModal(hwId, currentLinkedIds) {
   // load all financial documents
   let allDocs = [];
   let q = '';
+  let tagFilter = [];   // v1.9.302 — filter ตามหมวด (tag)
   fetchJson('/api/admin/financial-documents').then(d => {
     allDocs = d.documents || [];
+    // v1.9.302 — เรียงตามวันที่ล่าสุด (doc_date → created_at) ใหม่→เก่า
+    allDocs.sort((a, b) => (b.doc_date || b.created_at || '').localeCompare(a.doc_date || a.created_at || ''));
     refreshList();
   }).catch(e => {
     const el = $('hmfdp-list');
@@ -13794,11 +13802,27 @@ function showHmFinDocPickerModal(hwId, currentLinkedIds) {
   const linkedSet = new Set(currentLinkedIds);
   function refreshList() {
     const ql = q.trim().toLowerCase();
-    const filtered = allDocs.filter(d =>
-      !ql || (d.name || '').toLowerCase().includes(ql) || (d.vendor || '').toLowerCase().includes(ql)
-    );
+    // v1.9.302 — tag filter bar (capsule)
+    const tagsOf = (d) => (d.tags || '').split(',').map(t => t.trim()).filter(Boolean);
+    const allTags = [...new Set(allDocs.flatMap(tagsOf))].sort((a, b) => a.localeCompare(b, 'th'));
+    tagFilter = tagFilter.filter(t => allTags.includes(t));
+    const tagsEl = $('hmfdp-tags');
+    if (tagsEl) {
+      const chip = (label, active, attr) => `<button type="button" ${attr} style="border:1px solid ${active ? 'var(--primary)' : 'var(--border)'};background:${active ? 'var(--primary)' : 'var(--bg-card)'};color:${active ? '#fff' : 'var(--text-muted)'};font-size:11.5px;font-weight:600;padding:4px 11px;border-radius:999px;cursor:pointer;font-family:inherit">${label}</button>`;
+      tagsEl.innerHTML = allTags.length
+        ? `<span style="font-size:11.5px;color:var(--text-muted);font-weight:700;align-self:center">🏷️</span>${chip('ทั้งหมด', tagFilter.length === 0, 'data-hmfdp-fall="1"')}${allTags.map(t => chip(escapeHtml(t), tagFilter.includes(t), `data-hmfdp-ftag="${encodeURIComponent(t)}"`)).join('')}`
+        : '';
+      tagsEl.querySelectorAll('[data-hmfdp-fall]').forEach(b => b.addEventListener('click', () => { tagFilter = []; refreshList(); }));
+      tagsEl.querySelectorAll('[data-hmfdp-ftag]').forEach(b => b.addEventListener('click', () => { const t = decodeURIComponent(b.dataset.hmfdpFtag); const i = tagFilter.indexOf(t); if (i >= 0) tagFilter.splice(i, 1); else tagFilter.push(t); refreshList(); }));
+    }
+    const filtered = allDocs.filter(d => {
+      const matchQ = !ql || (d.name || '').toLowerCase().includes(ql) || (d.vendor || '').toLowerCase().includes(ql);
+      if (!matchQ) return false;
+      if (tagFilter.length) { const ts = tagsOf(d); return tagFilter.some(f => ts.includes(f)); }
+      return true;
+    });
     const countEl = $('hmfdp-count');
-    if (countEl) countEl.textContent = ql ? `แสดง ${filtered.length} / ${allDocs.length} ชุด` : `ทั้งหมด ${allDocs.length} ชุด`;
+    if (countEl) countEl.textContent = (ql || tagFilter.length) ? `แสดง ${filtered.length} / ${allDocs.length} ชุด` : `ทั้งหมด ${allDocs.length} ชุด`;
     const listEl = $('hmfdp-list');
     if (!listEl) return;
     if (filtered.length === 0) {
@@ -14766,9 +14790,9 @@ function _initMonthPicker(pid, placeholder, allowClear) {
         ${_MTH_SHORT.map((mn, i) => { const sel = selY === navYear && selM === i + 1; return `<button type="button" data-mth="${i + 1}" style="border:1px solid ${sel ? 'var(--primary)' : 'var(--border)'};background:${sel ? 'var(--primary)' : 'var(--bg-card)'};color:${sel ? '#fff' : 'var(--text)'};border-radius:7px;padding:9px 4px;cursor:pointer;font-size:12.5px;font-family:inherit;font-weight:${sel ? 700 : 500}">${mn}</button>`; }).join('')}
       </div>
       ${allowClear ? `<button type="button" data-mth-clear="1" style="width:100%;margin-top:8px;border:none;background:var(--bg-soft);border-radius:7px;padding:7px;cursor:pointer;font-size:12px;color:var(--text-muted);font-family:inherit">✕ ล้าง (= ปัจจุบัน)</button>` : ''}`;
-    pnl.querySelectorAll('[data-mth-nav]').forEach(b => b.addEventListener('click', () => { navYear += parseInt(b.dataset.mthNav, 10); renderPanel(); }));
-    pnl.querySelectorAll('[data-mth]').forEach(b => b.addEventListener('click', () => { hidden.value = navYear + '-' + String(parseInt(b.dataset.mth, 10)).padStart(2, '0'); paintFace(); close(); }));
-    const clr = pnl.querySelector('[data-mth-clear]'); if (clr) clr.addEventListener('click', () => { hidden.value = ''; paintFace(); close(); });
+    pnl.querySelectorAll('[data-mth-nav]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); navYear += parseInt(b.dataset.mthNav, 10); renderPanel(); }));
+    pnl.querySelectorAll('[data-mth]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); hidden.value = navYear + '-' + String(parseInt(b.dataset.mth, 10)).padStart(2, '0'); paintFace(); close(); }));
+    const clr = pnl.querySelector('[data-mth-clear]'); if (clr) clr.addEventListener('click', (e) => { e.stopPropagation(); hidden.value = ''; paintFace(); close(); });
   }
   function open() { navYear = valid(hidden.value) ? parseInt(hidden.value.slice(0, 4), 10) : new Date().getFullYear(); renderPanel(); pnl.style.display = 'block'; }
   function close() { pnl.style.display = 'none'; }

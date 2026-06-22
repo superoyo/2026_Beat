@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.302",
+      "date": "2026-06-22",
+      "title": "แก้: current บนสุด + month picker ย้อนปีได้ + ผูก FinDoc filter tag",
+      "summary": "(1) ประวัติการครอบครอง ‘current’ อยู่บนสุดเสมอ (2) แก้บั๊ก month picker กดเลื่อนปีแล้วปฏิทินปิด → ย้อนปีต่ำกว่า 2569 ได้แล้ว (3) modal ผูก Financial Document เพิ่ม filter ตามหมวด (tag) + เรียงตามวันที่ล่าสุด",
+      "changes": [
+        "ประวัติการครอบครอง: เรียง active(current) ขึ้นบนสุด",
+        "month picker: stopPropagation บนปุ่มเลื่อนปี/เดือน (เดิมกดแล้วปฏิทินปิดเพราะ document click handler)",
+        "ผูก FinDoc: tag filter capsule + เรียงวันที่ล่าสุด"
+      ]
+    },
+    {
       "version": "1.9.301",
       "date": "2026-06-22",
       "title": "Financial Document: tag หมวดหมู่ (capsule) + filter + preview เล็กลง",
