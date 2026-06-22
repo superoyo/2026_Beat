@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.288",
+      "date": "2026-06-22",
+      "title": "แผงโปรไฟล์ — รวมอุปกรณ์เป็น ‘Devices’ + capsule current/previous",
+      "summary": "แผงโปรไฟล์เจ้าของ เปลี่ยนหัวข้อ ‘อุปกรณ์ที่ผูกอยู่’ → ‘Devices’ · รวมเครื่องปัจจุบัน + เครื่องเก่าไว้รายการเดียวกัน · มี capsule ขวา (current = เครื่องปัจจุบัน · previous + วงเล็บช่วงเดือนเล็ก ๆ)",
+      "changes": [
+        "หัวข้อเป็น 💻 Devices",
+        "current + previous รวมเป็นรายการเดียว (ติดกัน)",
+        "capsule ขวา: current (เขียว) / previous (เทา) + (เดือน) เล็ก"
+      ]
+    },
+    {
       "version": "1.9.287",
       "date": "2026-06-22",
       "title": "Dashboard ปฏิทินซื้อ — คลิกยอดรวมรายปี + บรรทัดแผนกในรายการ",
