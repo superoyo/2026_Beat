@@ -11426,6 +11426,7 @@ async function renderPcDashboard() {
       <div style="min-width:0">
         <div style="font-weight:700;font-size:13.5px">${escapeHtml(p.name)} ${p._mac ? '<span style="font-size:10px;color:#7c3aed;font-weight:700">🍎 Mac</span>' : '<span style="font-size:10px;color:var(--text-muted)">💻 Notebook</span>'}</div>
         <div style="font-size:11.5px;color:var(--text-muted)">${escapeHtml(p.model || '—')} · ${escapeHtml(ownerOf(p))} · ${escapeHtml(p.os || '')}</div>
+        ${p.for_new_position ? '<div style="margin-top:4px"><span style="display:inline-block;font-size:10px;font-weight:700;background:rgba(14,165,233,.12);color:#0284c7;padding:2px 8px;border-radius:999px">🆕 คอมฯสำหรับตำแหน่งเปิดใหม่</span></div>' : ''}
         ${noteHtml}
       </div>
       <div style="text-align:right;flex-shrink:0">
@@ -11569,7 +11570,7 @@ async function renderPcDashboard() {
       <div style="font-weight:800;font-size:13px;padding:10px 13px;border-bottom:1px solid var(--border);flex-shrink:0">🛒 ${escapeHtml(label)} — ซื้อ ${arr.length} เครื่อง</div>
       <div style="overflow-y:auto;padding:2px 13px 6px">
         ${arr.map(p => { const dept = _pcDeptOf(p); return `<div data-pcd-item="${p.id}" title="${p.current_member_id ? 'คลิกดูเจ้าของ + อุปกรณ์' : 'คลิกดูรายละเอียดเครื่อง'}" style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px;cursor:pointer;border-radius:6px;transition:background .1s" onmouseenter="this.style.background='var(--bg-soft)'" onmouseleave="this.style.background='transparent'">
-          <span style="flex:1;min-width:0;padding-left:4px"><span style="font-weight:600">${escapeHtml(p.name)}</span> <span style="color:var(--text-muted)">${escapeHtml(p.model || '')}</span>${dept ? `<br><span style="font-size:10.5px;color:var(--text-soft)">🏢 ${escapeHtml(dept)}</span>` : ''}</span>
+          <span style="flex:1;min-width:0;padding-left:4px"><span style="font-weight:600">${escapeHtml(p.name)}</span> <span style="color:var(--text-muted)">${escapeHtml(p.model || '')}</span>${dept ? `<br><span style="font-size:10.5px;color:var(--text-soft)">🏢 ${escapeHtml(dept)}</span>` : ''}${p.for_new_position ? `<br><span style="display:inline-block;font-size:9.5px;font-weight:700;background:rgba(14,165,233,.12);color:#0284c7;padding:1px 7px;border-radius:999px;margin-top:2px">🆕 ตำแหน่งเปิดใหม่</span>` : ''}</span>
           <span style="color:var(--text-muted);white-space:nowrap;flex-shrink:0;text-align:right;padding-right:4px">${escapeHtml(ownerOf(p))}${p._needsReplace ? '<br><span style="color:#dc2626;font-weight:700">⚠ ควรเปลี่ยน</span>' : ''}</span>
         </div>`; }).join('')}
       </div>
@@ -13025,6 +13026,12 @@ async function showHardwareModal(hw, type, afterSubmit) {
             🙋 คอมพิวเตอร์ของตนเอง <span style="font-weight:500;color:var(--text-muted);font-size:12px">(เครื่องส่วนตัว / BYOD)</span>
           </label>
         </div>
+        <div class="field" style="margin-top:4px">
+          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-weight:600;font-size:13.5px">
+            <input type="checkbox" id="hm-for-new-position" ${isEdit && hw.for_new_position ? 'checked' : ''} style="width:17px;height:17px;accent-color:#0ea5e9;cursor:pointer" />
+            🆕 คอมฯสำหรับตำแหน่งเปิดใหม่ <span style="font-weight:500;color:var(--text-muted);font-size:12px">(สำรองรอพนักงานใหม่)</span>
+          </label>
+        </div>
           </div><!-- /right column -->
         </div><!-- /2-col flex -->
         </div><!-- /details pane -->
@@ -13172,6 +13179,7 @@ async function showHardwareModal(hw, type, afterSubmit) {
         data.status = $('hm-status').value || null;
         data.quotation = $('hm-quotation').value.trim() || null;
         data.is_personal_owned = $('hm-personal-owned') ? $('hm-personal-owned').checked : false;
+        data.for_new_position = $('hm-for-new-position') ? $('hm-for-new-position').checked : false;
         // v1.9.65 — unlinked fields: ส่งเฉพาะ unassigned_team_id + storage_location
         // (เก็บเสมอ ไม่ว่าจะมี owner หรือไม่ — ถ้ามี owner ก็ยังเก็บเผื่อ admin ระบุไว้)
         const untSel = $('hm-unassigned-team');

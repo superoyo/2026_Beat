@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.289",
+      "date": "2026-06-22",
+      "title": "คอมฯสำหรับตำแหน่งเปิดใหม่ — checkbox ในฟอร์ม + capsule ใน Dashboard",
+      "summary": "หน้าแก้ไขคอมฯ เพิ่ม checkbox 🆕 ‘คอมฯสำหรับตำแหน่งเปิดใหม่’ (สำรองรอพนักงานใหม่) · Dashboard แสดง capsule เล็ก ๆ ใต้คอมฯที่ติ๊กไว้ (ทั้งรายการควรพิจารณาเปลี่ยน + รายการที่ซื้อด้านขวา)",
+      "changes": [
+        "DB: hardware.for_new_position (0/1)",
+        "ฟอร์มแก้ไข PC: checkbox 🆕 คอมฯสำหรับตำแหน่งเปิดใหม่",
+        "Dashboard: capsule 🆕 ใต้คอมฯ (replaceRow + รายการที่ซื้อ)"
+      ]
+    },
+    {
       "version": "1.9.288",
       "date": "2026-06-22",
       "title": "แผงโปรไฟล์ — รวมอุปกรณ์เป็น ‘Devices’ + capsule current/previous",

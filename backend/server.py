@@ -635,6 +635,8 @@ def init_db() -> None:
                 ("note_category", "TEXT"),
                 # v1.9.252 — เครื่องเป็นของพนักงานเอง (BYOD)
                 ("is_personal_owned", "INTEGER NOT NULL DEFAULT 0"),
+                # v1.9.289 — คอมฯสำหรับตำแหน่งเปิดใหม่ (สำรองรอพนักงานใหม่)
+                ("for_new_position", "INTEGER NOT NULL DEFAULT 0"),
             ]
             for col_name, col_type in extra_cols:
                 if hw_cols and col_name not in hw_cols:
@@ -6180,6 +6182,7 @@ class HardwareIn(BaseModel):
     note_category: Optional[str] = Field(None, max_length=20)
     # v1.9.252 — เครื่องเป็นของพนักงานเอง (BYOD)
     is_personal_owned: bool = False
+    for_new_position: bool = False        # v1.9.289
 
     @field_validator("hw_type")
     @classmethod
@@ -6227,6 +6230,7 @@ class HardwarePatchIn(BaseModel):
     note_category: Optional[str] = Field(None, max_length=20)
     # v1.9.252 — เครื่องเป็นของพนักงานเอง (BYOD): null = no change
     is_personal_owned: Optional[bool] = None
+    for_new_position: Optional[bool] = None        # v1.9.289
     _set_owner: bool = False    # internal flag (not used yet)
 
 
@@ -6306,8 +6310,8 @@ def admin_create_hardware(
             "                     serial_number, display, department, location, os_version, model, "
             "                     mainboard, gpu, battery, ups, status, quotation, "
             "                     device_subtype, capacity, current_member_id, photo_data, asset_photo_data, "
-            "                     unassigned_team_id, storage_location, note_category, is_personal_owned) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "                     unassigned_team_id, storage_location, note_category, is_personal_owned, for_new_position) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 payload.hw_type,
                 payload.name.strip(),
@@ -6340,6 +6344,7 @@ def admin_create_hardware(
                 s(payload.storage_location),
                 s(payload.note_category),
                 1 if payload.is_personal_owned else 0,
+                1 if payload.for_new_position else 0,
             ),
         )
         hw_id = cur.lastrowid
@@ -6390,6 +6395,9 @@ def admin_update_hardware(
     # v1.9.252 — is_personal_owned: bool → 0/1, omitted = unchanged
     if "is_personal_owned" in raw_body:
         updates["is_personal_owned"] = 1 if raw_body["is_personal_owned"] else 0
+    # v1.9.289 — for_new_position
+    if "for_new_position" in raw_body:
+        updates["for_new_position"] = 1 if raw_body["for_new_position"] else 0
 
     with db_conn() as conn:
         existing = conn.execute("SELECT * FROM hardware WHERE id = ?", (hw_id,)).fetchone()
