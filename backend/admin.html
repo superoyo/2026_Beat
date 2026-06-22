@@ -649,6 +649,24 @@
     .kebab-pop button { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; background: none; border: none; padding: 8px 11px; border-radius: 7px; cursor: pointer; font-family: inherit; font-size: 13px; }
     .kebab-pop button:hover { background: var(--bg-soft); }
 
+    /* v1.9.278 — Workflow builder */
+    .wf-canvas { position: relative; width: 100%; height: calc(100vh - 210px); min-height: 500px; background: var(--bg-soft); background-image: radial-gradient(var(--border) 1px, transparent 1px); background-size: 22px 22px; border: 1px solid var(--border); border-radius: 12px; overflow: auto; }
+    .wf-edges { position: absolute; top: 0; left: 0; width: 4000px; height: 3000px; pointer-events: none; z-index: 1; overflow: visible; }
+    .wf-node { position: absolute; width: 216px; background: var(--bg-card); border: 1.5px solid var(--border); border-radius: 13px; box-shadow: 0 3px 12px rgba(15,23,42,.09); user-select: none; z-index: 2; }
+    .wf-node.selected { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,.18); }
+    .wf-node-head { display: flex; align-items: center; gap: 8px; padding: 9px 11px; cursor: grab; font-weight: 700; font-size: 13px; }
+    .wf-node-head:active { cursor: grabbing; }
+    .wf-node-ico { width: 28px; height: 28px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; }
+    .wf-node-body { padding: 0 11px 10px; }
+    .wf-port { position: absolute; width: 14px; height: 14px; border-radius: 50%; background: var(--bg-card); border: 2.5px solid var(--primary); cursor: crosshair; z-index: 4; }
+    .wf-port.in { left: -8px; top: 50%; transform: translateY(-50%); }
+    .wf-port.out { right: -8px; }
+    .wf-port:hover { background: var(--primary); transform: translateY(-50%) scale(1.25); }
+    .wf-port.out:hover { transform: scale(1.25); }
+    .wf-palette-item { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border: 1.5px dashed var(--border); border-radius: 11px; background: var(--bg-card); cursor: grab; margin-bottom: 9px; transition: border-color .12s, background .12s; }
+    .wf-palette-item:hover { border-color: var(--primary); background: var(--bg-soft); }
+    .wf-palette-item:active { cursor: grabbing; }
+
     /* Modal */
     .modal-bg {
       position: fixed; inset: 0;
@@ -1143,6 +1161,7 @@
         <a href="#/tv" data-route="tv" data-route-extra="tv-scheduling" data-label="TV"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="13" rx="2"/><polyline points="8 3 12 7 16 3"/></svg></span><span class="nav-label">TV</span></a>
         <!-- v1.9.122 — บัญชีของฉัน: direct link (โปรไฟล์/My Device/Extension/Check-in อยู่ในเมนูย่อยของหน้านี้แล้ว) -->
         <a href="#/account" data-route="account" data-label="My Profile"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><span class="nav-label">My Profile</span></a>
+        <a href="#/workflow" data-route="workflow" data-label="Workflow"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><path d="M9 6h3a3 3 0 0 1 3 3v0M6 9v3a3 3 0 0 0 3 3h0"/></svg></span><span class="nav-label">Workflow</span></a>
         <!-- v1.9.126 — Supervise: แสดงเฉพาะ member ที่ดูแลทีม (toggle ตอน load) -->
       </div>
 
@@ -1388,6 +1407,7 @@ const routes = {
   'access-requests':  () => renderPeoplesPage('access-requests'),
   'extension':        renderExtensionPage,
   'account':          renderAccountPage,
+  'workflow':         renderWorkflowPage,
 };
 
 function setActive(route) {
@@ -16430,6 +16450,327 @@ function showResetPasswordModal(memberId, memberName) {
       await loadMembersList();
     },
   });
+}
+
+// ============================ v1.9.278 — Workflow builder (n8n-style) ============================
+let _wfList = [];
+let _wfMembersCache = [];
+let _wfEditor = null;
+async function _wfLoadMembers() {
+  if (_wfMembersCache.length) return _wfMembersCache;
+  try { _wfMembersCache = (await fetchJson('/api/workflow-members')).members || []; } catch { _wfMembersCache = []; }
+  return _wfMembersCache;
+}
+function _wfMember(id) { return _wfMembersCache.find(m => m.id === id) || null; }
+function _wfAvatar(m, px) {
+  px = px || 30;
+  if (!m) return `<span style="width:${px}px;height:${px}px;border-radius:50%;background:var(--bg-soft);display:inline-flex;align-items:center;justify-content:center;font-size:${Math.round(px * 0.5)}px;flex-shrink:0">👤</span>`;
+  return m.avatar
+    ? `<img src="${m.avatar}" alt="" style="width:${px}px;height:${px}px;border-radius:50%;object-fit:cover;flex-shrink:0;border:1.5px solid #fff" />`
+    : `<span style="width:${px}px;height:${px}px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-size:${Math.round(px * 0.42)}px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml((String(m.name).trim().charAt(0) || '?').toUpperCase())}</span>`;
+}
+function _wfAgo(iso) { if (!iso) return '—'; const diff = (Date.now() - new Date(iso).getTime()) / 1000; if (diff < 60) return 'เมื่อสักครู่'; if (diff < 3600) return Math.floor(diff / 60) + ' นาทีที่แล้ว'; if (diff < 86400) return Math.floor(diff / 3600) + ' ชม.ที่แล้ว'; return Math.floor(diff / 86400) + ' วันที่แล้ว'; }
+
+async function renderWorkflowPage() {
+  const main = $('main');
+  main.innerHTML = `
+    <div class="page-head"><h2 class="page-title">🔀 Workflows</h2>
+      <button class="btn primary" id="wf-create" style="margin-left:auto">+ Create New Workflow</button>
+    </div>
+    <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px">ลากกล่อง Task / Logic เข้า canvas แล้วเชื่อมต่อกัน — บันทึกอัตโนมัติ · เฉพาะผู้สร้าง/collaborator แก้ไขได้</div>
+    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+      <input id="wf-search" placeholder="🔍 ค้นหา workflow..." autocomplete="off" style="flex:1;min-width:220px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--bg-card);color:var(--text);box-sizing:border-box" />
+      <select id="wf-dept" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--bg-card);color:var(--text);cursor:pointer"></select>
+    </div>
+    <div id="wf-list">${skelStack(3)}</div>`;
+  $('wf-create').addEventListener('click', _wfCreate);
+  $('wf-search').addEventListener('input', _wfRenderList);
+  $('wf-dept').addEventListener('change', _wfRenderList);
+  await _wfLoadMembers();
+  await _wfLoadList();
+}
+async function _wfLoadList() {
+  try { _wfList = (await fetchJson('/api/workflows')).workflows || []; }
+  catch (e) { if ($('wf-list')) $('wf-list').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`; return; }
+  const depts = [...new Set(_wfList.map(w => w.department).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'th'));
+  const sel = $('wf-dept');
+  if (sel) { const cur = sel.value; sel.innerHTML = `<option value="">🏢 ทุกแผนก</option>` + depts.map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join(''); sel.value = cur; }
+  _wfRenderList();
+}
+function _wfRenderList() {
+  const listEl = $('wf-list'); if (!listEl) return;
+  const q = ($('wf-search') ? $('wf-search').value : '').trim().toLowerCase();
+  const dept = $('wf-dept') ? $('wf-dept').value : '';
+  const list = _wfList.filter(w => (!q || (w.name || '').toLowerCase().includes(q)) && (!dept || w.department === dept));
+  if (list.length === 0) { listEl.innerHTML = `<div class="empty">— ไม่มี workflow — กด <strong>+ Create New Workflow</strong></div>`; return; }
+  listEl.innerHTML = `<div class="cfg-table-wrap"><div class="cfg-table-scroll"><table class="cfg-table">
+    <thead><tr><th>Name</th><th>แผนก</th><th>กล่อง</th><th>แก้ไขล่าสุด</th><th>ผู้สร้าง</th><th style="text-align:right">จัดการ</th></tr></thead>
+    <tbody>${list.map(_wfRow).join('')}</tbody></table></div></div>`;
+  listEl.querySelectorAll('tr[data-wf-row]').forEach(r => r.addEventListener('click', () => renderWorkflowEditor(parseInt(r.dataset.wfRow, 10))));
+  listEl.querySelectorAll('[data-wf-del]').forEach(b => b.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (!confirm('ลบ workflow นี้?')) return;
+    try { await fetchJson('/api/workflows/' + b.dataset.wfDel, { method: 'DELETE' }); await _wfLoadList(); } catch (err) { alert('ลบไม่ได้: ' + err.message); }
+  }));
+}
+function _wfRow(w) {
+  const c = w.creator;
+  return `<tr data-wf-row="${w.id}" title="คลิกเพื่อเปิด">
+    <td style="font-weight:700">${escapeHtml(w.name)}</td>
+    <td>${w.department ? `<span style="font-size:11px;background:var(--bg-soft);padding:2px 9px;border-radius:999px">${escapeHtml(w.department)}</span>` : '<span style="color:var(--text-muted)">—</span>'}</td>
+    <td style="color:var(--text-muted);white-space:nowrap">${w.node_count} กล่อง</td>
+    <td style="color:var(--text-muted);white-space:nowrap">${escapeHtml(_wfAgo(w.updated_at))}</td>
+    <td><div style="display:flex;align-items:center;gap:7px">${_wfAvatar(c, 24)}<span style="font-size:12.5px">${c ? escapeHtml(c.name) : '—'}</span></div></td>
+    <td style="text-align:right;white-space:nowrap">${w.can_edit ? '<span style="font-size:11px;color:var(--primary);font-weight:600">✏️ แก้ไขได้</span>' : '<span style="font-size:11px;color:var(--text-muted)">🔒 อ่านอย่างเดียว</span>'} ${w.can_edit ? `<button class="kebab-btn" data-wf-del="${w.id}" title="ลบ" style="font-size:13px">🗑</button>` : ''}</td>
+  </tr>`;
+}
+async function _wfCreate() {
+  try { const r = await fetchJson('/api/workflows', { method: 'POST', body: JSON.stringify({ name: 'Workflow ใหม่' }) }); renderWorkflowEditor(r.id); }
+  catch (e) { alert('สร้างไม่ได้: ' + e.message); }
+}
+
+// ---------------- Editor ----------------
+async function renderWorkflowEditor(id) {
+  const main = $('main');
+  main.innerHTML = `<div class="empty">กำลังโหลด…</div>`;
+  let wf;
+  try { wf = await fetchJson('/api/workflows/' + id); } catch (e) { main.innerHTML = `<div class="empty">โหลดไม่ได้: ${escapeHtml(e.message)}</div>`; return; }
+  await _wfLoadMembers();
+  const data = (wf.data && Array.isArray(wf.data.nodes)) ? wf.data : { nodes: [], edges: [] };
+  if (!Array.isArray(data.edges)) data.edges = [];
+  _wfEditor = { id, data, canEdit: wf.can_edit, isCreator: wf.is_creator, creator: wf.creator, collaborators: wf.collaborators || [], selected: null, saveTimer: null };
+  const ce = wf.can_edit;
+  main.innerHTML = `
+    <div class="page-head" style="gap:10px;align-items:center">
+      <button class="btn" id="wf-back">← Workflows</button>
+      <input id="wf-name" value="${escapeHtml(wf.name)}" ${ce ? '' : 'disabled'} placeholder="ชื่อ workflow" style="font-size:18px;font-weight:800;border:1px solid transparent;background:transparent;color:var(--text);min-width:180px;flex:1;font-family:inherit;padding:5px 8px;border-radius:8px" />
+      <input id="wf-dept-in" value="${escapeHtml(wf.department || '')}" ${ce ? '' : 'disabled'} placeholder="แผนก" list="wf-dept-list" style="width:150px;font-size:13px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);font-family:inherit;padding:7px 10px;border-radius:8px" />
+      <span id="wf-save-status" style="font-size:12px;color:var(--text-muted);min-width:80px"></span>
+      ${wf.is_creator ? '<button class="btn" id="wf-collab" style="font-size:12.5px">👥 Collaborators</button>' : ''}
+    </div>
+    ${ce ? '' : '<div class="hint" style="margin-bottom:10px;color:#92400e;background:rgba(245,158,11,.1);padding:8px 12px;border-radius:8px;font-size:12.5px">🔒 อ่านอย่างเดียว — เฉพาะผู้สร้างหรือ collaborator แก้ไขได้</div>'}
+    <div style="display:flex;gap:12px;align-items:flex-start">
+      ${ce ? `<div style="width:172px;flex-shrink:0">
+        <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">กล่อง · ลากเข้า canvas</div>
+        <div class="wf-palette-item" draggable="true" data-wf-add="task"><span class="wf-node-ico" style="background:rgba(37,99,235,.12)">📋</span><div><div style="font-weight:700;font-size:13px">Task</div><div style="font-size:10px;color:var(--text-muted)">งาน + ผู้รับผิดชอบ</div></div></div>
+        <div class="wf-palette-item" draggable="true" data-wf-add="logic"><span class="wf-node-ico" style="background:rgba(245,158,11,.16)">🔀</span><div><div style="font-weight:700;font-size:13px">Logic</div><div style="font-size:10px;color:var(--text-muted)">เงื่อนไข / ทางแยก</div></div></div>
+      </div>` : ''}
+      <div style="flex:1;min-width:0"><div class="wf-canvas" id="wf-canvas"><svg class="wf-edges" id="wf-edges"></svg><div id="wf-nodes"></div></div></div>
+      <div id="wf-inspector" style="width:288px;flex-shrink:0"></div>
+    </div>
+    <datalist id="wf-dept-list">${[...new Set(_wfList.map(w => w.department).filter(Boolean))].map(d => `<option value="${escapeHtml(d)}"></option>`).join('')}</datalist>`;
+  $('wf-back').addEventListener('click', () => renderWorkflowPage());
+  if (ce) {
+    $('wf-name').addEventListener('input', () => _wfScheduleSave({ name: $('wf-name').value }));
+    $('wf-dept-in').addEventListener('input', () => _wfScheduleSave({ department: $('wf-dept-in').value }));
+    const cb = $('wf-collab'); if (cb) cb.addEventListener('click', _wfCollabModal);
+    // palette drag
+    document.querySelectorAll('[data-wf-add]').forEach(p => p.addEventListener('dragstart', e => e.dataTransfer.setData('wf-type', p.dataset.wfAdd)));
+    const canvas = $('wf-canvas');
+    canvas.addEventListener('dragover', e => e.preventDefault());
+    canvas.addEventListener('drop', e => {
+      e.preventDefault();
+      const type = e.dataTransfer.getData('wf-type'); if (!type) return;
+      const rect = canvas.getBoundingClientRect();
+      _wfAddNode(type, e.clientX - rect.left + canvas.scrollLeft - 100, e.clientY - rect.top + canvas.scrollTop - 20);
+    });
+    canvas.addEventListener('mousedown', e => { if (e.target.id === 'wf-canvas' || e.target.id === 'wf-nodes' || e.target.tagName === 'svg') _wfSelect(null); });
+  }
+  _wfRenderCanvas();
+  _wfRenderInspector();
+}
+function _wfSaveStatus(t) { const el = $('wf-save-status'); if (el) el.textContent = t; }
+function _wfScheduleSave(extra) {
+  if (!_wfEditor || !_wfEditor.canEdit) return;
+  _wfSaveStatus('● แก้ไข…');
+  clearTimeout(_wfEditor.saveTimer);
+  const body = { data: _wfEditor.data };
+  if (extra) Object.assign(body, extra);
+  _wfEditor.saveTimer = setTimeout(async () => {
+    try { await fetchJson('/api/workflows/' + _wfEditor.id, { method: 'PATCH', body: JSON.stringify(body) }); _wfSaveStatus('✓ บันทึกแล้ว'); }
+    catch (e) { _wfSaveStatus('⚠ บันทึกไม่สำเร็จ'); }
+  }, 700);
+}
+let _wfNodeSeq = 0;
+function _wfAddNode(type, x, y) {
+  const id = 'n' + Date.now() + '_' + (_wfNodeSeq++);
+  const node = { id, type, x: Math.max(0, Math.round(x)), y: Math.max(0, Math.round(y)), title: type === 'logic' ? 'เงื่อนไข' : 'งานใหม่', detail: '', assignee_id: null, condition: '' };
+  _wfEditor.data.nodes.push(node);
+  _wfRenderCanvas(); _wfSelect(id); _wfScheduleSave();
+}
+function _wfPath(x1, y1, x2, y2) { const dx = Math.max(40, Math.abs(x2 - x1) * 0.5); return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`; }
+function _wfPortCenter(nodeEl, cls) {
+  const p = nodeEl.querySelector('.wf-port.' + cls); if (!p) return null;
+  const canvas = $('wf-canvas'), cr = canvas.getBoundingClientRect(), pr = p.getBoundingClientRect();
+  return { x: pr.left + pr.width / 2 - cr.left + canvas.scrollLeft, y: pr.top + pr.height / 2 - cr.top + canvas.scrollTop };
+}
+function _wfRenderCanvas() {
+  const wrap = $('wf-nodes'); if (!wrap) return;
+  wrap.innerHTML = _wfEditor.data.nodes.map(_wfNodeHtml).join('');
+  wrap.querySelectorAll('.wf-node').forEach(el => {
+    const node = _wfEditor.data.nodes.find(n => n.id === el.dataset.wfNode);
+    el.querySelector('.wf-node-head').addEventListener('mousedown', e => { if (e.button !== 0) return; _wfSelect(node.id); _wfStartNodeDrag(node, el, e); });
+    el.addEventListener('mousedown', e => { if (!e.target.closest('.wf-port')) _wfSelect(node.id); });
+    const outp = el.querySelector('.wf-port.out');
+    if (outp && _wfEditor.canEdit) outp.addEventListener('mousedown', e => _wfStartConnect(node, e));
+  });
+  _wfRenderEdges();
+}
+function _wfNodeHtml(n) {
+  const sel = _wfEditor.selected === n.id ? ' selected' : '';
+  const isLogic = n.type === 'logic';
+  const ico = isLogic ? '🔀' : '📋';
+  const icoBg = isLogic ? 'rgba(245,158,11,.16)' : 'rgba(37,99,235,.12)';
+  let body;
+  if (isLogic) {
+    body = `<div style="font-size:11.5px;color:var(--text-muted);line-height:1.5">${n.condition ? '⚖️ ' + escapeHtml(n.condition.length > 60 ? n.condition.slice(0, 57) + '…' : n.condition) : '<span style="font-style:italic">— ยังไม่ตั้งเงื่อนไข —</span>'}</div>`;
+  } else {
+    const m = _wfMember(n.assignee_id);
+    const detail = n.detail ? `<div style="font-size:11px;color:var(--text-muted);line-height:1.45;margin-bottom:7px">${escapeHtml(n.detail.length > 60 ? n.detail.slice(0, 57) + '…' : n.detail)}</div>` : '';
+    const person = m
+      ? `<div style="display:flex;align-items:center;gap:8px;padding-top:8px;border-top:1px solid var(--border)">${_wfAvatar(m, 30)}<div style="min-width:0"><div style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(m.name)}</div>${m.position ? `<div style="font-size:10px;color:var(--text-muted)">${escapeHtml(m.position)}</div>` : ''}</div></div>`
+      : `<div style="display:flex;align-items:center;gap:8px;padding-top:8px;border-top:1px solid var(--border);color:var(--text-muted)">${_wfAvatar(null, 30)}<span style="font-size:11px;font-style:italic">ยังไม่กำหนดผู้รับผิดชอบ</span></div>`;
+    body = detail + person;
+  }
+  return `<div class="wf-node${sel}" data-wf-node="${n.id}" style="left:${n.x}px;top:${n.y}px;${isLogic ? 'border-color:rgba(245,158,11,.5)' : ''}">
+    <div class="wf-port in" title="input"></div>
+    <div class="wf-node-head"><span class="wf-node-ico" style="background:${icoBg}">${ico}</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(n.title || (isLogic ? 'เงื่อนไข' : 'งาน'))}</span></div>
+    <div class="wf-node-body">${body}</div>
+    <div class="wf-port out" title="output (ลากเพื่อเชื่อม)" style="top:50%;transform:translateY(-50%)"></div>
+  </div>`;
+}
+function _wfRenderEdges() {
+  const svg = $('wf-edges'); if (!svg) return;
+  const wrap = $('wf-nodes');
+  let paths = '';
+  (_wfEditor.data.edges || []).forEach((ed, i) => {
+    const fromEl = wrap.querySelector(`.wf-node[data-wf-node="${ed.from}"]`);
+    const toEl = wrap.querySelector(`.wf-node[data-wf-node="${ed.to}"]`);
+    if (!fromEl || !toEl) return;
+    const a = _wfPortCenter(fromEl, 'out'), b = _wfPortCenter(toEl, 'in');
+    if (!a || !b) return;
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    paths += `<path d="${_wfPath(a.x, a.y, b.x, b.y)}" stroke="var(--primary)" stroke-width="2.5" fill="none" opacity=".75" />`;
+    paths += `<circle cx="${b.x}" cy="${b.y}" r="3.5" fill="var(--primary)" />`;
+    if (ed.label) paths += `<text x="${mx}" y="${my - 6}" text-anchor="middle" font-size="11" font-weight="600" fill="var(--text)" style="paint-order:stroke;stroke:var(--bg-soft);stroke-width:4px">${escapeHtml(ed.label)}</text>`;
+    if (_wfEditor.canEdit) paths += `<g class="wf-edge-del" data-wf-edge="${i}" style="cursor:pointer"><circle cx="${mx}" cy="${my}" r="9" fill="var(--bg-card)" stroke="var(--border)" /><text x="${mx}" y="${my + 4}" text-anchor="middle" font-size="11" fill="var(--critical)">✕</text></g>`;
+  });
+  svg.innerHTML = paths;
+  if (_wfEditor.canEdit) svg.querySelectorAll('.wf-edge-del').forEach(g => {
+    g.style.pointerEvents = 'all';
+    g.addEventListener('click', e => { e.stopPropagation(); const i = parseInt(g.dataset.wfEdge, 10); const ed = _wfEditor.data.edges[i]; const lbl = prompt('ใส่ป้ายเงื่อนไขของเส้นนี้ (เว้นว่าง=ไม่มี) · พิมพ์ "ลบ" เพื่อลบเส้น', ed.label || ''); if (lbl === null) return; if (lbl.trim() === 'ลบ') { _wfEditor.data.edges.splice(i, 1); } else { ed.label = lbl.trim() || undefined; } _wfRenderEdges(); _wfScheduleSave(); });
+  });
+}
+function _wfStartNodeDrag(node, el, e) {
+  if (!_wfEditor.canEdit) return;
+  e.preventDefault();
+  const sx = e.clientX, sy = e.clientY, ox = node.x, oy = node.y;
+  const move = ev => { node.x = Math.max(0, ox + ev.clientX - sx); node.y = Math.max(0, oy + ev.clientY - sy); el.style.left = node.x + 'px'; el.style.top = node.y + 'px'; _wfRenderEdges(); };
+  const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); _wfScheduleSave(); };
+  document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+}
+function _wfStartConnect(node, e) {
+  if (!_wfEditor.canEdit) return;
+  e.preventDefault(); e.stopPropagation();
+  const canvas = $('wf-canvas'), rect = canvas.getBoundingClientRect(), svg = $('wf-edges');
+  const fromEl = $('wf-nodes').querySelector(`.wf-node[data-wf-node="${node.id}"]`);
+  const from = _wfPortCenter(fromEl, 'out');
+  const temp = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  temp.setAttribute('stroke', 'var(--primary)'); temp.setAttribute('stroke-width', '2.5'); temp.setAttribute('fill', 'none'); temp.setAttribute('stroke-dasharray', '5 4');
+  svg.appendChild(temp);
+  const move = ev => { const x = ev.clientX - rect.left + canvas.scrollLeft, y = ev.clientY - rect.top + canvas.scrollTop; temp.setAttribute('d', _wfPath(from.x, from.y, x, y)); };
+  const up = ev => {
+    document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); temp.remove();
+    const tgt = ev.target.closest && ev.target.closest('.wf-port.in');
+    if (tgt) { const toId = tgt.closest('.wf-node').dataset.wfNode; if (toId && toId !== node.id) _wfAddEdge(node.id, toId); }
+  };
+  document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+}
+function _wfAddEdge(from, to) {
+  if (_wfEditor.data.edges.some(e => e.from === from && e.to === to)) return;
+  _wfEditor.data.edges.push({ from, to });
+  _wfRenderEdges(); _wfScheduleSave();
+}
+function _wfSelect(id) {
+  _wfEditor.selected = id;
+  $('wf-nodes').querySelectorAll('.wf-node').forEach(el => el.classList.toggle('selected', el.dataset.wfNode === id));
+  _wfRenderInspector();
+}
+function _wfRenderInspector() {
+  const box = $('wf-inspector'); if (!box) return;
+  const n = _wfEditor.selected ? _wfEditor.data.nodes.find(x => x.id === _wfEditor.selected) : null;
+  if (!n) { box.innerHTML = `<div style="border:1px solid var(--border);border-radius:12px;padding:22px 16px;text-align:center;color:var(--text-muted);font-size:12.5px">คลิกกล่องเพื่อแก้ไขรายละเอียด<br>หรือลากกล่องจากซ้ายเข้า canvas</div>`; return; }
+  const ce = _wfEditor.canEdit, dis = ce ? '' : 'disabled';
+  const isLogic = n.type === 'logic';
+  const inp = 'width:100%;padding:8px 11px;font-size:13px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;box-sizing:border-box';
+  let mid = '';
+  if (isLogic) {
+    mid = `<div class="field"><label>เงื่อนไข</label><textarea id="wf-i-cond" rows="3" ${dis} style="${inp};resize:vertical">${escapeHtml(n.condition || '')}</textarea><div style="font-size:11px;color:var(--text-muted);margin-top:4px">ลากเส้นออกหลายเส้นเพื่อแยกทาง · คลิกที่เส้น (✕) เพื่อใส่ป้าย/ลบ</div></div>`;
+  } else {
+    const opts = _wfMembersCache.map(m => `<option value="${m.id}" ${n.assignee_id === m.id ? 'selected' : ''}>${escapeHtml(m.name)}${m.position ? ' · ' + escapeHtml(m.position) : ''}</option>`).join('');
+    mid = `<div class="field"><label>รายละเอียดงาน</label><textarea id="wf-i-detail" rows="3" ${dis} style="${inp};resize:vertical">${escapeHtml(n.detail || '')}</textarea></div>
+      <div class="field"><label>ผู้รับผิดชอบ</label><select id="wf-i-assignee" ${dis} style="${inp};cursor:pointer"><option value="">— ยังไม่กำหนด —</option>${opts}</select></div>`;
+  }
+  box.innerHTML = `<div style="border:1px solid var(--border);border-radius:12px;padding:14px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div style="font-size:13px;font-weight:800">${isLogic ? '🔀 Logic' : '📋 Task'}</div>
+      ${ce ? `<button class="btn danger" id="wf-i-del" style="font-size:11.5px;padding:5px 11px">🗑 ลบกล่อง</button>` : ''}
+    </div>
+    <div class="field"><label>ชื่อกล่อง</label><input id="wf-i-title" value="${escapeHtml(n.title || '')}" ${dis} style="${inp}" /></div>
+    ${mid}
+  </div>`;
+  if (!ce) return;
+  $('wf-i-title').addEventListener('input', e => { n.title = e.target.value; _wfRefreshNode(n.id); _wfScheduleSave(); });
+  if (isLogic) { $('wf-i-cond').addEventListener('input', e => { n.condition = e.target.value; _wfRefreshNode(n.id); _wfScheduleSave(); }); }
+  else {
+    $('wf-i-detail').addEventListener('input', e => { n.detail = e.target.value; _wfRefreshNode(n.id); _wfScheduleSave(); });
+    $('wf-i-assignee').addEventListener('change', e => { n.assignee_id = e.target.value ? parseInt(e.target.value, 10) : null; _wfRefreshNode(n.id); _wfScheduleSave(); });
+  }
+  $('wf-i-del').addEventListener('click', () => {
+    if (!confirm('ลบกล่องนี้?')) return;
+    _wfEditor.data.nodes = _wfEditor.data.nodes.filter(x => x.id !== n.id);
+    _wfEditor.data.edges = _wfEditor.data.edges.filter(e => e.from !== n.id && e.to !== n.id);
+    _wfEditor.selected = null; _wfRenderCanvas(); _wfRenderInspector(); _wfScheduleSave();
+  });
+}
+function _wfRefreshNode(id) {
+  const el = $('wf-nodes').querySelector(`.wf-node[data-wf-node="${id}"]`);
+  const n = _wfEditor.data.nodes.find(x => x.id === id);
+  if (!el || !n) return;
+  const tmp = document.createElement('div'); tmp.innerHTML = _wfNodeHtml(n);
+  const fresh = tmp.firstElementChild;
+  el.replaceWith(fresh);
+  const node = n;
+  fresh.querySelector('.wf-node-head').addEventListener('mousedown', e => { if (e.button !== 0) return; _wfSelect(node.id); _wfStartNodeDrag(node, fresh, e); });
+  fresh.addEventListener('mousedown', e => { if (!e.target.closest('.wf-port')) _wfSelect(node.id); });
+  const outp = fresh.querySelector('.wf-port.out'); if (outp && _wfEditor.canEdit) outp.addEventListener('mousedown', e => _wfStartConnect(node, e));
+  _wfRenderEdges();
+}
+async function _wfCollabModal() {
+  await _wfLoadMembers();
+  const opts = _wfMembersCache.map(m => `<option value="${m.id}">${escapeHtml(m.name)}${m.position ? ' · ' + escapeHtml(m.position) : ''}</option>`).join('');
+  const chips = () => (_wfEditor.collaborators || []).map(c => `<span style="display:inline-flex;align-items:center;gap:6px;background:var(--bg-soft);border:1px solid var(--border);border-radius:999px;padding:3px 6px 3px 10px;font-size:12px;margin:3px 3px 0 0">${_wfAvatar(c, 20)} ${escapeHtml(c.name)} <button data-wf-rmc="${c.id}" style="border:none;background:rgba(220,38,38,.1);color:var(--critical);width:16px;height:16px;border-radius:999px;cursor:pointer;font-size:10px;line-height:1">×</button></span>`).join('') || '<span style="color:var(--text-muted);font-size:12.5px">— ยังไม่มี collaborator —</span>';
+  showModal({
+    title: '👥 Collaborators — ผู้ที่แก้ไข workflow นี้ได้',
+    body: `<div style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px">ผู้สร้างแก้ไขได้เสมอ · เพิ่มคนอื่นให้แก้ไขร่วมได้</div>
+      <div id="wf-collab-chips" style="margin-bottom:14px">${chips()}</div>
+      <div class="field"><label>เพิ่ม collaborator</label><div style="display:flex;gap:8px"><select id="wf-collab-sel" style="flex:1;padding:9px 11px;font-size:13px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit"><option value="">— เลือก —</option>${opts}</select><button class="btn primary" id="wf-collab-add" type="button">เพิ่ม</button></div></div>`,
+    onSubmit: async () => {},
+  });
+  const refresh = () => { const c = $('wf-collab-chips'); if (c) { c.innerHTML = chips(); wireRm(); } };
+  const wireRm = () => document.querySelectorAll('[data-wf-rmc]').forEach(b => b.addEventListener('click', async () => {
+    const mid = parseInt(b.dataset.wfRmc, 10);
+    try { await fetchJson(`/api/workflows/${_wfEditor.id}/collaborators/${mid}`, { method: 'DELETE' }); _wfEditor.collaborators = _wfEditor.collaborators.filter(x => x.id !== mid); refresh(); } catch (e) { alert(e.message); }
+  }));
+  setTimeout(() => {
+    wireRm();
+    const addBtn = $('wf-collab-add');
+    if (addBtn) addBtn.addEventListener('click', async () => {
+      const mid = parseInt($('wf-collab-sel').value, 10); if (!mid) return;
+      if ((_wfEditor.collaborators || []).some(c => c.id === mid)) return;
+      try { await fetchJson(`/api/workflows/${_wfEditor.id}/collaborators`, { method: 'POST', body: JSON.stringify({ member_id: mid }) }); const m = _wfMember(mid); if (m) _wfEditor.collaborators.push(m); refresh(); } catch (e) { alert(e.message); }
+    });
+  }, 0);
 }
 
 async function renderAccountPage() {

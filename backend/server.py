@@ -484,6 +484,24 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_domain_services_service ON domain_services(service_id);
 
+            -- v1.9.278 — Workflow builder (n8n-style) — nodes/edges เก็บเป็น JSON ใน data
+            CREATE TABLE IF NOT EXISTS workflows (
+                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                name               TEXT NOT NULL,
+                department         TEXT,
+                creator_member_id  INTEGER,
+                data               TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+                is_active          INTEGER NOT NULL DEFAULT 1,
+                created_at         TEXT NOT NULL,
+                updated_at         TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS workflow_collaborators (
+                workflow_id  INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+                member_id    INTEGER NOT NULL,
+                added_at     TEXT NOT NULL,
+                PRIMARY KEY (workflow_id, member_id)
+            );
+
             -- v1.13 — ขอสิทธิ์เข้าถึง site (member request → admin accept/reject)
             CREATE TABLE IF NOT EXISTS access_requests (
                 id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -6538,6 +6556,195 @@ def admin_set_member_alumni(mid: int, payload: MemberAlumniIn,
             "UPDATE members SET is_alumni = ?, last_working_day = ? WHERE id = ?",
             (1 if payload.is_alumni else 0, lwd, mid))
     return {"ok": True}
+
+
+# =============================================================================
+# v1.9.278 — Workflow builder (n8n-style)
+# =============================================================================
+class WorkflowCreateIn(BaseModel):
+    name: str = Field("Workflow ใหม่", max_length=200)
+    department: Optional[str] = Field(None, max_length=120)
+
+
+class WorkflowPatchIn(BaseModel):
+    name: Optional[str] = Field(None, max_length=200)
+    department: Optional[str] = Field(None, max_length=120)
+    data: Optional[Any] = None                # {nodes:[], edges:[]}
+    is_active: Optional[bool] = None
+
+
+class WorkflowCollabIn(BaseModel):
+    member_id: int
+
+
+def _wf_actor(sess: dict) -> tuple[Optional[int], bool]:
+    """คืน (member_id|None, is_admin)"""
+    return sess.get("member_id"), (sess.get("role") == "admin")
+
+
+def _wf_can_edit(conn, wf, member_id: Optional[int], is_admin: bool) -> bool:
+    if is_admin:
+        return True
+    if member_id is None:
+        return False
+    if wf["creator_member_id"] == member_id:
+        return True
+    return bool(conn.execute(
+        "SELECT 1 FROM workflow_collaborators WHERE workflow_id = ? AND member_id = ?",
+        (wf["id"], member_id)).fetchone())
+
+
+def _wf_member_brief(conn, mid: Optional[int]) -> Optional[dict]:
+    if not mid:
+        return None
+    r = conn.execute("SELECT id, display_name, email, avatar_data FROM members WHERE id = ?", (mid,)).fetchone()
+    if not r:
+        return None
+    tn = conn.execute(
+        "SELECT t.name FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.member_id = ? ORDER BY t.name LIMIT 1",
+        (mid,)).fetchone()
+    return {"id": r["id"], "name": r["display_name"] or r["email"] or ("member#" + str(mid)),
+            "avatar": r["avatar_data"], "position": tn["name"] if tn else None}
+
+
+@app.get("/api/workflows")
+def list_workflows(sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    member_id, is_admin = _wf_actor(sess)
+    with db_conn() as conn:
+        rows = conn.execute("SELECT * FROM workflows ORDER BY updated_at DESC").fetchall()
+        out = []
+        for w in rows:
+            try:
+                nc = len((json.loads(w["data"] or "{}").get("nodes") or []))
+            except Exception:
+                nc = 0
+            out.append({
+                "id": w["id"], "name": w["name"], "department": w["department"],
+                "is_active": bool(w["is_active"]), "updated_at": w["updated_at"], "node_count": nc,
+                "creator": _wf_member_brief(conn, w["creator_member_id"]),
+                "can_edit": _wf_can_edit(conn, w, member_id, is_admin),
+            })
+    return {"workflows": out}
+
+
+@app.post("/api/workflows")
+def create_workflow(payload: WorkflowCreateIn, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    member_id, _ = _wf_actor(sess)
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO workflows(name, department, creator_member_id, data, created_at, updated_at) "
+            "VALUES (?, ?, ?, '{\"nodes\":[],\"edges\":[]}', ?, ?)",
+            ((payload.name or "Workflow ใหม่").strip(), (payload.department or "").strip() or None, member_id, now, now))
+    return {"ok": True, "id": cur.lastrowid}
+
+
+@app.get("/api/workflows/{wf_id}")
+def get_workflow(wf_id: int, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    member_id, is_admin = _wf_actor(sess)
+    with db_conn() as conn:
+        w = conn.execute("SELECT * FROM workflows WHERE id = ?", (wf_id,)).fetchone()
+        if not w:
+            raise HTTPException(status_code=404, detail="ไม่พบ workflow")
+        try:
+            data = json.loads(w["data"] or "{}")
+        except Exception:
+            data = {"nodes": [], "edges": []}
+        collabs = [_wf_member_brief(conn, r["member_id"]) for r in conn.execute(
+            "SELECT member_id FROM workflow_collaborators WHERE workflow_id = ?", (wf_id,)).fetchall()]
+        return {
+            "id": w["id"], "name": w["name"], "department": w["department"],
+            "is_active": bool(w["is_active"]), "data": data,
+            "creator": _wf_member_brief(conn, w["creator_member_id"]),
+            "creator_member_id": w["creator_member_id"],
+            "collaborators": [c for c in collabs if c],
+            "can_edit": _wf_can_edit(conn, w, member_id, is_admin),
+            "is_creator": is_admin or (member_id is not None and w["creator_member_id"] == member_id),
+        }
+
+
+@app.patch("/api/workflows/{wf_id}")
+def update_workflow(wf_id: int, payload: WorkflowPatchIn, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    member_id, is_admin = _wf_actor(sess)
+    with db_conn() as conn:
+        w = conn.execute("SELECT * FROM workflows WHERE id = ?", (wf_id,)).fetchone()
+        if not w:
+            raise HTTPException(status_code=404, detail="ไม่พบ workflow")
+        if not _wf_can_edit(conn, w, member_id, is_admin):
+            raise HTTPException(status_code=403, detail="คุณไม่มีสิทธิ์แก้ไข workflow นี้")
+        sets, vals = [], []
+        if payload.name is not None:
+            sets.append("name = ?"); vals.append((payload.name or "").strip() or "Workflow")
+        if payload.department is not None:
+            sets.append("department = ?"); vals.append((payload.department or "").strip() or None)
+        if payload.is_active is not None:
+            sets.append("is_active = ?"); vals.append(1 if payload.is_active else 0)
+        if payload.data is not None:
+            sets.append("data = ?"); vals.append(json.dumps(payload.data, ensure_ascii=False))
+        if sets:
+            sets.append("updated_at = ?"); vals.append(utc_now().isoformat())
+            conn.execute(f"UPDATE workflows SET {', '.join(sets)} WHERE id = ?", vals + [wf_id])
+    return {"ok": True}
+
+
+@app.delete("/api/workflows/{wf_id}")
+def delete_workflow(wf_id: int, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    member_id, is_admin = _wf_actor(sess)
+    with db_conn() as conn:
+        w = conn.execute("SELECT * FROM workflows WHERE id = ?", (wf_id,)).fetchone()
+        if not w:
+            raise HTTPException(status_code=404, detail="ไม่พบ workflow")
+        # เฉพาะผู้สร้าง (หรือ admin) ลบได้
+        if not (is_admin or (member_id is not None and w["creator_member_id"] == member_id)):
+            raise HTTPException(status_code=403, detail="เฉพาะผู้สร้างเท่านั้นที่ลบได้")
+        conn.execute("DELETE FROM workflows WHERE id = ?", (wf_id,))
+    return {"ok": True}
+
+
+@app.post("/api/workflows/{wf_id}/collaborators")
+def add_workflow_collaborator(wf_id: int, payload: WorkflowCollabIn, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    member_id, is_admin = _wf_actor(sess)
+    with db_conn() as conn:
+        w = conn.execute("SELECT * FROM workflows WHERE id = ?", (wf_id,)).fetchone()
+        if not w:
+            raise HTTPException(status_code=404, detail="ไม่พบ workflow")
+        if not (is_admin or (member_id is not None and w["creator_member_id"] == member_id)):
+            raise HTTPException(status_code=403, detail="เฉพาะผู้สร้างเท่านั้นที่เพิ่ม collaborator ได้")
+        if not conn.execute("SELECT 1 FROM members WHERE id = ?", (payload.member_id,)).fetchone():
+            raise HTTPException(status_code=400, detail="member ไม่มีอยู่จริง")
+        conn.execute("INSERT OR IGNORE INTO workflow_collaborators(workflow_id, member_id, added_at) VALUES (?, ?, ?)",
+                     (wf_id, payload.member_id, utc_now().isoformat()))
+    return {"ok": True}
+
+
+@app.delete("/api/workflows/{wf_id}/collaborators/{mid}")
+def remove_workflow_collaborator(wf_id: int, mid: int, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    member_id, is_admin = _wf_actor(sess)
+    with db_conn() as conn:
+        w = conn.execute("SELECT * FROM workflows WHERE id = ?", (wf_id,)).fetchone()
+        if not w:
+            raise HTTPException(status_code=404, detail="ไม่พบ workflow")
+        if not (is_admin or (member_id is not None and w["creator_member_id"] == member_id)):
+            raise HTTPException(status_code=403, detail="เฉพาะผู้สร้างเท่านั้นที่ลบ collaborator ได้")
+        conn.execute("DELETE FROM workflow_collaborators WHERE workflow_id = ? AND member_id = ?", (wf_id, mid))
+    return {"ok": True}
+
+
+@app.get("/api/workflow-members")
+def workflow_members(sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    """รายชื่อ member สำหรับเลือกผู้รับผิดชอบ / collaborator (id, name, avatar, position)"""
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, display_name, email, avatar_data FROM members "
+            "WHERE is_alumni = 0 ORDER BY display_name COLLATE NOCASE").fetchall()
+        team_by_member = {}
+        for r in conn.execute(
+            "SELECT tm.member_id, t.name FROM team_members tm JOIN teams t ON t.id = tm.team_id ORDER BY t.name").fetchall():
+            team_by_member.setdefault(r["member_id"], r["name"])
+    return {"members": [{
+        "id": r["id"], "name": r["display_name"] or r["email"] or ("member#" + str(r["id"])),
+        "avatar": r["avatar_data"], "position": team_by_member.get(r["id"]),
+    } for r in rows]}
 
 
 # v1.9.64 — admin แก้ไข/ลบ record ประวัติการครอบครองได้

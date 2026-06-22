@@ -2,6 +2,22 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.278",
+      "date": "2026-06-21",
+      "title": "เมนูใหม่ Workflow — ตัวสร้าง workflow แบบ n8n",
+      "summary": "เมนู Workflow: หน้ารวม (ค้นหา + filter แผนก + Create) · editor แบบ canvas ลากกล่อง Task/Logic เชื่อมต่อกัน (1-1 หรือแยกหลายเส้น) · กล่อง Task แสดงรูป+ชื่อ+ตำแหน่งผู้รับผิดชอบ · Logic ตั้งเงื่อนไข/ป้ายทางแยก · บันทึกอัตโนมัติ · เฉพาะผู้สร้าง/collaborator แก้ไขได้",
+      "changes": [
+        "DB: workflows + workflow_collaborators · CRUD + permission (creator/collaborator/admin)",
+        "หน้ารวม workflow: ตาราง + ค้นหา + filter แผนก + ผู้สร้าง + can_edit",
+        "editor: canvas ลาก-วาง Task/Logic, เชื่อมต่อด้วย port (drag), inspector ตั้งรายละเอียด/ผู้รับผิดชอบ/เงื่อนไข",
+        "กล่อง Task แสดง avatar+ชื่อ+ตำแหน่งใต้กล่อง",
+        "เส้นเชื่อม fan-out ได้ + ใส่ป้าย/ลบเส้น (คลิก ✕)",
+        "auto-save (debounce) · กดออก/back ได้เลย",
+        "Collaborators modal (creator เพิ่ม/ลบ คนที่แก้ไขร่วมได้)",
+        "เมนู Workflow เข้าได้ทั้ง admin + member"
+      ]
+    },
+    {
       "version": "1.9.277",
       "date": "2026-06-21",
       "title": "Domain — ปุ่มเปิดเว็บไซต์ (ลิงก์)",
