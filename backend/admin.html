@@ -11148,6 +11148,47 @@ let _pcDashTeam = '';   // '' = ทุกทีม | team_id (string)
 let _pcdReplaceFilter = 'all';   // v1.9.257 — 'all' | 'mac' | 'windows' (toggle ในส่วนควรพิจารณาเปลี่ยน)
 let _pcdAllPcs = [];    // PC list เต็ม (ก่อน filter ทีม) — ใช้ใน owner panel
 // v1.9.244 — panel เจ้าของเครื่อง (จากข้อมูลที่ dashboard โหลดไว้ — ใช้บน admin ได้) + คลิกดู device
+// v1.9.285 — modal แก้ไขโปรไฟล์ (BYOD + Alumni) — ยุบจาก inline
+function _pcdEditProfile(memberId, st, onSaved) {
+  const on = !!st.uses_own_computer, aon = !!st.is_alumni;
+  const inp = 'width:100%;padding:8px 11px;font-size:13px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;box-sizing:border-box';
+  showModal({
+    title: '✏️ แก้ไขโปรไฟล์',
+    body: `
+      <div style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:12px">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13.5px;font-weight:600">
+          <input type="checkbox" id="ep-byod" ${on ? 'checked' : ''} style="width:17px;height:17px;accent-color:#7c3aed;cursor:pointer" />
+          <span>🙋 ใช้คอมพิวเตอร์ของตนเอง <span style="font-weight:500;color:var(--text-muted);font-size:11.5px">(เครื่องส่วนตัว / BYOD)</span></span>
+        </label>
+        <div id="ep-byod-wrap" style="margin-top:10px;${on ? '' : 'display:none'}">
+          <label style="display:block;font-size:11.5px;color:var(--text-muted);margin-bottom:4px">เป็นคอมฯอะไร</label>
+          <input id="ep-byod-info" type="text" maxlength="300" value="${escapeHtml(st.own_computer_info || '')}" placeholder="เช่น Macbook Pro M2 ส่วนตัว" style="${inp}" />
+        </div>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:12px;padding:12px 14px">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13.5px;font-weight:600">
+          <input type="checkbox" id="ep-alum" ${aon ? 'checked' : ''} style="width:17px;height:17px;accent-color:#d97706;cursor:pointer" />
+          <span>🎓 เป็น Alumni <span style="font-weight:500;color:var(--text-muted);font-size:11.5px">(อดีตพนักงาน — ไม่นับรวมจำนวนพนักงาน)</span></span>
+        </label>
+        <div id="ep-alum-wrap" style="margin-top:10px;${aon ? '' : 'display:none'}">
+          <label style="display:block;font-size:11.5px;color:var(--text-muted);margin-bottom:4px">วันทำงานวันสุดท้าย</label>
+          <input id="ep-alum-date" type="date" value="${escapeHtml(st.last_working_day || '')}" style="${inp}" />
+        </div>
+      </div>`,
+    onSubmit: async () => {
+      const byod = $('ep-byod').checked, info = ($('ep-byod-info') ? $('ep-byod-info').value : '').trim();
+      const alum = $('ep-alum').checked, lwd = ($('ep-alum-date') ? $('ep-alum-date').value : '').trim();
+      await fetchJson('/api/admin/members/' + memberId + '/own-computer', { method: 'PATCH', body: JSON.stringify({ uses_own_computer: byod, own_computer_info: info || null }) });
+      await fetchJson('/api/admin/members/' + memberId + '/alumni', { method: 'PATCH', body: JSON.stringify({ is_alumni: alum, last_working_day: lwd || null }) });
+      if (typeof onSaved === 'function') onSaved({ uses_own_computer: byod, own_computer_info: info, is_alumni: alum, last_working_day: lwd });
+    },
+  });
+  setTimeout(() => {
+    const bt = $('ep-byod'), bw = $('ep-byod-wrap'); if (bt && bw) bt.addEventListener('change', () => bw.style.display = bt.checked ? '' : 'none');
+    const at = $('ep-alum'), aw = $('ep-alum-wrap'); if (at && aw) at.addEventListener('change', () => aw.style.display = at.checked ? '' : 'none');
+  }, 0);
+}
+
 function _pcdOwnerPanel(memberId, onChange, memberObj, deviceList) {
   document.querySelectorAll('.sup-panel-wrap').forEach(e => e.remove());
   // v1.9.260 — รับ memberObj + deviceList ได้ (เปิดจากหน้า Teams ที่ไม่มี hardware cache)
@@ -11205,74 +11246,29 @@ function _pcdOwnerPanel(memberId, onChange, memberObj, deviceList) {
     const p = devices.find(x => x.id === parseInt(el.dataset.pcdDev, 10));
     if (p) showHardwareDetail(p, onChange || renderPcDashboard);
   }));
-  // v1.9.261 — ใช้คอมพิวเตอร์ของตนเอง (member-level) + ระบุว่าเป็นคอมฯอะไร
+  // v1.9.285 — โปรไฟล์ (BYOD + Alumni) ยุบเป็นปุ่ม "แก้ไขโปรไฟล์" → modal
   (async () => {
     const box = wrap.querySelector('#pcd-own-comp');
+    const abox = wrap.querySelector('#pcd-alumni'); if (abox) abox.remove();
     if (!box) return;
-    let st = { uses_own_computer: false, own_computer_info: '' };
+    let st = { uses_own_computer: false, own_computer_info: '', is_alumni: false, last_working_day: '' };
     try { st = await fetchJson('/api/admin/members/' + memberId + '/own-computer'); } catch (e) { /* default */ }
-    const on = !!st.uses_own_computer;
-    box.innerHTML = `
-      <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">🙋 คอมพิวเตอร์ของตนเอง</div>
-      <div id="ocomp-box" style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;${on ? 'background:rgba(124,58,237,.05)' : ''}">
-        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13.5px;font-weight:600">
-          <input type="checkbox" id="ocomp-toggle" ${on ? 'checked' : ''} style="width:17px;height:17px;accent-color:#7c3aed;cursor:pointer" />
-          <span>ใช้คอมพิวเตอร์ของตนเอง <span style="font-weight:500;color:var(--text-muted);font-size:11.5px">(เครื่องส่วนตัว / BYOD)</span></span>
-        </label>
-        <div id="ocomp-info-wrap" style="margin-top:10px;${on ? '' : 'display:none'}">
-          <label style="display:block;font-size:11.5px;color:var(--text-muted);margin-bottom:4px">เป็นคอมฯอะไร</label>
-          <input id="ocomp-info" type="text" maxlength="300" value="${escapeHtml(st.own_computer_info || '')}" placeholder="เช่น Macbook Pro M2 ส่วนตัว / Dell XPS ของตัวเอง" style="width:100%;padding:8px 11px;font-size:13px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;box-sizing:border-box" />
+    const render = () => {
+      const chips = [];
+      if (st.uses_own_computer) chips.push(`<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;background:rgba(124,58,237,.1);color:#7c3aed;padding:3px 10px;border-radius:999px;font-weight:600">🙋 ใช้เครื่องตนเอง${st.own_computer_info ? ': ' + escapeHtml(st.own_computer_info) : ''}</span>`);
+      if (st.is_alumni) chips.push(`<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;background:rgba(245,158,11,.12);color:#92400e;padding:3px 10px;border-radius:999px;font-weight:600">🎓 Alumni${st.last_working_day ? ' · ' + escapeHtml(fmtDateThai(st.last_working_day)) : ''}</span>`);
+      box.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;${chips.length ? 'margin-bottom:8px' : ''}">
+          <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">โปรไฟล์</div>
+          <button type="button" id="pcd-edit-profile" class="btn" style="font-size:12px;padding:6px 13px">✏️ แก้ไขโปรไฟล์</button>
         </div>
-        <div style="display:flex;justify-content:flex-end;margin-top:11px"><button type="button" id="ocomp-save" class="btn primary" style="font-size:12.5px;padding:6px 16px">บันทึก</button></div>
-      </div>`;
-    const toggle = box.querySelector('#ocomp-toggle');
-    const infoWrap = box.querySelector('#ocomp-info-wrap');
-    toggle.addEventListener('change', () => { infoWrap.style.display = toggle.checked ? '' : 'none'; });
-    box.querySelector('#ocomp-save').addEventListener('click', async (e) => {
-      const btn = e.currentTarget;
-      const uses = toggle.checked;
-      const info = (box.querySelector('#ocomp-info') ? box.querySelector('#ocomp-info').value : '').trim();
-      btn.disabled = true; btn.textContent = 'กำลังบันทึก…';
-      try {
-        await fetchJson('/api/admin/members/' + memberId + '/own-computer', { method: 'PATCH', body: JSON.stringify({ uses_own_computer: uses, own_computer_info: info || null }) });
-        const ocb = box.querySelector('#ocomp-box'); if (ocb) ocb.style.background = uses ? 'rgba(124,58,237,.05)' : '';
-        btn.textContent = '✓ บันทึกแล้ว';
-        setTimeout(() => { btn.disabled = false; btn.textContent = 'บันทึก'; }, 1200);
-      } catch (err) { alert('บันทึกไม่สำเร็จ: ' + (err.message || err)); btn.disabled = false; btn.textContent = 'บันทึก'; }
-    });
-    // v1.9.263 — Alumni (อดีตพนักงาน) + วันทำงานวันสุดท้าย
-    const abox = wrap.querySelector('#pcd-alumni');
-    if (abox) {
-      const aon = !!st.is_alumni;
-      abox.innerHTML = `
-        <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">🎓 สถานะพนักงาน</div>
-        <div id="alum-box" style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;${aon ? 'background:rgba(245,158,11,.06)' : ''}">
-          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13.5px;font-weight:600">
-            <input type="checkbox" id="alum-toggle" ${aon ? 'checked' : ''} style="width:17px;height:17px;accent-color:#d97706;cursor:pointer" />
-            <span>เป็น Alumni <span style="font-weight:500;color:var(--text-muted);font-size:11.5px">(อดีตพนักงาน — ไม่นับรวมจำนวนพนักงาน)</span></span>
-          </label>
-          <div id="alum-date-wrap" style="margin-top:10px;${aon ? '' : 'display:none'}">
-            <label style="display:block;font-size:11.5px;color:var(--text-muted);margin-bottom:4px">วันทำงานวันสุดท้าย</label>
-            <input id="alum-date" type="date" value="${escapeHtml(st.last_working_day || '')}" style="width:100%;padding:8px 11px;font-size:13px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;box-sizing:border-box" />
-          </div>
-          <div style="display:flex;justify-content:flex-end;margin-top:11px"><button type="button" id="alum-save" class="btn primary" style="font-size:12.5px;padding:6px 16px">บันทึก</button></div>
-        </div>`;
-      const at = abox.querySelector('#alum-toggle');
-      const adw = abox.querySelector('#alum-date-wrap');
-      at.addEventListener('change', () => { adw.style.display = at.checked ? '' : 'none'; });
-      abox.querySelector('#alum-save').addEventListener('click', async (e) => {
-        const btn = e.currentTarget;
-        const lwd = abox.querySelector('#alum-date') ? abox.querySelector('#alum-date').value : '';
-        btn.disabled = true; btn.textContent = 'กำลังบันทึก…';
-        try {
-          await fetchJson('/api/admin/members/' + memberId + '/alumni', { method: 'PATCH', body: JSON.stringify({ is_alumni: at.checked, last_working_day: lwd || null }) });
-          const ab = abox.querySelector('#alum-box'); if (ab) ab.style.background = at.checked ? 'rgba(245,158,11,.06)' : '';
-          if (typeof onChange === 'function') { try { onChange(); } catch (_) { /* refresh นับ/ปุ่มข้างหลัง */ } }
-          btn.textContent = '✓ บันทึกแล้ว';
-          setTimeout(() => { btn.disabled = false; btn.textContent = 'บันทึก'; }, 1200);
-        } catch (err) { alert('บันทึกไม่สำเร็จ: ' + (err.message || err)); btn.disabled = false; btn.textContent = 'บันทึก'; }
-      });
-    }
+        ${chips.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px">${chips.join('')}</div>` : ''}`;
+      box.querySelector('#pcd-edit-profile').addEventListener('click', () => _pcdEditProfile(memberId, st, (newSt) => {
+        st = newSt; render();
+        if (typeof onChange === 'function') { try { onChange(); } catch (_) {} }
+      }));
+    };
+    render();
   })();
   // v1.9.247 — Previous Device: เครื่องที่เคยใช้ + ตอนนี้อยู่ไหน
   (async () => {
