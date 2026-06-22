@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.298",
+      "date": "2026-06-22",
+      "title": "หน้าทีม: คลิกคอมฯ → สไลด์ข้าง (เหมือนหน้า Personal Computer)",
+      "summary": "หน้า Teams เวลากดคอมฯเพื่อดูรายละเอียด เปลี่ยนจาก popup กลางจอ → แผงสไลด์ด้านข้าง (showHardwareDetail) เหมือนหน้า Personal Computer · มี owner card คลิกดูโปรไฟล์ + ประวัติการครอบครอง inline",
+      "changes": [
+        "Teams: คลิกคอมฯ → showHardwareDetail (สไลด์ข้าง) แทน popup กลาง",
+        "โหลด members/teams cache ก่อนเปิด (ให้มี avatar + ชื่อแผนก)",
+        "แก้ไข/ลบ → reload team detail"
+      ]
+    },
+    {
       "version": "1.9.297",
       "date": "2026-06-22",
       "title": "ประวัติการครอบครอง: เพิ่มรูป profile + ชื่อแผนกใต้ชื่อ",

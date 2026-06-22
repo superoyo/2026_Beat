@@ -6392,10 +6392,10 @@ function renderTeamUnassignedPcs(teamId, pcs) {
 
   // Wire click → detail modal
   el.querySelectorAll('button[data-tu-pc-id]').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const pcId = parseInt(btn.dataset.tuPcId, 10);
       const pc = pcs.find(x => x.id === pcId);
-      if (pc) showTeamPcDetailModal(pc, teamId);
+      if (pc) { await _ensureHwCaches(); showHardwareDetail(pc, () => loadTeamDetail(teamId)); }
     });
   });
 }
@@ -6652,12 +6652,13 @@ function renderTeamMembers(teamId, members) {
 
   // v1.9.62 — คลิก PC card → เปิด detail modal (ภาพ + spec + ปุ่ม Edit)
   document.querySelectorAll('#tab-members button[data-tm-pc-id]').forEach(b => {
-    b.addEventListener('click', () => {
+    b.addEventListener('click', async () => {
       const pcId = parseInt(b.dataset.tmPcId, 10);
       for (const m of (_lastTeamMembersData || [])) {
         const pc = (m.pcs || []).find(p => p.id === pcId);
         if (pc) {
-          showTeamPcDetailModal(pc, _lastTeamMembersTeamId);
+          await _ensureHwCaches();
+          showHardwareDetail(pc, () => loadTeamDetail(_lastTeamMembersTeamId));
           return;
         }
       }
@@ -12523,6 +12524,16 @@ function renderTeamMemberPcCard(pc) {
 // v1.9.62 — Detail modal สำหรับ PC ในหน้า Team detail
 // ซ้าย = ภาพ ; ขวา = รายละเอียด + ปุ่ม Edit
 // v1.9.68 — รับ optional afterEdit callback สำหรับ refresh context ที่เปิด modal (เช่น unassigned page)
+// v1.9.298 — โหลด members/teams cache ถ้ายังว่าง (ให้ slide panel มี avatar + ชื่อแผนก)
+async function _ensureHwCaches() {
+  if (_hwMembersCache.length && _hwTeamsCache.length) return;
+  try {
+    const [md, td] = await Promise.all([fetchJson('/api/admin/members'), fetchJson('/api/admin/teams')]);
+    _hwMembersCache = md.members || _hwMembersCache;
+    _hwTeamsCache = td.teams || _hwTeamsCache;
+  } catch (_) { /* ignore */ }
+}
+
 function showTeamPcDetailModal(pc, teamId, afterEdit) {
   const tile = renderMyDevicePurchaseTile(pc.purchased_at);
   const ageStr = calcHwAgeStr(pc.purchased_at);
