@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.286",
+      "date": "2026-06-22",
+      "title": "แผงโปรไฟล์ — ปุ่มแก้ไขบนขวา + แก้ไข inline (ไม่ใช้ popup)",
+      "summary": "ย้ายปุ่ม ✏️ แก้ไขโปรไฟล์ ไปบนขวาของแผง (ข้าง ✕) · เปลี่ยนจาก popup (ที่กดไม่ได้เพราะซ้อน sup-panel z-index) เป็นแก้ไข inline ในสไลด์เลย (toggle BYOD/Alumni + ช่องข้อมูล + บันทึก/ยกเลิก)",
+      "changes": [
+        "ปุ่มแก้ไขโปรไฟล์ย้ายไป header บนขวา (ข้าง ✕)",
+        "แก้ไข inline ในแผง (view chips ↔ edit form) — ไม่เปิด popup",
+        "แก้ปัญหา popup กดไม่ได้ (modal ซ้อนใต้ sup-panel z-index 1100)"
+      ]
+    },
+    {
       "version": "1.9.285",
       "date": "2026-06-22",
       "title": "แผงโปรไฟล์ — ยุบ BYOD + Alumni เป็นปุ่ม ‘แก้ไขโปรไฟล์’",
