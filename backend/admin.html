@@ -11205,7 +11205,7 @@ function _pcdOwnerPanel(memberId, onChange, memberObj, deviceList) {
     : '<span style="color:var(--text-muted)">—</span>';
   const row = (label, val) => `<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)"><div style="width:90px;flex-shrink:0;font-size:12px;color:var(--text-muted)">${label}</div><div style="flex:1;font-size:13px;color:var(--text);word-break:break-word">${val}</div></div>`;
   // v1.9.256 — แสดงหมายเหตุ (+ หมวด) ใต้อุปกรณ์
-  const _catLabel = { keep: '🔸 ยังไม่เปลี่ยน', procuring: '🛒 อยู่ระหว่างจัดหา', transferring: '🔄 ได้เครื่องใหม่ — transfer' };
+  const _catLabel = { keep: '🔸 ยังไม่เปลี่ยน', procuring: '🛒 อยู่ระหว่างจัดหา', transferring: '🔄 ได้เครื่องใหม่ — transfer', transferring_rotation: '♻️ ได้เครื่องใหม่ (หมุนเวียน) — transfer' };
   const devCard = (p) => {
     const a = calcHwAgeStr(p.purchased_at);
     const cat = _catLabel[p.note_category];
@@ -11450,12 +11450,13 @@ async function renderPcDashboard() {
       const lbl = _pcdReplaceFilter === 'mac' ? 'Mac' : _pcdReplaceFilter === 'windows' ? 'Windows' : '';
       return `<div class="empty" style="padding:24px">🎉 ไม่มีเครื่อง${lbl ? ' ' + lbl : ''}ที่เกินเกณฑ์</div>`;
     }
-    const byCat = { general: [], keep: [], procuring: [], transferring: [] };
-    list.forEach(p => { const c = ['keep', 'procuring', 'transferring'].includes(p.note_category) ? p.note_category : 'general'; byCat[c].push(p); });
+    const byCat = { general: [], keep: [], procuring: [], transferring: [], transferring_rotation: [] };
+    list.forEach(p => { const c = ['keep', 'procuring', 'transferring', 'transferring_rotation'].includes(p.note_category) ? p.note_category : 'general'; byCat[c].push(p); });
     return _replGrid(byCat.general, false)
       + _replSection(byCat.keep, '🔸 ยังไม่เปลี่ยน', '#92400e')
       + _replSection(byCat.procuring, '🛒 อยู่ระหว่างจัดหา', '#3730a3')
-      + _replSection(byCat.transferring, '🔄 ได้เครื่องใหม่แล้ว — transfer ข้อมูล', '#15803d');
+      + _replSection(byCat.transferring, '🔄 ได้เครื่องใหม่แล้ว — transfer ข้อมูล', '#15803d')
+      + _replSection(byCat.transferring_rotation, '♻️ ได้เครื่องใหม่แล้ว (หมุนเวียน) — transfer ข้อมูล', '#15803d');
   };
   const replaceBody = _buildReplaceBody();
   const _replToggle = needReplace.length === 0 ? '' : `<div id="pcd-repl-toggle" style="display:inline-flex;gap:2px;background:var(--bg-soft);border:1px solid var(--border);border-radius:9px;padding:3px">${[['all', 'ทั้งหมด', needReplace.length], ['mac', '🍎 Mac', _replMacCount], ['windows', '🪟 Windows', _replWinCount]].map(([k, lb, n]) => `<button type="button" data-repl-filter="${k}" style="border:none;background:${_pcdReplaceFilter === k ? 'var(--bg-card)' : 'transparent'};color:${_pcdReplaceFilter === k ? 'var(--text)' : 'var(--text-muted)'};font-weight:${_pcdReplaceFilter === k ? 700 : 500};font-size:12px;padding:5px 12px;border-radius:7px;cursor:pointer;font-family:inherit;box-shadow:${_pcdReplaceFilter === k ? 'var(--shadow-sm)' : 'none'};transition:.12s">${lb} <span style="opacity:.7">(${n})</span></button>`).join('')}</div>`;
@@ -11937,7 +11938,7 @@ function _renderPcGridCard(h) {
     ? '<span style="font-size:10px;font-weight:700;color:#7c3aed;background:rgba(124,58,237,.12);padding:1px 7px;border-radius:999px;white-space:nowrap">🙋 เครื่องตนเอง</span>'
     : '';
   // v1.9.258 — หมายเหตุ (+ หมวด) ใต้การ์ด
-  const _pcCatLabel = { keep: '🔸 ยังไม่เปลี่ยน', procuring: '🛒 อยู่ระหว่างจัดหา', transferring: '🔄 ได้เครื่องใหม่ — transfer' };
+  const _pcCatLabel = { keep: '🔸 ยังไม่เปลี่ยน', procuring: '🛒 อยู่ระหว่างจัดหา', transferring: '🔄 ได้เครื่องใหม่ — transfer', transferring_rotation: '♻️ ได้เครื่องใหม่ (หมุนเวียน) — transfer' };
   const _pcCat = _pcCatLabel[h.note_category];
   const noteHtml = (h.notes || _pcCat)
     ? `<div style="font-size:10.5px;color:#92400e;margin-top:5px;background:rgba(245,158,11,.1);padding:3px 8px;border-radius:6px;line-height:1.4">📝 ${_pcCat ? `<b>${_pcCat}</b>${h.notes ? ' · ' : ''}` : ''}${escapeHtml(h.notes || '')}</div>`
@@ -13014,13 +13015,14 @@ async function showHardwareModal(hw, type, afterSubmit) {
         ${sect('📝', 'หมายเหตุ')}
         <div class="field">
           <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">หมวดหมายเหตุ</label>
-          <select id="hm-note-category" onchange="(function(s){var t=document.getElementById('hm-notes');if(t)t.placeholder=({general:'หมายเหตุเพิ่มเติม (optional)',keep:'เหตุผลที่ยังไม่เปลี่ยน',procuring:'เหตุผลที่อยู่ระหว่างจัดหา',transferring:'ความคืบหน้าการ transfer ข้อมูล (เครื่องใหม่มาแล้ว)'})[s.value]||'';})(this)" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;margin-bottom:8px">
+          <select id="hm-note-category" onchange="(function(s){var t=document.getElementById('hm-notes');if(t)t.placeholder=({general:'หมายเหตุเพิ่มเติม (optional)',keep:'เหตุผลที่ยังไม่เปลี่ยน',procuring:'เหตุผลที่อยู่ระหว่างจัดหา',transferring:'ความคืบหน้าการ transfer ข้อมูล (เครื่องใหม่มาแล้ว)',transferring_rotation:'ความคืบหน้าการ transfer ข้อมูล (เครื่องจากการหมุนเวียน)'})[s.value]||'';})(this)" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;margin-bottom:8px">
             <option value="general" ${(!isEdit || !hw.note_category || hw.note_category === 'general') ? 'selected' : ''}>ทั่วไป — กรอกอะไรก็ได้</option>
             <option value="keep" ${(isEdit && hw.note_category === 'keep') ? 'selected' : ''}>ยังไม่เปลี่ยน — กรอกเหตุผลที่ยังไม่เปลี่ยน</option>
             <option value="procuring" ${(isEdit && hw.note_category === 'procuring') ? 'selected' : ''}>อยู่ระหว่างจัดหา — กรอกเหตุผล</option>
             <option value="transferring" ${(isEdit && hw.note_category === 'transferring') ? 'selected' : ''}>ได้เครื่องใหม่แล้ว — อยู่ระหว่าง transfer ข้อมูล</option>
+            <option value="transferring_rotation" ${(isEdit && hw.note_category === 'transferring_rotation') ? 'selected' : ''}>ได้เครื่องใหม่แล้ว (เครื่องจากการหมุนเวียน) — อยู่ระหว่าง transfer ข้อมูล</option>
           </select>
-          <textarea id="hm-notes" rows="3" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical" placeholder="${isEdit && hw.note_category === 'keep' ? 'เหตุผลที่ยังไม่เปลี่ยน' : (isEdit && hw.note_category === 'procuring' ? 'เหตุผลที่อยู่ระหว่างจัดหา' : (isEdit && hw.note_category === 'transferring' ? 'ความคืบหน้าการ transfer ข้อมูล (เครื่องใหม่มาแล้ว)' : 'หมายเหตุเพิ่มเติม (optional)'))}">${isEdit ? escapeHtml(hw.notes || '') : ''}</textarea>
+          <textarea id="hm-notes" rows="3" style="width:100%;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;resize:vertical" placeholder="${isEdit && hw.note_category === 'keep' ? 'เหตุผลที่ยังไม่เปลี่ยน' : (isEdit && hw.note_category === 'procuring' ? 'เหตุผลที่อยู่ระหว่างจัดหา' : (isEdit && hw.note_category === 'transferring' ? 'ความคืบหน้าการ transfer ข้อมูล (เครื่องใหม่มาแล้ว)' : (isEdit && hw.note_category === 'transferring_rotation' ? 'ความคืบหน้าการ transfer ข้อมูล (เครื่องจากการหมุนเวียน)' : 'หมายเหตุเพิ่มเติม (optional)')))}">${isEdit ? escapeHtml(hw.notes || '') : ''}</textarea>
         </div>
         <div class="field" style="margin-top:4px">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-weight:600;font-size:13.5px">
@@ -13508,7 +13510,7 @@ async function loadHmStatusLog(hwId) {
     log = d.log || [];
   } catch (e) { el.innerHTML = '<div class="empty" style="padding:16px;font-size:12.5px">โหลดประวัติสถานะไม่ได้</div>'; return; }
   if (!log.length) { el.innerHTML = '<div class="empty" style="padding:16px;font-size:12.5px">ยังไม่มีประวัติสถานะ — จะเริ่มบันทึกเมื่อมีการแก้ไขหมายเหตุ/สถานะครั้งถัดไป</div>'; return; }
-  const catLabel = { keep: '🔸 ยังไม่เปลี่ยน', procuring: '🛒 อยู่ระหว่างจัดหา', transferring: '🔄 ได้เครื่องใหม่ — transfer' };
+  const catLabel = { keep: '🔸 ยังไม่เปลี่ยน', procuring: '🛒 อยู่ระหว่างจัดหา', transferring: '🔄 ได้เครื่องใหม่ — transfer', transferring_rotation: '♻️ ได้เครื่องใหม่ (หมุนเวียน) — transfer' };
   const chip = (bg, c, t) => `<span style="display:inline-flex;align-items:center;font-size:10.5px;font-weight:700;background:${bg};color:${c};padding:2px 9px;border-radius:999px">${t}</span>`;
   const fmtTime = (iso) => { if (!iso) return '—'; const d = new Date(iso); return isNaN(d.getTime()) ? escapeHtml(String(iso)) : d.toLocaleString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); };
   el.innerHTML = log.map((e, i) => {

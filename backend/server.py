@@ -6195,7 +6195,7 @@ class HardwareIn(BaseModel):
     unassigned_team_id: Optional[int] = None
     storage_location: Optional[str] = Field(None, max_length=200)
     # v1.9.245 — หมวดหมายเหตุ
-    note_category: Optional[str] = Field(None, max_length=20)
+    note_category: Optional[str] = Field(None, max_length=30)  # v1.9.292
     # v1.9.252 — เครื่องเป็นของพนักงานเอง (BYOD)
     is_personal_owned: bool = False
     for_new_position: bool = False        # v1.9.289
@@ -6244,7 +6244,7 @@ class HardwarePatchIn(BaseModel):
     unassigned_team_id: Optional[int] = None
     storage_location: Optional[str] = Field(None, max_length=200)
     # v1.9.245 — หมวดหมายเหตุ
-    note_category: Optional[str] = Field(None, max_length=20)
+    note_category: Optional[str] = Field(None, max_length=30)  # v1.9.292
     # v1.9.252 — เครื่องเป็นของพนักงานเอง (BYOD): null = no change
     is_personal_owned: Optional[bool] = None
     for_new_position: Optional[bool] = None        # v1.9.289

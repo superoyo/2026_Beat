@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.292",
+      "date": "2026-06-22",
+      "title": "หมวดหมายเหตุ — เพิ่ม ‘ได้เครื่องใหม่ (เครื่องจากการหมุนเวียน)’",
+      "summary": "เพิ่มหมวดหมายเหตุคอมฯ ‘ได้เครื่องใหม่แล้ว (เครื่องจากการหมุนเวียน) — อยู่ระหว่าง transfer ข้อมูล’ (♻️) · แสดงครบทั้ง dropdown, Dashboard (ควรพิจารณาเปลี่ยน), การ์ด PC, tab สถานะ",
+      "changes": [
+        "dropdown หมวดหมายเหตุ: + transferring_rotation",
+        "Dashboard: section ♻️ ได้เครื่องใหม่ (หมุนเวียน)",
+        "label maps + placeholder ครบทุกจุด",
+        "backend: note_category max_length 20→30"
+      ]
+    },
+    {
       "version": "1.9.291",
       "date": "2026-06-22",
       "title": "คอมฯ: tab ‘สถานะ’ — ประวัติหมายเหตุ/checkbox + ผู้กรอก",
