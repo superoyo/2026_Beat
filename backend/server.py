@@ -6615,7 +6615,7 @@ def list_workflows(sess: dict = Depends(require_admin_or_member)) -> dict[str, A
         out = []
         for w in rows:
             try:
-                nc = len((json.loads(w["data"] or "{}").get("nodes") or []))
+                nc = len((_json.loads(w["data"] or "{}").get("nodes") or []))
             except Exception:
                 nc = 0
             out.append({
@@ -6645,7 +6645,7 @@ def my_workflows(sess: dict = Depends(require_admin_or_member)) -> dict[str, Any
             if w["id"] in collab_wf:
                 rels.append("collaborator")
             try:
-                nodes = json.loads(w["data"] or "{}").get("nodes") or []
+                nodes = _json.loads(w["data"] or "{}").get("nodes") or []
                 if any(isinstance(n, dict) and n.get("type") == "task" and n.get("assignee_id") == member_id for n in nodes):
                     rels.append("assignee")
                 nc = len(nodes)
@@ -6682,7 +6682,7 @@ def get_workflow(wf_id: int, sess: dict = Depends(require_admin_or_member)) -> d
         if not w:
             raise HTTPException(status_code=404, detail="ไม่พบ workflow")
         try:
-            data = json.loads(w["data"] or "{}")
+            data = _json.loads(w["data"] or "{}")
         except Exception:
             data = {"nodes": [], "edges": []}
         collabs = [_wf_member_brief(conn, r["member_id"]) for r in conn.execute(
@@ -6715,7 +6715,7 @@ def update_workflow(wf_id: int, payload: WorkflowPatchIn, sess: dict = Depends(r
         if payload.is_active is not None:
             sets.append("is_active = ?"); vals.append(1 if payload.is_active else 0)
         if payload.data is not None:
-            sets.append("data = ?"); vals.append(json.dumps(payload.data, ensure_ascii=False))
+            sets.append("data = ?"); vals.append(_json.dumps(payload.data, ensure_ascii=False))
         if sets:
             sets.append("updated_at = ?"); vals.append(utc_now().isoformat())
             conn.execute(f"UPDATE workflows SET {', '.join(sets)} WHERE id = ?", vals + [wf_id])

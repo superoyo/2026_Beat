@@ -2,6 +2,16 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.281",
+      "date": "2026-06-22",
+      "title": "Workflow — แก้บันทึกไม่สำเร็จ (json alias)",
+      "summary": "แก้บั๊ก ‘name json is not defined’ — server.py import json เป็น _json (alias) แต่ workflow endpoints เรียก json. ตรง ๆ · เปลี่ยนเป็น _json. ครบทุกจุด → บันทึก workflow ได้แล้ว",
+      "changes": [
+        "json.loads/json.dumps → _json.loads/_json.dumps ใน workflow endpoints (4 จุด)",
+        "แก้ save workflow ที่ขึ้น error"
+      ]
+    },
+    {
       "version": "1.9.280",
       "date": "2026-06-22",
       "title": "Workflow — แสดงสาเหตุ ‘บันทึกไม่สำเร็จ’ จริง + harden",
