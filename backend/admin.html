@@ -11375,7 +11375,8 @@ async function renderPcDashboard() {
 
   const SHORT = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
   // v1.9.293 — สถานะระหว่างดำเนินการเปลี่ยนเครื่อง (โชว์บน dashboard เสมอ แม้ไม่เกินเกณฑ์อายุ/เป็นมือสอง)
-  const _IN_PROGRESS = ['procuring', 'transferring', 'transferring_rotation'];
+  // v1.9.294 — transferring_rotation แยกเป็นบล็อกของตัวเองด้านบน (ไม่รวมในควรพิจารณาเปลี่ยน)
+  const _IN_PROGRESS = ['procuring', 'transferring'];
   pcs.forEach(p => {
     p._age = _pcDashAgeMonths(p);
     p._mac = _pcDashIsMac(p);
@@ -11392,8 +11393,10 @@ async function renderPcDashboard() {
   const withAge = active.filter(p => p._age != null);
   const avgAge = withAge.length ? Math.round(withAge.reduce((s, p) => s + p._age, 0) / withAge.length) : null;
   const _replKey = (p) => (p._age != null ? p._age - p._thr : -1e9);   // เครื่องไม่มีอายุ/ไม่เกินเกณฑ์ → ท้ายสุด
-  const needReplace = pcs.filter(p => p._needsReplace).sort((a, b) => _replKey(b) - _replKey(a));
+  const needReplace = pcs.filter(p => p._needsReplace && p.note_category !== 'transferring_rotation').sort((a, b) => _replKey(b) - _replKey(a));
   const _inProgOnly = needReplace.filter(p => !p._overThr).length;   // นับเฉพาะที่เข้ามาเพราะ status (ไม่เกินเกณฑ์)
+  // v1.9.294 — กลุ่มแยก: ได้เครื่องใหม่ (เครื่องจากการหมุนเวียน) — กำลัง transfer (โชว์ทุกเครื่องในหมวดนี้)
+  const rotationList = pcs.filter(p => !p._retired && p.note_category === 'transferring_rotation').sort((a, b) => _replKey(b) - _replKey(a));
   let win = 0, mac = 0, other = 0;
   pcs.forEach(p => { if (p._mac) mac++; else if (/win/i.test(p.os || '')) win++; else other++; });
   let assigned = 0, central = 0, unassigned = 0;
@@ -11461,13 +11464,12 @@ async function renderPcDashboard() {
       const lbl = _pcdReplaceFilter === 'mac' ? 'Mac' : _pcdReplaceFilter === 'windows' ? 'Windows' : '';
       return `<div class="empty" style="padding:24px">🎉 ไม่มีเครื่อง${lbl ? ' ' + lbl : ''}ที่เกินเกณฑ์</div>`;
     }
-    const byCat = { general: [], keep: [], procuring: [], transferring: [], transferring_rotation: [] };
-    list.forEach(p => { const c = ['keep', 'procuring', 'transferring', 'transferring_rotation'].includes(p.note_category) ? p.note_category : 'general'; byCat[c].push(p); });
+    const byCat = { general: [], keep: [], procuring: [], transferring: [] };
+    list.forEach(p => { const c = ['keep', 'procuring', 'transferring'].includes(p.note_category) ? p.note_category : 'general'; byCat[c].push(p); });
     return _replGrid(byCat.general, false)
       + _replSection(byCat.keep, '🔸 ยังไม่เปลี่ยน', '#92400e')
       + _replSection(byCat.procuring, '🛒 อยู่ระหว่างจัดหา', '#3730a3')
-      + _replSection(byCat.transferring, '🔄 ได้เครื่องใหม่แล้ว — transfer ข้อมูล', '#15803d')
-      + _replSection(byCat.transferring_rotation, '♻️ ได้เครื่องใหม่แล้ว (หมุนเวียน) — transfer ข้อมูล', '#15803d');
+      + _replSection(byCat.transferring, '🔄 ได้เครื่องใหม่แล้ว — transfer ข้อมูล', '#15803d');
   };
   const replaceBody = _buildReplaceBody();
   const _replToggle = needReplace.length === 0 ? '' : `<div id="pcd-repl-toggle" style="display:inline-flex;gap:2px;background:var(--bg-soft);border:1px solid var(--border);border-radius:9px;padding:3px">${[['all', 'ทั้งหมด', needReplace.length], ['mac', '🍎 Mac', _replMacCount], ['windows', '🪟 Windows', _replWinCount]].map(([k, lb, n]) => `<button type="button" data-repl-filter="${k}" style="border:none;background:${_pcdReplaceFilter === k ? 'var(--bg-card)' : 'transparent'};color:${_pcdReplaceFilter === k ? 'var(--text)' : 'var(--text-muted)'};font-weight:${_pcdReplaceFilter === k ? 700 : 500};font-size:12px;padding:5px 12px;border-radius:7px;cursor:pointer;font-family:inherit;box-shadow:${_pcdReplaceFilter === k ? 'var(--shadow-sm)' : 'none'};transition:.12s">${lb} <span style="opacity:.7">(${n})</span></button>`).join('')}</div>`;
@@ -11506,6 +11508,14 @@ async function renderPcDashboard() {
       ${card('แยกตาม OS', `${win}<span style="font-size:13px;color:var(--text-muted)"> win</span> · ${mac}<span style="font-size:13px;color:var(--text-muted)"> mac</span>`, '', other ? other + ' อื่น ๆ' : '')}
       ${card('การผูก owner', assigned, 'var(--green)', `ส่วนกลาง ${central} · ยังไม่ผูก ${unassigned}`)}
     </div>
+
+    <!-- v1.9.294 — กลุ่มแยก: ได้เครื่องใหม่ (เครื่องจากการหมุนเวียน) — กำลัง transfer -->
+    ${rotationList.length ? `
+    <div style="margin-bottom:18px;border:1px solid rgba(21,128,61,.35);background:rgba(21,128,61,.05);border-radius:12px;padding:14px 16px">
+      <div style="font-size:13px;font-weight:800;color:#15803d;margin-bottom:3px">♻️ ได้เครื่องใหม่แล้ว (เครื่องจากการหมุนเวียน) — กำลัง transfer ข้อมูล (${rotationList.length})</div>
+      <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:11px">เครื่องที่ได้รับเครื่องใหม่จากการหมุนเวียน และอยู่ระหว่างย้าย/transfer ข้อมูล</div>
+      ${_replGrid(rotationList, true)}
+    </div>` : ''}
 
     <!-- ปฏิทินการซื้อ (ซ้าย) | รายการเดือนที่คลิก (ขวา) -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px;align-items:start;margin-bottom:18px">
