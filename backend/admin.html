@@ -2272,8 +2272,8 @@ async function renderCreditCard(){
   const root=$('creditcard-root'); if(!root) return;
   root.innerHTML=`
     <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
-      <button class="btn cc-nav" data-cc-view="bills">🧾 บิลรายเดือน</button>
-      <button class="btn cc-nav" data-cc-view="pool">📥 Invoice ลอย</button>
+      <button class="btn cc-nav" data-cc-view="bills">🧾 ใบแจ้งหนี้บัตรเครดิต</button>
+      <button class="btn cc-nav" data-cc-view="pool">📥 ใบเสร็จ / ใบแจ้งหนี้ จากแพลตฟอร์ม</button>
       <button class="btn cc-nav" data-cc-view="summary">📊 Summary</button>
     </div>
     <div id="cc-view"><div class="empty">กำลังโหลด…</div></div>`;
@@ -2295,10 +2295,10 @@ function _ccRenderBills(v){
   const bills=_ccState.bills;
   v.innerHTML=`
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
-      <button class="btn primary" id="cc-new-bill">+ สร้างบิลรายเดือน</button>
+      <button class="btn primary" id="cc-new-bill">+ สร้างใบแจ้งหนี้บัตรเครดิต</button>
       <button class="btn" id="cc-up-invoice">⬆️ อัพโหลด Invoice / Receipt</button>
     </div>
-    ${bills.length?bills.map(_ccBillCard).join(''):'<div class="empty">ยังไม่มีบิล — กด “สร้างบิลรายเดือน” แล้วอัพโหลดใบแจ้งยอดบัตรเครดิต</div>'}`;
+    ${bills.length?bills.map(_ccBillCard).join(''):'<div class="empty">ยังไม่มีบิล — กด “สร้างใบแจ้งหนี้บัตรเครดิต” แล้วอัพโหลดใบแจ้งยอดบัตรเครดิต</div>'}`;
   $('cc-new-bill').onclick=()=>_ccCreateBill();
   $('cc-up-invoice').onclick=()=>_ccUploadInvoice(null);
   v.querySelectorAll('[data-cc-bill]').forEach(c=>c.addEventListener('click',()=>{ _ccState.billId=parseInt(c.dataset.ccBill,10); _ccRender(); }));
@@ -2322,7 +2322,7 @@ function _ccBillCard(b){
 function _ccCreateBill(){
   const pages=[];
   showModal({
-    title:'+ สร้างบิลรายเดือน', slide:true, size:'wide',
+    title:'+ สร้างใบแจ้งหนี้บัตรเครดิต', slide:true, size:'wide',
     body:`
       <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px">อัพโหลดรูปใบแจ้งยอดบัตรเครดิต (หลายใบได้) → ระบบ OCR ดึงรายการ → ตรวจ/แก้ก่อนบันทึก</div>
       <input id="cc-bill-files" type="file" accept="image/*" multiple style="margin-bottom:10px" />
@@ -2651,11 +2651,11 @@ function _ccEditInvoice(inv,onDone){
   setTimeout(()=>{ _initMemberPicker('cc-ei-uploader', _ccMembers, _euLabel); }, 0);   // searchable picker (รูป+ชื่อ)
 }
 
-// ---- edit bill (แก้ไขบิลรายเดือน: เลขบัตร/เดือน/ปี + รายการ — รักษา match ของแถวเดิม) ----
+// ---- edit bill (แก้ไขใบแจ้งหนี้บัตรเครดิต: เลขบัตร/เดือน/ปี + รายการ — รักษา match ของแถวเดิม) ----
 function _ccEditBill(d){
   const bill=d.bill;
   showModal({
-    title:'✏️ แก้ไขบิลรายเดือน', slide:true, size:'wide',
+    title:'✏️ แก้ไขใบแจ้งหนี้บัตรเครดิต', slide:true, size:'wide',
     body:`
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
         <label style="flex:1;min-width:150px;font-size:12px">เลขบัตร<input id="cc-eb-card" value="${escapeHtml(bill.card_number||'')}" style="width:100%" /></label>
