@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.304",
+      "date": "2026-06-22",
+      "title": "Website detail: ช่องหมายเหตุ platform (edit + ✓ บันทึก)",
+      "summary": "หน้ารายละเอียดเว็บ เพิ่มช่องหมายเหตุระดับ platform ใต้หัว (ก่อนรายการ credentials) — พิมพ์แก้ไขได้ มีปุ่ม ✓ เล็ก ๆ ข้างช่องเพื่อบันทึก (หรือ ⌘/Ctrl+Enter)",
+      "changes": [
+        "DB: sites.note",
+        "ช่องหมายเหตุ textarea auto-grow ใต้ header",
+        "ปุ่ม ✓ บันทึก + toast"
+      ]
+    },
+    {
       "version": "1.9.303",
       "date": "2026-06-22",
       "title": "Website detail: อัพโหลดรูป screenshot + preview + credentials เป็นตารางเรียบ",

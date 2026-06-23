@@ -4486,6 +4486,14 @@ async function renderSiteDetail(siteId) {
       </div>
     </div>
 
+    <!-- v1.9.304 — หมายเหตุระดับ platform (กด edit ได้ + ปุ่ม ✓ บันทึก) -->
+    <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:14px;padding:10px 14px;background:var(--bg-card);border:1px solid var(--border);border-radius:12px">
+      <span style="font-size:14px;flex-shrink:0;margin-top:6px">📝</span>
+      <textarea id="sd-note" rows="1" placeholder="หมายเหตุเกี่ยวกับ platform นี้ (วิธี login / ข้อควรระวัง / ฯลฯ) — กด ✓ เพื่อบันทึก"
+        style="flex:1;min-width:0;resize:none;border:1px solid transparent;border-radius:8px;background:transparent;padding:6px 8px;font-family:inherit;font-size:13px;color:var(--text);line-height:1.55;outline:none;transition:border-color .12s,background .12s;box-sizing:border-box"></textarea>
+      <button type="button" id="sd-note-save" title="บันทึกหมายเหตุ (⌘/Ctrl + Enter)" style="flex-shrink:0;width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--bg-soft);color:var(--text-muted);cursor:pointer;font-size:15px;font-family:inherit;margin-top:2px">✓</button>
+    </div>
+
     <div class="warning-box">
       ⚠️ <strong>หมายเหตุ:</strong> Password ถูกเก็บแบบ plaintext ใน SQLite (จำเป็นเพื่อ prefill) —
       ใครเข้าถึงไฟล์ DB ในเครื่องนี้ก็เห็นได้ทั้งหมด
@@ -4511,6 +4519,35 @@ async function renderSiteDetail(siteId) {
   wireSiteLogoActions(siteId);
   // === v1.9.303 — รูป screenshot wiring ===
   _wireSiteImage(siteId);
+  // === v1.9.304 — หมายเหตุ platform ===
+  _wireSiteNote(siteId);
+}
+
+// v1.9.304 — หมายเหตุระดับ platform: edit + ปุ่ม ✓ save
+function _sdNoteGrow() {
+  const ta = $('sd-note'); if (!ta) return;
+  ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 220) + 'px';
+}
+function _wireSiteNote(siteId) {
+  const ta = $('sd-note'), btn = $('sd-note-save');
+  if (!ta || !btn) return;
+  ta.addEventListener('input', () => { _sdNoteGrow(); btn.style.borderColor = 'var(--primary)'; btn.style.color = 'var(--primary)'; });
+  ta.addEventListener('focus', () => { ta.style.borderColor = 'var(--border)'; ta.style.background = 'var(--bg-soft)'; });
+  ta.addEventListener('blur', () => { ta.style.borderColor = 'transparent'; ta.style.background = 'transparent'; });
+  const save = async () => {
+    const v = ta.value.trim();
+    btn.disabled = true; btn.textContent = '…';
+    try {
+      await fetchJson('/api/admin/sites/' + siteId, { method: 'PATCH', body: JSON.stringify({ note: v }) });
+      if (_currentSite) _currentSite.note = v || null;
+      btn.style.borderColor = 'var(--green)'; btn.style.color = 'var(--green)';
+      if (typeof showSavedToast === 'function') showSavedToast('✓ บันทึกหมายเหตุแล้ว');
+      setTimeout(() => { btn.style.borderColor = 'var(--border)'; btn.style.color = 'var(--text-muted)'; }, 1200);
+    } catch (e) { alert('บันทึกไม่สำเร็จ: ' + (e.message || e)); }
+    btn.textContent = '✓'; btn.disabled = false;
+  };
+  btn.addEventListener('click', save);
+  ta.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); save(); } });
 }
 
 // v1.9.303 — lightbox preview รูป (เต็มจอ คลิกปิด) — reusable
@@ -4898,6 +4935,7 @@ async function loadSite(siteId) {
   // populate logo preview
   updateSdLogoPreview(site.logo_data || '');
   _updateSdImage(site.image_data || '');   // v1.9.303
+  const noteTa = $('sd-note'); if (noteTa) { noteTa.value = site.note || ''; _sdNoteGrow(); }   // v1.9.304
 
   const list = $('creds-list');
   if (credentials.length === 0) {
