@@ -946,6 +946,10 @@ def init_db() -> None:
         _cic = [r["name"] for r in conn.execute("PRAGMA table_info(cc_invoices)").fetchall()]
         if "description" not in _cic:
             conn.execute("ALTER TABLE cc_invoices ADD COLUMN description TEXT")
+        # v1.9.306 — cc_invoices: เลข Job / ชื่อสินค้า / AM ที่ดูแล / หมายเหตุ
+        for _c in ("job_number", "product_name", "am_name", "note"):
+            if _c not in _cic:
+                conn.execute(f"ALTER TABLE cc_invoices ADD COLUMN {_c} TEXT")
 
         # ---- 4. seed config defaults
         for key, value in DEFAULT_CONFIG.items():
@@ -10444,6 +10448,11 @@ class CcInvoiceIn(BaseModel):
     inv_year: Optional[int] = None
     amount: Optional[float] = None
     description: Optional[str] = Field(None, max_length=2000)
+    # v1.9.306 — เลข Job / ชื่อสินค้า / AM ที่ดูแล / หมายเหตุ
+    job_number: Optional[str] = Field(None, max_length=200)
+    product_name: Optional[str] = Field(None, max_length=300)
+    am_name: Optional[str] = Field(None, max_length=200)
+    note: Optional[str] = Field(None, max_length=2000)
     uploaded_by_id: Optional[int] = None       # ว่าง = ใช้ผู้ล็อกอินปัจจุบัน
     file_data: Optional[str] = None
     file_name: Optional[str] = None
@@ -10458,6 +10467,11 @@ class CcInvoiceEdit(BaseModel):
     inv_year: Optional[int] = None
     amount: Optional[float] = None
     description: Optional[str] = Field(None, max_length=2000)
+    # v1.9.306
+    job_number: Optional[str] = Field(None, max_length=200)
+    product_name: Optional[str] = Field(None, max_length=300)
+    am_name: Optional[str] = Field(None, max_length=200)
+    note: Optional[str] = Field(None, max_length=2000)
     uploaded_by_id: Optional[int] = None       # ว่าง = คงผู้อัพโหลดเดิม
 
 
@@ -10554,12 +10568,12 @@ def cc_bill_detail(bid: int, _sess: dict = Depends(_require_module("platform")))
             raise HTTPException(status_code=404, detail="ไม่พบบิล")
         txns = conn.execute("SELECT * FROM cc_transactions WHERE bill_id=? ORDER BY row_order, id", (bid,)).fetchall()
         invs = conn.execute(
-            "SELECT id,bill_id,company,kind,inv_month,inv_year,amount,description,file_name,file_mime,ocr_text,uploaded_by,uploaded_by_id,created_at "
+            "SELECT id,bill_id,company,kind,inv_month,inv_year,amount,description,job_number,product_name,am_name,note,file_name,file_mime,ocr_text,uploaded_by,uploaded_by_id,created_at "
             "FROM cc_invoices WHERE bill_id=? ORDER BY id", (bid,)).fetchall()
         matches = conn.execute("SELECT * FROM cc_matches WHERE bill_id=?", (bid,)).fetchall()
         pages = conn.execute("SELECT id,page_order FROM cc_statement_pages WHERE bill_id=? ORDER BY page_order", (bid,)).fetchall()
         pool = conn.execute(
-            "SELECT id,bill_id,company,kind,inv_month,inv_year,amount,description,file_name,file_mime,uploaded_by,uploaded_by_id,created_at "
+            "SELECT id,bill_id,company,kind,inv_month,inv_year,amount,description,job_number,product_name,am_name,note,file_name,file_mime,uploaded_by,uploaded_by_id,created_at "
             "FROM cc_invoices WHERE bill_id IS NULL ORDER BY id DESC", ()).fetchall()
     return {"bill": dict(b),
             "transactions": [dict(t) for t in txns],
@@ -10592,11 +10606,14 @@ def cc_create_invoice(payload: CcInvoiceIn,
         if payload.uploaded_by_id:
             up_id = payload.uploaded_by_id
             up_name = _cc_member_name(conn, payload.uploaded_by_id) or name
+        _s = lambda v: (v.strip() if isinstance(v, str) else v) or None
         cur = conn.execute(
-            "INSERT INTO cc_invoices(bill_id,company,kind,inv_month,inv_year,amount,description,file_data,file_name,file_mime,ocr_text,uploaded_by_id,uploaded_by,created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO cc_invoices(bill_id,company,kind,inv_month,inv_year,amount,description,"
+            "job_number,product_name,am_name,note,file_data,file_name,file_mime,ocr_text,uploaded_by_id,uploaded_by,created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (payload.bill_id, payload.company, payload.kind, payload.inv_month, payload.inv_year, payload.amount,
-             payload.description, payload.file_data, payload.file_name, payload.file_mime, payload.ocr_text, up_id, up_name, now))
+             payload.description, _s(payload.job_number), _s(payload.product_name), _s(payload.am_name), _s(payload.note),
+             payload.file_data, payload.file_name, payload.file_mime, payload.ocr_text, up_id, up_name, now))
     return {"ok": True, "id": cur.lastrowid}
 
 
@@ -10605,8 +10622,11 @@ def cc_edit_invoice(iid: int, payload: CcInvoiceEdit, _sess: dict = Depends(_req
     with db_conn() as conn:
         if not conn.execute("SELECT 1 FROM cc_invoices WHERE id=?", (iid,)).fetchone():
             raise HTTPException(status_code=404, detail="ไม่พบ invoice")
-        conn.execute("UPDATE cc_invoices SET company=?, kind=?, inv_month=?, inv_year=?, amount=?, description=? WHERE id=?",
-                     (payload.company, payload.kind, payload.inv_month, payload.inv_year, payload.amount, payload.description, iid))
+        _s = lambda v: (v.strip() if isinstance(v, str) else v) or None
+        conn.execute("UPDATE cc_invoices SET company=?, kind=?, inv_month=?, inv_year=?, amount=?, description=?, "
+                     "job_number=?, product_name=?, am_name=?, note=? WHERE id=?",
+                     (payload.company, payload.kind, payload.inv_month, payload.inv_year, payload.amount, payload.description,
+                      _s(payload.job_number), _s(payload.product_name), _s(payload.am_name), _s(payload.note), iid))
         # เปลี่ยนผู้อัพโหลด/เจ้าของเอกสาร (ถ้าเลือก member มา)
         if payload.uploaded_by_id:
             conn.execute("UPDATE cc_invoices SET uploaded_by_id=?, uploaded_by=? WHERE id=?",
@@ -10618,7 +10638,7 @@ def cc_edit_invoice(iid: int, payload: CcInvoiceEdit, _sess: dict = Depends(_req
 def cc_pool_invoices(_sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
     with db_conn() as conn:
         rows = conn.execute(
-            "SELECT id,bill_id,company,kind,inv_month,inv_year,amount,description,file_name,file_mime,uploaded_by,uploaded_by_id,created_at "
+            "SELECT id,bill_id,company,kind,inv_month,inv_year,amount,description,job_number,product_name,am_name,note,file_name,file_mime,uploaded_by,uploaded_by_id,created_at "
             "FROM cc_invoices WHERE bill_id IS NULL ORDER BY id DESC", ()).fetchall()
     return {"invoices": [dict(r) for r in rows]}
 

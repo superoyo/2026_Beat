@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.306",
+      "date": "2026-06-22",
+      "title": "Credit Card Invoice: เพิ่มเลข Job / ชื่อสินค้า / AM ที่ดูแล / หมายเหตุ",
+      "summary": "เอกสาร Invoice/Receipt เพิ่มฟิลด์ เลข Job · ชื่อสินค้า · AM ที่ดูแล · หมายเหตุ (เช่น ‘ตัดแบบนี้ทุกเดือน’) — ทั้งตอนอัพโหลด + แก้ไข · แสดงบนการ์ด invoice",
+      "changes": [
+        "DB: cc_invoices.job_number/product_name/am_name/note",
+        "ฟอร์มอัพโหลด + แก้ไข Invoice เพิ่ม 4 ฟิลด์",
+        "แสดงบนการ์ด invoice (🔖 Job · 📦 สินค้า · 👤 AM · 🗒️ หมายเหตุ)"
+      ]
+    },
+    {
       "version": "1.9.305",
       "date": "2026-06-22",
       "title": "Credit Card: คอลัมน์รายการแคบลง + preview ไฟล์ก่อน OCR",

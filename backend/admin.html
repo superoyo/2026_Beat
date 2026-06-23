@@ -2394,6 +2394,12 @@ function _ccInvUploadRow(idx,fname,p){
     </div>
     <label style="display:block;margin-bottom:6px;font-size:12px">บริษัท / Platform<input class="cc-ir-company" value="${escapeHtml(p.company||'')}" style="width:100%" /></label>
     <label style="display:block;margin-bottom:6px;font-size:12px">รายละเอียดเอกสาร<input class="cc-ir-desc" placeholder="เช่น ค่าโฆษณา Facebook เดือน พ.ค." style="width:100%" /></label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+      <label style="flex:1;min-width:100px;font-size:12px">เลข Job<input class="cc-ir-job" placeholder="J2026-..." style="width:100%" /></label>
+      <label style="flex:1;min-width:100px;font-size:12px">ชื่อสินค้า<input class="cc-ir-product" style="width:100%" /></label>
+      <label style="flex:1;min-width:100px;font-size:12px">AM ที่ดูแล<input class="cc-ir-am" style="width:100%" /></label>
+    </div>
+    <label style="display:block;margin-bottom:6px;font-size:12px">หมายเหตุ<input class="cc-ir-note" placeholder="เช่น ตัดแบบนี้ทุกเดือน" style="width:100%" /></label>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <label style="width:120px;font-size:12px">ประเภท<select class="cc-ir-kind" style="width:100%"><option value="invoice" ${p.kind!=='receipt'?'selected':''}>Invoice</option><option value="receipt" ${p.kind==='receipt'?'selected':''}>Receipt</option></select></label>
       <label style="width:110px;font-size:12px">เดือน${_ccMonthSelectCls('cc-ir-month',p.month)}</label>
@@ -2426,6 +2432,10 @@ function _ccUploadInvoice(defaultBillId){
         const it=items[parseInt(r.dataset.idx,10)]; if(!it) continue;
         const body={ bill_id, uploaded_by_id, company:r.querySelector('.cc-ir-company').value.trim()||null,
           description:r.querySelector('.cc-ir-desc').value.trim()||null,
+          job_number:r.querySelector('.cc-ir-job').value.trim()||null,
+          product_name:r.querySelector('.cc-ir-product').value.trim()||null,
+          am_name:r.querySelector('.cc-ir-am').value.trim()||null,
+          note:r.querySelector('.cc-ir-note').value.trim()||null,
           kind:r.querySelector('.cc-ir-kind').value, inv_month:parseInt(r.querySelector('.cc-ir-month').value,10)||null,
           inv_year:parseInt(r.querySelector('.cc-ir-year').value,10)||null, amount:parseFloat(r.querySelector('.cc-ir-amount').value)||null,
           file_data:it.fileData, file_name:it.fileName, file_mime:it.fileMime };
@@ -2543,6 +2553,8 @@ function _ccInvCardHtml(i,isMatched,isPool){
   return `<div class="cc-inv card" draggable="true" data-inv="${i.id}" style="padding:9px 11px;margin-bottom:6px;cursor:grab;border:1px solid ${isPool?'rgba(245,158,11,.5)':(isMatched?'rgba(16,185,129,.45)':'var(--border)')}">
     <div style="font-size:12.5px;font-weight:700">${escapeHtml(i.company||'—')} <span style="font-size:10px;color:var(--text-muted);font-weight:500">${i.kind==='receipt'?'ใบเสร็จ':'invoice'}</span>${isPool?' <span style="font-size:9.5px;color:#92400e;background:rgba(245,158,11,.15);padding:1px 6px;border-radius:999px">ลอย</span>':''}</div>
     ${i.description?`<div style="font-size:11px;color:var(--text);margin-top:1px">📝 ${escapeHtml(i.description)}</div>`:''}
+    ${(i.job_number||i.product_name||i.am_name)?`<div style="font-size:10.5px;color:var(--text-muted);margin-top:1px;display:flex;gap:7px;flex-wrap:wrap">${i.job_number?`<span>🔖 ${escapeHtml(i.job_number)}</span>`:''}${i.product_name?`<span>📦 ${escapeHtml(i.product_name)}</span>`:''}${i.am_name?`<span>👤 ${escapeHtml(i.am_name)}</span>`:''}</div>`:''}
+    ${i.note?`<div style="font-size:10.5px;color:#92400e;margin-top:1px">🗒️ ${escapeHtml(i.note)}</div>`:''}
     <div style="font-size:11px;color:var(--text-muted)">${_ccMonthLabel(i.inv_month,i.inv_year)} · ${_ccUploaderChip(i)}</div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px">
       <span style="font-weight:700;color:var(--green);font-variant-numeric:tabular-nums">${_ccMoney(i.amount)}</span>
@@ -2610,6 +2622,12 @@ function _ccEditInvoice(inv,onDone){
     body:`
       <label style="display:block;margin-bottom:8px;font-size:12px">บริษัท / Platform<input id="cc-ei-company" value="${escapeHtml(inv.company||'')}" style="width:100%" /></label>
       <label style="display:block;margin-bottom:8px;font-size:12px">รายละเอียดเอกสาร<input id="cc-ei-desc" value="${escapeHtml(inv.description||'')}" placeholder="เช่น ค่าโฆษณา Facebook เดือน พ.ค." style="width:100%" /></label>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+        <label style="flex:1;min-width:130px;font-size:12px">เลข Job<input id="cc-ei-job" value="${escapeHtml(inv.job_number||'')}" placeholder="เช่น J2026-0142" style="width:100%" /></label>
+        <label style="flex:1;min-width:130px;font-size:12px">ชื่อสินค้า<input id="cc-ei-product" value="${escapeHtml(inv.product_name||'')}" placeholder="เช่น น้ำดื่ม XXX" style="width:100%" /></label>
+        <label style="flex:1;min-width:130px;font-size:12px">AM ที่ดูแล<input id="cc-ei-am" value="${escapeHtml(inv.am_name||'')}" placeholder="ชื่อ AM" style="width:100%" /></label>
+      </div>
+      <label style="display:block;margin-bottom:8px;font-size:12px">หมายเหตุ<textarea id="cc-ei-note" rows="2" placeholder="เช่น ตัดแบบนี้ทุกเดือน" style="width:100%;resize:vertical;font-family:inherit">${escapeHtml(inv.note||'')}</textarea></label>
       <div style="margin-bottom:8px;font-size:12px">ผู้อัพโหลด / เจ้าของเอกสาร${_memberPickerHtml('cc-ei-uploader',inv.uploaded_by_id,_euLabel)}</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <label style="width:130px;font-size:12px">ประเภท<select id="cc-ei-kind" style="width:100%"><option value="invoice" ${inv.kind!=='receipt'?'selected':''}>Invoice</option><option value="receipt" ${inv.kind==='receipt'?'selected':''}>Receipt</option></select></label>
@@ -2623,6 +2641,8 @@ function _ccEditInvoice(inv,onDone){
       const body={ company:$('cc-ei-company').value.trim()||null, kind:$('cc-ei-kind').value,
         inv_month:parseInt($('cc-ei-month').value,10)||null, inv_year:parseInt($('cc-ei-year').value,10)||null,
         amount:parseFloat($('cc-ei-amount').value)||null, description:$('cc-ei-desc').value.trim()||null,
+        job_number:$('cc-ei-job').value.trim()||null, product_name:$('cc-ei-product').value.trim()||null,
+        am_name:$('cc-ei-am').value.trim()||null, note:$('cc-ei-note').value.trim()||null,
         uploaded_by_id: uv?parseInt(uv,10):null };
       await fetchJson('/api/creditcard/invoices/'+inv.id,{method:'PUT',body:JSON.stringify(body)});
       await _ccLoadBills(); if(onDone) onDone();
