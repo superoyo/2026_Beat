@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.308",
+      "date": "2026-06-22",
+      "title": "Credit Card: ปุ่ม ‘อัพโหลด’ + ลากไฟล์วางเพื่ออัพโหลด (drag-drop)",
+      "summary": "ปุ่มอัพโหลดเปลี่ยนเป็น ‘⬆️ อัพโหลด’ (สั้นลง) · หน้า invoice ลอย เพิ่ม dropzone ลากไฟล์ PDF/รูปมาวางเพื่ออัพโหลดได้เลย (เปิดฟอร์ม + OCR ให้อัตโนมัติ)",
+      "changes": [
+        "ปุ่ม: อัพโหลด Invoice / Receipt → อัพโหลด",
+        "dropzone ลากไฟล์วาง (pool view) → เปิดฟอร์มอัพโหลดพร้อม process",
+        "_ccUploadInvoice รับ preFiles"
+      ]
+    },
+    {
       "version": "1.9.307",
       "date": "2026-06-22",
       "title": "Credit Card: เปลี่ยนชื่อ tab (ใบแจ้งหนี้บัตรเครดิต / ใบเสร็จ-ใบแจ้งหนี้ จากแพลตฟอร์ม)",

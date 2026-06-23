@@ -2296,7 +2296,7 @@ function _ccRenderBills(v){
   v.innerHTML=`
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
       <button class="btn primary" id="cc-new-bill">+ สร้างใบแจ้งหนี้บัตรเครดิต</button>
-      <button class="btn" id="cc-up-invoice">⬆️ อัพโหลด Invoice / Receipt</button>
+      <button class="btn" id="cc-up-invoice">⬆️ อัพโหลด</button>
     </div>
     ${bills.length?bills.map(_ccBillCard).join(''):'<div class="empty">ยังไม่มีบิล — กด “สร้างใบแจ้งหนี้บัตรเครดิต” แล้วอัพโหลดใบแจ้งยอดบัตรเครดิต</div>'}`;
   $('cc-new-bill').onclick=()=>_ccCreateBill();
@@ -2408,7 +2408,7 @@ function _ccInvUploadRow(idx,fname,p){
     </div>
   </div>`;
 }
-function _ccUploadInvoice(defaultBillId){
+function _ccUploadInvoice(defaultBillId, preFiles){
   const items=[];   // {fileData, fileMime, fileName, parsed}
   const billOpts=`<option value="">— ยังไม่ผูกบิล (ลอยไว้ก่อน) —</option>`+_ccState.bills.map(b=>`<option value="${b.id}" ${b.id===defaultBillId?'selected':''}>${escapeHtml(b.card_number||'บัตร')} · ${_ccMonthLabel(b.bill_month,b.bill_year)}</option>`).join('');
   showModal({
@@ -2452,8 +2452,10 @@ function _ccUploadInvoice(defaultBillId){
     const inp=$('cc-inv-file'); const st=$('cc-inv-status'); const listEl=$('cc-inv-list');
     // v1.9.305 — กดดูไฟล์ที่อัพ (ก่อน OCR/บันทึก) — delegated (อยู่รอด innerHTML rebuild)
     listEl.addEventListener('click',(e)=>{ const b=e.target.closest('.cc-ir-preview'); if(!b) return; const it=items[parseInt(b.dataset.idx,10)]; if(it) _ccPreviewDataUrl(it.fileData,it.fileMime,it.fileName); });
-    inp.onchange=async ()=>{
-      const files=Array.from(inp.files||[]); if(!files.length) return;
+    // v1.9.308 — แยก process ไฟล์ เพื่อรองรับทั้งเลือกไฟล์ + ลากวาง (drag-drop)
+    const processFiles=async (files)=>{
+      files=Array.from(files||[]).filter(f=>/pdf|image\//.test(f.type)||/\.(pdf|png|jpe?g|gif|webp|bmp)$/i.test(f.name));
+      if(!files.length) return;
       items.length=0; listEl.innerHTML='';
       for(let i=0;i<files.length;i++){
         const f=files[i];
@@ -2472,6 +2474,8 @@ function _ccUploadInvoice(defaultBillId){
       }
       st.textContent=`✓ อ่าน ${items.length} ไฟล์ — ตรวจ/แก้แล้วกดบันทึกทั้งหมด`;
     };
+    inp.onchange=()=>processFiles(inp.files);
+    if(preFiles && preFiles.length) processFiles(preFiles);   // ลากไฟล์มาวาง → process เลย
   },0);
 }
 
@@ -2699,12 +2703,25 @@ function _ccEditBill(d){
 // ---- pool: invoice ลอย (ยังไม่ผูกบิล) ----
 async function _ccRenderPool(v){
   v.innerHTML=`
-    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
-      <button class="btn primary" id="cc-pool-up">⬆️ อัพโหลด Invoice / Receipt</button>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+      <button class="btn primary" id="cc-pool-up">⬆️ อัพโหลด</button>
       <span style="font-size:12px;color:var(--text-muted)">invoice ที่ยังไม่ผูกบิล — เปิดบิลแล้วลากจับคู่เพื่อผูกเข้าบิลอัตโนมัติ</span>
+    </div>
+    <div id="cc-pool-drop" style="border:2px dashed var(--border);border-radius:12px;padding:16px;text-align:center;color:var(--text-muted);font-size:12.5px;margin-bottom:14px;transition:border-color .12s,background .12s;cursor:pointer;line-height:1.6">
+      📥 <b>ลากไฟล์ Invoice / Receipt</b> (PDF / รูป) มาวางที่นี่เพื่ออัพโหลด<br><span style="font-size:11px">หรือคลิกเพื่อเลือกไฟล์</span>
     </div>
     <div id="cc-pool-list"><div class="empty">กำลังโหลด…</div></div>`;
   $('cc-pool-up').onclick=()=>_ccUploadInvoice(null);
+  // v1.9.308 — drag-drop zone
+  const dz=$('cc-pool-drop');
+  if(dz){
+    dz.onclick=()=>_ccUploadInvoice(null);
+    const on=()=>{ dz.style.borderColor='var(--primary)'; dz.style.background='rgba(37,99,235,.06)'; };
+    const off=()=>{ dz.style.borderColor='var(--border)'; dz.style.background='transparent'; };
+    dz.addEventListener('dragover',e=>{ e.preventDefault(); on(); });
+    dz.addEventListener('dragleave',e=>{ e.preventDefault(); off(); });
+    dz.addEventListener('drop',e=>{ e.preventDefault(); off(); const fs=e.dataTransfer&&e.dataTransfer.files; if(fs&&fs.length) _ccUploadInvoice(null,fs); });
+  }
   let list;
   try{ list=(await fetchJson('/api/creditcard/pool-invoices')).invoices||[]; }
   catch(e){ $('cc-pool-list').innerHTML=`<div class="empty">${escapeHtml(e.message)}</div>`; return; }
