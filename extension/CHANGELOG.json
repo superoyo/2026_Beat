@@ -2,6 +2,17 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.305",
+      "date": "2026-06-22",
+      "title": "Credit Card: คอลัมน์รายการแคบลง + preview ไฟล์ก่อน OCR",
+      "summary": "หน้าจับคู่บิลบัตรเครดิต: คอลัมน์ ‘รายการจากบัตร’ แคบลง ~ครึ่ง (อ่านง่ายขึ้น) · ในหน้าอัพโหลด Invoice เพิ่มปุ่ม 👁 เปิดดู ไฟล์ที่อัพ (ก่อน OCR/บันทึก) ได้",
+      "changes": [
+        "รายการจากบัตร: grid 1fr → minmax(300,460px)",
+        "upload invoice: ปุ่ม 👁 เปิดดู (รูป/PDF) จาก data URL ก่อนบันทึก",
+        "_ccPreviewDataUrl reusable"
+      ]
+    },
+    {
       "version": "1.9.304",
       "date": "2026-06-22",
       "title": "Website detail: ช่องหมายเหตุ platform (edit + ✓ บันทึก)",

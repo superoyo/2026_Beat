@@ -2388,7 +2388,10 @@ function _ccCreateBill(){
 // ---- upload invoice/receipt (PDF/รูป → อ่าน บริษัท/เดือน/ยอด → preview → save) ----
 function _ccInvUploadRow(idx,fname,p){
   return `<div class="cc-invrow card" data-idx="${idx}" style="padding:10px 12px;margin-bottom:8px">
-    <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;word-break:break-all">📎 ${escapeHtml(fname)}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px">
+      <div style="font-size:11px;color:var(--text-muted);word-break:break-all;min-width:0">📎 ${escapeHtml(fname)}</div>
+      <button type="button" class="btn cc-ir-preview" data-idx="${idx}" style="font-size:11px;padding:3px 9px;flex-shrink:0">👁 เปิดดู</button>
+    </div>
     <label style="display:block;margin-bottom:6px;font-size:12px">บริษัท / Platform<input class="cc-ir-company" value="${escapeHtml(p.company||'')}" style="width:100%" /></label>
     <label style="display:block;margin-bottom:6px;font-size:12px">รายละเอียดเอกสาร<input class="cc-ir-desc" placeholder="เช่น ค่าโฆษณา Facebook เดือน พ.ค." style="width:100%" /></label>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -2437,6 +2440,8 @@ function _ccUploadInvoice(defaultBillId){
   setTimeout(()=>{
     _initMemberPicker('cc-inv-uploader', _ccMembers, '— ฉัน (ผู้ล็อกอิน) —');   // searchable picker (รูป+ชื่อ)
     const inp=$('cc-inv-file'); const st=$('cc-inv-status'); const listEl=$('cc-inv-list');
+    // v1.9.305 — กดดูไฟล์ที่อัพ (ก่อน OCR/บันทึก) — delegated (อยู่รอด innerHTML rebuild)
+    listEl.addEventListener('click',(e)=>{ const b=e.target.closest('.cc-ir-preview'); if(!b) return; const it=items[parseInt(b.dataset.idx,10)]; if(it) _ccPreviewDataUrl(it.fileData,it.fileMime,it.fileName); });
     inp.onchange=async ()=>{
       const files=Array.from(inp.files||[]); if(!files.length) return;
       items.length=0; listEl.innerHTML='';
@@ -2485,7 +2490,7 @@ async function _ccRenderDetail(v){
       </div>
     </div>
     <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:10px">ลาก invoice จากขวา → วางบนรายการซ้ายเพื่อจับคู่ · หรือคลิก invoice แล้วคลิกรายการ</div>
-    <div style="display:grid;grid-template-columns:1fr 320px;gap:14px;align-items:start">
+    <div style="display:grid;grid-template-columns:minmax(300px,460px) 320px;gap:14px;align-items:start">
       <div>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
           <span style="font-size:12px;font-weight:700;color:var(--text-muted)">รายการจากบัตร (${total})</span>
@@ -2551,6 +2556,26 @@ function _ccInvCardHtml(i,isMatched,isPool){
 }
 
 // ---- preview ไฟล์ invoice/receipt ในแอป (PDF=iframe, รูป=img) ----
+// v1.9.305 — preview ไฟล์จาก data URL (ตอนอัพโหลด ก่อนบันทึก/OCR)
+function _ccPreviewDataUrl(dataUrl,mime,name){
+  if(!dataUrl) return;
+  const isImg=(mime||'').startsWith('image/')||/\.(png|jpe?g|gif|webp|bmp)$/i.test(name||'');
+  const inner=isImg
+    ? `<img src="${dataUrl}" alt="" style="width:100%;max-height:78vh;object-fit:contain;display:block;background:#0f172a" />`
+    : `<iframe src="${dataUrl}" style="width:100%;height:78vh;border:0;background:#fff;display:block" title="preview"></iframe>`;
+  const bg=document.createElement('div'); bg.className='modal-bg'; bg.style.zIndex='1300';
+  bg.innerHTML=`<div class="modal modal-xwide" style="max-width:940px;padding:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">
+      <div style="font-size:13px;font-weight:700;min-width:0;word-break:break-all">📎 ${escapeHtml(name||'ไฟล์')}</div>
+      <button class="btn" id="cc-dprev-close" style="font-size:12px;flex-shrink:0">ปิด</button>
+    </div>
+    <div style="border-radius:10px;overflow:hidden;border:1px solid var(--border)">${inner}</div>
+  </div>`;
+  document.body.appendChild(bg);
+  const close=()=>bg.remove();
+  bg.querySelector('#cc-dprev-close').onclick=close;
+  bg.addEventListener('click',e=>{ if(e.target===bg) close(); });
+}
 function _ccPreviewInvoice(inv){
   const url=API+'/api/creditcard/invoices/'+inv.id+'/file';
   const isImg=(inv.file_mime||'').startsWith('image/')||/\.(png|jpe?g|gif|webp|bmp)$/i.test(inv.file_name||'');
