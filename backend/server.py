@@ -586,6 +586,8 @@ def init_db() -> None:
             ("end_date",      "TEXT"),                              # ISO date — วันสิ้นสุด (NULL = ongoing)
             # v1.12 — site logo (square, base64 data URL)
             ("logo_data",     "TEXT"),                              # data:image/png;base64,...
+            # v1.9.303 — รูป screenshot/อ้างอิงของเว็บ (กด preview ได้)
+            ("image_data",    "TEXT"),                              # data:image/jpeg;base64,...
         ]:
             if col_name not in site_cols:
                 conn.execute(f"ALTER TABLE sites ADD COLUMN {col_name} {col_def}")
@@ -3676,6 +3678,8 @@ class SiteIn(BaseModel):
     end_date: Optional[str] = Field(None, max_length=40)     # ISO YYYY-MM-DD
     # v1.12 — logo data URL (data:image/png;base64,...) ขนาด max 500 KB
     logo_data: Optional[str] = Field(None, max_length=700_000)
+    # v1.9.303 — รูป screenshot/อ้างอิง (กด preview)
+    image_data: Optional[str] = Field(None, max_length=6_000_000)
 
 
 class SitePatchIn(BaseModel):
@@ -3695,6 +3699,8 @@ class SitePatchIn(BaseModel):
     end_date: Optional[str] = Field(None, max_length=40)
     # v1.12 — ส่ง '' เพื่อลบ logo
     logo_data: Optional[str] = Field(None, max_length=700_000)
+    # v1.9.303 — รูป screenshot (ส่ง '' เพื่อลบ)
+    image_data: Optional[str] = Field(None, max_length=6_000_000)
 
 
 def _resolve_card_owner_id(name: Optional[str]) -> Optional[int]:
@@ -4217,6 +4223,8 @@ def update_site(
     if payload.logo_data is not None:
         # ส่ง '' (empty string) → ลบ logo (set NULL); ส่ง data:image/... → save
         updates["logo_data"] = payload.logo_data or None
+    if payload.image_data is not None:
+        updates["image_data"] = payload.image_data or None        # v1.9.303
     if not updates:
         raise HTTPException(status_code=400, detail="ไม่มีอะไรให้บันทึก")
     set_clause = ", ".join(f"{k} = ?" for k in updates)

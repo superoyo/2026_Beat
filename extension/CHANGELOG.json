@@ -2,6 +2,18 @@
   "_note": "เพิ่ม entry ใหม่ที่ตำแหน่ง 0 ของ array versions ทุกครั้งที่ bump version ใน manifest.json — admin SPA จะอ่านอัตโนมัติ",
   "versions": [
     {
+      "version": "1.9.303",
+      "date": "2026-06-22",
+      "title": "Website detail: อัพโหลดรูป screenshot + preview + credentials เป็นตารางเรียบ",
+      "summary": "หน้ารายละเอียดเว็บ (Int. Platforms Config) เพิ่มช่องอัพโหลดรูป screenshot ด้านบน (กดดู preview เต็มจอได้) · เปลี่ยนรายการ credentials จากการ์ดใหญ่ → ตารางเรียบ ๆ เหมือนหน้า domain (User/Password + copy/show + ⋮ แก้ไข/ลบ)",
+      "changes": [
+        "DB: sites.image_data (screenshot)",
+        "อัพโหลดรูปด้านบน + lightbox preview (ย่อด้วย compressImageToJpeg)",
+        "credentials list → ตาราง cfg-table + kebab menu",
+        "credBillingSummary รองรับโหมด compact"
+      ]
+    },
+    {
       "version": "1.9.302",
       "date": "2026-06-22",
       "title": "แก้: current บนสุด + month picker ย้อนปีได้ + ผูก FinDoc filter tag",

@@ -4467,6 +4467,18 @@ async function renderSiteDetail(siteId) {
               style="display:inline-block;min-width:220px;font-size:13px;padding:4px 8px;background:var(--bg-soft);border-radius:6px;outline:none;line-height:1.5;transition:background .12s;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">…</code>
       </div>
 
+      <!-- v1.9.303 — รูป screenshot/อ้างอิง (อัพโหลด + กด preview) -->
+      <div style="flex-shrink:0;display:flex;flex-direction:column;gap:5px;align-items:center">
+        <div id="sd-image" title="อัพโหลด / กดดูรูป" style="width:128px;height:84px;border-radius:10px;border:1.5px dashed var(--border);background:var(--bg-soft);display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;transition:border-color .15s">
+          <span style="color:var(--text-muted);font-size:11px;text-align:center;line-height:1.5">📷<br>อัพโหลดรูป</span>
+        </div>
+        <div id="sd-image-actions" style="display:none;gap:5px">
+          <button class="btn" id="sd-image-replace" title="เปลี่ยนรูป" style="font-size:10.5px;padding:3px 8px;line-height:1">📷 เปลี่ยน</button>
+          <button class="btn danger" id="sd-image-remove" title="ลบรูป" style="font-size:10.5px;padding:3px 8px;line-height:1">🗑</button>
+        </div>
+        <input type="file" id="sd-image-file" accept="image/*" style="display:none" />
+      </div>
+
       <!-- Action buttons (top right) -->
       <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
         <button class="btn primary" id="add-cred-btn" style="font-size:12.5px;padding:7px 12px;white-space:nowrap">+ เพิ่ม Credential</button>
@@ -4497,6 +4509,56 @@ async function renderSiteDetail(siteId) {
 
   // === Logo wiring ===
   wireSiteLogoActions(siteId);
+  // === v1.9.303 — รูป screenshot wiring ===
+  _wireSiteImage(siteId);
+}
+
+// v1.9.303 — lightbox preview รูป (เต็มจอ คลิกปิด) — reusable
+function _showImageLightbox(src) {
+  if (!src) return;
+  const bg = document.createElement('div');
+  bg.style.cssText = 'position:fixed;inset:0;z-index:5000;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;cursor:zoom-out;padding:30px';
+  bg.innerHTML = `<img src="${src}" alt="preview" style="max-width:96%;max-height:96%;object-fit:contain;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.5)" />`;
+  bg.addEventListener('click', () => bg.remove());
+  document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { bg.remove(); document.removeEventListener('keydown', esc); } });
+  document.body.appendChild(bg);
+}
+function _updateSdImage(src) {
+  const box = $('sd-image'), actions = $('sd-image-actions');
+  if (!box) return;
+  if (src) {
+    box.innerHTML = `<img src="${src}" alt="" style="width:100%;height:100%;object-fit:cover;display:block" />`;
+    box.style.borderStyle = 'solid';
+    if (actions) actions.style.display = 'flex';
+  } else {
+    box.innerHTML = '<span style="color:var(--text-muted);font-size:11px;text-align:center;line-height:1.5">📷<br>อัพโหลดรูป</span>';
+    box.style.borderStyle = 'dashed';
+    if (actions) actions.style.display = 'none';
+  }
+}
+async function _setSiteImage(siteId, dataUrl) {
+  try { await fetchJson('/api/admin/sites/' + siteId, { method: 'PATCH', body: JSON.stringify({ image_data: dataUrl }) }); }
+  catch (e) { alert('บันทึกรูปไม่สำเร็จ: ' + (e.message || e)); return; }
+  if (_currentSite) _currentSite.image_data = dataUrl || null;
+  _updateSdImage(dataUrl);
+}
+function _wireSiteImage(siteId) {
+  const box = $('sd-image'), fileInp = $('sd-image-file');
+  if (!box || !fileInp) return;
+  box.addEventListener('click', () => {
+    const img = box.querySelector('img');
+    if (img) _showImageLightbox(img.src); else fileInp.click();
+  });
+  const rep = $('sd-image-replace'); if (rep) rep.addEventListener('click', (e) => { e.stopPropagation(); fileInp.click(); });
+  const rm = $('sd-image-remove'); if (rm) rm.addEventListener('click', async (e) => { e.stopPropagation(); if (confirm('ลบรูปนี้?')) await _setSiteImage(siteId, ''); });
+  fileInp.addEventListener('change', async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    fileInp.value = '';
+    try {
+      const dataUrl = await compressImageToJpeg(f, 2000, 0.9);   // ย่อก่อนเก็บ
+      await _setSiteImage(siteId, dataUrl);
+    } catch (err) { alert('อ่านรูปไม่สำเร็จ: ' + (err.message || err)); }
+  });
 }
 
 // === Inline editable field helper ===
@@ -4780,7 +4842,7 @@ async function bindBillingFieldsDynamic() {
 
 // แสดงสรุปข้อมูลการเงินของ credential แบบ chip ใต้แถว credential
 // (เฉพาะข้อมูลที่กรอกแล้ว — ไม่กรอก = ไม่โชว์)
-function credBillingSummary(c) {
+function credBillingSummary(c, compact) {
   const chips = [];
   // รอบบิล + cost
   if (c.billing_cycle === 'monthly') {
@@ -4815,6 +4877,7 @@ function credBillingSummary(c) {
     chips.push(`<span class="cred-chip" title="${escapeHtml(c.usage_reason)}">📝 ${escapeHtml(c.usage_reason.slice(0, 40))}${c.usage_reason.length > 40 ? '…' : ''}</span>`);
   }
   if (chips.length === 0) return '';
+  if (compact) return `<div style="display:flex;gap:5px;flex-wrap:wrap">${chips.join('')}</div>`;
   return `<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);display:flex;gap:6px;flex-wrap:wrap">${chips.join('')}</div>`;
 }
 
@@ -4834,39 +4897,50 @@ async function loadSite(siteId) {
   }
   // populate logo preview
   updateSdLogoPreview(site.logo_data || '');
+  _updateSdImage(site.image_data || '');   // v1.9.303
 
   const list = $('creds-list');
   if (credentials.length === 0) {
     list.innerHTML = '<div class="empty">ยังไม่มี credential — กด <strong>+ เพิ่ม Credential</strong> ด้านบน</div>';
     return;
   }
-  list.innerHTML = credentials.map(c => `
-    <div class="cred-row" data-id="${c.id}" style="flex-direction:column;align-items:stretch">
-      <div style="display:grid;grid-template-columns:1fr 1.4fr 1.4fr auto;gap:14px;align-items:center;width:100%">
-        <div class="col-label">${escapeHtml(c.label || '(ไม่มีชื่อ)')}</div>
-        <div>
-          <span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.04em">user</span>
-          <div style="margin-top:2px">
-            ${escapeHtml(c.username)}
-            <button class="copy-btn" data-copy="${escapeHtml(c.username)}" title="คัดลอก">📋</button>
-          </div>
-        </div>
-        <div class="col-pw">
-          <span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.04em">password</span>
-          <div style="margin-top:2px">
-            <span class="pw-mask" data-pw="${escapeHtml(c.password)}" data-shown="false">••••••••</span>
-            <button class="copy-btn pw-toggle" data-id="${c.id}" title="show/hide">👁</button>
-            <button class="copy-btn" data-copy="${escapeHtml(c.password)}" title="คัดลอก">📋</button>
-          </div>
-        </div>
-        <div style="display:flex;gap:6px">
-          <button class="btn" data-edit="${c.id}" style="font-size:12px;padding:5px 10px">✏️ แก้ไข</button>
-          <button class="btn danger" data-del="${c.id}">ลบ</button>
-        </div>
-      </div>
-      ${credBillingSummary(c)}
-    </div>
-  `).join('');
+  // v1.9.303 — ตารางเรียบ ๆ เหมือนหน้า domain (Services Config)
+  list.innerHTML = `
+    <div class="cfg-table-wrap"><div class="cfg-table-scroll">
+    <table class="cfg-table">
+      <thead><tr>
+        <th>ชื่อ / Account</th><th>User</th><th>Password</th><th>ค่าใช้จ่าย / รอบบิล</th><th style="text-align:right">จัดการ</th>
+      </tr></thead>
+      <tbody>
+      ${credentials.map(c => `
+        <tr style="cursor:default">
+          <td style="font-weight:700">${escapeHtml(c.label || '(ไม่มีชื่อ)')}${c.cancelled ? ' <span style="font-size:10px;color:var(--critical);font-weight:700">⛔</span>' : ''}</td>
+          <td><span style="font-family:ui-monospace,Menlo,monospace">${escapeHtml(c.username || '—')}</span>${c.username ? ` <button class="copy-btn" data-copy="${escapeHtml(c.username)}" title="คัดลอก">📋</button>` : ''}</td>
+          <td style="white-space:nowrap"><span class="pw-mask" data-pw="${escapeHtml(c.password || '')}" data-shown="false" style="font-family:ui-monospace,Menlo,monospace">••••••••</span> <button class="copy-btn pw-toggle" title="show/hide">👁</button>${c.password ? ` <button class="copy-btn" data-copy="${escapeHtml(c.password)}" title="คัดลอก">📋</button>` : ''}</td>
+          <td>${credBillingSummary(c, true) || '<span style="color:var(--text-muted)">—</span>'}</td>
+          <td style="text-align:right;white-space:nowrap"><button type="button" class="kebab-btn" data-cred-kebab="${c.id}" title="เมนู">⋮</button></td>
+        </tr>
+      `).join('')}
+      </tbody>
+    </table>
+    </div></div>`;
+
+  list.querySelectorAll('button[data-cred-kebab]').forEach(b => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const cid = parseInt(b.dataset.credKebab, 10);
+      const cred = credentials.find(x => x.id === cid);
+      if (!cred) return;
+      _kebabMenu(b, [
+        { icon: '✏️', label: 'แก้ไข', onClick: () => showEditCredModal(cred, siteId) },
+        { icon: '🗑', label: 'ลบ', danger: true, onClick: async () => {
+            if (!confirm('ลบ credential นี้?')) return;
+            await fetchJson('/api/admin/credentials/' + cid, { method: 'DELETE' });
+            await loadSite(siteId);
+          } },
+      ]);
+    });
+  });
 
   list.querySelectorAll('.copy-btn[data-copy]').forEach(b => {
     b.addEventListener('click', () => {
