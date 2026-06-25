@@ -11914,6 +11914,8 @@ async function renderHardwarePage(type) {
           <option value="">↕️ เรียง: ชื่อ (ก-ฮ)</option>
           <option value="purchase_desc">🛒 ซื้อล่าสุด → เก่า</option>
           <option value="purchase_asc">🛒 ซื้อเก่าสุด → ใหม่</option>
+          <option value="created_desc">➕ เพิ่มล่าสุด → เก่า</option>
+          <option value="created_asc">➕ เพิ่มเก่าสุด → ใหม่</option>
         </select>
       </div>
     ` : ''}
@@ -11997,14 +11999,19 @@ function applyHwFiltersExcept(h, excludeKey, q) {
 }
 
 // v1.9.251 — เรียงลำดับ PC ตามวันสั่งซื้อ (purchased_at = ISO YYYY-MM-DD CE → string sort ตรง)
+// v1.9.310 — เพิ่มเรียงตามวันที่เพิ่มเข้าระบบ (created_at)
 function _hwSortList(list) {
-  if (_hwSort !== 'purchase_desc' && _hwSort !== 'purchase_asc') return list;
-  const dir = _hwSort === 'purchase_desc' ? -1 : 1;
+  const byPurchase = _hwSort === 'purchase_desc' || _hwSort === 'purchase_asc';
+  const byCreated  = _hwSort === 'created_desc'  || _hwSort === 'created_asc';
+  if (!byPurchase && !byCreated) return list;
+  const field = byPurchase ? 'purchased_at' : 'created_at';
+  const sliceLen = byPurchase ? 10 : 32;   // purchased_at = วันเดียว, created_at = full ISO timestamp
+  const dir = (_hwSort === 'purchase_desc' || _hwSort === 'created_desc') ? -1 : 1;
   return [...list].sort((a, b) => {
-    const pa = (a.purchased_at || '').slice(0, 10);
-    const pb = (b.purchased_at || '').slice(0, 10);
+    const pa = (a[field] || '').slice(0, sliceLen);
+    const pb = (b[field] || '').slice(0, sliceLen);
     if (!pa && !pb) return 0;
-    if (!pa) return 1;            // เครื่องที่ไม่มีวันซื้อ → ท้ายสุดเสมอ
+    if (!pa) return 1;            // เครื่องที่ไม่มีข้อมูล → ท้ายสุดเสมอ
     if (!pb) return -1;
     return pa < pb ? -dir : pa > pb ? dir : 0;
   });
