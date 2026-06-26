@@ -11894,7 +11894,7 @@ async function renderHardwareReportPage() {
       <span id="hr-count" class="card-sub">—</span>
     </div>
     <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px">
-      สรุปการเปลี่ยน Personal Computer ของพนักงานแต่ละคน — เรียงจากล่าสุดไปเก่าสุด (ตามวันที่ได้รับเครื่องใหม่)
+      Personal Computer ทุกเครื่องที่มีวันสั่งซื้อ (purchased_at) — ตรงกับปฏิทินการซื้อใน Dashboard · ใช้ตามหาว่าใครยังไม่มีบันทึก "คอมเดิม"
     </div>
     <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
       <label style="font-size:12.5px;color:var(--text-muted);font-weight:600">📅 ปี:</label>
@@ -11902,6 +11902,7 @@ async function renderHardwareReportPage() {
         <option value="">— ทุกปี —</option>
       </select>
     </div>
+    <div id="hr-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:14px"></div>
     <div id="hr-list">${skelStack(5)}</div>
   `;
   let data;
@@ -11930,10 +11931,33 @@ async function renderHardwareReportPage() {
 function _renderHwReportTable() {
   const wrap = $('hr-list');
   const countEl = $('hr-count');
+  const sumEl = $('hr-summary');
   if (!wrap || !_hwReportData) return;
   const events = _hwReportData.events || [];
   const filtered = _hwReportYear ? events.filter(e => String(e.year) === _hwReportYear) : events;
   if (countEl) countEl.textContent = `${filtered.length} รายการ`;
+  // v1.9.312 — สรุปจำนวนคอมใหม่ + จำนวนที่กรอกคอมเดิม #1 แล้ว
+  const withPrev1 = filtered.filter(e => Array.isArray(e.prev_pcs) && e.prev_pcs[0]).length;
+  const total = filtered.length;
+  const pct = total ? Math.round((withPrev1 / total) * 100) : 0;
+  if (sumEl) {
+    const cardS = 'background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:14px 16px';
+    const labelS = 'font-size:12px;color:var(--text-muted);font-weight:600;margin-bottom:6px';
+    const valS = 'font-size:24px;font-weight:700;color:var(--text);line-height:1.1';
+    const subS = 'font-size:11.5px;color:var(--text-muted);margin-top:4px';
+    sumEl.innerHTML = `
+      <div style="${cardS}">
+        <div style="${labelS}">💻 คอมฯใหม่ทั้งหมด</div>
+        <div style="${valS}">${total}</div>
+        <div style="${subS}">${_hwReportYear ? `พ.ศ. ${parseInt(_hwReportYear, 10) + 543}` : 'ทุกปี'}</div>
+      </div>
+      <div style="${cardS}">
+        <div style="${labelS}">📝 กรอกคอมเดิมแล้ว (#1)</div>
+        <div style="${valS};color:var(--primary)">${withPrev1}</div>
+        <div style="${subS}">${pct}% ของ ${total} รายการ · เหลือ ${total - withPrev1}</div>
+      </div>
+    `;
+  }
   if (filtered.length === 0) {
     wrap.innerHTML = `<div class="empty" style="padding:32px;text-align:center">
       <div style="font-size:48px;margin-bottom:6px">📭</div>

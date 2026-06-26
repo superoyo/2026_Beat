@@ -6555,69 +6555,80 @@ def admin_unassigned_pcs(_sess: dict = Depends(require_admin)) -> dict[str, Any]
     return {"hardware": [dict(r) for r in rows]}
 
 
-# v1.9.311 — รายงานการเปลี่ยนเครื่อง: แต่ละครั้งที่ member ได้รับเครื่องใหม่ + คอมเดิมที่เคยใช้
+# v1.9.312 — รายงานคอมที่ซื้อใหม่/เปลี่ยน: ตามวันสั่งซื้อ (purchased_at) — ตรงกับ dashboard ปฏิทินการซื้อ
 @app.get("/api/admin/hardware/pc-replacement-report")
 def admin_hardware_pc_replacement_report(
     _sess: dict = Depends(require_admin),
 ) -> dict[str, Any]:
-    """รายการการเปลี่ยนเครื่อง PC — เรียง assigned_at DESC
+    """รายงาน PC ที่ซื้อใหม่ — 1 แถว ต่อ 1 PC (filter โดย purchased_at IS NOT NULL)
 
-    Returns one row per (member, PC assignment) where member_id is set. For
-    each event we surface the previous PCs that the same member had been
-    assigned to (assigned_at strictly earlier than this event)."""
+    total = จำนวน PC ที่มี purchased_at = ตรงกับ ปฏิทินการซื้อ ใน dashboard
+    สำหรับแต่ละ PC จะแสดงคอมเดิมของเจ้าของปัจจุบัน — คือ PC อื่นที่คนคนนี้เคยได้รับ
+    ก่อนหน้านี้ (assigned_at เก่ากว่าตอนได้รับ PC นี้) สูงสุด 3 เครื่อง"""
     with db_conn() as conn:
-        events = conn.execute(
-            "SELECT a.id AS asg_id, a.hardware_id, a.member_id, a.member_label, "
-            "       a.assigned_at, h.name AS hw_name, m.display_name, m.email "
-            "FROM hardware_assignments a "
-            "JOIN hardware h ON h.id = a.hardware_id "
-            "LEFT JOIN members m ON m.id = a.member_id "
-            "WHERE h.hw_type = 'pc' AND a.member_id IS NOT NULL "
-            "  AND a.assigned_at IS NOT NULL AND a.assigned_at != '' "
-            "ORDER BY a.assigned_at DESC"
+        rows = conn.execute(
+            "SELECT h.id, h.name, h.purchased_at, h.current_member_id, "
+            "       m.display_name, m.email "
+            "FROM hardware h "
+            "LEFT JOIN members m ON m.id = h.current_member_id "
+            "WHERE h.hw_type = 'pc' AND h.purchased_at IS NOT NULL "
+            "  AND TRIM(h.purchased_at) != '' "
+            "ORDER BY h.purchased_at DESC"
         ).fetchall()
-        # group all PC assignments per member for prev-lookup
-        all_by_member: dict[int, list[sqlite3.Row]] = {}
-        all_rows = conn.execute(
-            "SELECT a.member_id, a.hardware_id, a.assigned_at, h.name AS hw_name "
+        # (member, pc) → วันที่ assigned ครั้งแรกของคู่นี้ + ชื่อ PC
+        asg_rows = conn.execute(
+            "SELECT a.member_id, a.hardware_id, MIN(a.assigned_at) AS first_at, "
+            "       h.name AS hw_name "
             "FROM hardware_assignments a JOIN hardware h ON h.id = a.hardware_id "
             "WHERE h.hw_type = 'pc' AND a.member_id IS NOT NULL "
             "  AND a.assigned_at IS NOT NULL AND a.assigned_at != '' "
-            "ORDER BY a.assigned_at DESC"
+            "GROUP BY a.member_id, a.hardware_id"
         ).fetchall()
-        for r in all_rows:
-            all_by_member.setdefault(r["member_id"], []).append(r)
+
+    member_pcs: dict[int, list[dict[str, Any]]] = {}
+    for r in asg_rows:
+        member_pcs.setdefault(r["member_id"], []).append({
+            "hardware_id": r["hardware_id"],
+            "first_at": r["first_at"] or "",
+            "hw_name": r["hw_name"] or "",
+        })
+    for mid in member_pcs:
+        member_pcs[mid].sort(key=lambda x: x["first_at"], reverse=True)
 
     out: list[dict[str, Any]] = []
     years: set[int] = set()
-    for e in events:
-        at = e["assigned_at"]
+    for r in rows:
+        at = r["purchased_at"] or ""
         try:
             year = int(at[0:4])
             month = int(at[5:7])
         except (ValueError, TypeError):
             continue
         years.add(year)
-        # prev PCs: same member, hardware_id != this, assigned_at < this
+        member_name = ""
         prev_names: list[str] = []
-        seen_hw: set[int] = {e["hardware_id"]}
-        for r in all_by_member.get(e["member_id"], []):
-            if r["hardware_id"] in seen_hw:
-                continue
-            if (r["assigned_at"] or "") >= at:
-                continue
-            seen_hw.add(r["hardware_id"])
-            prev_names.append(r["hw_name"] or "")
-            if len(prev_names) >= 3:
-                break
+        if r["current_member_id"]:
+            member_name = r["display_name"] or r["email"] or ""
+            pcs = member_pcs.get(r["current_member_id"], [])
+            # หา assigned_at ของเจ้าของกับ PC ตัวนี้ — ใช้เป็น cutoff ของ "คอมเดิม"
+            this_first = next((p["first_at"] for p in pcs if p["hardware_id"] == r["id"]), "")
+            ref = this_first or at  # fallback: ใช้วันซื้อ ถ้าไม่มี assignment record
+            for p in pcs:
+                if p["hardware_id"] == r["id"]:
+                    continue
+                if p["first_at"] and ref and p["first_at"] >= ref:
+                    continue
+                prev_names.append(p["hw_name"])
+                if len(prev_names) >= 3:
+                    break
         out.append({
             "year": year,
             "month": month,
-            "assigned_at": at,
-            "hardware_id": e["hardware_id"],
-            "new_pc": e["hw_name"] or "",
-            "member_id": e["member_id"],
-            "member_name": (e["display_name"] or e["member_label"] or e["email"] or ""),
+            "purchased_at": at,
+            "hardware_id": r["id"],
+            "new_pc": r["name"] or "",
+            "member_id": r["current_member_id"],
+            "member_name": member_name,
             "prev_pcs": prev_names,
         })
     return {"events": out, "years": sorted(years, reverse=True)}
