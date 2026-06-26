@@ -1178,7 +1178,7 @@
           <span id="nav-peoples-badge" style="display:none;background:var(--critical);color:#fff;font-size:10px;padding:0 6px;border-radius:999px;font-weight:700;position:absolute;top:6px;right:6px;line-height:16px"></span>
         </a>
         <!-- v1.9.124 — Device & Software: direct link -->
-        <a href="#/sites" data-route="sites" data-route-extra="hardware-pc-dashboard,hardware-pc,hardware-pc-unassigned,hardware-device,hardware-network,financial-documents" data-label="Device & Software">
+        <a href="#/sites" data-route="sites" data-route-extra="hardware-pc-dashboard,hardware-pc,hardware-pc-unassigned,hardware-device,hardware-network,hardware-report,financial-documents" data-label="Device & Software">
           <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>
           <span class="nav-label">Device &amp; Software</span>
         </a>
@@ -1367,10 +1367,10 @@ function _extractErrDetail(j) {
 }
 
 // admin-only routes — member ห้ามเข้า (bounce ไป default)
-const ADMIN_ONLY_ROUTES = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc-dashboard', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads', 'ads-benchmark', 'ads-audience', 'ads-campaigns', 'sso']);
+const ADMIN_ONLY_ROUTES = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc-dashboard', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'hardware-report', 'financial-documents', 'ads', 'ads-benchmark', 'ads-audience', 'ads-campaigns', 'sso']);
 // menu items ที่ซ่อนใน sidebar สำหรับ member
 // (dashboard เห็นได้ทุกบทบาท — ใช้เป็นหน้าแรกของ member ด้วย)
-const HIDE_FROM_MEMBER_NAV = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc-dashboard', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'financial-documents', 'ads', 'ads-benchmark', 'ads-audience', 'ads-campaigns', 'sso']);
+const HIDE_FROM_MEMBER_NAV = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc-dashboard', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'hardware-report', 'financial-documents', 'ads', 'ads-benchmark', 'ads-audience', 'ads-campaigns', 'sso']);
 // v1.9.162 — IAM: route → module ที่ต้องมีสิทธิ์ (member ที่ถูก grant ถึงเข้าได้)
 const ROUTE_MODULE = { platforms: 'platform', ads: 'ads', 'ads-benchmark': 'ads', 'ads-audience': 'ads', 'ads-campaigns': 'ads', calendar: 'customer', domains: 'customer', websites: 'customer', 'services-config': 'customer', 'domains-config': 'customer', tv: 'tv', 'tv-scheduling': 'tv' };
 let currentModules = new Set();   // module ที่ผู้ใช้ปัจจุบันเข้าถึงได้ (member)
@@ -1389,6 +1389,7 @@ const routes = {
   'hardware-pc-unassigned': () => renderDeviceSoftwarePage('hardware-pc-unassigned'),
   'hardware-device':  () => renderDeviceSoftwarePage('hardware-device'),
   'hardware-network': () => renderDeviceSoftwarePage('hardware-network'),
+  'hardware-report':  () => renderDeviceSoftwarePage('hardware-report'),
   'financial-documents': () => renderDeviceSoftwarePage('financial-documents'),
   'logs':             () => renderSettingPage('logs'),
   'security':         () => renderSettingPage('security'),
@@ -11881,6 +11882,102 @@ async function renderPcDashboard() {
   }));
 }
 
+// v1.9.311 — Report: ตารางการเปลี่ยนเครื่อง PC (ปี · เดือน · เครื่องใหม่ · ผู้ใช้ · คอมเดิม 1-3)
+let _hwReportData = null;     // { events, years }
+let _hwReportYear = '';        // '' = ทุกปี
+const _THAI_MONTHS = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+
+async function renderHardwareReportPage() {
+  _subMain().innerHTML = `
+    <div class="page-head">
+      <h2 class="page-title">📑 รายงานการเปลี่ยนเครื่อง</h2>
+      <span id="hr-count" class="card-sub">—</span>
+    </div>
+    <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px">
+      สรุปการเปลี่ยน Personal Computer ของพนักงานแต่ละคน — เรียงจากล่าสุดไปเก่าสุด (ตามวันที่ได้รับเครื่องใหม่)
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+      <label style="font-size:12.5px;color:var(--text-muted);font-weight:600">📅 ปี:</label>
+      <select id="hr-f-year" style="padding:7px 11px;border:1px solid var(--border);border-radius:8px;font-size:12.5px;font-family:inherit;background:var(--bg-card);color:var(--text);cursor:pointer;font-weight:600;box-sizing:border-box">
+        <option value="">— ทุกปี —</option>
+      </select>
+    </div>
+    <div id="hr-list">${skelStack(5)}</div>
+  `;
+  let data;
+  try {
+    data = await fetchJson('/api/admin/hardware/pc-replacement-report');
+  } catch (e) {
+    $('hr-list').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  _hwReportData = data;
+  const sel = $('hr-f-year');
+  (data.years || []).forEach(y => {
+    const opt = document.createElement('option');
+    opt.value = String(y);
+    opt.textContent = `พ.ศ. ${y + 543}`;
+    sel.appendChild(opt);
+  });
+  sel.value = _hwReportYear;
+  sel.addEventListener('change', (e) => {
+    _hwReportYear = e.target.value;
+    _renderHwReportTable();
+  });
+  _renderHwReportTable();
+}
+
+function _renderHwReportTable() {
+  const wrap = $('hr-list');
+  const countEl = $('hr-count');
+  if (!wrap || !_hwReportData) return;
+  const events = _hwReportData.events || [];
+  const filtered = _hwReportYear ? events.filter(e => String(e.year) === _hwReportYear) : events;
+  if (countEl) countEl.textContent = `${filtered.length} รายการ`;
+  if (filtered.length === 0) {
+    wrap.innerHTML = `<div class="empty" style="padding:32px;text-align:center">
+      <div style="font-size:48px;margin-bottom:6px">📭</div>
+      <div style="font-weight:600;color:var(--text)">ไม่มีข้อมูลในปีที่เลือก</div>
+    </div>`;
+    return;
+  }
+  const th = 'text-align:left;padding:9px 12px;font-size:12px;color:var(--text-muted);font-weight:600;background:var(--bg-soft);border-bottom:1px solid var(--border);position:sticky;top:0';
+  const td = 'padding:10px 12px;font-size:13px;border-bottom:1px solid var(--border);vertical-align:top';
+  const tdMuted = td + ';color:var(--text-muted)';
+  const rows = filtered.map(e => {
+    const prev = e.prev_pcs || [];
+    const cell = (i) => {
+      const v = prev[i];
+      return `<td style="${v ? td : tdMuted}">${v ? escapeHtml(v) : '—'}</td>`;
+    };
+    return `<tr>
+      <td style="${td};white-space:nowrap;color:var(--text-muted)">${e.year + 543}</td>
+      <td style="${td};white-space:nowrap;color:var(--text-muted)">${_THAI_MONTHS[e.month] || e.month}</td>
+      <td style="${td};font-weight:600">${escapeHtml(e.new_pc || '—')}</td>
+      <td style="${td}">${escapeHtml(e.member_name || '—')}</td>
+      ${cell(0)}${cell(1)}${cell(2)}
+    </tr>`;
+  }).join('');
+  wrap.innerHTML = `
+    <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--bg-card)">
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-family:inherit">
+          <thead><tr>
+            <th style="${th}">ปี</th>
+            <th style="${th}">เดือน</th>
+            <th style="${th}">คอมฯที่เปลี่ยน</th>
+            <th style="${th}">ชื่อ</th>
+            <th style="${th}">คอมเดิม #1</th>
+            <th style="${th}">คอมเดิม #2</th>
+            <th style="${th}">คอมเดิม #3</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
 async function renderHardwarePage(type) {
   if (type) _hwActiveType = type;
   _hwSearch = '';
@@ -14428,6 +14525,7 @@ async function renderDeviceSoftwarePage(active, arg) {
     { group: 'Hardware',  route: 'hardware-pc-unassigned', ico: '📦',  label: 'คอมส่วนกลาง',       badge: central, render: () => renderHardwareUnassignedPcsPage() },
     { group: 'Hardware',  route: 'hardware-device',        ico: '📱',  label: 'Device',                render: () => renderHardwarePage('device') },
     { group: 'Hardware',  route: 'hardware-network',       ico: '📡',  label: 'Network',               render: () => renderHardwarePage('network') },
+    { group: 'Hardware',  route: 'hardware-report',        ico: '📑',  label: 'Report',                render: () => renderHardwareReportPage() },
     { group: 'Document',  route: 'financial-documents',    ico: '💰',  label: 'Financial Document',    render: () => renderFinancialDocumentsPage() },
   ]});
 }

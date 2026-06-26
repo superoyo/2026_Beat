@@ -6555,6 +6555,74 @@ def admin_unassigned_pcs(_sess: dict = Depends(require_admin)) -> dict[str, Any]
     return {"hardware": [dict(r) for r in rows]}
 
 
+# v1.9.311 — รายงานการเปลี่ยนเครื่อง: แต่ละครั้งที่ member ได้รับเครื่องใหม่ + คอมเดิมที่เคยใช้
+@app.get("/api/admin/hardware/pc-replacement-report")
+def admin_hardware_pc_replacement_report(
+    _sess: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """รายการการเปลี่ยนเครื่อง PC — เรียง assigned_at DESC
+
+    Returns one row per (member, PC assignment) where member_id is set. For
+    each event we surface the previous PCs that the same member had been
+    assigned to (assigned_at strictly earlier than this event)."""
+    with db_conn() as conn:
+        events = conn.execute(
+            "SELECT a.id AS asg_id, a.hardware_id, a.member_id, a.member_label, "
+            "       a.assigned_at, h.name AS hw_name, m.display_name, m.email "
+            "FROM hardware_assignments a "
+            "JOIN hardware h ON h.id = a.hardware_id "
+            "LEFT JOIN members m ON m.id = a.member_id "
+            "WHERE h.hw_type = 'pc' AND a.member_id IS NOT NULL "
+            "  AND a.assigned_at IS NOT NULL AND a.assigned_at != '' "
+            "ORDER BY a.assigned_at DESC"
+        ).fetchall()
+        # group all PC assignments per member for prev-lookup
+        all_by_member: dict[int, list[sqlite3.Row]] = {}
+        all_rows = conn.execute(
+            "SELECT a.member_id, a.hardware_id, a.assigned_at, h.name AS hw_name "
+            "FROM hardware_assignments a JOIN hardware h ON h.id = a.hardware_id "
+            "WHERE h.hw_type = 'pc' AND a.member_id IS NOT NULL "
+            "  AND a.assigned_at IS NOT NULL AND a.assigned_at != '' "
+            "ORDER BY a.assigned_at DESC"
+        ).fetchall()
+        for r in all_rows:
+            all_by_member.setdefault(r["member_id"], []).append(r)
+
+    out: list[dict[str, Any]] = []
+    years: set[int] = set()
+    for e in events:
+        at = e["assigned_at"]
+        try:
+            year = int(at[0:4])
+            month = int(at[5:7])
+        except (ValueError, TypeError):
+            continue
+        years.add(year)
+        # prev PCs: same member, hardware_id != this, assigned_at < this
+        prev_names: list[str] = []
+        seen_hw: set[int] = {e["hardware_id"]}
+        for r in all_by_member.get(e["member_id"], []):
+            if r["hardware_id"] in seen_hw:
+                continue
+            if (r["assigned_at"] or "") >= at:
+                continue
+            seen_hw.add(r["hardware_id"])
+            prev_names.append(r["hw_name"] or "")
+            if len(prev_names) >= 3:
+                break
+        out.append({
+            "year": year,
+            "month": month,
+            "assigned_at": at,
+            "hardware_id": e["hardware_id"],
+            "new_pc": e["hw_name"] or "",
+            "member_id": e["member_id"],
+            "member_name": (e["display_name"] or e["member_label"] or e["email"] or ""),
+            "prev_pcs": prev_names,
+        })
+    return {"events": out, "years": sorted(years, reverse=True)}
+
+
 @app.get("/api/admin/hardware/{hw_id}/history")
 def admin_hardware_history(
     hw_id: int,
