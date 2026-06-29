@@ -1152,7 +1152,7 @@
       <!-- v1.9.99 — รายการระดับบนใช้ icon-only ใน rail mode: ห่อ emoji + label ด้วย span + data-label สำหรับ tooltip -->
       <div class="nav-section">
         <a href="#/dashboard" data-route="dashboard" data-label="Dashboard"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></span><span class="nav-label">Dashboard</span></a>
-        <a href="#/platforms" data-route="platforms" data-label="Platforms"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></span><span class="nav-label">Platforms</span></a>
+        <a href="#/platforms" data-route="platforms" data-route-extra="sites" data-label="Platforms"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></span><span class="nav-label">Platforms</span></a>
         <!-- v1.9.163/167 — Ads (submenu: Report + Benchmark) -->
         <a href="#/ads" data-route="ads" data-route-extra="ads-benchmark,ads-audience,ads-campaigns" data-label="Ads"><span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg></span><span class="nav-label">Ads</span></a>
         <!-- v1.9.164 — Customer: ย้ายขึ้นโซนบน (กรองตามสิทธิ์ IAM อยู่แล้ว) -->
@@ -1178,7 +1178,7 @@
           <span id="nav-peoples-badge" style="display:none;background:var(--critical);color:#fff;font-size:10px;padding:0 6px;border-radius:999px;font-weight:700;position:absolute;top:6px;right:6px;line-height:16px"></span>
         </a>
         <!-- v1.9.124 — Device & Software: direct link -->
-        <a href="#/sites" data-route="sites" data-route-extra="hardware-pc-dashboard,hardware-pc,hardware-pc-unassigned,hardware-device,hardware-network,hardware-report,financial-documents" data-label="Device & Software">
+        <a href="#/hardware-pc-dashboard" data-route="hardware-pc-dashboard" data-route-extra="hardware-pc,hardware-pc-unassigned,hardware-device,hardware-network,hardware-report,financial-documents" data-label="Device & Software">
           <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>
           <span class="nav-label">Device &amp; Software</span>
         </a>
@@ -1383,7 +1383,7 @@ const routes = {
   'domains':          () => renderCustomerPage('calendar'),   // legacy alias
   'websites':         () => renderCustomerPage('websites'),
   'services-config':  () => renderCustomerPage('services-config'),
-  'sites':            () => renderDeviceSoftwarePage('sites'),
+  'sites':            renderSitesList,           // v1.9.314 — ย้ายเป็น standalone (เข้าทาง ปุ่ม Configuration ใน Platforms)
   'hardware-pc-dashboard': () => renderDeviceSoftwarePage('hardware-pc-dashboard'),
   'hardware-pc':      () => renderDeviceSoftwarePage('hardware-pc'),
   'hardware-pc-unassigned': () => renderDeviceSoftwarePage('hardware-pc-unassigned'),
@@ -1499,8 +1499,8 @@ async function navigate() {
 
   resetMainPadding();
   if (route === 'sites' && parts[1]) {
-    setActive('sites');
-    await renderDeviceSoftwarePage('sites', parseInt(parts[1], 10));
+    setActive('sites');                                              // v1.9.314 — highlight Platforms (มี data-route-extra='sites')
+    await renderSiteDetail(parseInt(parts[1], 10));
   } else if (route === 'teams' && parts[1]) {
     // Teams page now uses tabs — pass team_id เพื่อ select tab
     setActive('teams');
@@ -2517,14 +2517,26 @@ async function _ccRenderDetail(v){
       </div>
       <div><div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px">Invoice / Receipt (${d.invoices.length})</div><div id="cc-inv-col"></div></div>
     </div>`;
+  // v1.9.314 — รายการในบัตรกดเพื่อ edit description (user_note) ได้ inline
   $('cc-txn-col').innerHTML=d.transactions.map(t=>{
     const ms=matchByTxn[t.id]||[];
     const chips=ms.map(mm=>`<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;background:rgba(16,185,129,.12);color:var(--green);font-weight:600;margin:3px 3px 0 0">${escapeHtml((mm.inv&&mm.inv.company)||'invoice')} ${_ccMoney(mm.inv&&mm.inv.amount)} <span class="cc-unmatch" data-match="${mm.matchId}" style="cursor:pointer;opacity:.7">✕</span></span>`).join('');
-    return `<div class="cc-txn card" data-txn="${t.id}" style="padding:9px 12px;margin-bottom:6px;border:1px solid ${ms.length?'rgba(16,185,129,.45)':'var(--border)'};transition:background .1s">
+    const note=t.user_note||'';
+    const noteLine=`<div class="cc-txn-note" style="${note?'':'display:none;'}font-size:11px;color:var(--text-muted);margin-top:3px;font-style:italic">${note?'📝 '+escapeHtml(note):''}</div>`;
+    return `<div class="cc-txn card" data-txn="${t.id}" style="padding:9px 12px;margin-bottom:6px;border:1px solid ${ms.length?'rgba(16,185,129,.45)':'var(--border)'};transition:background .1s;cursor:pointer" title="คลิกเพื่อเพิ่ม description">
       <div style="display:flex;justify-content:space-between;gap:8px">
-        <div style="min-width:0"><div style="font-size:13px;font-weight:600">${escapeHtml(t.description||'—')}</div><div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t.txn_date||'')}</div></div>
+        <div style="min-width:0">
+          <div style="font-size:13px;font-weight:600">${escapeHtml(t.description||'—')}</div>
+          <div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t.txn_date||'')}</div>
+          ${noteLine}
+        </div>
         <div style="font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap">${_ccMoney(t.amount)}</div>
       </div>${chips?`<div>${chips}</div>`:''}
+      <div class="cc-txn-edit" style="display:none;margin-top:8px;gap:6px;align-items:center">
+        <input class="cc-txn-input" type="text" value="${escapeHtml(note)}" placeholder="ใส่ description..." maxlength="500" style="flex:1;font-size:12px;padding:5px 9px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);color:var(--text);min-width:0" />
+        <button type="button" class="btn cc-txn-save" title="บันทึก (Enter)" style="font-size:13px;padding:4px 9px;line-height:1;color:var(--green)">✓</button>
+        <button type="button" class="btn cc-txn-cancel" title="ยกเลิก (Esc)" style="font-size:13px;padding:4px 9px;line-height:1">✕</button>
+      </div>
     </div>`;
   }).join('')||'<div class="empty" style="font-size:12px">ไม่มีรายการ</div>';
   const poolInv=d.pool_invoices||[];
@@ -2552,7 +2564,41 @@ async function _ccRenderDetail(v){
     el.addEventListener('dragover',e=>{ e.preventDefault(); el.style.background='var(--bg-soft)'; });
     el.addEventListener('dragleave',()=>{ el.style.background=''; });
     el.addEventListener('drop',e=>{ e.preventDefault(); el.style.background=''; if(dragInv) doMatch(parseInt(el.dataset.txn,10),dragInv); dragInv=null; });
-    el.addEventListener('click',()=>{ if(_ccState.selInvoice) doMatch(parseInt(el.dataset.txn,10),_ccState.selInvoice); });
+    el.addEventListener('click',(e)=>{
+      // ไม่ทำอะไรถ้าคลิกใน inline editor / chip ✕
+      if(e.target.closest('.cc-txn-edit')||e.target.closest('.cc-unmatch')) return;
+      // โหมดจับคู่ invoice — กระทำตามเดิม
+      if(_ccState.selInvoice){ doMatch(parseInt(el.dataset.txn,10),_ccState.selInvoice); return; }
+      // toggle inline note editor
+      const editEl=el.querySelector('.cc-txn-edit'); if(!editEl) return;
+      const isOpen=editEl.style.display==='flex';
+      v.querySelectorAll('.cc-txn-edit').forEach(x=>{ x.style.display='none'; });
+      if(!isOpen){ editEl.style.display='flex'; const inp=editEl.querySelector('.cc-txn-input'); if(inp){ inp.focus(); inp.select(); } }
+    });
+  });
+  // v1.9.314 — inline save/cancel ของ description ใต้รายการ
+  const _ccSaveTxnNote=async(card)=>{
+    const tid=parseInt(card.dataset.txn,10);
+    const inp=card.querySelector('.cc-txn-input'); if(!inp) return;
+    const saveBtn=card.querySelector('.cc-txn-save'); if(saveBtn) saveBtn.disabled=true;
+    try{
+      const r=await fetchJson('/api/creditcard/transactions/'+tid,{method:'PATCH',body:JSON.stringify({user_note:inp.value})});
+      const newNote=r.user_note||'';
+      const t=d.transactions.find(x=>x.id===tid); if(t) t.user_note=newNote;
+      const noteEl=card.querySelector('.cc-txn-note');
+      if(noteEl){ if(newNote){ noteEl.style.display=''; noteEl.innerHTML='📝 '+escapeHtml(newNote); } else { noteEl.style.display='none'; noteEl.textContent=''; } }
+      card.querySelector('.cc-txn-edit').style.display='none';
+    }catch(err){ alert(err.message); }
+    finally{ if(saveBtn) saveBtn.disabled=false; }
+  };
+  v.querySelectorAll('.cc-txn-save').forEach(btn=>btn.addEventListener('click',(e)=>{ e.stopPropagation(); _ccSaveTxnNote(btn.closest('.cc-txn')); }));
+  v.querySelectorAll('.cc-txn-cancel').forEach(btn=>btn.addEventListener('click',(e)=>{ e.stopPropagation(); const card=btn.closest('.cc-txn'); const t=d.transactions.find(x=>x.id===parseInt(card.dataset.txn,10)); const inp=card.querySelector('.cc-txn-input'); if(inp&&t) inp.value=t.user_note||''; card.querySelector('.cc-txn-edit').style.display='none'; }));
+  v.querySelectorAll('.cc-txn-input').forEach(inp=>{
+    inp.addEventListener('click',e=>e.stopPropagation());
+    inp.addEventListener('keydown',(e)=>{
+      if(e.key==='Enter'){ e.preventDefault(); _ccSaveTxnNote(inp.closest('.cc-txn')); }
+      else if(e.key==='Escape'){ e.preventDefault(); inp.closest('.cc-txn').querySelector('.cc-txn-cancel').click(); }
+    });
   });
 }
 
@@ -5664,6 +5710,11 @@ async function renderPlatformsPage(initialTab) {
       <div class="acc-detail">
         <!-- ============ Platform ============ -->
         <div data-plat-panel="platform">
+          ${(currentRole === 'admin' || currentIsSuper) ? `
+            <div style="margin-bottom:14px">
+              <a href="#/sites" class="btn" id="plat-config-btn" style="display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:8px 14px;text-decoration:none">⚙️ Configuration</a>
+            </div>
+          ` : ''}
           <div id="p-hint" class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px"></div>
 
           <div style="display:grid;grid-template-columns:1fr auto auto;gap:10px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
@@ -11883,8 +11934,11 @@ async function renderPcDashboard() {
 }
 
 // v1.9.311 — Report: ตารางการเปลี่ยนเครื่อง PC (ปี · เดือน · เครื่องใหม่ · ผู้ใช้ · คอมเดิม 1-3)
+// v1.9.315 — คอลัมน์ "ชื่อ" แสดง avatar+display_name+email+แผนก + filter popup (Tableau-style)
 let _hwReportData = null;     // { events, years }
 let _hwReportYear = '';        // '' = ทุกปี
+let _hwReportMemberFilter = new Set();  // member_ids ที่เลือกแสดง — ว่าง = แสดงทั้งหมด
+let _hwReportMemberSearch = '';          // search ใน popup
 const _THAI_MONTHS = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 
 async function renderHardwareReportPage() {
@@ -11934,8 +11988,16 @@ function _renderHwReportTable() {
   const sumEl = $('hr-summary');
   if (!wrap || !_hwReportData) return;
   const events = _hwReportData.events || [];
-  const filtered = _hwReportYear ? events.filter(e => String(e.year) === _hwReportYear) : events;
-  if (countEl) countEl.textContent = `${filtered.length} รายการ`;
+  // step 1: filter by year
+  const byYear = _hwReportYear ? events.filter(e => String(e.year) === _hwReportYear) : events;
+  // step 2: filter by selected members (empty = all)
+  const filtered = _hwReportMemberFilter.size === 0
+    ? byYear
+    : byYear.filter(e => e.member_id != null && _hwReportMemberFilter.has(e.member_id));
+  const filterActive = _hwReportMemberFilter.size > 0;
+  if (countEl) countEl.textContent = filterActive
+    ? `${filtered.length} / ${byYear.length} รายการ (กรอง ${_hwReportMemberFilter.size} คน)`
+    : `${filtered.length} รายการ`;
   // v1.9.312 — สรุปจำนวนคอมใหม่ + จำนวนที่กรอกคอมเดิม #1 แล้ว
   const withPrev1 = filtered.filter(e => Array.isArray(e.prev_pcs) && e.prev_pcs[0]).length;
   const total = filtered.length;
@@ -11949,7 +12011,7 @@ function _renderHwReportTable() {
       <div style="${cardS}">
         <div style="${labelS}">💻 คอมฯใหม่ทั้งหมด</div>
         <div style="${valS}">${total}</div>
-        <div style="${subS}">${_hwReportYear ? `พ.ศ. ${parseInt(_hwReportYear, 10) + 543}` : 'ทุกปี'}</div>
+        <div style="${subS}">${_hwReportYear ? `พ.ศ. ${parseInt(_hwReportYear, 10) + 543}` : 'ทุกปี'}${filterActive ? ` · กรอง ${_hwReportMemberFilter.size} คน` : ''}</div>
       </div>
       <div style="${cardS}">
         <div style="${labelS}">📝 กรอกคอมเดิมแล้ว (#1)</div>
@@ -11958,16 +12020,37 @@ function _renderHwReportTable() {
       </div>
     `;
   }
-  if (filtered.length === 0) {
-    wrap.innerHTML = `<div class="empty" style="padding:32px;text-align:center">
-      <div style="font-size:48px;margin-bottom:6px">📭</div>
-      <div style="font-weight:600;color:var(--text)">ไม่มีข้อมูลในปีที่เลือก</div>
-    </div>`;
-    return;
-  }
   const th = 'text-align:left;padding:9px 12px;font-size:12px;color:var(--text-muted);font-weight:600;background:var(--bg-soft);border-bottom:1px solid var(--border);position:sticky;top:0';
   const td = 'padding:10px 12px;font-size:13px;border-bottom:1px solid var(--border);vertical-align:top';
   const tdMuted = td + ';color:var(--text-muted)';
+  const _renderNameCell = (e) => {
+    if (!e.member_id) return `<td style="${tdMuted}">—</td>`;
+    const name = e.member_name || '—';
+    const initial = (name || '?').trim().charAt(0).toUpperCase();
+    const av = e.member_avatar
+      ? `<img src="${e.member_avatar}" alt="" style="width:34px;height:34px;border-radius:50%;object-fit:cover;flex-shrink:0" />`
+      : `<div style="width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:13px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(initial)}</div>`;
+    const teams = (e.member_teams || []).slice(0, 2);
+    const moreTeams = (e.member_teams || []).length - teams.length;
+    const teamChips = teams.map(t => `<span style="display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:500;background:rgba(37,99,235,.10);color:var(--primary);border:1px solid rgba(37,99,235,.18)">${escapeHtml(t)}</span>`).join('');
+    const moreChip = moreTeams > 0 ? `<span style="font-size:10px;color:var(--text-muted)">+${moreTeams}</span>` : '';
+    const emailLine = e.member_email
+      ? `<div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(e.member_email)}</div>`
+      : '';
+    const teamLine = (teamChips || moreChip)
+      ? `<div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:3px">${teamChips}${moreChip}</div>`
+      : '';
+    return `<td style="${td}">
+      <div style="display:flex;gap:9px;align-items:flex-start;min-width:0">
+        ${av}
+        <div style="min-width:0;overflow:hidden">
+          <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(name)}</div>
+          ${emailLine}
+          ${teamLine}
+        </div>
+      </div>
+    </td>`;
+  };
   const rows = filtered.map(e => {
     const prev = e.prev_pcs || [];
     const cell = (i) => {
@@ -11978,19 +12061,31 @@ function _renderHwReportTable() {
       <td style="${td};white-space:nowrap;color:var(--text-muted)">${e.year + 543}</td>
       <td style="${td};white-space:nowrap;color:var(--text-muted)">${_THAI_MONTHS[e.month] || e.month}</td>
       <td style="${td};font-weight:600">${escapeHtml(e.new_pc || '—')}</td>
-      <td style="${td}">${escapeHtml(e.member_name || '—')}</td>
+      ${_renderNameCell(e)}
       ${cell(0)}${cell(1)}${cell(2)}
     </tr>`;
   }).join('');
-  wrap.innerHTML = `
-    <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--bg-card)">
+  // ปุ่ม filter ในหัวคอลัมน์ "ชื่อ" — สีเปลี่ยนเมื่อมี filter
+  const filterBtn = `
+    <button type="button" id="hr-name-filter-btn" title="กรองรายชื่อที่จะแสดง"
+      style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;margin-left:6px;border-radius:5px;border:1px solid ${filterActive ? 'var(--primary)' : 'var(--border)'};background:${filterActive ? 'rgba(37,99,235,.10)' : 'var(--bg-card)'};color:${filterActive ? 'var(--primary)' : 'var(--text-muted)'};cursor:pointer;font-size:11px;font-family:inherit;padding:0;line-height:1;vertical-align:middle">
+      ${filterActive ? '▼' : '⏷'}
+    </button>`;
+  wrap.innerHTML = filtered.length === 0
+    ? `<div class="empty" style="padding:32px;text-align:center">
+        <div style="font-size:48px;margin-bottom:6px">📭</div>
+        <div style="font-weight:600;color:var(--text)">ไม่มีข้อมูลตาม filter</div>
+        ${filterActive ? '<button type="button" id="hr-clear-from-empty" class="btn" style="margin-top:10px;font-size:12.5px">เคลียร์ตัวกรองรายชื่อ</button>' : ''}
+      </div>`
+    : `
+    <div style="position:relative;border:1px solid var(--border);border-radius:10px;overflow:visible;background:var(--bg-card)">
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-family:inherit">
           <thead><tr>
             <th style="${th}">ปี</th>
             <th style="${th}">เดือน</th>
             <th style="${th}">คอมฯที่เปลี่ยน</th>
-            <th style="${th}">ชื่อ</th>
+            <th style="${th};position:relative"><span style="vertical-align:middle">ชื่อ</span>${filterBtn}</th>
             <th style="${th}">คอมเดิม #1</th>
             <th style="${th}">คอมเดิม #2</th>
             <th style="${th}">คอมเดิม #3</th>
@@ -12000,6 +12095,121 @@ function _renderHwReportTable() {
       </div>
     </div>
   `;
+  // wire filter button + clear-from-empty button
+  const fBtn = $('hr-name-filter-btn');
+  if (fBtn) fBtn.addEventListener('click', (ev) => { ev.stopPropagation(); _toggleHwReportMemberPopup(fBtn); });
+  const cBtn = $('hr-clear-from-empty');
+  if (cBtn) cBtn.addEventListener('click', () => { _hwReportMemberFilter.clear(); _renderHwReportTable(); });
+}
+
+// v1.9.315 — popup เลือกคนแสดงในตาราง — Tableau-style
+function _toggleHwReportMemberPopup(anchor) {
+  const existing = document.getElementById('hr-name-popup');
+  if (existing) { existing.remove(); document.removeEventListener('mousedown', _hwReportMemberPopupClickOutside, true); return; }
+  if (!_hwReportData) return;
+  // unique members from current year filter
+  const events = _hwReportData.events || [];
+  const byYear = _hwReportYear ? events.filter(e => String(e.year) === _hwReportYear) : events;
+  const seen = new Map();
+  byYear.forEach(e => {
+    if (e.member_id != null && !seen.has(e.member_id)) {
+      seen.set(e.member_id, { id: e.member_id, name: e.member_name || '—', email: e.member_email || '', avatar: e.member_avatar || null, teams: e.member_teams || [] });
+    }
+  });
+  const members = Array.from(seen.values()).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'th'));
+
+  const popup = document.createElement('div');
+  popup.id = 'hr-name-popup';
+  popup.style.cssText = 'position:absolute;z-index:200;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.18);width:320px;max-height:420px;display:flex;flex-direction:column;font-family:inherit';
+  popup.innerHTML = `
+    <div style="padding:10px 12px 8px;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+        <span style="font-size:12.5px;font-weight:700;color:var(--text)">กรองรายชื่อ</span>
+        <button type="button" id="hr-popup-clear" style="font-size:11px;border:none;background:none;color:var(--primary);cursor:pointer;padding:2px 4px;font-family:inherit;font-weight:600">เคลียร์ทั้งหมด</button>
+      </div>
+      <input id="hr-popup-search" type="text" placeholder="🔍 ค้นหา..." autocomplete="off"
+        style="width:100%;padding:6px 10px;font-size:12.5px;border:1px solid var(--border);border-radius:7px;background:var(--bg-input);color:var(--text);box-sizing:border-box;font-family:inherit" />
+    </div>
+    <div id="hr-popup-list" style="flex:1;overflow-y:auto;padding:4px"></div>
+    <div style="padding:8px 12px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <span id="hr-popup-count" style="font-size:11px;color:var(--text-muted)"></span>
+      <button type="button" id="hr-popup-done" class="btn primary" style="font-size:12px;padding:5px 12px">เสร็จ</button>
+    </div>
+  `;
+  // position relative to anchor — append to body, use viewport coords
+  document.body.appendChild(popup);
+  const r = anchor.getBoundingClientRect();
+  popup.style.position = 'fixed';
+  popup.style.top = (r.bottom + 6) + 'px';
+  // align to right edge of anchor, but clip to viewport
+  let left = r.left;
+  const vw = window.innerWidth;
+  if (left + 320 > vw - 12) left = vw - 320 - 12;
+  if (left < 12) left = 12;
+  popup.style.left = left + 'px';
+
+  const listEl = popup.querySelector('#hr-popup-list');
+  const countEl = popup.querySelector('#hr-popup-count');
+  const renderList = () => {
+    const q = _hwReportMemberSearch.trim().toLowerCase();
+    const matched = !q ? members : members.filter(m =>
+      (m.name || '').toLowerCase().includes(q) ||
+      (m.email || '').toLowerCase().includes(q) ||
+      (m.teams || []).some(t => (t || '').toLowerCase().includes(q))
+    );
+    if (matched.length === 0) {
+      listEl.innerHTML = '<div style="padding:18px 12px;font-size:12px;color:var(--text-muted);text-align:center">ไม่พบ</div>';
+    } else {
+      listEl.innerHTML = matched.map(m => {
+        const checked = _hwReportMemberFilter.has(m.id);
+        const initial = (m.name || '?').trim().charAt(0).toUpperCase();
+        const av = m.avatar
+          ? `<img src="${m.avatar}" alt="" style="width:24px;height:24px;border-radius:50%;object-fit:cover;flex-shrink:0" />`
+          : `<div style="width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:11px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(initial)}</div>`;
+        const team = (m.teams || [])[0] || '';
+        return `<label data-mid="${m.id}" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:12.5px;transition:background .1s" onmouseenter="this.style.background='var(--bg-soft)'" onmouseleave="this.style.background='transparent'">
+          <input type="checkbox" data-mid="${m.id}" ${checked ? 'checked' : ''} style="margin:0;cursor:pointer" />
+          ${av}
+          <div style="min-width:0;flex:1">
+            <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(m.name)}</div>
+            ${team ? `<div style="font-size:10.5px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(team)}</div>` : ''}
+          </div>
+        </label>`;
+      }).join('');
+      listEl.querySelectorAll('input[type=checkbox]').forEach(cb => {
+        cb.addEventListener('change', () => {
+          const mid = parseInt(cb.dataset.mid, 10);
+          if (cb.checked) _hwReportMemberFilter.add(mid); else _hwReportMemberFilter.delete(mid);
+          updateCount();
+        });
+      });
+    }
+    updateCount();
+  };
+  const updateCount = () => {
+    if (countEl) countEl.textContent = _hwReportMemberFilter.size === 0
+      ? `แสดงทั้งหมด (${members.length} คน)`
+      : `เลือก ${_hwReportMemberFilter.size} / ${members.length} คน`;
+  };
+  renderList();
+  popup.querySelector('#hr-popup-search').addEventListener('input', (e) => { _hwReportMemberSearch = e.target.value; renderList(); });
+  popup.querySelector('#hr-popup-clear').addEventListener('click', () => { _hwReportMemberFilter.clear(); renderList(); });
+  popup.querySelector('#hr-popup-done').addEventListener('click', () => {
+    popup.remove();
+    document.removeEventListener('mousedown', _hwReportMemberPopupClickOutside, true);
+    _renderHwReportTable();
+  });
+  setTimeout(() => popup.querySelector('#hr-popup-search').focus(), 30);
+  document.addEventListener('mousedown', _hwReportMemberPopupClickOutside, true);
+}
+function _hwReportMemberPopupClickOutside(e) {
+  const popup = document.getElementById('hr-name-popup');
+  if (!popup) return;
+  if (popup.contains(e.target)) return;
+  if (e.target.closest('#hr-name-filter-btn')) return;
+  popup.remove();
+  document.removeEventListener('mousedown', _hwReportMemberPopupClickOutside, true);
+  _renderHwReportTable();
 }
 
 async function renderHardwarePage(type) {
@@ -14542,8 +14752,8 @@ async function renderDeviceSoftwarePage(active, arg) {
     pcTotal = s.total;
     central = (s.by_assignment && s.by_assignment.central != null) ? s.by_assignment.central : '';
   } catch { /* ไม่มี badge ถ้าโหลดไม่ได้ */ }
-  return renderSubmenuPage({ title: '🖥️ Device & Software', active: active || 'sites', arg, items: [
-    { group: 'Software',  route: 'sites',                  ico: '🛠',  label: 'Int. Platforms Config', render: (a) => a ? renderSiteDetail(a) : renderSitesList() },
+  // v1.9.314 — ย้าย Int. Platforms Config ไปเป็นปุ่ม Configuration ใน Platforms > Platform (admin only)
+  return renderSubmenuPage({ title: '🖥️ Device & Software', active: active || 'hardware-pc-dashboard', arg, items: [
     { group: 'Hardware',  route: 'hardware-pc-dashboard',  ico: '📊',  label: 'Dashboard',             render: () => renderPcDashboard() },
     { group: 'Hardware',  route: 'hardware-pc',            ico: '💻',  label: 'Personal Computer', badge: pcTotal, render: () => renderHardwarePage('pc') },
     { group: 'Hardware',  route: 'hardware-pc-unassigned', ico: '📦',  label: 'คอมส่วนกลาง',       badge: central, render: () => renderHardwareUnassignedPcsPage() },

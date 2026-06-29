@@ -951,6 +951,10 @@ def init_db() -> None:
         for _c in ("job_number", "product_name", "am_name", "note", "expense_category"):
             if _c not in _cic:
                 conn.execute(f"ALTER TABLE cc_invoices ADD COLUMN {_c} TEXT")
+        # v1.9.314 — cc_transactions: เพิ่ม user_note (รายละเอียดที่ user กรอกใต้รายการ)
+        _cct = [r["name"] for r in conn.execute("PRAGMA table_info(cc_transactions)").fetchall()]
+        if "user_note" not in _cct:
+            conn.execute("ALTER TABLE cc_transactions ADD COLUMN user_note TEXT")
 
         # ---- 4. seed config defaults
         for key, value in DEFAULT_CONFIG.items():
@@ -6568,7 +6572,7 @@ def admin_hardware_pc_replacement_report(
     with db_conn() as conn:
         rows = conn.execute(
             "SELECT h.id, h.name, h.purchased_at, h.current_member_id, "
-            "       m.display_name, m.email "
+            "       m.display_name, m.email, m.avatar_data, m.temp_department "
             "FROM hardware h "
             "LEFT JOIN members m ON m.id = h.current_member_id "
             "WHERE h.hw_type = 'pc' AND h.purchased_at IS NOT NULL "
@@ -6584,6 +6588,12 @@ def admin_hardware_pc_replacement_report(
             "  AND a.assigned_at IS NOT NULL AND a.assigned_at != '' "
             "GROUP BY a.member_id, a.hardware_id"
         ).fetchall()
+        # v1.9.315 — team (แผนก) ของ member ที่อยู่ในรายงาน
+        team_rows = conn.execute(
+            "SELECT tm.member_id, t.name "
+            "FROM team_members tm JOIN teams t ON t.id = tm.team_id "
+            "ORDER BY t.name COLLATE NOCASE"
+        ).fetchall()
 
     member_pcs: dict[int, list[dict[str, Any]]] = {}
     for r in asg_rows:
@@ -6594,6 +6604,10 @@ def admin_hardware_pc_replacement_report(
         })
     for mid in member_pcs:
         member_pcs[mid].sort(key=lambda x: x["first_at"], reverse=True)
+
+    member_teams: dict[int, list[str]] = {}
+    for r in team_rows:
+        member_teams.setdefault(r["member_id"], []).append(r["name"])
 
     out: list[dict[str, Any]] = []
     years: set[int] = set()
@@ -6606,9 +6620,15 @@ def admin_hardware_pc_replacement_report(
             continue
         years.add(year)
         member_name = ""
+        avatar = None
+        teams_list: list[str] = []
         prev_names: list[str] = []
         if r["current_member_id"]:
             member_name = r["display_name"] or r["email"] or ""
+            avatar = r["avatar_data"]
+            teams_list = member_teams.get(r["current_member_id"], [])
+            if not teams_list and r["temp_department"]:
+                teams_list = [r["temp_department"]]
             pcs = member_pcs.get(r["current_member_id"], [])
             # หา assigned_at ของเจ้าของกับ PC ตัวนี้ — ใช้เป็น cutoff ของ "คอมเดิม"
             this_first = next((p["first_at"] for p in pcs if p["hardware_id"] == r["id"]), "")
@@ -6629,6 +6649,9 @@ def admin_hardware_pc_replacement_report(
             "new_pc": r["name"] or "",
             "member_id": r["current_member_id"],
             "member_name": member_name,
+            "member_email": r["email"] or "",
+            "member_avatar": avatar,
+            "member_teams": teams_list,
             "prev_pcs": prev_names,
         })
     return {"events": out, "years": sorted(years, reverse=True)}
@@ -10756,6 +10779,23 @@ def cc_edit_bill(bid: int, payload: CcBillEdit, _sess: dict = Depends(_require_m
         else:
             conn.execute("DELETE FROM cc_transactions WHERE bill_id=?", (bid,))
     return {"ok": True}
+
+
+# v1.9.314 — บันทึก description (user_note) ของรายการในบัตร แบบ inline
+class CcTxnNoteIn(BaseModel):
+    user_note: Optional[str] = Field(None, max_length=500)
+
+
+@app.patch("/api/creditcard/transactions/{tid}")
+def cc_update_txn_note(tid: int, payload: CcTxnNoteIn,
+                       _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    with db_conn() as conn:
+        r = conn.execute("SELECT 1 FROM cc_transactions WHERE id=?", (tid,)).fetchone()
+        if not r:
+            raise HTTPException(status_code=404, detail="ไม่พบรายการ")
+        note = (payload.user_note or "").strip() or None
+        conn.execute("UPDATE cc_transactions SET user_note=? WHERE id=?", (note, tid))
+    return {"ok": True, "user_note": note}
 
 
 @app.get("/api/creditcard/invoices/{iid}/file")
