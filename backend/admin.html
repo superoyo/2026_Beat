@@ -840,7 +840,7 @@
     }
     .members-table tbody tr:hover { background: var(--bg-soft); }
     .members-table tbody tr:last-child { border-bottom: none; }
-    .members-table tbody td { padding: 14px; vertical-align: top; }
+    .members-table tbody td { padding: 14px; vertical-align: middle; }
     .m-row {
       font-size: 12.5px; color: var(--text);
       line-height: 1.5; margin-top: 1px;
@@ -16050,6 +16050,22 @@ async function loadMembersList() {
   applyMemberFilter();                   // render table ด้านล่าง (ใช้ filter)
 }
 
+// v1.9.313 — Members list: Landing-Folio style row layout (avatar + name/handle · Active pill · Role · Email · Team tags · chevron)
+// แต่ละแถวยังคงคลิกได้เพื่อเปิด slide-out panel (openMemberPanel) เหมือนเดิม
+const _TEAM_TAG_PALETTE = [
+  { bg: 'rgba(168,85,247,.10)', fg: '#7e22ce', bd: 'rgba(168,85,247,.25)' },  // purple
+  { bg: 'rgba(37,99,235,.10)',  fg: '#1d4ed8', bd: 'rgba(37,99,235,.25)'  },  // blue
+  { bg: 'rgba(245,158,11,.12)', fg: '#b45309', bd: 'rgba(245,158,11,.25)' },  // amber
+  { bg: 'rgba(16,185,129,.10)', fg: '#047857', bd: 'rgba(16,185,129,.25)' },  // emerald
+  { bg: 'rgba(236,72,153,.10)', fg: '#be185d', bd: 'rgba(236,72,153,.25)' },  // pink
+  { bg: 'rgba(14,165,233,.10)', fg: '#0369a1', bd: 'rgba(14,165,233,.25)' },  // sky
+];
+function _teamTagStyle(name) {
+  let h = 0;
+  for (let i = 0; i < (name || '').length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return _TEAM_TAG_PALETTE[h % _TEAM_TAG_PALETTE.length];
+}
+
 function renderMembersTable(members) {
   if (members.length === 0) {
     $('m-list').innerHTML = `<div class="empty">ไม่เจอ member ที่ตรงกับ filter</div>`;
@@ -16061,10 +16077,12 @@ function renderMembersTable(members) {
       <table class="members-table">
         <thead>
           <tr>
-            <th style="width:40%">Member</th>
-            <th style="width:26%">ทีม</th>
-            <th style="width:16%">Extension</th>
-            <th style="width:18%">สถานะ</th>
+            <th style="width:30%">Name</th>
+            <th style="width:11%">Status</th>
+            <th style="width:11%">Role</th>
+            <th style="width:22%">Email address</th>
+            <th style="width:22%">Teams</th>
+            <th style="width:4%"></th>
           </tr>
         </thead>
         <tbody id="m-tbody"></tbody>
@@ -16076,105 +16094,73 @@ function renderMembersTable(members) {
   tbody.innerHTML = members.map(m => {
     const display = m.display_name || m.email || m.phone || '—';
     const initial = (display || '?').trim().charAt(0).toUpperCase();
-    const safeName = escapeHtml(m.display_name || m.email || m.phone);
+    const handle = m.email
+      ? '@' + (m.email.split('@')[0] || m.email)
+      : (m.phone ? '📞 ' + m.phone : '');
 
-    // === Member identity cell (multi-line) ===
-    const emailLine = m.email
-      ? `<div class="m-row" title="${escapeHtml(m.email)}">📧 <span style="font-family:ui-monospace,Menlo,monospace">${escapeHtml(m.email)}</span></div>`
-      : '';
-    const phoneLine = m.phone
-      ? `<div class="m-row" title="${escapeHtml(m.phone)}">📞 <span style="font-family:ui-monospace,Menlo,monospace">${escapeHtml(m.phone)}</span></div>`
-      : '';
-    const lastLine = m.last_login_at
-      ? `<div class="m-row m-row-muted">🕐 ล่าสุด ${fmtMemberDate(m.last_login_at)}</div>`
-      : `<div class="m-row m-row-muted">🕐 ยังไม่เคยเข้าระบบ</div>`;
+    // === Avatar (round) ===
+    const avatar = m.avatar_data
+      ? `<img src="${m.avatar_data}" alt="" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0" />`
+      : `<div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:15px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(initial)}</div>`;
 
-    // v1.9.86/87 — login methods chips (icon + ค่า account จริง) + alias chips
-    const methodMap = {
-      phone:    { icon: '📱', title: 'Phone OTP',        bg: 'rgba(37,99,235,.10)',  fg: 'var(--primary)', bd: 'rgba(37,99,235,.20)' },
-      email_pw: { icon: '🔑', title: 'Email + Password', bg: 'rgba(16,185,129,.10)', fg: 'var(--green)',   bd: 'rgba(16,185,129,.25)' },
-      wazzup:   { icon: '🏢', title: 'Wazzup SSO',       bg: 'rgba(245,158,11,.12)', fg: '#92400e',        bd: 'rgba(245,158,11,.25)' },
-    };
-    const lm = m.login_methods || [];
-    const loginChips = lm.length === 0
-      ? '<span style="font-size:10.5px;color:var(--text-muted);font-style:italic">— ยังไม่มี login method —</span>'
-      : lm.map(item => {
-          const mm = methodMap[item.kind]; if (!mm) return '';
-          const label = item.label || '(no label)';
-          return `<span title="${escapeHtml(mm.title)}" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:600;background:${mm.bg};color:${mm.fg};border:1px solid ${mm.bd};white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis">${mm.icon} ${escapeHtml(label)}</span>`;
-        }).join('');
-    // v1.9.87 — alias chips: แสดงเฉพาะ phone/email aliases ที่มาจาก merge
-    const aliases = m.aliases || [];
-    const aliasChips = aliases.map(a => {
-      const icon = a.kind === 'phone' ? '📱' : (a.kind === 'email' ? '📧' : '🔗');
-      return `<span title="alias จาก merge — ใช้ login ได้ → ${escapeHtml(a.kind)}" style="display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:600;background:rgba(124,58,237,.10);color:var(--accent);border:1px dashed rgba(124,58,237,.30);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis">🔗 ${icon} ${escapeHtml(a.value)}</span>`;
-    }).join('');
-    const loginMethodsLine = `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;align-items:center"><span style="font-size:10px;color:var(--text-muted);font-weight:500;margin-right:2px">login:</span>${loginChips}${aliasChips}</div>`;
-
-    const identityCell = `
-      <div style="display:flex;gap:11px;align-items:flex-start">
-        <div style="width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:15px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(initial)}</div>
-        <div style="flex:1;min-width:0;overflow:hidden">
-          <div style="font-weight:600;font-size:14px;line-height:1.3;margin-bottom:3px;color:var(--text)">${escapeHtml(m.display_name || '(ไม่ได้ตั้งชื่อ)')}</div>
-          ${emailLine}
-          ${phoneLine}
-          ${lastLine}
-          ${loginMethodsLine}
+    const nameCell = `
+      <div style="display:flex;gap:12px;align-items:center">
+        ${avatar}
+        <div style="min-width:0;overflow:hidden">
+          <div style="font-weight:600;font-size:14px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(m.display_name || '(ไม่ได้ตั้งชื่อ)')}</div>
+          <div style="font-size:12.5px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(handle)}</div>
         </div>
       </div>
     `;
 
-    // === Teams cell (chips wrap + edit) ===
-    const teamChips = (m.teams && m.teams.length > 0)
-      ? m.teams.map(t =>
-          `<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:500;background:rgba(37,99,235,.10);color:var(--primary);border:1px solid rgba(37,99,235,.20)">${escapeHtml(t.name)}</span>`
-        ).join('')
-      : '<span style="color:var(--text-muted);font-size:12px;font-style:italic">— ยังไม่มีทีม —</span>';
-    const teamsCell = `
-      <div style="display:flex;flex-wrap:wrap;gap:4px;line-height:1.4;align-items:flex-start">${teamChips}</div>
-    `;
+    // === Status (Active / Disabled pill with dot) ===
+    const statusCell = m.enabled
+      ? `<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px 3px 8px;border-radius:999px;font-size:11.5px;font-weight:600;background:rgba(16,185,129,.10);color:var(--green);border:1px solid rgba(16,185,129,.20)">
+           <span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block"></span>Active
+         </span>`
+      : `<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px 3px 8px;border-radius:999px;font-size:11.5px;font-weight:600;background:rgba(220,38,38,.10);color:var(--critical);border:1px solid rgba(220,38,38,.20)">
+           <span style="width:6px;height:6px;border-radius:50%;background:var(--critical);display:inline-block"></span>Disabled
+         </span>`;
 
-    // === Status cell (3 badges stacked vertically) ===
-    const roleBadge = m.is_admin
-      ? '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:linear-gradient(135deg, rgba(37,99,235,.15), rgba(124,58,237,.15));color:var(--primary-dark);width:fit-content">👑 Admin</span>'
-      : '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:500;background:var(--bg-soft);color:var(--text-muted);width:fit-content">Member</span>';
-    const pwBadge = m.has_password
-      ? '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:500;background:rgba(16,185,129,.10);color:var(--green);width:fit-content">🔐 มี pw</span>'
-      : '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:500;background:rgba(245,158,11,.10);color:#92400e;width:fit-content">⚠ ไม่มี pw</span>';
-    const enabledBadge = m.enabled
-      ? '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:500;background:rgba(16,185,129,.10);color:var(--green);width:fit-content">✓ ใช้งาน</span>'
-      : '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:500;background:rgba(220,38,38,.10);color:var(--critical);width:fit-content">⛔ ระงับ</span>';
-    const statusCell = `
-      <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">
-        ${roleBadge}
-        ${pwBadge}
-        ${enabledBadge}
-      </div>
-    `;
+    // === Role (Admin / Member) ===
+    const roleCell = m.is_admin
+      ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:13px;color:var(--text);font-weight:600">👑 Admin</span>`
+      : `<span style="font-size:13px;color:var(--text-muted)">Member</span>`;
 
-    // === Extension version cell ===
-    let extensionCell;
-    if (m.extension_version) {
-      const lastUsed = m.extension_last_used_at ? fmtRelativeTh(m.extension_last_used_at) : '—';
-      extensionCell = `
-        <div style="display:flex;flex-direction:column;gap:3px;align-items:flex-start">
-          <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(37,99,235,.10);color:var(--primary);font-family:ui-monospace,Menlo,monospace">🧩 v${escapeHtml(m.extension_version)}</span>
-          <div style="font-size:10.5px;color:var(--text-muted)" title="${escapeHtml(m.extension_last_used_at || '')}">ใช้ล่าสุด ${escapeHtml(lastUsed)}</div>
-        </div>
-      `;
+    // === Email column ===
+    const emailCell = m.email
+      ? `<div style="font-size:13px;color:var(--text);font-family:ui-monospace,Menlo,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(m.email)}">${escapeHtml(m.email)}</div>${m.phone ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:2px">📞 ${escapeHtml(m.phone)}</div>` : ''}`
+      : (m.phone ? `<div style="font-size:13px;color:var(--text);font-family:ui-monospace,Menlo,monospace">📞 ${escapeHtml(m.phone)}</div>` : `<span style="color:var(--text-muted);font-size:12px;font-style:italic">—</span>`);
+
+    // === Teams (colored chips, max 3 + "+N") ===
+    const teams = m.teams || [];
+    let teamsCell;
+    if (teams.length === 0) {
+      teamsCell = `<span style="color:var(--text-muted);font-size:12px;font-style:italic">— ยังไม่มีทีม —</span>`;
     } else {
-      extensionCell = `
-        <div style="font-size:11.5px;color:var(--text-muted);font-style:italic">ยังไม่เคยใช้</div>
-      `;
+      const visible = teams.slice(0, 3);
+      const more = teams.length - visible.length;
+      const chips = visible.map(t => {
+        const s = _teamTagStyle(t.name || '');
+        return `<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:500;background:${s.bg};color:${s.fg};border:1px solid ${s.bd}">${escapeHtml(t.name)}</span>`;
+      }).join('');
+      const moreChip = more > 0
+        ? `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:500;background:var(--bg-soft);color:var(--text-muted);border:1px solid var(--border)" title="${escapeHtml(teams.slice(3).map(t => t.name).join(', '))}">+${more}</span>`
+        : '';
+      teamsCell = `<div style="display:flex;flex-wrap:wrap;gap:4px;line-height:1.4">${chips}${moreChip}</div>`;
     }
 
-    // v1.9.150 — row has no buttons; click row -> slide-out panel (tabs)
+    // === Chevron (visual cue ว่าคลิกได้ → slide-out) ===
+    const chevronCell = `<span style="color:var(--text-muted);font-size:18px;display:inline-block">›</span>`;
+
     return `
       <tr data-id="${m.id}" class="m-row-click" style="cursor:pointer">
-        <td>${identityCell}</td>
-        <td>${teamsCell}</td>
-        <td>${extensionCell}</td>
+        <td>${nameCell}</td>
         <td>${statusCell}</td>
+        <td>${roleCell}</td>
+        <td>${emailCell}</td>
+        <td>${teamsCell}</td>
+        <td style="text-align:right">${chevronCell}</td>
       </tr>
     `;
   }).join('');
