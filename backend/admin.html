@@ -11959,9 +11959,16 @@ async function renderHardwareReportPage() {
     <div id="hr-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:14px"></div>
     <div id="hr-list">${skelStack(5)}</div>
   `;
+  // v1.9.316 — เตรียม cache ของ members + teams + PC list ไว้ก่อนสำหรับ slide-out (คลิกชื่อ/คลิกเครื่อง)
   let data;
   try {
-    data = await fetchJson('/api/admin/hardware/pc-replacement-report');
+    const [r, pcRes] = await Promise.all([
+      fetchJson('/api/admin/hardware/pc-replacement-report'),
+      fetchJson('/api/admin/hardware?type=pc'),
+      _ensureHwCaches(),
+    ]);
+    data = r;
+    _pcdAllPcs = pcRes.hardware || [];
   } catch (e) {
     $('hr-list').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
     return;
@@ -12040,7 +12047,7 @@ function _renderHwReportTable() {
     const teamLine = (teamChips || moreChip)
       ? `<div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:3px">${teamChips}${moreChip}</div>`
       : '';
-    return `<td style="${td}">
+    return `<td style="${td};cursor:pointer" class="hr-name-click" data-mid="${e.member_id}" title="คลิกดูรายละเอียดผู้ใช้">
       <div style="display:flex;gap:9px;align-items:flex-start;min-width:0">
         ${av}
         <div style="min-width:0;overflow:hidden">
@@ -12051,18 +12058,25 @@ function _renderHwReportTable() {
       </div>
     </td>`;
   };
+  // v1.9.316 — เซลล์เครื่อง (คอมที่เปลี่ยน + คอมเดิม) คลิกได้ → showHardwareDetail
+  const _prevCell = (p) => {
+    if (!p) return `<td style="${tdMuted}">—</td>`;
+    const id = (typeof p === 'object') ? p.id : null;
+    const name = (typeof p === 'object') ? (p.name || '—') : String(p);
+    if (id) return `<td style="${td};cursor:pointer" class="hr-hw-click" data-hwid="${id}" title="คลิกดูรายละเอียดเครื่อง">${escapeHtml(name)}</td>`;
+    return `<td style="${td}">${escapeHtml(name)}</td>`;
+  };
   const rows = filtered.map(e => {
     const prev = e.prev_pcs || [];
-    const cell = (i) => {
-      const v = prev[i];
-      return `<td style="${v ? td : tdMuted}">${v ? escapeHtml(v) : '—'}</td>`;
-    };
+    const newCell = e.hardware_id
+      ? `<td style="${td};font-weight:600;cursor:pointer" class="hr-hw-click" data-hwid="${e.hardware_id}" title="คลิกดูรายละเอียดเครื่อง">${escapeHtml(e.new_pc || '—')}</td>`
+      : `<td style="${td};font-weight:600">${escapeHtml(e.new_pc || '—')}</td>`;
     return `<tr>
       <td style="${td};white-space:nowrap;color:var(--text-muted)">${e.year + 543}</td>
       <td style="${td};white-space:nowrap;color:var(--text-muted)">${_THAI_MONTHS[e.month] || e.month}</td>
-      <td style="${td};font-weight:600">${escapeHtml(e.new_pc || '—')}</td>
+      ${newCell}
       ${_renderNameCell(e)}
-      ${cell(0)}${cell(1)}${cell(2)}
+      ${_prevCell(prev[0])}${_prevCell(prev[1])}${_prevCell(prev[2])}
     </tr>`;
   }).join('');
   // ปุ่ม filter ในหัวคอลัมน์ "ชื่อ" — สีเปลี่ยนเมื่อมี filter
@@ -12100,6 +12114,27 @@ function _renderHwReportTable() {
   if (fBtn) fBtn.addEventListener('click', (ev) => { ev.stopPropagation(); _toggleHwReportMemberPopup(fBtn); });
   const cBtn = $('hr-clear-from-empty');
   if (cBtn) cBtn.addEventListener('click', () => { _hwReportMemberFilter.clear(); _renderHwReportTable(); });
+  // v1.9.316 — คลิกชื่อ → owner panel · คลิกเครื่อง → hardware detail
+  const _refresh = async () => {
+    try {
+      const [r, pcRes] = await Promise.all([
+        fetchJson('/api/admin/hardware/pc-replacement-report'),
+        fetchJson('/api/admin/hardware?type=pc'),
+      ]);
+      _hwReportData = r;
+      _pcdAllPcs = pcRes.hardware || [];
+    } catch (_) { /* ignore */ }
+    _renderHwReportTable();
+  };
+  wrap.querySelectorAll('.hr-name-click').forEach(el => el.addEventListener('click', () => {
+    const mid = parseInt(el.dataset.mid, 10);
+    if (Number.isFinite(mid)) _pcdOwnerPanel(mid, _refresh);
+  }));
+  wrap.querySelectorAll('.hr-hw-click').forEach(el => el.addEventListener('click', () => {
+    const hid = parseInt(el.dataset.hwid, 10);
+    const pc = _pcdAllPcs.find(p => p.id === hid);
+    if (pc) showHardwareDetail(pc, _refresh);
+  }));
 }
 
 // v1.9.315 — popup เลือกคนแสดงในตาราง — Tableau-style

@@ -6622,7 +6622,7 @@ def admin_hardware_pc_replacement_report(
         member_name = ""
         avatar = None
         teams_list: list[str] = []
-        prev_names: list[str] = []
+        prev_pcs_list: list[dict[str, Any]] = []
         if r["current_member_id"]:
             member_name = r["display_name"] or r["email"] or ""
             avatar = r["avatar_data"]
@@ -6638,8 +6638,8 @@ def admin_hardware_pc_replacement_report(
                     continue
                 if p["first_at"] and ref and p["first_at"] >= ref:
                     continue
-                prev_names.append(p["hw_name"])
-                if len(prev_names) >= 3:
+                prev_pcs_list.append({"id": p["hardware_id"], "name": p["hw_name"]})
+                if len(prev_pcs_list) >= 3:
                     break
         out.append({
             "year": year,
@@ -6652,7 +6652,7 @@ def admin_hardware_pc_replacement_report(
             "member_email": r["email"] or "",
             "member_avatar": avatar,
             "member_teams": teams_list,
-            "prev_pcs": prev_names,
+            "prev_pcs": prev_pcs_list,
         })
     return {"events": out, "years": sorted(years, reverse=True)}
 
