@@ -2853,6 +2853,7 @@ async function _ccRenderSummary(v){
   };
   const platCount={}; d.transactions.forEach(t=>{ const p=platOf(t); platCount[p]=(platCount[p]||0)+1; });
   const orderedPlats=[...Object.keys(platCount).filter(p=>p!=='อื่น ๆ').sort(), ...(platCount['อื่น ๆ']?['อื่น ๆ']:[])];
+  // v1.9.317 — Summary: แสดง user_note ของรายการในบัตร + แก้ไข inline เหมือนหน้า bill detail
   const rows=d.transactions.map(t=>{
     const ms=matchByTxn[t.id]||[]; const ok=ms.length>0;
     const invSum=ms.reduce((s,i)=>s+((i&&i.amount)||0),0); const diff=Math.abs(invSum-(t.amount||0));
@@ -2862,13 +2863,27 @@ async function _ccRenderSummary(v){
     const ownerCells=ms.length
       ? ms.map(i=>i?`<div style="margin-bottom:4px">${i.description?`<div style="font-size:13px;color:var(--text)">📝 ${escapeHtml(i.description)}</div>`:'<span style="font-size:11px;color:var(--text-muted)">— ไม่มีรายละเอียด —</span>'}<div style="font-size:10.5px;color:var(--text-muted)">${_ccUploaderChip(i,13)}</div></div>`:'').join('')
       : '<span style="color:var(--text-muted);font-size:12px">—</span>';
-    return `<tr data-platform="${escapeHtml(platOf(t))}" style="border-bottom:1px solid var(--border)">
-      <td style="padding:7px 3px;text-align:center;width:18px">${ok?'<span style="color:var(--green);font-weight:800">✓</span>':'<span style="color:var(--critical);font-weight:800">✗</span>'}</td>
-      <td style="padding:7px 8px;font-size:12.5px">${escapeHtml(t.description||'—')}<div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t.txn_date||'')}</div></td>
-      <td style="padding:7px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap">${_ccMoney(t.amount)}</td>
-      <td style="padding:7px 8px;font-size:12px">${invCells}</td>
-      <td style="padding:7px 8px">${ownerCells}</td>
-      <td style="padding:7px 8px;text-align:right;font-size:12px;white-space:nowrap;${ok&&diff>0.01?'color:#92400e;font-weight:700':''}">${ok?(diff>0.01?'Δ '+_ccMoney(diff):'ตรง'):''}</td>
+    const un=t.user_note||'';
+    const noteHtml=`<div class="cc-sum-note" style="${un?'':'display:none;'}font-size:11px;color:var(--text-muted);margin-top:3px;font-style:italic">${un?'📝 '+escapeHtml(un):''}</div>`;
+    const editHtml=`<div class="cc-sum-edit" style="display:none;margin-top:6px;gap:6px;align-items:center">
+      <input class="cc-sum-input" type="text" value="${escapeHtml(un)}" placeholder="ใส่ description..." maxlength="500" style="flex:1;font-size:12px;padding:5px 9px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);color:var(--text);min-width:0" />
+      <button type="button" class="btn cc-sum-save" title="บันทึก (Enter)" style="font-size:13px;padding:4px 9px;line-height:1;color:var(--green)">✓</button>
+      <button type="button" class="btn cc-sum-cancel" title="ยกเลิก (Esc)" style="font-size:13px;padding:4px 9px;line-height:1">✕</button>
+    </div>`;
+    return `<tr data-platform="${escapeHtml(platOf(t))}" data-txn="${t.id}" style="border-bottom:1px solid var(--border)">
+      <td style="padding:7px 3px;text-align:center;width:18px;vertical-align:top">${ok?'<span style="color:var(--green);font-weight:800">✓</span>':'<span style="color:var(--critical);font-weight:800">✗</span>'}</td>
+      <td style="padding:7px 8px;font-size:12.5px;vertical-align:top">
+        <div class="cc-sum-desc" style="cursor:pointer" title="คลิกเพื่อเพิ่ม/แก้ไข description">
+          ${escapeHtml(t.description||'—')}
+          <div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t.txn_date||'')}</div>
+          ${noteHtml}
+        </div>
+        ${editHtml}
+      </td>
+      <td style="padding:7px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;vertical-align:top">${_ccMoney(t.amount)}</td>
+      <td style="padding:7px 8px;font-size:12px;vertical-align:top">${invCells}</td>
+      <td style="padding:7px 8px;vertical-align:top">${ownerCells}</td>
+      <td style="padding:7px 8px;text-align:right;font-size:12px;white-space:nowrap;vertical-align:top;${ok&&diff>0.01?'color:#92400e;font-weight:700':''}">${ok?(diff>0.01?'Δ '+_ccMoney(diff):'ตรง'):''}</td>
     </tr>`;
   }).join('');
   const filterChips=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
@@ -2892,6 +2907,44 @@ async function _ccRenderSummary(v){
       </tr></thead><tbody>${rows||'<tr><td colspan="6" style="padding:14px;text-align:center;color:var(--text-muted)">ไม่มีรายการ</td></tr>'}</tbody>
     </table></div>`;
   v.querySelectorAll('.cc-sum-prev').forEach(x=>x.addEventListener('click',()=>{ const inv=invById[parseInt(x.dataset.inv,10)]; if(inv) _ccPreviewInvoice(inv); }));
+  // v1.9.317 — inline edit user_note ใน Summary
+  v.querySelectorAll('.cc-sum-desc').forEach(el=>el.addEventListener('click',(e)=>{
+    e.stopPropagation();
+    const tr=el.closest('tr[data-txn]'); if(!tr) return;
+    const editEl=tr.querySelector('.cc-sum-edit'); if(!editEl) return;
+    const isOpen=editEl.style.display==='flex';
+    v.querySelectorAll('.cc-sum-edit').forEach(x=>{ x.style.display='none'; });
+    if(!isOpen){ editEl.style.display='flex'; const inp=editEl.querySelector('.cc-sum-input'); if(inp){ inp.focus(); inp.select(); } }
+  }));
+  const _ccSaveSumNote=async(tr)=>{
+    const tid=parseInt(tr.dataset.txn,10);
+    const inp=tr.querySelector('.cc-sum-input'); if(!inp) return;
+    const saveBtn=tr.querySelector('.cc-sum-save'); if(saveBtn) saveBtn.disabled=true;
+    try{
+      const r=await fetchJson('/api/creditcard/transactions/'+tid,{method:'PATCH',body:JSON.stringify({user_note:inp.value})});
+      const newNote=r.user_note||'';
+      const t=d.transactions.find(x=>x.id===tid); if(t) t.user_note=newNote;
+      const noteEl=tr.querySelector('.cc-sum-note');
+      if(noteEl){ if(newNote){ noteEl.style.display=''; noteEl.innerHTML='📝 '+escapeHtml(newNote); } else { noteEl.style.display='none'; noteEl.textContent=''; } }
+      tr.querySelector('.cc-sum-edit').style.display='none';
+    }catch(err){ alert(err.message); }
+    finally{ if(saveBtn) saveBtn.disabled=false; }
+  };
+  v.querySelectorAll('.cc-sum-save').forEach(b=>b.addEventListener('click',(e)=>{ e.stopPropagation(); _ccSaveSumNote(b.closest('tr[data-txn]')); }));
+  v.querySelectorAll('.cc-sum-cancel').forEach(b=>b.addEventListener('click',(e)=>{
+    e.stopPropagation();
+    const tr=b.closest('tr[data-txn]'); if(!tr) return;
+    const t=d.transactions.find(x=>x.id===parseInt(tr.dataset.txn,10));
+    const inp=tr.querySelector('.cc-sum-input'); if(inp&&t) inp.value=t.user_note||'';
+    tr.querySelector('.cc-sum-edit').style.display='none';
+  }));
+  v.querySelectorAll('.cc-sum-input').forEach(inp=>{
+    inp.addEventListener('click',e=>e.stopPropagation());
+    inp.addEventListener('keydown',(e)=>{
+      if(e.key==='Enter'){ e.preventDefault(); _ccSaveSumNote(inp.closest('tr[data-txn]')); }
+      else if(e.key==='Escape'){ e.preventDefault(); inp.closest('tr[data-txn]').querySelector('.cc-sum-cancel').click(); }
+    });
+  });
   const applyFilter=(plat)=>{
     v.querySelectorAll('.cc-sum-filter').forEach(b=>b.classList.toggle('primary', b.dataset.plat===plat));
     v.querySelectorAll('#cc-sum-table tbody tr[data-platform]').forEach(tr=>{ tr.style.display=(!plat||tr.dataset.platform===plat)?'':'none'; });
@@ -12030,6 +12083,13 @@ function _renderHwReportTable() {
   const th = 'text-align:left;padding:9px 12px;font-size:12px;color:var(--text-muted);font-weight:600;background:var(--bg-soft);border-bottom:1px solid var(--border);position:sticky;top:0';
   const td = 'padding:10px 12px;font-size:13px;border-bottom:1px solid var(--border);vertical-align:top';
   const tdMuted = td + ';color:var(--text-muted)';
+  // v1.9.317 — นับคอมที่อยู่ในครอบครอง (current_member_id) ต่อ member
+  const _pcCountByMember = new Map();
+  (_pcdAllPcs || []).forEach(p => {
+    if (p.current_member_id != null) {
+      _pcCountByMember.set(p.current_member_id, (_pcCountByMember.get(p.current_member_id) || 0) + 1);
+    }
+  });
   const _renderNameCell = (e) => {
     if (!e.member_id) return `<td style="${tdMuted}">—</td>`;
     const name = e.member_name || '—';
@@ -12041,19 +12101,20 @@ function _renderHwReportTable() {
     const moreTeams = (e.member_teams || []).length - teams.length;
     const teamChips = teams.map(t => `<span style="display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:500;background:rgba(37,99,235,.10);color:var(--primary);border:1px solid rgba(37,99,235,.18)">${escapeHtml(t)}</span>`).join('');
     const moreChip = moreTeams > 0 ? `<span style="font-size:10px;color:var(--text-muted)">+${moreTeams}</span>` : '';
+    // v1.9.317 — chip แสดงจำนวนเครื่องที่ถือครองปัจจุบัน
+    const pcCount = _pcCountByMember.get(e.member_id) || 0;
+    const pcChip = `<span title="คอมพิวเตอร์ที่ถือครองปัจจุบัน" style="display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:600;background:rgba(16,185,129,.10);color:var(--green);border:1px solid rgba(16,185,129,.22)">💻 ${pcCount} เครื่อง</span>`;
     const emailLine = e.member_email
       ? `<div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(e.member_email)}</div>`
       : '';
-    const teamLine = (teamChips || moreChip)
-      ? `<div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:3px">${teamChips}${moreChip}</div>`
-      : '';
+    const chipLine = `<div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:3px;align-items:center">${teamChips}${moreChip}${pcChip}</div>`;
     return `<td style="${td};cursor:pointer" class="hr-name-click" data-mid="${e.member_id}" title="คลิกดูรายละเอียดผู้ใช้">
       <div style="display:flex;gap:9px;align-items:flex-start;min-width:0">
         ${av}
         <div style="min-width:0;overflow:hidden">
           <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(name)}</div>
           ${emailLine}
-          ${teamLine}
+          ${chipLine}
         </div>
       </div>
     </td>`;
