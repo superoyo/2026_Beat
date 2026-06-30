@@ -12200,22 +12200,32 @@ function _renderHwReportTable() {
     }
     return { txt: '— ไม่ผูก —', bg: 'var(--bg-soft)', fg: 'var(--text-muted)', bd: 'var(--border)' };
   };
+  // v1.9.322 — แสดงอายุคอม (จาก purchased_at) ใต้ชื่อทุกเครื่อง
+  const _pcAgeLine = (pcId) => {
+    const pc = (_pcdAllPcs || []).find(x => x.id === pcId);
+    if (!pc || !pc.purchased_at) return '';
+    const ageStr = calcHwAgeStr(pc.purchased_at);
+    if (!ageStr) return '';
+    return `<div style="font-size:11px;color:var(--accent);font-weight:600;margin-top:2px;white-space:nowrap">⏱ ${escapeHtml(ageStr)}</div>`;
+  };
   const _prevCell = (p) => {
     if (!p) return `<td style="${tdMuted}">—</td>`;
     const id = (typeof p === 'object') ? p.id : null;
     const name = (typeof p === 'object') ? (p.name || '—') : String(p);
     const w = id ? _prevPcWhereNow(id) : null;
+    const ageLine = id ? _pcAgeLine(id) : '';
     const chip = w
       ? `<div style="margin-top:3px"><span style="display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:600;background:${w.bg};color:${w.fg};border:1px solid ${w.bd};max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(w.txt)}</span></div>`
       : '';
-    if (id) return `<td style="${td};cursor:pointer" class="hr-hw-click" data-hwid="${id}" title="คลิกดูรายละเอียดเครื่อง">${escapeHtml(name)}${chip}</td>`;
-    return `<td style="${td}">${escapeHtml(name)}${chip}</td>`;
+    if (id) return `<td style="${td};cursor:pointer" class="hr-hw-click" data-hwid="${id}" title="คลิกดูรายละเอียดเครื่อง">${escapeHtml(name)}${ageLine}${chip}</td>`;
+    return `<td style="${td}">${escapeHtml(name)}${ageLine}${chip}</td>`;
   };
   const rows = filtered.map(e => {
     const prev = e.prev_pcs || [];
+    const newAge = e.hardware_id ? _pcAgeLine(e.hardware_id) : '';
     const newCell = e.hardware_id
-      ? `<td style="${td};font-weight:600;cursor:pointer" class="hr-hw-click" data-hwid="${e.hardware_id}" title="คลิกดูรายละเอียดเครื่อง">${escapeHtml(e.new_pc || '—')}</td>`
-      : `<td style="${td};font-weight:600">${escapeHtml(e.new_pc || '—')}</td>`;
+      ? `<td style="${td};font-weight:600;cursor:pointer" class="hr-hw-click" data-hwid="${e.hardware_id}" title="คลิกดูรายละเอียดเครื่อง">${escapeHtml(e.new_pc || '—')}${newAge}</td>`
+      : `<td style="${td};font-weight:600">${escapeHtml(e.new_pc || '—')}${newAge}</td>`;
     return `<tr>
       <td style="${td};white-space:nowrap;color:var(--text-muted)">${e.year + 543}</td>
       <td style="${td};white-space:nowrap;color:var(--text-muted)">${_THAI_MONTHS[e.month] || e.month}</td>
