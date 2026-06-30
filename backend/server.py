@@ -6579,10 +6579,11 @@ def admin_hardware_pc_replacement_report(
             "  AND TRIM(h.purchased_at) != '' "
             "ORDER BY h.purchased_at DESC"
         ).fetchall()
-        # (member, pc) → วันที่ assigned ครั้งแรกของคู่นี้ + ชื่อ PC
+        # (member, pc) → วันที่ assigned + unassigned + ชื่อ PC + เจ้าของปัจจุบัน
         asg_rows = conn.execute(
             "SELECT a.member_id, a.hardware_id, MIN(a.assigned_at) AS first_at, "
-            "       h.name AS hw_name "
+            "       MAX(a.unassigned_at) AS last_unassigned_at, "
+            "       h.name AS hw_name, h.current_member_id "
             "FROM hardware_assignments a JOIN hardware h ON h.id = a.hardware_id "
             "WHERE h.hw_type = 'pc' AND a.member_id IS NOT NULL "
             "  AND a.assigned_at IS NOT NULL AND a.assigned_at != '' "
@@ -6600,10 +6601,13 @@ def admin_hardware_pc_replacement_report(
         member_pcs.setdefault(r["member_id"], []).append({
             "hardware_id": r["hardware_id"],
             "first_at": r["first_at"] or "",
+            "last_unassigned_at": r["last_unassigned_at"] or "",
             "hw_name": r["hw_name"] or "",
+            "current_member_id": r["current_member_id"],
         })
+    # เรียงตาม "เพิ่งสูญเสีย" → "ได้มาเร็วสุด" (เหมือน slide-out device-history)
     for mid in member_pcs:
-        member_pcs[mid].sort(key=lambda x: x["first_at"], reverse=True)
+        member_pcs[mid].sort(key=lambda x: (x["last_unassigned_at"], x["first_at"]), reverse=True)
 
     member_teams: dict[int, list[str]] = {}
     for r in team_rows:
@@ -6629,14 +6633,13 @@ def admin_hardware_pc_replacement_report(
             teams_list = member_teams.get(r["current_member_id"], [])
             if not teams_list and r["temp_department"]:
                 teams_list = [r["temp_department"]]
+            # v1.9.319 — "คอมเดิม" = PC ที่เคยถือ + ตอนนี้ไม่ใช่ของเขาแล้ว (align กับ slide-out)
             pcs = member_pcs.get(r["current_member_id"], [])
-            # หา assigned_at ของเจ้าของกับ PC ตัวนี้ — ใช้เป็น cutoff ของ "คอมเดิม"
-            this_first = next((p["first_at"] for p in pcs if p["hardware_id"] == r["id"]), "")
-            ref = this_first or at  # fallback: ใช้วันซื้อ ถ้าไม่มี assignment record
             for p in pcs:
                 if p["hardware_id"] == r["id"]:
                     continue
-                if p["first_at"] and ref and p["first_at"] >= ref:
+                # ข้าม PC ที่ปัจจุบันยัง member คนเดียวกันถืออยู่ (parallel current)
+                if p["current_member_id"] == r["current_member_id"]:
                     continue
                 prev_pcs_list.append({"id": p["hardware_id"], "name": p["hw_name"]})
                 if len(prev_pcs_list) >= 3:
