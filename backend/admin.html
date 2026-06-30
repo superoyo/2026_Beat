@@ -12023,7 +12023,7 @@ async function renderPcDashboard() {
 // v1.9.315 — คอลัมน์ "ชื่อ" แสดง avatar+display_name+email+แผนก + filter popup (Tableau-style)
 let _hwReportData = null;     // { events, years }
 let _hwReportYear = '';        // '' = ทุกปี
-let _hwReportTeam = '';        // v1.9.321 — '' = ทุกแผนก, หรือชื่อทีม
+let _hwReportTeam = '';        // v1.9.323 — '' = ทุกแผนก, หรือ team_id (string) — รวมทีมย่อยอัตโนมัติ
 let _hwReportMemberFilter = new Set();  // member_ids ที่เลือกแสดง — ว่าง = แสดงทั้งหมด
 let _hwReportMemberSearch = '';          // search ใน popup
 const _THAI_MONTHS = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
@@ -12043,7 +12043,7 @@ async function renderHardwareReportPage() {
         <option value="">— ทุกปี —</option>
       </select>
       <label style="font-size:12.5px;color:var(--text-muted);font-weight:600;margin-left:6px">🏢 แผนก:</label>
-      <select id="hr-f-team" style="padding:7px 11px;border:1px solid var(--border);border-radius:8px;font-size:12.5px;font-family:inherit;background:var(--bg-card);color:var(--text);cursor:pointer;font-weight:600;box-sizing:border-box;min-width:160px">
+      <select id="hr-f-team" style="padding:7px 11px;border:1px solid var(--border);border-radius:8px;font-size:12.5px;font-family:inherit;background:var(--bg-card);color:var(--text);cursor:pointer;font-weight:600;box-sizing:border-box;min-width:220px;max-width:340px">
         <option value="">— ทุกแผนก —</option>
       </select>
     </div>
@@ -12077,16 +12077,19 @@ async function renderHardwareReportPage() {
     _hwReportYear = e.target.value;
     _renderHwReportTable();
   });
-  // v1.9.321 — แผนก dropdown: รวมทุกทีมที่ปรากฏใน events
-  const teamSet = new Set();
-  (data.events || []).forEach(e => (e.member_teams || []).forEach(t => { if (t) teamSet.add(t); }));
+  // v1.9.323 — แผนก dropdown: ใช้ team-tree จาก _hwTeamsCache + indent ตาม depth + รวมทีมย่อยอัตโนมัติ
   const teamSel = $('hr-f-team');
-  Array.from(teamSet).sort((a, b) => a.localeCompare(b, 'th')).forEach(t => {
+  const flat = flattenTeamTreeDFS(buildTeamTree(_hwTeamsCache || []));
+  flat.forEach(({ team, depth }) => {
     const opt = document.createElement('option');
-    opt.value = t;
-    opt.textContent = t;
+    opt.value = String(team.id);
+    opt.textContent = '  '.repeat(depth) + (depth > 0 ? '↳ ' : '') + team.name;
     teamSel.appendChild(opt);
   });
+  // reset ถ้า team_id ที่จำไว้ไม่อยู่ใน cache แล้ว
+  if (_hwReportTeam && !(_hwTeamsCache || []).some(t => String(t.id) === _hwReportTeam)) {
+    _hwReportTeam = '';
+  }
   teamSel.value = _hwReportTeam;
   teamSel.addEventListener('change', (e) => {
     _hwReportTeam = e.target.value;
@@ -12103,10 +12106,20 @@ function _renderHwReportTable() {
   const events = _hwReportData.events || [];
   // step 1: filter by year
   const byYear = _hwReportYear ? events.filter(e => String(e.year) === _hwReportYear) : events;
-  // step 2: filter by team (แผนก)
-  const byTeam = _hwReportTeam
-    ? byYear.filter(e => (e.member_teams || []).includes(_hwReportTeam))
-    : byYear;
+  // step 2: filter by team (แผนก) — v1.9.323 รวมทีมย่อยอัตโนมัติ + จับคู่ผ่านชื่อ
+  let byTeam = byYear;
+  let teamLabel = '';
+  if (_hwReportTeam) {
+    const tid = parseInt(_hwReportTeam, 10);
+    if (Number.isFinite(tid)) {
+      const descIds = getTeamDescendantIds(_hwTeamsCache || [], tid);
+      const nameSet = new Set();
+      (_hwTeamsCache || []).forEach(t => { if (descIds.has(t.id)) nameSet.add(t.name); });
+      byTeam = byYear.filter(e => (e.member_teams || []).some(n => nameSet.has(n)));
+      const sel = (_hwTeamsCache || []).find(t => t.id === tid);
+      teamLabel = sel ? sel.name : '';
+    }
+  }
   // step 3: filter by selected members (empty = all)
   const filtered = _hwReportMemberFilter.size === 0
     ? byTeam
@@ -12115,7 +12128,7 @@ function _renderHwReportTable() {
   const teamFilterActive = !!_hwReportTeam;
   if (countEl) {
     const tail = [];
-    if (teamFilterActive) tail.push(`แผนก ${_hwReportTeam}`);
+    if (teamFilterActive && teamLabel) tail.push(`แผนก ${teamLabel}`);
     if (filterActive) tail.push(`กรอง ${_hwReportMemberFilter.size} คน`);
     countEl.textContent = tail.length
       ? `${filtered.length} / ${byYear.length} รายการ (${tail.join(' · ')})`
@@ -12297,10 +12310,19 @@ function _toggleHwReportMemberPopup(anchor) {
   const existing = document.getElementById('hr-name-popup');
   if (existing) { existing.remove(); document.removeEventListener('mousedown', _hwReportMemberPopupClickOutside, true); return; }
   if (!_hwReportData) return;
-  // unique members from current year + team filter
+  // unique members from current year + team filter (v1.9.323 ใช้ team-tree descendants)
   const events = _hwReportData.events || [];
   const byYear = _hwReportYear ? events.filter(e => String(e.year) === _hwReportYear) : events;
-  const byTeam = _hwReportTeam ? byYear.filter(e => (e.member_teams || []).includes(_hwReportTeam)) : byYear;
+  let byTeam = byYear;
+  if (_hwReportTeam) {
+    const tid = parseInt(_hwReportTeam, 10);
+    if (Number.isFinite(tid)) {
+      const descIds = getTeamDescendantIds(_hwTeamsCache || [], tid);
+      const nameSet = new Set();
+      (_hwTeamsCache || []).forEach(t => { if (descIds.has(t.id)) nameSet.add(t.name); });
+      byTeam = byYear.filter(e => (e.member_teams || []).some(n => nameSet.has(n)));
+    }
+  }
   const seen = new Map();
   byTeam.forEach(e => {
     if (e.member_id != null && !seen.has(e.member_id)) {
