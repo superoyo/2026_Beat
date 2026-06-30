@@ -12153,12 +12153,33 @@ function _renderHwReportTable() {
     </td>`;
   };
   // v1.9.316 — เซลล์เครื่อง (คอมที่เปลี่ยน + คอมเดิม) คลิกได้ → showHardwareDetail
+  // v1.9.320 — คอมเดิม: เพิ่ม chip ใต้ชื่อ ว่าตอนนี้อยู่ไหน (เจ้าของ / สำรอง / ส่วนกลาง)
+  const _prevPcWhereNow = (pcId) => {
+    const pc = (_pcdAllPcs || []).find(x => x.id === pcId);
+    if (!pc) return null;
+    if (pc.current_member_id) {
+      const label = pc.current_member_label || ('member#' + pc.current_member_id);
+      return { txt: '👤 ' + label, bg: 'rgba(37,99,235,.10)', fg: 'var(--primary)', bd: 'rgba(37,99,235,.20)' };
+    }
+    if (pc.status === 'retired') {
+      return { txt: '⚠ สำรอง', bg: 'rgba(220,38,38,.10)', fg: 'var(--critical)', bd: 'rgba(220,38,38,.20)' };
+    }
+    if (pc.unassigned_team_id != null || (pc.storage_location && String(pc.storage_location).trim()) || pc.status === 'stock') {
+      const loc = pc.storage_location ? ' · ' + pc.storage_location : '';
+      return { txt: '📦 ส่วนกลาง' + loc, bg: 'rgba(245,158,11,.12)', fg: '#92400e', bd: 'rgba(245,158,11,.25)' };
+    }
+    return { txt: '— ไม่ผูก —', bg: 'var(--bg-soft)', fg: 'var(--text-muted)', bd: 'var(--border)' };
+  };
   const _prevCell = (p) => {
     if (!p) return `<td style="${tdMuted}">—</td>`;
     const id = (typeof p === 'object') ? p.id : null;
     const name = (typeof p === 'object') ? (p.name || '—') : String(p);
-    if (id) return `<td style="${td};cursor:pointer" class="hr-hw-click" data-hwid="${id}" title="คลิกดูรายละเอียดเครื่อง">${escapeHtml(name)}</td>`;
-    return `<td style="${td}">${escapeHtml(name)}</td>`;
+    const w = id ? _prevPcWhereNow(id) : null;
+    const chip = w
+      ? `<div style="margin-top:3px"><span style="display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:600;background:${w.bg};color:${w.fg};border:1px solid ${w.bd};max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(w.txt)}</span></div>`
+      : '';
+    if (id) return `<td style="${td};cursor:pointer" class="hr-hw-click" data-hwid="${id}" title="คลิกดูรายละเอียดเครื่อง">${escapeHtml(name)}${chip}</td>`;
+    return `<td style="${td}">${escapeHtml(name)}${chip}</td>`;
   };
   const rows = filtered.map(e => {
     const prev = e.prev_pcs || [];
