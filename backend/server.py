@@ -6720,7 +6720,7 @@ def admin_member_device_history(mid: int, _sess: dict = Depends(require_admin)) 
         if r["current_member_id"]:
             where = "อยู่กับ " + (r["cur_name"] or r["cur_email"] or "ผู้ใช้อื่น")
         elif r["status"] == "retired":
-            where = "ปลดระวาง"
+            where = "สำรอง"
         else:
             where = "คอมส่วนกลาง" + (" · " + r["storage_location"] if r["storage_location"] else "")
         prev.append({
@@ -8832,7 +8832,7 @@ def member_supervised_detail(
         if r["current_member_id"]:
             where = "ใช้งานโดยคนอื่นแล้ว"
         elif r["status"] == "retired":
-            where = "ปลดระวาง"
+            where = "สำรอง"
         else:
             where = "คอมส่วนกลาง"
         prev_devices.append({
