@@ -12424,17 +12424,24 @@ function _renderHwReportTable() {
     if (!ageStr) return '';
     return `<div style="font-size:11px;color:var(--accent);font-weight:600;margin-top:2px;white-space:nowrap">⏱ ${escapeHtml(ageStr)}</div>`;
   };
+  // v1.9.333 — กล่องเล็ก ๆ แสดง 'หมายเหตุ' ของเครื่อง
+  const _pcNotesBox = (pcId) => {
+    const pc = (_pcdAllPcs || []).find(x => x.id === pcId);
+    if (!pc || !pc.notes || !String(pc.notes).trim()) return '';
+    return `<div style="margin-top:5px;padding:4px 8px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:6px;font-size:11px;color:#92400e;line-height:1.4;word-break:break-word;white-space:normal;font-style:italic">📝 ${escapeHtml(pc.notes)}</div>`;
+  };
   const _prevCell = (p) => {
     if (!p) return `<td style="${tdMuted}">—</td>`;
     const id = (typeof p === 'object') ? p.id : null;
     const name = (typeof p === 'object') ? (p.name || '—') : String(p);
     const w = id ? _prevPcWhereNow(id) : null;
     const ageLine = id ? _pcAgeLine(id) : '';
+    const notesBox = id ? _pcNotesBox(id) : '';
     const chip = w
       ? `<div style="margin-top:3px"><span style="display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:600;background:${w.bg};color:${w.fg};border:1px solid ${w.bd};max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(w.txt)}</span></div>`
       : '';
-    if (id) return `<td style="${td};cursor:pointer" class="hr-hw-click" data-hwid="${id}" title="คลิกดูรายละเอียดเครื่อง">${escapeHtml(name)}${ageLine}${chip}</td>`;
-    return `<td style="${td}">${escapeHtml(name)}${ageLine}${chip}</td>`;
+    if (id) return `<td style="${td};cursor:pointer" class="hr-hw-click" data-hwid="${id}" title="คลิกดูรายละเอียดเครื่อง">${escapeHtml(name)}${ageLine}${chip}${notesBox}</td>`;
+    return `<td style="${td}">${escapeHtml(name)}${ageLine}${chip}${notesBox}</td>`;
   };
   // v1.9.324 — chip 'ตำแหน่งเปิดใหม่' ใต้คอมที่เปลี่ยน (ถ้า for_new_position=1)
   const _newPositionChip = (pcId) => {
@@ -12457,9 +12464,10 @@ function _renderHwReportTable() {
     const prev = e.prev_pcs || [];
     const newAge = e.hardware_id ? _pcAgeLine(e.hardware_id) : '';
     const newPos = e.hardware_id ? _newPositionChip(e.hardware_id) : '';
+    const newNotes = e.hardware_id ? _pcNotesBox(e.hardware_id) : '';
     const newCell = e.hardware_id
-      ? `<td style="${td};font-weight:600;cursor:pointer" class="hr-hw-click" data-hwid="${e.hardware_id}" title="คลิกดูรายละเอียดเครื่อง">${escapeHtml(e.new_pc || '—')}${newAge}${newPos}</td>`
-      : `<td style="${td};font-weight:600">${escapeHtml(e.new_pc || '—')}${newAge}${newPos}</td>`;
+      ? `<td style="${td};font-weight:600;cursor:pointer" class="hr-hw-click" data-hwid="${e.hardware_id}" title="คลิกดูรายละเอียดเครื่อง">${escapeHtml(e.new_pc || '—')}${newAge}${newPos}${newNotes}</td>`
+      : `<td style="${td};font-weight:600">${escapeHtml(e.new_pc || '—')}${newAge}${newPos}${newNotes}</td>`;
     // คอมเดิม #1 — ต่อท้ายด้วย chip สถานะคอมเก่า (ถ้ามี tick)
     const prev1Cell = _prevCell(prev[0]);
     const oldStatus = e.hardware_id ? _oldPcStatusChips(e.hardware_id) : '';
