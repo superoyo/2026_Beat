@@ -12066,6 +12066,9 @@ let _hwReportPcCount = '';     // v1.9.326 — '' = ทุกจำนวน, '1
 let _hwReportPrev1 = '';       // v1.9.327 — '' = ทั้งหมด, 'empty' = คอมเดิม#1 ว่าง, 'filled' = กรอกแล้ว
 let _hwReportMemberFilter = new Set();  // member_ids ที่เลือกแสดง — ว่าง = แสดงทั้งหมด
 let _hwReportMemberSearch = '';          // search ใน popup
+// v1.9.331 — Tableau-style filter สำหรับคอมเดิม #1 / #2 (Set ของ hardware_id)
+let _hwReportPrevSelections = [new Set(), new Set()];   // index 0 = คอมเดิม #1, 1 = คอมเดิม #2
+let _hwReportPrevSearch = ['', ''];                     // search text ต่อ slot
 const _THAI_MONTHS = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 
 async function renderHardwareReportPage() {
@@ -12209,10 +12212,18 @@ function _renderHwReportTable() {
     const has = Array.isArray(e.prev_pcs) && !!e.prev_pcs[0];
     return _hwReportPrev1 === 'empty' ? !has : has;
   });
+  // v1.9.331 — filter เฉพาะเจาะจง (checkbox popup) ต่อ slot 0/1
+  const _prevId = (p) => (p && typeof p === 'object') ? p.id : null;
+  const _matchPrevSel = (e, slot) => {
+    const sel = _hwReportPrevSelections[slot]; if (!sel || sel.size === 0) return true;
+    const pid = _prevId((e.prev_pcs || [])[slot]);
+    return pid != null && sel.has(pid);
+  };
+  const byPrevSel = byPrev1.filter(e => _matchPrevSel(e, 0) && _matchPrevSel(e, 1));
   // step: filter by selected members (empty = all)
   const filtered = _hwReportMemberFilter.size === 0
-    ? byPrev1
-    : byPrev1.filter(e => e.member_id != null && _hwReportMemberFilter.has(e.member_id));
+    ? byPrevSel
+    : byPrevSel.filter(e => e.member_id != null && _hwReportMemberFilter.has(e.member_id));
   const filterActive = _hwReportMemberFilter.size > 0;
   const teamFilterActive = !!_hwReportTeam;
   const pcCountActive = !!_hwReportPcCount;
@@ -12222,6 +12233,9 @@ function _renderHwReportTable() {
     if (teamFilterActive && teamLabel) tail.push(`แผนก ${teamLabel}`);
     if (pcCountActive) tail.push(_hwReportPcCount === '3+' ? 'ถือ ≥3 เครื่อง' : `ถือ ${_hwReportPcCount} เครื่อง`);
     if (prev1Active) tail.push(_hwReportPrev1 === 'empty' ? 'คอมเดิมว่าง' : 'มีคอมเดิม');
+    // v1.9.331 — filter คอมเดิม เฉพาะเจาะจง
+    if (_hwReportPrevSelections[0].size > 0) tail.push(`คอมเดิม #1: ${_hwReportPrevSelections[0].size} เครื่อง`);
+    if (_hwReportPrevSelections[1].size > 0) tail.push(`คอมเดิม #2: ${_hwReportPrevSelections[1].size} เครื่อง`);
     if (filterActive) tail.push(`กรอง ${_hwReportMemberFilter.size} คน`);
     countEl.textContent = tail.length
       ? `${filtered.length} / ${byYear.length} รายการ (${tail.join(' · ')})`
@@ -12371,6 +12385,14 @@ function _renderHwReportTable() {
       style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;margin-left:6px;border-radius:5px;border:1px solid ${filterActive ? 'var(--primary)' : 'var(--border)'};background:${filterActive ? 'rgba(37,99,235,.10)' : 'var(--bg-card)'};color:${filterActive ? 'var(--primary)' : 'var(--text-muted)'};cursor:pointer;font-size:11px;font-family:inherit;padding:0;line-height:1;vertical-align:middle">
       ${filterActive ? '▼' : '⏷'}
     </button>`;
+  // v1.9.331 — filter button สำหรับคอมเดิม #1 / #2
+  const _prevFilterBtn = (slot) => {
+    const active = _hwReportPrevSelections[slot].size > 0;
+    return `<button type="button" class="hr-prev-filter-btn" data-slot="${slot}" title="กรองคอมเดิมที่จะแสดง"
+      style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;margin-left:6px;border-radius:5px;border:1px solid ${active ? 'var(--primary)' : 'var(--border)'};background:${active ? 'rgba(37,99,235,.10)' : 'var(--bg-card)'};color:${active ? 'var(--primary)' : 'var(--text-muted)'};cursor:pointer;font-size:11px;font-family:inherit;padding:0;line-height:1;vertical-align:middle">
+      ${active ? '▼' : '⏷'}
+    </button>`;
+  };
   wrap.innerHTML = filtered.length === 0
     ? `<div class="empty" style="padding:32px;text-align:center">
         <div style="font-size:48px;margin-bottom:6px">📭</div>
@@ -12386,8 +12408,8 @@ function _renderHwReportTable() {
             <th style="${th}">เดือน</th>
             <th style="${th}">คอมฯที่เปลี่ยน</th>
             <th style="${th};position:relative"><span style="vertical-align:middle">ชื่อ</span>${filterBtn}</th>
-            <th style="${th}">คอมเดิม #1</th>
-            <th style="${th}">คอมเดิม #2</th>
+            <th style="${th};position:relative"><span style="vertical-align:middle">คอมเดิม #1</span>${_prevFilterBtn(0)}</th>
+            <th style="${th};position:relative"><span style="vertical-align:middle">คอมเดิม #2</span>${_prevFilterBtn(1)}</th>
             <th style="${th}">คอมเดิม #3</th>
           </tr></thead>
           <tbody>${rows}</tbody>
@@ -12400,6 +12422,12 @@ function _renderHwReportTable() {
   if (fBtn) fBtn.addEventListener('click', (ev) => { ev.stopPropagation(); _toggleHwReportMemberPopup(fBtn); });
   const cBtn = $('hr-clear-from-empty');
   if (cBtn) cBtn.addEventListener('click', () => { _hwReportMemberFilter.clear(); _renderHwReportTable(); });
+  // v1.9.331 — wire filter buttons ของคอลัมน์คอมเดิม
+  wrap.querySelectorAll('.hr-prev-filter-btn').forEach(btn => btn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const slot = parseInt(btn.dataset.slot, 10);
+    if (Number.isFinite(slot)) _toggleHwReportPrevPopup(btn, slot);
+  }));
   // v1.9.316 — คลิกชื่อ → owner panel · คลิกเครื่อง → hardware detail
   const _refresh = async () => {
     try {
@@ -12556,6 +12584,131 @@ function _hwReportMemberPopupClickOutside(e) {
   if (e.target.closest('#hr-name-filter-btn')) return;
   popup.remove();
   document.removeEventListener('mousedown', _hwReportMemberPopupClickOutside, true);
+  _renderHwReportTable();
+}
+
+// v1.9.331 — popup เลือกคอมเดิม (Tableau-style) ต่อ slot (0 = #1, 1 = #2)
+function _toggleHwReportPrevPopup(anchor, slot) {
+  const existing = document.getElementById('hr-prev-popup');
+  if (existing) { existing.remove(); document.removeEventListener('mousedown', _hwReportPrevPopupClickOutside, true); return; }
+  if (!_hwReportData) return;
+  // Apply upstream filters (year/team/pcCount/prev1) — respect other filters so the list is contextual
+  const events = _hwReportData.events || [];
+  const byYear = _hwReportYear ? events.filter(e => String(e.year) === _hwReportYear) : events;
+  let byTeam = byYear;
+  if (_hwReportTeam) {
+    const tid = parseInt(_hwReportTeam, 10);
+    if (Number.isFinite(tid)) {
+      const descIds = getTeamDescendantIds(_hwTeamsCache || [], tid);
+      const nameSet = new Set();
+      (_hwTeamsCache || []).forEach(t => { if (descIds.has(t.id)) nameSet.add(t.name); });
+      byTeam = byYear.filter(e => (e.member_teams || []).some(n => nameSet.has(n)));
+    }
+  }
+  let byPcCount = byTeam;
+  if (_hwReportPcCount) {
+    const cnt = new Map();
+    (_pcdAllPcs || []).forEach(p => { if (p.current_member_id != null) cnt.set(p.current_member_id, (cnt.get(p.current_member_id) || 0) + 1); });
+    const match = (mid) => {
+      const n = cnt.get(mid) || 0;
+      if (_hwReportPcCount === '3+') return n >= 3;
+      return n === parseInt(_hwReportPcCount, 10);
+    };
+    byPcCount = byTeam.filter(e => e.member_id != null && match(e.member_id));
+  }
+  const byPrev1 = !_hwReportPrev1 ? byPcCount : byPcCount.filter(e => {
+    const has = Array.isArray(e.prev_pcs) && !!e.prev_pcs[0];
+    return _hwReportPrev1 === 'empty' ? !has : has;
+  });
+  // แต่ละ slot: unique PCs (id + name) จาก prev_pcs[slot]
+  const seen = new Map();
+  byPrev1.forEach(e => {
+    const p = (e.prev_pcs || [])[slot];
+    if (p && typeof p === 'object' && p.id != null && !seen.has(p.id)) {
+      seen.set(p.id, { id: p.id, name: p.name || ('PC#' + p.id) });
+    }
+  });
+  const pcs = Array.from(seen.values()).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'th'));
+  const sel = _hwReportPrevSelections[slot];
+
+  const popup = document.createElement('div');
+  popup.id = 'hr-prev-popup';
+  popup.dataset.slot = String(slot);
+  popup.style.cssText = 'position:fixed;z-index:200;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.18);width:320px;max-height:420px;display:flex;flex-direction:column;font-family:inherit';
+  popup.innerHTML = `
+    <div style="padding:10px 12px 8px;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+        <span style="font-size:12.5px;font-weight:700;color:var(--text)">กรองคอมเดิม #${slot + 1}</span>
+        <button type="button" id="hr-prev-clear" style="font-size:11px;border:none;background:none;color:var(--primary);cursor:pointer;padding:2px 4px;font-family:inherit;font-weight:600">เคลียร์ทั้งหมด</button>
+      </div>
+      <input id="hr-prev-search" type="text" placeholder="🔍 ค้นหาชื่อเครื่อง..." autocomplete="off"
+        style="width:100%;padding:6px 10px;font-size:12.5px;border:1px solid var(--border);border-radius:7px;background:var(--bg-input);color:var(--text);box-sizing:border-box;font-family:inherit" />
+    </div>
+    <div id="hr-prev-list" style="flex:1;overflow-y:auto;padding:4px"></div>
+    <div style="padding:8px 12px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <span id="hr-prev-count" style="font-size:11px;color:var(--text-muted)"></span>
+      <button type="button" id="hr-prev-done" class="btn primary" style="font-size:12px;padding:5px 12px">เสร็จ</button>
+    </div>
+  `;
+  document.body.appendChild(popup);
+  const r = anchor.getBoundingClientRect();
+  popup.style.top = (r.bottom + 6) + 'px';
+  let left = r.left;
+  const vw = window.innerWidth;
+  if (left + 320 > vw - 12) left = vw - 320 - 12;
+  if (left < 12) left = 12;
+  popup.style.left = left + 'px';
+
+  const listEl = popup.querySelector('#hr-prev-list');
+  const countEl = popup.querySelector('#hr-prev-count');
+  const renderList = () => {
+    const q = (_hwReportPrevSearch[slot] || '').trim().toLowerCase();
+    const matched = !q ? pcs : pcs.filter(p => (p.name || '').toLowerCase().includes(q));
+    if (matched.length === 0) {
+      listEl.innerHTML = '<div style="padding:18px 12px;font-size:12px;color:var(--text-muted);text-align:center">ไม่พบ</div>';
+    } else {
+      listEl.innerHTML = matched.map(p => {
+        const checked = sel.has(p.id);
+        return `<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:12.5px;transition:background .1s" onmouseenter="this.style.background='var(--bg-soft)'" onmouseleave="this.style.background='transparent'">
+          <input type="checkbox" data-pid="${p.id}" ${checked ? 'checked' : ''} style="margin:0;cursor:pointer" />
+          <div style="min-width:0;flex:1">
+            <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(p.name)}</div>
+          </div>
+        </label>`;
+      }).join('');
+      listEl.querySelectorAll('input[type=checkbox]').forEach(cb => {
+        cb.addEventListener('change', () => {
+          const pid = parseInt(cb.dataset.pid, 10);
+          if (cb.checked) sel.add(pid); else sel.delete(pid);
+          updateCount();
+        });
+      });
+    }
+    updateCount();
+  };
+  const updateCount = () => {
+    if (countEl) countEl.textContent = sel.size === 0
+      ? `แสดงทั้งหมด (${pcs.length} เครื่อง)`
+      : `เลือก ${sel.size} / ${pcs.length} เครื่อง`;
+  };
+  renderList();
+  popup.querySelector('#hr-prev-search').addEventListener('input', (e) => { _hwReportPrevSearch[slot] = e.target.value; renderList(); });
+  popup.querySelector('#hr-prev-clear').addEventListener('click', () => { sel.clear(); renderList(); });
+  popup.querySelector('#hr-prev-done').addEventListener('click', () => {
+    popup.remove();
+    document.removeEventListener('mousedown', _hwReportPrevPopupClickOutside, true);
+    _renderHwReportTable();
+  });
+  setTimeout(() => popup.querySelector('#hr-prev-search').focus(), 30);
+  document.addEventListener('mousedown', _hwReportPrevPopupClickOutside, true);
+}
+function _hwReportPrevPopupClickOutside(e) {
+  const popup = document.getElementById('hr-prev-popup');
+  if (!popup) return;
+  if (popup.contains(e.target)) return;
+  if (e.target.closest('.hr-prev-filter-btn')) return;
+  popup.remove();
+  document.removeEventListener('mousedown', _hwReportPrevPopupClickOutside, true);
   _renderHwReportTable();
 }
 
