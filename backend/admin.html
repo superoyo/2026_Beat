@@ -12027,6 +12027,7 @@ let _hwReportData = null;     // { events, years }
 let _hwReportYear = '';        // '' = ทุกปี
 let _hwReportTeam = '';        // v1.9.323 — '' = ทุกแผนก, หรือ team_id (string) — รวมทีมย่อยอัตโนมัติ
 let _hwReportPcCount = '';     // v1.9.326 — '' = ทุกจำนวน, '1' / '2' / '3+' — จำนวน PC ที่ถือครอง
+let _hwReportPrev1 = '';       // v1.9.327 — '' = ทั้งหมด, 'empty' = คอมเดิม#1 ว่าง, 'filled' = กรอกแล้ว
 let _hwReportMemberFilter = new Set();  // member_ids ที่เลือกแสดง — ว่าง = แสดงทั้งหมด
 let _hwReportMemberSearch = '';          // search ใน popup
 const _THAI_MONTHS = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
@@ -12056,6 +12057,12 @@ async function renderHardwareReportPage() {
         <option value="1">1 เครื่อง</option>
         <option value="2">2 เครื่อง</option>
         <option value="3+">3 เครื่องขึ้นไป</option>
+      </select>
+      <label style="font-size:12.5px;color:var(--text-muted);font-weight:600;margin-left:6px">📝 คอมเดิม #1:</label>
+      <select id="hr-f-prev1" style="padding:7px 11px;border:1px solid var(--border);border-radius:8px;font-size:12.5px;font-family:inherit;background:var(--bg-card);color:var(--text);cursor:pointer;font-weight:600;box-sizing:border-box">
+        <option value="">— ทั้งหมด —</option>
+        <option value="empty">ยังไม่มีคอมเดิม (ว่าง)</option>
+        <option value="filled">มีคอมเดิมแล้ว</option>
       </select>
     </div>
     <div id="hr-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:14px"></div>
@@ -12115,6 +12122,15 @@ async function renderHardwareReportPage() {
       _renderHwReportTable();
     });
   }
+  // v1.9.327 — filter คอมเดิม #1 ว่าง/มี
+  const prev1Sel = $('hr-f-prev1');
+  if (prev1Sel) {
+    prev1Sel.value = _hwReportPrev1;
+    prev1Sel.addEventListener('change', (e) => {
+      _hwReportPrev1 = e.target.value;
+      _renderHwReportTable();
+    });
+  }
   _renderHwReportTable();
 }
 
@@ -12152,17 +12168,24 @@ function _renderHwReportTable() {
     return n === parseInt(_hwReportPcCount, 10);
   };
   const byPcCount = _hwReportPcCount ? byTeam.filter(e => e.member_id != null && _matchPcCount(e.member_id)) : byTeam;
-  // step 4: filter by selected members (empty = all)
+  // v1.9.327 — filter คอมเดิม #1 ว่าง/มี
+  const byPrev1 = !_hwReportPrev1 ? byPcCount : byPcCount.filter(e => {
+    const has = Array.isArray(e.prev_pcs) && !!e.prev_pcs[0];
+    return _hwReportPrev1 === 'empty' ? !has : has;
+  });
+  // step: filter by selected members (empty = all)
   const filtered = _hwReportMemberFilter.size === 0
-    ? byPcCount
-    : byPcCount.filter(e => e.member_id != null && _hwReportMemberFilter.has(e.member_id));
+    ? byPrev1
+    : byPrev1.filter(e => e.member_id != null && _hwReportMemberFilter.has(e.member_id));
   const filterActive = _hwReportMemberFilter.size > 0;
   const teamFilterActive = !!_hwReportTeam;
   const pcCountActive = !!_hwReportPcCount;
+  const prev1Active = !!_hwReportPrev1;
   if (countEl) {
     const tail = [];
     if (teamFilterActive && teamLabel) tail.push(`แผนก ${teamLabel}`);
     if (pcCountActive) tail.push(_hwReportPcCount === '3+' ? 'ถือ ≥3 เครื่อง' : `ถือ ${_hwReportPcCount} เครื่อง`);
+    if (prev1Active) tail.push(_hwReportPrev1 === 'empty' ? 'คอมเดิมว่าง' : 'มีคอมเดิม');
     if (filterActive) tail.push(`กรอง ${_hwReportMemberFilter.size} คน`);
     countEl.textContent = tail.length
       ? `${filtered.length} / ${byYear.length} รายการ (${tail.join(' · ')})`
@@ -12378,8 +12401,13 @@ function _toggleHwReportMemberPopup(anchor) {
     };
     byPcCount = byTeam.filter(e => e.member_id != null && match(e.member_id));
   }
+  // v1.9.327 — filter คอมเดิม #1 ว่าง/มี
+  const byPrev1 = !_hwReportPrev1 ? byPcCount : byPcCount.filter(e => {
+    const has = Array.isArray(e.prev_pcs) && !!e.prev_pcs[0];
+    return _hwReportPrev1 === 'empty' ? !has : has;
+  });
   const seen = new Map();
-  byPcCount.forEach(e => {
+  byPrev1.forEach(e => {
     if (e.member_id != null && !seen.has(e.member_id)) {
       seen.set(e.member_id, { id: e.member_id, name: e.member_name || '—', email: e.member_email || '', avatar: e.member_avatar || null, teams: e.member_teams || [] });
     }
