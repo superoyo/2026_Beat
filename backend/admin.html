@@ -12233,12 +12233,19 @@ function _renderHwReportTable() {
     if (id) return `<td style="${td};cursor:pointer" class="hr-hw-click" data-hwid="${id}" title="คลิกดูรายละเอียดเครื่อง">${escapeHtml(name)}${ageLine}${chip}</td>`;
     return `<td style="${td}">${escapeHtml(name)}${ageLine}${chip}</td>`;
   };
+  // v1.9.324 — chip 'ตำแหน่งเปิดใหม่' ใต้คอมที่เปลี่ยน (ถ้า for_new_position=1)
+  const _newPositionChip = (pcId) => {
+    const pc = (_pcdAllPcs || []).find(x => x.id === pcId);
+    if (!pc || !pc.for_new_position) return '';
+    return `<div style="margin-top:3px"><span style="display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:700;background:rgba(14,165,233,.12);color:#0284c7;border:1px solid rgba(14,165,233,.28)">🆕 ตำแหน่งเปิดใหม่</span></div>`;
+  };
   const rows = filtered.map(e => {
     const prev = e.prev_pcs || [];
     const newAge = e.hardware_id ? _pcAgeLine(e.hardware_id) : '';
+    const newPos = e.hardware_id ? _newPositionChip(e.hardware_id) : '';
     const newCell = e.hardware_id
-      ? `<td style="${td};font-weight:600;cursor:pointer" class="hr-hw-click" data-hwid="${e.hardware_id}" title="คลิกดูรายละเอียดเครื่อง">${escapeHtml(e.new_pc || '—')}${newAge}</td>`
-      : `<td style="${td};font-weight:600">${escapeHtml(e.new_pc || '—')}${newAge}</td>`;
+      ? `<td style="${td};font-weight:600;cursor:pointer" class="hr-hw-click" data-hwid="${e.hardware_id}" title="คลิกดูรายละเอียดเครื่อง">${escapeHtml(e.new_pc || '—')}${newAge}${newPos}</td>`
+      : `<td style="${td};font-weight:600">${escapeHtml(e.new_pc || '—')}${newAge}${newPos}</td>`;
     return `<tr>
       <td style="${td};white-space:nowrap;color:var(--text-muted)">${e.year + 543}</td>
       <td style="${td};white-space:nowrap;color:var(--text-muted)">${_THAI_MONTHS[e.month] || e.month}</td>
