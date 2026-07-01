@@ -6602,9 +6602,12 @@ def admin_hardware_pc_replacement_report(
     with db_conn() as conn:
         rows = conn.execute(
             "SELECT h.id, h.name, h.purchased_at, h.current_member_id, "
-            "       m.display_name, m.email, m.avatar_data, m.temp_department "
+            "       m.display_name, m.email, m.avatar_data, m.temp_department, "
+            "       m.replaces_member_id, "
+            "       rm.display_name AS replaces_display_name, rm.email AS replaces_email "
             "FROM hardware h "
             "LEFT JOIN members m ON m.id = h.current_member_id "
+            "LEFT JOIN members rm ON rm.id = m.replaces_member_id "
             "WHERE h.hw_type = 'pc' AND h.purchased_at IS NOT NULL "
             "  AND TRIM(h.purchased_at) != '' "
             "ORDER BY h.purchased_at DESC"
@@ -6686,6 +6689,9 @@ def admin_hardware_pc_replacement_report(
             "member_avatar": avatar,
             "member_teams": teams_list,
             "prev_pcs": prev_pcs_list,
+            # v1.9.332 — พนักงานคนก่อน (alumni ที่ member นี้มาแทน)
+            "replaces_member_id": r["replaces_member_id"],
+            "replaces_member_name": r["replaces_display_name"] or r["replaces_email"] or None,
         })
     return {"events": out, "years": sorted(years, reverse=True)}
 
@@ -6843,6 +6849,13 @@ class MemberReplacesIn(BaseModel):
     replaces_member_id: Optional[int] = None
 
 
+# v1.9.332 — สร้าง alumni ใหม่ (temp staff + is_alumni=1) + ตั้ง replaces_member_id ให้ member นี้
+class CreateReplacesAlumniIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    department: Optional[str] = Field(None, max_length=120)
+    team_ids: Optional[list[int]] = None
+
+
 @app.patch("/api/admin/members/{mid}/replaces")
 def admin_set_member_replaces(mid: int, payload: MemberReplacesIn,
                               _sess: dict = Depends(require_admin)) -> dict[str, Any]:
@@ -6860,6 +6873,42 @@ def admin_set_member_replaces(mid: int, payload: MemberReplacesIn,
                 raise HTTPException(status_code=400, detail="target must be alumni")
         conn.execute("UPDATE members SET replaces_member_id = ? WHERE id = ?", (rmid, mid))
     return {"ok": True}
+
+
+# v1.9.332 — สร้าง alumni ใหม่ (temp staff + is_alumni=1) ทันทีในการเลือกจาก dropdown 'มาแทน'
+@app.post("/api/admin/members/{mid}/create-replaces")
+def admin_create_replaces_alumni(mid: int, payload: CreateReplacesAlumniIn,
+                                 _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    """สร้าง alumni ใหม่ (temp staff + is_alumni=1) และตั้งเป็น 'มาแทน' ของ member {mid} ในการเรียกครั้งเดียว"""
+    now = utc_now().isoformat()
+    name = (payload.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="ต้องระบุชื่อ")
+    dept = (payload.department or "").strip() or None
+    with db_conn() as conn:
+        if not conn.execute("SELECT 1 FROM members WHERE id = ?", (mid,)).fetchone():
+            raise HTTPException(status_code=404, detail="member not found")
+        # 1) สร้าง temp-staff member (no phone)
+        placeholder_phone = "nophone:" + secrets.token_hex(8)
+        fake_uid = "temp:" + secrets.token_hex(12)
+        cur = conn.execute(
+            "INSERT INTO members(phone, firebase_uid, display_name, is_temp, temp_department, "
+            "                    is_alumni, last_working_day, created_at) "
+            "VALUES (?, ?, ?, 1, ?, 1, NULL, ?)",
+            (placeholder_phone, fake_uid, name, dept, now),
+        )
+        new_id = cur.lastrowid
+        # 2) เชื่อมกับทีม (ถ้าระบุ team_ids)
+        team_ids = payload.team_ids or []
+        for tid in team_ids:
+            if isinstance(tid, int) and conn.execute("SELECT 1 FROM teams WHERE id = ?", (tid,)).fetchone():
+                conn.execute(
+                    "INSERT OR IGNORE INTO team_members(team_id, member_id, added_at) VALUES (?, ?, ?)",
+                    (tid, new_id, now),
+                )
+        # 3) ตั้ง replaces_member_id ของ member {mid} = new_id
+        conn.execute("UPDATE members SET replaces_member_id = ? WHERE id = ?", (new_id, mid))
+    return {"ok": True, "id": new_id, "display_name": name}
 
 
 # =============================================================================

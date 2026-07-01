@@ -11695,10 +11695,10 @@ function _pcdOwnerPanel(memberId, onChange, memberObj, deviceList) {
     };
     const renderEdit = () => {
       const on = !!st.uses_own_computer, aon = !!st.is_alumni;
-      const alumOpts = (st.alumni_options || []).map(a => {
-        const lwd = a.last_working_day ? ' (' + escapeHtml(fmtDateThai(a.last_working_day)) + ')' : '';
-        return `<option value="${a.id}" ${st.replaces_member_id === a.id ? 'selected' : ''}>${escapeHtml(a.display_name)}${lwd}</option>`;
-      }).join('');
+      // v1.9.332 — searchable combobox + create-new สำหรับ "มาแทน"
+      // state ภายใน: replacesPick = { id } | { createName } | null
+      const currentAlum = st.replaces_member_id ? _findAlum(st.replaces_member_id) : null;
+      let replacesPick = currentAlum ? { id: currentAlum.id, display: currentAlum.display_name } : null;
       box.innerHTML = `
         <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">✏️ แก้ไขโปรไฟล์</div>
         <div style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px">
@@ -11710,11 +11710,15 @@ function _pcdOwnerPanel(memberId, onChange, memberObj, deviceList) {
           <div id="ep-alum-wrap" style="margin-top:9px;${aon ? '' : 'display:none'}"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px">วันทำงานวันสุดท้าย</label><input id="ep-alum-date" type="date" value="${escapeHtml(st.last_working_day || '')}" style="${inp}" /></div>
         </div>
         <div id="ep-replaces-wrap" style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;${aon ? 'display:none' : ''}">
-          <label style="display:block;font-size:13px;font-weight:600;margin-bottom:7px">🔄 มาแทนใคร <span style="font-weight:500;color:var(--text-muted);font-size:11px">(เลือก alumni ที่คนนี้มาแทน)</span></label>
-          <select id="ep-replaces" style="${inp}">
-            <option value="">— ไม่ระบุ —</option>
-            ${alumOpts}
-          </select>
+          <label style="display:block;font-size:13px;font-weight:600;margin-bottom:7px">🔄 มาแทนใคร <span style="font-weight:500;color:var(--text-muted);font-size:11px">(พิมพ์เพื่อค้นหา หรือสร้างใหม่)</span></label>
+          <div style="position:relative">
+            <input id="ep-replaces-input" type="text" autocomplete="off" placeholder="พิมพ์ชื่อ alumni..." value="${escapeHtml(replacesPick ? replacesPick.display : '')}" style="${inp}" />
+            <div id="ep-replaces-dropdown" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--bg-card);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);z-index:10;max-height:240px;overflow-y:auto"></div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px">
+            <div id="ep-replaces-hint" style="font-size:11px;color:var(--text-muted);flex:1;min-width:0"></div>
+            <button type="button" id="ep-replaces-clear" style="font-size:11px;background:none;border:none;color:var(--text-muted);cursor:pointer;padding:2px 6px;font-family:inherit">✕ เคลียร์</button>
+          </div>
         </div>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button type="button" id="ep-cancel" class="btn" style="font-size:12.5px;padding:6px 14px">ยกเลิก</button><button type="button" id="ep-save" class="btn primary" style="font-size:12.5px;padding:6px 16px">บันทึก</button></div>`;
       const bt = box.querySelector('#ep-byod'), bw = box.querySelector('#ep-byod-wrap');
@@ -11725,19 +11729,100 @@ function _pcdOwnerPanel(memberId, onChange, memberObj, deviceList) {
         aw.style.display = at.checked ? '' : 'none';
         if (rw) rw.style.display = at.checked ? 'none' : '';   // alumni ไม่ต้องเลือก 'มาแทน'
       });
+      // === Combobox: search + create-new ===
+      const rInp = box.querySelector('#ep-replaces-input');
+      const rList = box.querySelector('#ep-replaces-dropdown');
+      const rHint = box.querySelector('#ep-replaces-hint');
+      const updateHint = () => {
+        if (!rHint) return;
+        if (!replacesPick) { rHint.textContent = ''; return; }
+        rHint.textContent = replacesPick.id
+          ? `เลือกแล้ว: ${replacesPick.display}`
+          : `จะสร้าง alumni ใหม่: ${replacesPick.display}`;
+        rHint.style.color = replacesPick.id ? 'var(--text-muted)' : '#0284c7';
+      };
+      const renderDropdown = () => {
+        const q = (rInp.value || '').trim();
+        const qLow = q.toLowerCase();
+        const opts = st.alumni_options || [];
+        const matched = q ? opts.filter(a => (a.display_name || '').toLowerCase().includes(qLow)) : opts.slice(0, 30);
+        const exactExists = q && opts.some(a => (a.display_name || '').trim().toLowerCase() === qLow);
+        const items = matched.slice(0, 20).map(a => {
+          const lwd = a.last_working_day ? ' <span style="color:var(--text-muted);font-size:10.5px">· ' + escapeHtml(fmtDateThai(a.last_working_day)) + '</span>' : '';
+          const initial = (a.display_name || '?').trim().charAt(0).toUpperCase();
+          const av = a.avatar_data
+            ? `<img src="${a.avatar_data}" alt="" style="width:22px;height:22px;border-radius:50%;object-fit:cover;flex-shrink:0" />`
+            : `<div style="width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#d97706,#92400e);color:#fff;font-weight:700;font-size:11px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml(initial)}</div>`;
+          return `<div data-pick-id="${a.id}" data-pick-name="${escapeHtml(a.display_name)}" style="display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;font-size:12.5px" onmouseenter="this.style.background='var(--bg-soft)'" onmouseleave="this.style.background='transparent'">${av}<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(a.display_name)}</span>${lwd}</div>`;
+        }).join('');
+        const createItem = (q && !exactExists) ? `<div data-pick-create="${escapeHtml(q)}" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;font-size:12.5px;border-top:1px solid var(--border);color:#0284c7;font-weight:600" onmouseenter="this.style.background='rgba(14,165,233,.06)'" onmouseleave="this.style.background='transparent'">➕ สร้างใหม่: "${escapeHtml(q)}"</div>` : '';
+        if (!items && !createItem) {
+          rList.innerHTML = '<div style="padding:14px;font-size:12px;color:var(--text-muted);text-align:center">ไม่พบ · พิมพ์ชื่อเพื่อสร้างใหม่</div>';
+        } else {
+          rList.innerHTML = items + createItem;
+        }
+        rList.style.display = '';
+        rList.querySelectorAll('[data-pick-id]').forEach(el => el.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          replacesPick = { id: parseInt(el.dataset.pickId, 10), display: el.dataset.pickName };
+          rInp.value = el.dataset.pickName;
+          rList.style.display = 'none';
+          updateHint();
+        }));
+        rList.querySelectorAll('[data-pick-create]').forEach(el => el.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          replacesPick = { createName: el.dataset.pickCreate, display: el.dataset.pickCreate };
+          rInp.value = el.dataset.pickCreate;
+          rList.style.display = 'none';
+          updateHint();
+        }));
+      };
+      rInp.addEventListener('input', () => { replacesPick = null; updateHint(); renderDropdown(); });
+      rInp.addEventListener('focus', renderDropdown);
+      rInp.addEventListener('blur', () => setTimeout(() => { rList.style.display = 'none'; }, 150));
+      box.querySelector('#ep-replaces-clear').addEventListener('click', () => {
+        replacesPick = null;
+        rInp.value = '';
+        rList.style.display = 'none';
+        updateHint();
+      });
+      updateHint();
+
       box.querySelector('#ep-cancel').addEventListener('click', renderView);
       box.querySelector('#ep-save').addEventListener('click', async (e) => {
         const btn = e.currentTarget;
         const byod = bt.checked, info = (box.querySelector('#ep-byod-info').value || '').trim();
         const alum = at.checked, lwd = (box.querySelector('#ep-alum-date').value || '').trim();
-        const rSel = box.querySelector('#ep-replaces');
-        const replacesId = (!alum && rSel && rSel.value) ? parseInt(rSel.value, 10) : null;
         btn.disabled = true; btn.textContent = 'กำลังบันทึก…';
         try {
           await fetchJson('/api/admin/members/' + memberId + '/own-computer', { method: 'PATCH', body: JSON.stringify({ uses_own_computer: byod, own_computer_info: info || null }) });
           await fetchJson('/api/admin/members/' + memberId + '/alumni', { method: 'PATCH', body: JSON.stringify({ is_alumni: alum, last_working_day: lwd || null }) });
-          await fetchJson('/api/admin/members/' + memberId + '/replaces', { method: 'PATCH', body: JSON.stringify({ replaces_member_id: replacesId }) });
-          st = { ...st, uses_own_computer: byod, own_computer_info: info, is_alumni: alum, last_working_day: lwd, replaces_member_id: replacesId };
+          // v1.9.332 — handle มาแทน: create-new / select-existing / clear
+          let newReplacesId = null;
+          if (!alum && replacesPick) {
+            if (replacesPick.createName) {
+              // สร้าง alumni ใหม่ + set replaces atomically
+              const teamIds = (m && Array.isArray(m.teams)) ? m.teams.map(t => t.id).filter(Boolean) : [];
+              const dept = (m && Array.isArray(m.teams) && m.teams[0]) ? m.teams[0].name : (m && m.temp_department) || null;
+              const res = await fetchJson('/api/admin/members/' + memberId + '/create-replaces', {
+                method: 'POST',
+                body: JSON.stringify({ name: replacesPick.createName, department: dept, team_ids: teamIds }),
+              });
+              newReplacesId = res.id;
+              // refresh alumni_options (เพราะเพิ่ง create ใหม่)
+              try {
+                const fresh = await fetchJson('/api/admin/members/' + memberId + '/own-computer');
+                st.alumni_options = fresh.alumni_options || st.alumni_options;
+              } catch (_) { /* ignore */ }
+            } else if (replacesPick.id) {
+              newReplacesId = replacesPick.id;
+              await fetchJson('/api/admin/members/' + memberId + '/replaces', { method: 'PATCH', body: JSON.stringify({ replaces_member_id: newReplacesId }) });
+            }
+          } else {
+            // clear
+            await fetchJson('/api/admin/members/' + memberId + '/replaces', { method: 'PATCH', body: JSON.stringify({ replaces_member_id: null }) });
+          }
+          st = { ...st, uses_own_computer: byod, own_computer_info: info, is_alumni: alum, last_working_day: lwd, replaces_member_id: newReplacesId };
           renderView();
           if (typeof onChange === 'function') { try { onChange(); } catch (_) {} }
         } catch (err) { alert('บันทึกไม่สำเร็จ: ' + (err.message || err)); btn.disabled = false; btn.textContent = 'บันทึก'; }
@@ -12291,6 +12376,13 @@ function _renderHwReportTable() {
       ? `<div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(e.member_email)}</div>`
       : '';
     const chipLine = `<div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:3px;align-items:center">${teamChips}${moreChip}${pcChip}</div>`;
+    // v1.9.332 — กล่องเล็ก 'พนักงานคนก่อน: ...' ถ้ามี replaces_member_id
+    const prevPersonBox = (e.replaces_member_id && e.replaces_member_name)
+      ? `<div style="margin-top:6px;padding:5px 9px;border:1px dashed rgba(217,119,6,.35);border-radius:7px;background:rgba(245,158,11,.06);font-size:11px;line-height:1.4">
+           <span style="color:var(--text-muted);font-weight:500">พนักงานคนก่อน:</span>
+           <span style="color:#92400e;font-weight:700">${escapeHtml(e.replaces_member_name)}</span>
+         </div>`
+      : '';
     return `<td style="${td};cursor:pointer" class="hr-name-click" data-mid="${e.member_id}" title="คลิกดูรายละเอียดผู้ใช้">
       <div style="display:flex;gap:9px;align-items:flex-start;min-width:0">
         ${av}
@@ -12298,6 +12390,7 @@ function _renderHwReportTable() {
           <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(name)}</div>
           ${emailLine}
           ${chipLine}
+          ${prevPersonBox}
         </div>
       </div>
     </td>`;
