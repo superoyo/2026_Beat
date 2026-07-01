@@ -12220,12 +12220,14 @@ async function renderHardwareReportPage() {
     _renderHwReportTable();
   });
   // v1.9.323 — แผนก dropdown: ใช้ team-tree จาก _hwTeamsCache + indent ตาม depth + รวมทีมย่อยอัตโนมัติ
+  // v1.9.334 — ใช้   (nbsp) 3 ตัวต่อ depth + prefix '↳' ทุกลูก เพื่อให้ browser ไม่ collapse spaces
   const teamSel = $('hr-f-team');
   const flat = flattenTeamTreeDFS(buildTeamTree(_hwTeamsCache || []));
   flat.forEach(({ team, depth }) => {
     const opt = document.createElement('option');
     opt.value = String(team.id);
-    opt.textContent = '  '.repeat(depth) + (depth > 0 ? '↳ ' : '') + team.name;
+    const indent = depth > 0 ? '   '.repeat(depth - 1) + '↳ ' : '';
+    opt.textContent = indent + team.name;
     teamSel.appendChild(opt);
   });
   // reset ถ้า team_id ที่จำไว้ไม่อยู่ใน cache แล้ว
@@ -12460,7 +12462,24 @@ function _renderHwReportTable() {
     if (!chips.length) return '';
     return `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">${chips.map(c => `<span style="display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:700;background:${c.bg};color:${c.fg};border:1px solid ${c.bd}">${c.t}</span>`).join('')}</div>`;
   };
-  const rows = filtered.map(e => {
+  // v1.9.334 — จับกลุ่มแถวของคนเดียวกันให้ติดกัน (คนที่มี 2+ เครื่อง)
+  //   preserves purchased_at DESC ordering of the group's first occurrence
+  const _grouped = (() => {
+    const byMember = new Map();
+    const order = [];
+    for (const e of filtered) {
+      if (e.member_id == null) { order.push({ solo: e }); continue; }
+      if (!byMember.has(e.member_id)) { byMember.set(e.member_id, []); order.push({ mid: e.member_id }); }
+      byMember.get(e.member_id).push(e);
+    }
+    const out = [];
+    for (const it of order) {
+      if (it.solo) out.push(it.solo);
+      else out.push(...byMember.get(it.mid));
+    }
+    return out;
+  })();
+  const rows = _grouped.map(e => {
     const prev = e.prev_pcs || [];
     const newAge = e.hardware_id ? _pcAgeLine(e.hardware_id) : '';
     const newPos = e.hardware_id ? _newPositionChip(e.hardware_id) : '';
