@@ -657,6 +657,10 @@ def init_db() -> None:
                 ("for_new_position", "INTEGER NOT NULL DEFAULT 0"),
                 # v1.9.290 — คอมฯส่งต่อมาจากท่านอื่น (มือสอง — ไม่นำไปคำนวณว่าควรเปลี่ยน)
                 ("is_handed_down", "INTEGER NOT NULL DEFAULT 0"),
+                # v1.9.329 — สถานะคอมเก่าเมื่อได้เครื่องนี้มา
+                ("old_pc_bought_by_employee", "INTEGER NOT NULL DEFAULT 0"),   # พนักงานซื้อคอมเก่าไป
+                ("old_pc_broken",             "INTEGER NOT NULL DEFAULT 0"),   # ชำรุดซ่อมไม่ได้
+                ("old_pc_donated_sold",       "INTEGER NOT NULL DEFAULT 0"),   # บริจาค / จำหน่าย
             ]
             for col_name, col_type in extra_cols:
                 if hw_cols and col_name not in hw_cols:
@@ -742,6 +746,8 @@ def init_db() -> None:
             # v1.9.263 — Alumni (อดีตพนักงาน) + วันทำงานวันสุดท้าย — ไม่นับรวมจำนวนพนักงาน
             ("is_alumni",              "INTEGER NOT NULL DEFAULT 0"),
             ("last_working_day",       "TEXT"),
+            # v1.9.328 — คนที่ replace (มาแทน) — ชี้ไป member_id ของ alumni ที่คนนี้มาแทน
+            ("replaces_member_id",     "INTEGER REFERENCES members(id) ON DELETE SET NULL"),
         ]:
             if col_name not in member_cols:
                 conn.execute(f"ALTER TABLE members ADD COLUMN {col_name} {col_def}")
@@ -2510,8 +2516,12 @@ def admin_get_team(team_id: int, _sess: dict = Depends(require_admin)) -> dict[s
             member_rows = conn.execute(
                 f"SELECT m.id, m.phone, m.email, m.display_name, m.enabled, m.avatar_data, "
                 f"  m.is_alumni, m.last_working_day, m.uses_own_computer, m.own_computer_info, "
+                f"  m.replaces_member_id, "
+                f"  rm.display_name AS replaces_display_name, rm.email AS replaces_email, "
+                f"  rm.avatar_data AS replaces_avatar, rm.last_working_day AS replaces_last_working_day, "
                 f"  tm.team_id AS source_team_id, tm.added_at "
                 f"FROM team_members tm JOIN members m ON m.id = tm.member_id "
+                f"LEFT JOIN members rm ON rm.id = m.replaces_member_id "
                 f"WHERE tm.team_id IN ({pl_sub}) "
                 f"ORDER BY tm.added_at DESC",
                 subtree_ids,
@@ -2543,6 +2553,10 @@ def admin_get_team(team_id: int, _sess: dict = Depends(require_admin)) -> dict[s
                     "last_working_day": r["last_working_day"],
                     "uses_own_computer": bool(r["uses_own_computer"]),
                     "own_computer_info": r["own_computer_info"],
+                    "replaces_member_id": r["replaces_member_id"],
+                    "replaces_member_label": r["replaces_display_name"] or r["replaces_email"] or None,
+                    "replaces_member_avatar": r["replaces_avatar"],
+                    "replaces_last_working_day": r["replaces_last_working_day"],
                     "direct": False,
                     "sub_team_names": [],
                 }
@@ -6235,6 +6249,10 @@ class HardwareIn(BaseModel):
     is_personal_owned: bool = False
     for_new_position: bool = False        # v1.9.289
     is_handed_down: bool = False          # v1.9.290
+    # v1.9.329 — สถานะคอมเก่าเมื่อได้รับเครื่องนี้
+    old_pc_bought_by_employee: bool = False
+    old_pc_broken: bool = False
+    old_pc_donated_sold: bool = False
 
     @field_validator("hw_type")
     @classmethod
@@ -6284,6 +6302,10 @@ class HardwarePatchIn(BaseModel):
     is_personal_owned: Optional[bool] = None
     for_new_position: Optional[bool] = None        # v1.9.289
     is_handed_down: Optional[bool] = None           # v1.9.290
+    # v1.9.329 — สถานะคอมเก่า
+    old_pc_bought_by_employee: Optional[bool] = None
+    old_pc_broken: Optional[bool] = None
+    old_pc_donated_sold: Optional[bool] = None
     _set_owner: bool = False    # internal flag (not used yet)
 
 
@@ -6387,8 +6409,9 @@ def admin_create_hardware(
             "                     serial_number, display, department, location, os_version, model, "
             "                     mainboard, gpu, battery, ups, status, quotation, "
             "                     device_subtype, capacity, current_member_id, photo_data, asset_photo_data, "
-            "                     unassigned_team_id, storage_location, note_category, is_personal_owned, for_new_position, is_handed_down) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "                     unassigned_team_id, storage_location, note_category, is_personal_owned, for_new_position, is_handed_down, "
+            "                     old_pc_bought_by_employee, old_pc_broken, old_pc_donated_sold) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 payload.hw_type,
                 payload.name.strip(),
@@ -6423,6 +6446,9 @@ def admin_create_hardware(
                 1 if payload.is_personal_owned else 0,
                 1 if payload.for_new_position else 0,
                 1 if payload.is_handed_down else 0,
+                1 if payload.old_pc_bought_by_employee else 0,
+                1 if payload.old_pc_broken else 0,
+                1 if payload.old_pc_donated_sold else 0,
             ),
         )
         hw_id = cur.lastrowid
@@ -6486,6 +6512,10 @@ def admin_update_hardware(
     # v1.9.290 — is_handed_down
     if "is_handed_down" in raw_body:
         updates["is_handed_down"] = 1 if raw_body["is_handed_down"] else 0
+    # v1.9.329 — สถานะคอมเก่า
+    for _fk in ("old_pc_bought_by_employee", "old_pc_broken", "old_pc_donated_sold"):
+        if _fk in raw_body:
+            updates[_fk] = 1 if raw_body[_fk] else 0
 
     with db_conn() as conn:
         existing = conn.execute("SELECT * FROM hardware WHERE id = ?", (hw_id,)).fetchone()
@@ -6744,19 +6774,35 @@ class MemberOwnComputerIn(BaseModel):
 
 @app.get("/api/admin/members/{mid}/own-computer")
 def admin_get_member_own_computer(mid: int, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
-    """v1.9.263 — รวม flag ส่วนตัว: own-computer + alumni (panel โหลดครั้งเดียว)"""
+    """v1.9.263 — รวม flag ส่วนตัว: own-computer + alumni (panel โหลดครั้งเดียว)
+    v1.9.328 — เพิ่ม replaces_member_id + alumni list สำหรับ dropdown 'มาแทน'"""
     with db_conn() as conn:
         r = conn.execute(
-            "SELECT uses_own_computer, own_computer_info, is_alumni, last_working_day "
+            "SELECT uses_own_computer, own_computer_info, is_alumni, last_working_day, replaces_member_id "
             "FROM members WHERE id = ?", (mid,)
         ).fetchone()
-    if not r:
-        raise HTTPException(status_code=404, detail="member not found")
+        if not r:
+            raise HTTPException(status_code=404, detail="member not found")
+        alumni_rows = conn.execute(
+            "SELECT id, display_name, email, avatar_data, last_working_day "
+            "FROM members WHERE is_alumni = 1 AND id != ? "
+            "ORDER BY (last_working_day IS NULL), last_working_day DESC, display_name COLLATE NOCASE ASC",
+            (mid,),
+        ).fetchall()
     return {
         "uses_own_computer": bool(r["uses_own_computer"]),
         "own_computer_info": r["own_computer_info"],
         "is_alumni": bool(r["is_alumni"]),
         "last_working_day": r["last_working_day"],
+        "replaces_member_id": r["replaces_member_id"],
+        "alumni_options": [
+            {
+                "id": a["id"],
+                "display_name": a["display_name"] or a["email"] or f"member#{a['id']}",
+                "avatar_data": a["avatar_data"],
+                "last_working_day": a["last_working_day"],
+            } for a in alumni_rows
+        ],
     }
 
 
@@ -6789,6 +6835,30 @@ def admin_set_member_alumni(mid: int, payload: MemberAlumniIn,
         conn.execute(
             "UPDATE members SET is_alumni = ?, last_working_day = ? WHERE id = ?",
             (1 if payload.is_alumni else 0, lwd, mid))
+    return {"ok": True}
+
+
+# v1.9.328 — บันทึกว่า member นี้มาแทนใคร (replace alumni)
+class MemberReplacesIn(BaseModel):
+    replaces_member_id: Optional[int] = None
+
+
+@app.patch("/api/admin/members/{mid}/replaces")
+def admin_set_member_replaces(mid: int, payload: MemberReplacesIn,
+                              _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    rmid = payload.replaces_member_id
+    with db_conn() as conn:
+        if not conn.execute("SELECT 1 FROM members WHERE id = ?", (mid,)).fetchone():
+            raise HTTPException(status_code=404, detail="member not found")
+        if rmid is not None:
+            if rmid == mid:
+                raise HTTPException(status_code=400, detail="cannot replace self")
+            r = conn.execute("SELECT is_alumni FROM members WHERE id = ?", (rmid,)).fetchone()
+            if not r:
+                raise HTTPException(status_code=404, detail="target member not found")
+            if not r["is_alumni"]:
+                raise HTTPException(status_code=400, detail="target must be alumni")
+        conn.execute("UPDATE members SET replaces_member_id = ? WHERE id = ?", (rmid, mid))
     return {"ok": True}
 
 

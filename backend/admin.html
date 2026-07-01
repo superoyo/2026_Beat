@@ -6940,6 +6940,17 @@ function renderTeamMembers(teamId, members) {
                 ${extraCapsules}
                 ${pcSection}
                 ${m.uses_own_computer ? `<div style="margin-top:8px;display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:9px;background:rgba(124,58,237,.08);border:1px solid rgba(124,58,237,.25);font-size:12px;color:#7c3aed;font-weight:600">🙋 ใช้คอมพิวเตอร์ของตนเอง${m.own_computer_info ? `<span style="color:var(--text-muted);font-weight:400">· ${escapeHtml(m.own_computer_info)}</span>` : ''}</div>` : ''}
+                ${(!m.is_alumni && m.replaces_member_id && m.replaces_member_label) ? `
+                  <div style="margin-top:8px;margin-left:24px;display:flex;align-items:center;gap:8px;padding:6px 11px;border-left:2px solid rgba(37,99,235,.35);background:rgba(37,99,235,.05);border-radius:0 8px 8px 0;font-size:12px">
+                    <span style="color:var(--primary);font-weight:700">↳ 🔄 มาแทน</span>
+                    ${m.replaces_member_avatar
+                      ? `<img src="${m.replaces_member_avatar}" alt="" style="width:22px;height:22px;border-radius:50%;object-fit:cover;flex-shrink:0" />`
+                      : `<div style="width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:700;font-size:11px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml((m.replaces_member_label || '?').trim().charAt(0).toUpperCase())}</div>`}
+                    <span style="color:var(--text);font-weight:600">${escapeHtml(m.replaces_member_label)}</span>
+                    ${m.replaces_last_working_day ? `<span style="color:var(--text-muted);font-size:11px">· ${escapeHtml(fmtDateThai(m.replaces_last_working_day))}</span>` : ''}
+                    <span style="font-size:10.5px;color:#92400e;background:rgba(245,158,11,.12);padding:1px 8px;border-radius:999px;font-weight:600">🎓 Alumni</span>
+                  </div>
+                ` : ''}
               </div>
               ${removeBtnOrLabel}
             </div>
@@ -11663,13 +11674,20 @@ function _pcdOwnerPanel(memberId, onChange, memberObj, deviceList) {
     const abox = wrap.querySelector('#pcd-alumni'); if (abox) abox.remove();
     const editBtn = wrap.querySelector('#pcd-edit-profile-btn');
     if (!box) return;
-    let st = { uses_own_computer: false, own_computer_info: '', is_alumni: false, last_working_day: '' };
+    let st = { uses_own_computer: false, own_computer_info: '', is_alumni: false, last_working_day: '', replaces_member_id: null, alumni_options: [] };
     try { st = await fetchJson('/api/admin/members/' + memberId + '/own-computer'); } catch (e) { /* default */ }
     const inp = 'width:100%;padding:8px 11px;font-size:13px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;box-sizing:border-box';
+    const _findAlum = (id) => (st.alumni_options || []).find(a => a.id === id);
     const renderView = () => {
       const chips = [];
       if (st.uses_own_computer) chips.push(`<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;background:rgba(124,58,237,.1);color:#7c3aed;padding:3px 10px;border-radius:999px;font-weight:600">🙋 ใช้เครื่องตนเอง${st.own_computer_info ? ': ' + escapeHtml(st.own_computer_info) : ''}</span>`);
       if (st.is_alumni) chips.push(`<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;background:rgba(245,158,11,.12);color:#92400e;padding:3px 10px;border-radius:999px;font-weight:600">🎓 Alumni${st.last_working_day ? ' · ' + escapeHtml(fmtDateThai(st.last_working_day)) : ''}</span>`);
+      // v1.9.328 — chip 'มาแทน' — แสดงเฉพาะพนักงานปัจจุบัน (ไม่ใช่ alumni)
+      if (!st.is_alumni && st.replaces_member_id) {
+        const alum = _findAlum(st.replaces_member_id);
+        const lbl = alum ? alum.display_name : ('member#' + st.replaces_member_id);
+        chips.push(`<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;background:rgba(37,99,235,.10);color:var(--primary);padding:3px 10px;border-radius:999px;font-weight:600">🔄 มาแทน ${escapeHtml(lbl)}</span>`);
+      }
       box.innerHTML = chips.length
         ? `<div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">โปรไฟล์</div><div style="display:flex;flex-wrap:wrap;gap:6px">${chips.join('')}</div>`
         : '';
@@ -11677,31 +11695,49 @@ function _pcdOwnerPanel(memberId, onChange, memberObj, deviceList) {
     };
     const renderEdit = () => {
       const on = !!st.uses_own_computer, aon = !!st.is_alumni;
+      const alumOpts = (st.alumni_options || []).map(a => {
+        const lwd = a.last_working_day ? ' (' + escapeHtml(fmtDateThai(a.last_working_day)) + ')' : '';
+        return `<option value="${a.id}" ${st.replaces_member_id === a.id ? 'selected' : ''}>${escapeHtml(a.display_name)}${lwd}</option>`;
+      }).join('');
       box.innerHTML = `
         <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">✏️ แก้ไขโปรไฟล์</div>
         <div style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px">
           <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;font-weight:600"><input type="checkbox" id="ep-byod" ${on ? 'checked' : ''} style="width:16px;height:16px;accent-color:#7c3aed;cursor:pointer" /><span>🙋 ใช้คอมพิวเตอร์ของตนเอง <span style="font-weight:500;color:var(--text-muted);font-size:11px">(BYOD)</span></span></label>
           <div id="ep-byod-wrap" style="margin-top:9px;${on ? '' : 'display:none'}"><input id="ep-byod-info" type="text" maxlength="300" value="${escapeHtml(st.own_computer_info || '')}" placeholder="เป็นคอมฯอะไร เช่น Macbook Pro M2 ส่วนตัว" style="${inp}" /></div>
         </div>
-        <div style="border:1px solid var(--border);border-radius:12px;padding:12px 14px">
+        <div style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px">
           <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;font-weight:600"><input type="checkbox" id="ep-alum" ${aon ? 'checked' : ''} style="width:16px;height:16px;accent-color:#d97706;cursor:pointer" /><span>🎓 เป็น Alumni <span style="font-weight:500;color:var(--text-muted);font-size:11px">(อดีตพนักงาน)</span></span></label>
           <div id="ep-alum-wrap" style="margin-top:9px;${aon ? '' : 'display:none'}"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px">วันทำงานวันสุดท้าย</label><input id="ep-alum-date" type="date" value="${escapeHtml(st.last_working_day || '')}" style="${inp}" /></div>
+        </div>
+        <div id="ep-replaces-wrap" style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;${aon ? 'display:none' : ''}">
+          <label style="display:block;font-size:13px;font-weight:600;margin-bottom:7px">🔄 มาแทนใคร <span style="font-weight:500;color:var(--text-muted);font-size:11px">(เลือก alumni ที่คนนี้มาแทน)</span></label>
+          <select id="ep-replaces" style="${inp}">
+            <option value="">— ไม่ระบุ —</option>
+            ${alumOpts}
+          </select>
         </div>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button type="button" id="ep-cancel" class="btn" style="font-size:12.5px;padding:6px 14px">ยกเลิก</button><button type="button" id="ep-save" class="btn primary" style="font-size:12.5px;padding:6px 16px">บันทึก</button></div>`;
       const bt = box.querySelector('#ep-byod'), bw = box.querySelector('#ep-byod-wrap');
       bt.addEventListener('change', () => bw.style.display = bt.checked ? '' : 'none');
       const at = box.querySelector('#ep-alum'), aw = box.querySelector('#ep-alum-wrap');
-      at.addEventListener('change', () => aw.style.display = at.checked ? '' : 'none');
+      const rw = box.querySelector('#ep-replaces-wrap');
+      at.addEventListener('change', () => {
+        aw.style.display = at.checked ? '' : 'none';
+        if (rw) rw.style.display = at.checked ? 'none' : '';   // alumni ไม่ต้องเลือก 'มาแทน'
+      });
       box.querySelector('#ep-cancel').addEventListener('click', renderView);
       box.querySelector('#ep-save').addEventListener('click', async (e) => {
         const btn = e.currentTarget;
         const byod = bt.checked, info = (box.querySelector('#ep-byod-info').value || '').trim();
         const alum = at.checked, lwd = (box.querySelector('#ep-alum-date').value || '').trim();
+        const rSel = box.querySelector('#ep-replaces');
+        const replacesId = (!alum && rSel && rSel.value) ? parseInt(rSel.value, 10) : null;
         btn.disabled = true; btn.textContent = 'กำลังบันทึก…';
         try {
           await fetchJson('/api/admin/members/' + memberId + '/own-computer', { method: 'PATCH', body: JSON.stringify({ uses_own_computer: byod, own_computer_info: info || null }) });
           await fetchJson('/api/admin/members/' + memberId + '/alumni', { method: 'PATCH', body: JSON.stringify({ is_alumni: alum, last_working_day: lwd || null }) });
-          st = { uses_own_computer: byod, own_computer_info: info, is_alumni: alum, last_working_day: lwd };
+          await fetchJson('/api/admin/members/' + memberId + '/replaces', { method: 'PATCH', body: JSON.stringify({ replaces_member_id: replacesId }) });
+          st = { ...st, uses_own_computer: byod, own_computer_info: info, is_alumni: alum, last_working_day: lwd, replaces_member_id: replacesId };
           renderView();
           if (typeof onChange === 'function') { try { onChange(); } catch (_) {} }
         } catch (err) { alert('บันทึกไม่สำเร็จ: ' + (err.message || err)); btn.disabled = false; btn.textContent = 'บันทึก'; }
@@ -14066,6 +14102,21 @@ async function showHardwareModal(hw, type, afterSubmit) {
             🔄 คอมฯส่งต่อมาจากท่านอื่น <span style="font-weight:500;color:var(--text-muted);font-size:12px">(มือสอง — ไม่นำไปคำนวณว่าควรเปลี่ยน)</span>
           </label>
         </div>
+        <div class="field" style="margin-top:14px;padding-top:10px;border-top:1px dashed var(--border)">
+          <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">สถานะคอมฯเก่า (เมื่อได้รับเครื่องนี้)</div>
+          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-weight:600;font-size:13.5px;margin-bottom:6px">
+            <input type="checkbox" id="hm-oldpc-bought" ${isEdit && hw.old_pc_bought_by_employee ? 'checked' : ''} style="width:17px;height:17px;accent-color:#f59e0b;cursor:pointer" />
+            💵 คอมฯเก่า พนักงานซื้อไป <span style="font-weight:500;color:var(--text-muted);font-size:12px">(พนักงานเดิมซื้อคอมฯเก่ากลับไปใช้เอง)</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-weight:600;font-size:13.5px;margin-bottom:6px">
+            <input type="checkbox" id="hm-oldpc-broken" ${isEdit && hw.old_pc_broken ? 'checked' : ''} style="width:17px;height:17px;accent-color:#dc2626;cursor:pointer" />
+            🛠 คอมฯเก่า ชำรุดซ่อมไม่ได้ <span style="font-weight:500;color:var(--text-muted);font-size:12px">(เสียหายเกินซ่อม)</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-weight:600;font-size:13.5px">
+            <input type="checkbox" id="hm-oldpc-donated" ${isEdit && hw.old_pc_donated_sold ? 'checked' : ''} style="width:17px;height:17px;accent-color:#0ea5e9;cursor:pointer" />
+            🎁 คอมฯเก่า บริจาค หรือ จำหน่าย <span style="font-weight:500;color:var(--text-muted);font-size:12px">(ให้องค์กรอื่น / ขายทอดตลาด)</span>
+          </label>
+        </div>
           </div><!-- /right column -->
         </div><!-- /2-col flex -->
         </div><!-- /details pane -->
@@ -14224,6 +14275,10 @@ async function showHardwareModal(hw, type, afterSubmit) {
         data.is_personal_owned = $('hm-personal-owned') ? $('hm-personal-owned').checked : false;
         data.for_new_position = $('hm-for-new-position') ? $('hm-for-new-position').checked : false;
         data.is_handed_down = $('hm-handed-down') ? $('hm-handed-down').checked : false;
+        // v1.9.329 — สถานะคอมเก่า
+        data.old_pc_bought_by_employee = $('hm-oldpc-bought') ? $('hm-oldpc-bought').checked : false;
+        data.old_pc_broken = $('hm-oldpc-broken') ? $('hm-oldpc-broken').checked : false;
+        data.old_pc_donated_sold = $('hm-oldpc-donated') ? $('hm-oldpc-donated').checked : false;
         // v1.9.65 — unlinked fields: ส่งเฉพาะ unassigned_team_id + storage_location
         // (เก็บเสมอ ไม่ว่าจะมี owner หรือไม่ — ถ้ามี owner ก็ยังเก็บเผื่อ admin ระบุไว้)
         const untSel = $('hm-unassigned-team');
