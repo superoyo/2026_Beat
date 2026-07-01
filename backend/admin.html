@@ -12026,6 +12026,7 @@ async function renderPcDashboard() {
 let _hwReportData = null;     // { events, years }
 let _hwReportYear = '';        // '' = ทุกปี
 let _hwReportTeam = '';        // v1.9.323 — '' = ทุกแผนก, หรือ team_id (string) — รวมทีมย่อยอัตโนมัติ
+let _hwReportPcCount = '';     // v1.9.326 — '' = ทุกจำนวน, '1' / '2' / '3+' — จำนวน PC ที่ถือครอง
 let _hwReportMemberFilter = new Set();  // member_ids ที่เลือกแสดง — ว่าง = แสดงทั้งหมด
 let _hwReportMemberSearch = '';          // search ใน popup
 const _THAI_MONTHS = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
@@ -12047,6 +12048,14 @@ async function renderHardwareReportPage() {
       <label style="font-size:12.5px;color:var(--text-muted);font-weight:600;margin-left:6px">🏢 แผนก:</label>
       <select id="hr-f-team" style="padding:7px 11px;border:1px solid var(--border);border-radius:8px;font-size:12.5px;font-family:inherit;background:var(--bg-card);color:var(--text);cursor:pointer;font-weight:600;box-sizing:border-box;min-width:220px;max-width:340px">
         <option value="">— ทุกแผนก —</option>
+      </select>
+      <label style="font-size:12.5px;color:var(--text-muted);font-weight:600;margin-left:6px">💻 คอมในครอบครอง:</label>
+      <select id="hr-f-pccount" style="padding:7px 11px;border:1px solid var(--border);border-radius:8px;font-size:12.5px;font-family:inherit;background:var(--bg-card);color:var(--text);cursor:pointer;font-weight:600;box-sizing:border-box">
+        <option value="">— ทุกจำนวน —</option>
+        <option value="0">0 เครื่อง (ไม่ถือครอง)</option>
+        <option value="1">1 เครื่อง</option>
+        <option value="2">2 เครื่อง</option>
+        <option value="3+">3 เครื่องขึ้นไป</option>
       </select>
     </div>
     <div id="hr-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:14px"></div>
@@ -12097,6 +12106,15 @@ async function renderHardwareReportPage() {
     _hwReportTeam = e.target.value;
     _renderHwReportTable();
   });
+  // v1.9.326 — จำนวน PC ที่ถือครอง
+  const pcCountSel = $('hr-f-pccount');
+  if (pcCountSel) {
+    pcCountSel.value = _hwReportPcCount;
+    pcCountSel.addEventListener('change', (e) => {
+      _hwReportPcCount = e.target.value;
+      _renderHwReportTable();
+    });
+  }
   _renderHwReportTable();
 }
 
@@ -12122,15 +12140,29 @@ function _renderHwReportTable() {
       teamLabel = sel ? sel.name : '';
     }
   }
-  // step 3: filter by selected members (empty = all)
+  // v1.9.326 — คำนวณจำนวน PC ปัจจุบันต่อ member (จาก _pcdAllPcs)
+  const _pcCountByMemberEarly = new Map();
+  (_pcdAllPcs || []).forEach(p => {
+    if (p.current_member_id != null) _pcCountByMemberEarly.set(p.current_member_id, (_pcCountByMemberEarly.get(p.current_member_id) || 0) + 1);
+  });
+  const _matchPcCount = (mid) => {
+    if (!_hwReportPcCount) return true;
+    const n = _pcCountByMemberEarly.get(mid) || 0;
+    if (_hwReportPcCount === '3+') return n >= 3;
+    return n === parseInt(_hwReportPcCount, 10);
+  };
+  const byPcCount = _hwReportPcCount ? byTeam.filter(e => e.member_id != null && _matchPcCount(e.member_id)) : byTeam;
+  // step 4: filter by selected members (empty = all)
   const filtered = _hwReportMemberFilter.size === 0
-    ? byTeam
-    : byTeam.filter(e => e.member_id != null && _hwReportMemberFilter.has(e.member_id));
+    ? byPcCount
+    : byPcCount.filter(e => e.member_id != null && _hwReportMemberFilter.has(e.member_id));
   const filterActive = _hwReportMemberFilter.size > 0;
   const teamFilterActive = !!_hwReportTeam;
+  const pcCountActive = !!_hwReportPcCount;
   if (countEl) {
     const tail = [];
     if (teamFilterActive && teamLabel) tail.push(`แผนก ${teamLabel}`);
+    if (pcCountActive) tail.push(_hwReportPcCount === '3+' ? 'ถือ ≥3 เครื่อง' : `ถือ ${_hwReportPcCount} เครื่อง`);
     if (filterActive) tail.push(`กรอง ${_hwReportMemberFilter.size} คน`);
     countEl.textContent = tail.length
       ? `${filtered.length} / ${byYear.length} รายการ (${tail.join(' · ')})`
@@ -12322,7 +12354,7 @@ function _toggleHwReportMemberPopup(anchor) {
   const existing = document.getElementById('hr-name-popup');
   if (existing) { existing.remove(); document.removeEventListener('mousedown', _hwReportMemberPopupClickOutside, true); return; }
   if (!_hwReportData) return;
-  // unique members from current year + team filter (v1.9.323 ใช้ team-tree descendants)
+  // unique members from current year + team filter + pc-count filter (v1.9.326)
   const events = _hwReportData.events || [];
   const byYear = _hwReportYear ? events.filter(e => String(e.year) === _hwReportYear) : events;
   let byTeam = byYear;
@@ -12335,8 +12367,19 @@ function _toggleHwReportMemberPopup(anchor) {
       byTeam = byYear.filter(e => (e.member_teams || []).some(n => nameSet.has(n)));
     }
   }
+  let byPcCount = byTeam;
+  if (_hwReportPcCount) {
+    const cnt = new Map();
+    (_pcdAllPcs || []).forEach(p => { if (p.current_member_id != null) cnt.set(p.current_member_id, (cnt.get(p.current_member_id) || 0) + 1); });
+    const match = (mid) => {
+      const n = cnt.get(mid) || 0;
+      if (_hwReportPcCount === '3+') return n >= 3;
+      return n === parseInt(_hwReportPcCount, 10);
+    };
+    byPcCount = byTeam.filter(e => e.member_id != null && match(e.member_id));
+  }
   const seen = new Map();
-  byTeam.forEach(e => {
+  byPcCount.forEach(e => {
     if (e.member_id != null && !seen.has(e.member_id)) {
       seen.set(e.member_id, { id: e.member_id, name: e.member_name || '—', email: e.member_email || '', avatar: e.member_avatar || null, teams: e.member_teams || [] });
     }
