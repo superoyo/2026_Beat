@@ -12335,6 +12335,17 @@ function _renderHwReportTable() {
     if (!pc || !pc.for_new_position) return '';
     return `<div style="margin-top:3px"><span style="display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:700;background:rgba(14,165,233,.12);color:#0284c7;border:1px solid rgba(14,165,233,.28)">🆕 ตำแหน่งเปิดใหม่</span></div>`;
   };
+  // v1.9.330 — chip 'สถานะคอมเก่า' ใต้คอมเดิม #1 — ดึงจาก flag ของ 'คอมที่เปลี่ยน' (เพราะ flag บันทึกเมื่อได้เครื่องใหม่)
+  const _oldPcStatusChips = (newHwId) => {
+    const pc = (_pcdAllPcs || []).find(x => x.id === newHwId);
+    if (!pc) return '';
+    const chips = [];
+    if (pc.old_pc_bought_by_employee) chips.push({ t: '💵 พนักงานซื้อไป', bg: 'rgba(245,158,11,.12)', fg: '#b45309', bd: 'rgba(245,158,11,.28)' });
+    if (pc.old_pc_broken) chips.push({ t: '🛠 ชำรุดซ่อมไม่ได้', bg: 'rgba(220,38,38,.10)', fg: 'var(--critical)', bd: 'rgba(220,38,38,.22)' });
+    if (pc.old_pc_donated_sold) chips.push({ t: '🎁 บริจาค/จำหน่าย', bg: 'rgba(14,165,233,.12)', fg: '#0284c7', bd: 'rgba(14,165,233,.28)' });
+    if (!chips.length) return '';
+    return `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">${chips.map(c => `<span style="display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:700;background:${c.bg};color:${c.fg};border:1px solid ${c.bd}">${c.t}</span>`).join('')}</div>`;
+  };
   const rows = filtered.map(e => {
     const prev = e.prev_pcs || [];
     const newAge = e.hardware_id ? _pcAgeLine(e.hardware_id) : '';
@@ -12342,12 +12353,16 @@ function _renderHwReportTable() {
     const newCell = e.hardware_id
       ? `<td style="${td};font-weight:600;cursor:pointer" class="hr-hw-click" data-hwid="${e.hardware_id}" title="คลิกดูรายละเอียดเครื่อง">${escapeHtml(e.new_pc || '—')}${newAge}${newPos}</td>`
       : `<td style="${td};font-weight:600">${escapeHtml(e.new_pc || '—')}${newAge}${newPos}</td>`;
+    // คอมเดิม #1 — ต่อท้ายด้วย chip สถานะคอมเก่า (ถ้ามี tick)
+    const prev1Cell = _prevCell(prev[0]);
+    const oldStatus = e.hardware_id ? _oldPcStatusChips(e.hardware_id) : '';
+    const prev1WithStatus = oldStatus ? prev1Cell.replace(/<\/td>$/, oldStatus + '</td>') : prev1Cell;
     return `<tr>
       <td style="${td};white-space:nowrap;color:var(--text-muted)">${e.year + 543}</td>
       <td style="${td};white-space:nowrap;color:var(--text-muted)">${_THAI_MONTHS[e.month] || e.month}</td>
       ${newCell}
       ${_renderNameCell(e)}
-      ${_prevCell(prev[0])}${_prevCell(prev[1])}${_prevCell(prev[2])}
+      ${prev1WithStatus}${_prevCell(prev[1])}${_prevCell(prev[2])}
     </tr>`;
   }).join('');
   // ปุ่ม filter ในหัวคอลัมน์ "ชื่อ" — สีเปลี่ยนเมื่อมี filter
