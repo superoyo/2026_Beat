@@ -6723,6 +6723,7 @@ function renderTeamUnassignedPcCard(pc) {
       repair:  { c: 'rgba(245,158,11,.15);color:#92400e',          l: '🔧 ซ่อม' },
       stock:   { c: 'rgba(99,102,241,.10);color:#3730a3',          l: '📦 Stock' },
       retired: { c: 'rgba(220,38,38,.10);color:var(--critical)',   l: '⚠ สำรอง' },
+      decommissioned: { c: 'rgba(82,82,82,.15);color:#404040',     l: '⛔ ปลดระวาง' },
     };
     const mp = map[pc.status];
     if (mp) statusBadge = `<span style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:700;background:${mp.c};white-space:nowrap">${mp.l}</span>`;
@@ -10879,6 +10880,7 @@ function renderHwUnassignedPcCard(pc) {
     repair:  ['🔧 ซ่อม', '#92400e'],
     stock:   ['📦 Stock', '#3730a3'],
     retired: ['⚠ สำรอง', 'var(--critical)'],
+    decommissioned: ['⛔ ปลดระวาง', '#404040'],
   };
   const st = statusMap[pc.status];
   const loc = pc.storage_location
@@ -12207,6 +12209,9 @@ function _renderHwReportTable() {
     if (pc.status === 'retired') {
       return { txt: '⚠ สำรอง', bg: 'rgba(220,38,38,.10)', fg: 'var(--critical)', bd: 'rgba(220,38,38,.20)' };
     }
+    if (pc.status === 'decommissioned') {
+      return { txt: '⛔ ปลดระวาง', bg: 'rgba(82,82,82,.12)', fg: '#404040', bd: 'rgba(82,82,82,.25)' };
+    }
     if (pc.unassigned_team_id != null || (pc.storage_location && String(pc.storage_location).trim()) || pc.status === 'stock') {
       const loc = pc.storage_location ? ' · ' + pc.storage_location : '';
       return { txt: '📦 ส่วนกลาง' + loc, bg: 'rgba(245,158,11,.12)', fg: '#92400e', bd: 'rgba(245,158,11,.25)' };
@@ -12759,6 +12764,7 @@ function _renderPcGridCard(h) {
     repair:  ['🔧 ซ่อม', '#92400e'],
     stock:   ['📦 Stock', '#3730a3'],
     retired: ['⚠ สำรอง', 'var(--critical)'],
+    decommissioned: ['⛔ ปลดระวาง', '#404040'],
   };
   const st = h.status ? statusMap[h.status] : null;
   let ownerHtml;
@@ -12847,6 +12853,7 @@ function renderHardwareRow(h) {
       repair:  { color: 'rgba(245,158,11,.15);color:#92400e',          label: '🔧 ซ่อม' },
       stock:   { color: 'rgba(99,102,241,.10);color:#3730a3',          label: '📦 Stock' },
       retired: { color: 'rgba(220,38,38,.10);color:var(--critical)',   label: '⚠ สำรอง' },
+      decommissioned: { color: 'rgba(82,82,82,.15);color:#404040',     label: '⛔ ปลดระวาง' },
     };
     const m = map[h.status];
     if (m) {
@@ -12911,6 +12918,7 @@ function showHardwareDetail(h, onChange) {
     repair:  ['background:rgba(245,158,11,.15);color:#92400e', '🔧 ซ่อม / รอซ่อม'],
     stock:   ['background:rgba(99,102,241,.10);color:#3730a3', '📦 Stock'],
     retired: ['background:rgba(220,38,38,.10);color:var(--critical)', '⚠ สำรอง'],
+    decommissioned: ['background:rgba(82,82,82,.15);color:#404040', '⛔ ปลดระวาง'],
   };
   let statusBadge = '';
   if (h.hw_type === 'pc' && h.status && statusMap[h.status]) {
@@ -13217,6 +13225,7 @@ function renderMyDeviceCard(h) {
       repair:  { c: 'rgba(245,158,11,.15);color:#92400e',          l: '🔧 ซ่อม' },
       stock:   { c: 'rgba(99,102,241,.10);color:#3730a3',          l: '📦 Stock' },
       retired: { c: 'rgba(220,38,38,.10);color:var(--critical)',   l: '⚠ สำรอง' },
+      decommissioned: { c: 'rgba(82,82,82,.15);color:#404040',     l: '⛔ ปลดระวาง' },
     };
     const m = map[h.status];
     if (m) statusBadge = `<span style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:${m.c}">${m.l}</span>`;
@@ -13315,6 +13324,7 @@ function renderTeamMemberPcCard(pc) {
       repair:  { c: 'rgba(245,158,11,.15);color:#92400e',          l: '🔧 ซ่อม' },
       stock:   { c: 'rgba(99,102,241,.10);color:#3730a3',          l: '📦 Stock' },
       retired: { c: 'rgba(220,38,38,.10);color:var(--critical)',   l: '⚠ สำรอง' },
+      decommissioned: { c: 'rgba(82,82,82,.15);color:#404040',     l: '⛔ ปลดระวาง' },
     };
     const mp = map[pc.status];
     if (mp) statusBadge = `<span style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:700;background:${mp.c};white-space:nowrap">${mp.l}</span>`;
@@ -13395,6 +13405,7 @@ function showTeamPcDetailModal(pc, teamId, afterEdit) {
       repair:  { c: 'rgba(245,158,11,.15);color:#92400e',          l: '🔧 ซ่อม / รอซ่อม' },
       stock:   { c: 'rgba(99,102,241,.10);color:#3730a3',          l: '📦 Stock' },
       retired: { c: 'rgba(220,38,38,.10);color:var(--critical)',   l: '⚠ สำรอง' },
+      decommissioned: { c: 'rgba(82,82,82,.15);color:#404040',     l: '⛔ ปลดระวาง' },
     };
     const mp = map[pc.status];
     if (mp) statusBadge = `<span style="display:inline-flex;align-items:center;padding:2px 10px;border-radius:999px;font-size:11.5px;font-weight:700;background:${mp.c};white-space:nowrap">${mp.l}</span>`;
@@ -13769,6 +13780,7 @@ async function showHardwareModal(hw, type, afterSubmit) {
     { value: 'repair', label: '🔧 ซ่อม / รอซ่อม' },
     { value: 'stock', label: '📦 เก็บ stock' },
     { value: 'retired', label: '⚠ สำรอง' },
+    { value: 'decommissioned', label: '⛔ ปลดระวาง' },
   ];
 
   // Inline section header — visual hint สำหรับการจัดกลุ่ม
