@@ -12479,6 +12479,24 @@ function _renderHwReportTable() {
     }
     return out;
   })();
+  // v1.9.335 — highlight สีให้กลุ่มที่คนเดียวกันมี 2+ เครื่อง (สลับ palette)
+  const _memberRowCount = new Map();
+  _grouped.forEach(e => { if (e.member_id != null) _memberRowCount.set(e.member_id, (_memberRowCount.get(e.member_id) || 0) + 1); });
+  const _GROUP_PALETTE = [
+    { bg: 'rgba(37,99,235,.07)',  bd: '#2563eb' },  // blue
+    { bg: 'rgba(16,185,129,.08)', bd: '#10b981' },  // green
+    { bg: 'rgba(245,158,11,.09)', bd: '#f59e0b' },  // amber
+    { bg: 'rgba(168,85,247,.07)', bd: '#a855f7' },  // purple
+    { bg: 'rgba(14,165,233,.08)', bd: '#0ea5e9' },  // sky
+    { bg: 'rgba(236,72,153,.06)', bd: '#ec4899' },  // pink
+  ];
+  const _groupColorIdx = new Map();
+  let _paletteCounter = 0;
+  _grouped.forEach(e => {
+    if (e.member_id != null && _memberRowCount.get(e.member_id) >= 2 && !_groupColorIdx.has(e.member_id)) {
+      _groupColorIdx.set(e.member_id, _paletteCounter++);
+    }
+  });
   const rows = _grouped.map(e => {
     const prev = e.prev_pcs || [];
     const newAge = e.hardware_id ? _pcAgeLine(e.hardware_id) : '';
@@ -12491,7 +12509,12 @@ function _renderHwReportTable() {
     const prev1Cell = _prevCell(prev[0]);
     const oldStatus = e.hardware_id ? _oldPcStatusChips(e.hardware_id) : '';
     const prev1WithStatus = oldStatus ? prev1Cell.replace(/<\/td>$/, oldStatus + '</td>') : prev1Cell;
-    return `<tr>
+    // v1.9.335 — inline background + left border สำหรับ row ที่อยู่ในกลุ่ม
+    const gIdx = (e.member_id != null && _groupColorIdx.has(e.member_id)) ? _groupColorIdx.get(e.member_id) : -1;
+    const trStyle = gIdx >= 0
+      ? ` style="background:${_GROUP_PALETTE[gIdx % _GROUP_PALETTE.length].bg};box-shadow:inset 3px 0 0 ${_GROUP_PALETTE[gIdx % _GROUP_PALETTE.length].bd}"`
+      : '';
+    return `<tr${trStyle}>
       <td style="${td};white-space:nowrap;color:var(--text-muted)">${e.year + 543}</td>
       <td style="${td};white-space:nowrap;color:var(--text-muted)">${_THAI_MONTHS[e.month] || e.month}</td>
       ${newCell}
