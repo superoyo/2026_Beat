@@ -416,9 +416,10 @@ function _initMonthPicker(pid, placeholder, allowClear) {
   const valid = (v) => v && /^\d{4}-\d{2}$/.test(v);
   let navYear = valid(hidden.value) ? parseInt(hidden.value.slice(0, 4), 10) : new Date().getFullYear();
   function paintFace() {
+    // v1.9.340 — แสดงปี ค.ศ. ให้สอดคล้องกับหน้าอื่น (input value เป็น ค.ศ. อยู่แล้ว)
     const v = hidden.value;
     face.innerHTML = valid(v)
-      ? `<span style="color:var(--text);font-weight:600">${_MTH_SHORT[parseInt(v.slice(5, 7), 10) - 1]} ${parseInt(v.slice(0, 4), 10) + 543}</span>`
+      ? `<span style="color:var(--text);font-weight:600">${_MTH_SHORT[parseInt(v.slice(5, 7), 10) - 1]} ${parseInt(v.slice(0, 4), 10)}</span>`
       : `<span style="color:var(--text-muted)">${escapeHtml(placeholder)}</span>`;
   }
   function renderPanel() {
@@ -428,7 +429,7 @@ function _initMonthPicker(pid, placeholder, allowClear) {
     pnl.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
         <button type="button" data-mth-nav="-1" style="border:none;background:var(--bg-soft);border-radius:6px;width:30px;height:30px;cursor:pointer;font-size:16px;font-family:inherit">‹</button>
-        <span style="font-weight:700;font-size:14.5px">${navYear + 543}</span>
+        <span style="font-weight:700;font-size:14.5px">${navYear}</span>
         <button type="button" data-mth-nav="1" style="border:none;background:var(--bg-soft);border-radius:6px;width:30px;height:30px;cursor:pointer;font-size:16px;font-family:inherit">›</button>
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
