@@ -154,3 +154,18 @@ curl http://localhost:8765/api/health
 ## License
 
 ใช้ส่วนตัวได้ตามสบาย ไม่รับประกันใดๆ
+
+## Tests (backend)
+
+Test suite ครอบ API หลัก (auth / hardware / members / report / credit card / teams) — 48 tests
+
+```bash
+# ครั้งแรก: สร้าง venv (ต้อง Python 3.10+ — server.py ใช้ syntax `str | None`)
+python3.12 -m venv .venv
+.venv/bin/pip install -r backend/requirements.txt pytest httpx
+
+# รัน
+cd backend && ../.venv/bin/python -m pytest tests/ -q
+```
+
+แต่ละ test ได้ SQLite เปล่าของตัวเอง (monkeypatch `server.DB_PATH` → tmp) — ไม่แตะ DB จริง
