@@ -6716,18 +6716,7 @@ function renderTeamUnassignedPcCard(pc) {
   if (pc.ram) specs.push(`🧠 ${escapeHtml(pc.ram)}`);
   if (pc.storage) specs.push(`💾 ${escapeHtml(pc.storage)}`);
   if (pc.os) specs.push(`💿 ${escapeHtml(pc.os)}${pc.os_version ? ' ' + escapeHtml(pc.os_version) : ''}`);
-  let statusBadge = '';
-  if (pc.status) {
-    const map = {
-      active:  { c: 'rgba(16,185,129,.12);color:var(--green)',     l: '✓ ใช้งาน' },
-      repair:  { c: 'rgba(245,158,11,.15);color:#92400e',          l: '🔧 ซ่อม' },
-      stock:   { c: 'rgba(99,102,241,.10);color:#3730a3',          l: '📦 Stock' },
-      retired: { c: 'rgba(220,38,38,.10);color:var(--critical)',   l: '⚠ สำรอง' },
-      decommissioned: { c: 'rgba(82,82,82,.15);color:#404040',     l: '⛔ ปลดระวาง' },
-    };
-    const mp = map[pc.status];
-    if (mp) statusBadge = `<span style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:700;background:${mp.c};white-space:nowrap">${mp.l}</span>`;
-  }
+  const statusBadge = hwStatusBadge(pc.status, { size: 'sm' });
   const headLine = pc.model
     ? `${escapeHtml(pc.name)} <span style="color:var(--text-muted);font-weight:500;font-size:12px">— ${escapeHtml(pc.model)}</span>`
     : escapeHtml(pc.name);
@@ -10701,6 +10690,26 @@ const HW_TYPES = [
   { id: 'network', label: 'Network Devices',   icon: '📡',  emptyText: 'ยังไม่มี Network Device' },
 ];
 
+// v1.9.337 — สถานะเครื่อง: single source of truth
+// เพิ่ม/แก้สถานะที่นี่ที่เดียว → badge ทุกหน้า + dropdown ในฟอร์มแก้ไขตามอัตโนมัติ
+// label = ป้ายสั้น (ใช้ในการ์ด/ตาราง) · full = ป้ายเต็ม (dropdown + detail panel)
+const HW_STATUS_META = {
+  active:         { label: '✓ ใช้งาน',    full: '✓ ใช้งาน',         fg: 'var(--green)',    bg: 'rgba(16,185,129,.12)' },
+  repair:         { label: '🔧 ซ่อม',      full: '🔧 ซ่อม / รอซ่อม',  fg: '#92400e',         bg: 'rgba(245,158,11,.15)' },
+  stock:          { label: '📦 Stock',      full: '📦 เก็บ stock',     fg: '#3730a3',         bg: 'rgba(99,102,241,.10)' },
+  retired:        { label: '⚠ สำรอง',      full: '⚠ สำรอง',          fg: 'var(--critical)', bg: 'rgba(220,38,38,.10)' },
+  decommissioned: { label: '⛔ ปลดระวาง',  full: '⛔ ปลดระวาง',       fg: '#404040',         bg: 'rgba(82,82,82,.15)' },
+};
+// pill badge — size: 'sm' (การ์ดเล็ก) | 'md' (การ์ดทั่วไป) | 'lg' (detail panel)
+function hwStatusBadge(status, { size = 'md', fullLabel = false } = {}) {
+  const m = HW_STATUS_META[status];
+  if (!m) return '';
+  const s = size === 'sm' ? 'padding:1px 8px;font-size:10.5px'
+    : size === 'lg' ? 'padding:3px 11px;font-size:11.5px'
+    : 'padding:2px 9px;font-size:11px';
+  return `<span style="display:inline-flex;align-items:center;border-radius:999px;font-weight:700;background:${m.bg};color:${m.fg};white-space:nowrap;${s}">${fullLabel ? m.full : m.label}</span>`;
+}
+
 // suggestion list สำหรับ device subtype — pre-fill dropdown
 const HW_DEVICE_SUBTYPES = [
   'External HDD', 'External SSD', 'USB Flash Drive',
@@ -10886,14 +10895,7 @@ function renderHwUnassignedPcCard(pc) {
   const typeBadge = isMac
     ? '<span style="font-size:10px;color:#7c3aed;font-weight:700">🍎 Mac</span>'
     : '<span style="font-size:10px;color:var(--text-muted)">💻 Notebook/PC</span>';
-  const statusMap = {
-    active:  ['✓ ใช้งาน', 'var(--green)'],
-    repair:  ['🔧 ซ่อม', '#92400e'],
-    stock:   ['📦 Stock', '#3730a3'],
-    retired: ['⚠ สำรอง', 'var(--critical)'],
-    decommissioned: ['⛔ ปลดระวาง', '#404040'],
-  };
-  const st = statusMap[pc.status];
+  const st = HW_STATUS_META[pc.status];
   const loc = pc.storage_location
     ? `<span style="color:#3730a3;font-weight:600">📍 ${escapeHtml(pc.storage_location)}</span>`
     : '<span style="color:var(--critical);font-style:italic">⚠ ยังไม่ระบุที่เก็บ</span>';
@@ -10907,7 +10909,7 @@ function renderHwUnassignedPcCard(pc) {
         <div style="font-size:11px;margin-top:3px">${loc}</div>
       </div>
       <div style="text-align:right;flex-shrink:0">
-        ${st ? `<div style="font-size:10.5px;font-weight:700;color:${st[1]};white-space:nowrap">${st[0]}</div>` : ''}
+        ${st ? `<div style="font-size:10.5px;font-weight:700;color:${st.fg};white-space:nowrap">${st.label}</div>` : ''}
         ${ageStr ? `<div style="font-size:15px;color:var(--accent);font-weight:800;margin-top:4px;white-space:nowrap;letter-spacing:.2px">⏱ ${escapeHtml(ageStr)}</div>` : '<div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-top:4px;white-space:nowrap">⏱ ไม่ระบุอายุ</div>'}
       </div>
     </div>
@@ -12406,11 +12408,10 @@ function _renderHwReportTable() {
       const label = pc.current_member_label || ('member#' + pc.current_member_id);
       return { txt: '👤 ' + label, bg: 'rgba(37,99,235,.10)', fg: 'var(--primary)', bd: 'rgba(37,99,235,.20)' };
     }
-    if (pc.status === 'retired') {
-      return { txt: '⚠ สำรอง', bg: 'rgba(220,38,38,.10)', fg: 'var(--critical)', bd: 'rgba(220,38,38,.20)' };
-    }
-    if (pc.status === 'decommissioned') {
-      return { txt: '⛔ ปลดระวาง', bg: 'rgba(82,82,82,.12)', fg: '#404040', bd: 'rgba(82,82,82,.25)' };
+    if (pc.status === 'retired' || pc.status === 'decommissioned') {
+      const m = HW_STATUS_META[pc.status];
+      const bd = pc.status === 'retired' ? 'rgba(220,38,38,.20)' : 'rgba(82,82,82,.25)';
+      return { txt: m.label, bg: m.bg, fg: m.fg, bd };
     }
     if (pc.unassigned_team_id != null || (pc.storage_location && String(pc.storage_location).trim()) || pc.status === 'stock') {
       const loc = pc.storage_location ? ' · ' + pc.storage_location : '';
@@ -13177,14 +13178,7 @@ function _renderPcGridCard(h) {
   const typeBadge = isMac
     ? '<span style="font-size:10px;color:#7c3aed;font-weight:700">🍎 Mac</span>'
     : '<span style="font-size:10px;color:var(--text-muted)">💻 PC</span>';
-  const statusMap = {
-    active:  ['✓ ใช้งาน', 'var(--green)'],
-    repair:  ['🔧 ซ่อม', '#92400e'],
-    stock:   ['📦 Stock', '#3730a3'],
-    retired: ['⚠ สำรอง', 'var(--critical)'],
-    decommissioned: ['⛔ ปลดระวาง', '#404040'],
-  };
-  const st = h.status ? statusMap[h.status] : null;
+  const st = h.status ? HW_STATUS_META[h.status] : null;
   let ownerHtml;
   if (h.current_member_label) {
     const m = _hwMembersCache.find(x => x.id === h.current_member_id);
@@ -13220,7 +13214,7 @@ function _renderPcGridCard(h) {
       <div style="min-width:0;flex:1">
         <div style="font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">
           <span style="overflow:hidden;text-overflow:ellipsis">${escapeHtml(h.model || h.name || '—')}</span> ${typeBadge}
-          ${st ? `<span style="font-size:10px;font-weight:700;color:${st[1]}">${st[0]}</span>` : ''}
+          ${st ? `<span style="font-size:10px;font-weight:700;color:${st.fg}">${st.label}</span>` : ''}
         </div>
         ${(h.model && h.name && h.name !== h.model) ? `<div style="font-size:10.5px;color:var(--text-soft);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🖥 ${escapeHtml(h.name)}</div>` : ''}
         <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">${sub || '—'}</div>
@@ -13264,20 +13258,7 @@ function renderHardwareRow(h) {
   const meta2Line = meta2.length ? `<div style="font-size:11px;color:var(--text-soft);line-height:1.5;margin-top:1px">${meta2.join(_sep)}</div>` : '';
 
   // Status badge (PC only — device/network ไม่มี status field)
-  let statusBadge = '';
-  if (h.hw_type === 'pc' && h.status) {
-    const map = {
-      active:  { color: 'rgba(16,185,129,.12);color:var(--green)',     label: '✓ ใช้งาน' },
-      repair:  { color: 'rgba(245,158,11,.15);color:#92400e',          label: '🔧 ซ่อม' },
-      stock:   { color: 'rgba(99,102,241,.10);color:#3730a3',          label: '📦 Stock' },
-      retired: { color: 'rgba(220,38,38,.10);color:var(--critical)',   label: '⚠ สำรอง' },
-      decommissioned: { color: 'rgba(82,82,82,.15);color:#404040',     label: '⛔ ปลดระวาง' },
-    };
-    const m = map[h.status];
-    if (m) {
-      statusBadge = `<span style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:${m.color}">${m.label}</span>`;
-    }
-  }
+  const statusBadge = (h.hw_type === 'pc') ? hwStatusBadge(h.status) : '';
 
   // Owner badge — มี owner = 👤 / คอมส่วนกลาง = 📦 ส่วนกลาง / ที่เหลือ = 🔓 ยังไม่ผูก
   const ownerBadge = h.current_member_label
@@ -13331,18 +13312,7 @@ function renderHardwareRow(h) {
 // v1.9.217 — Slide-in รายละเอียดอุปกรณ์ (คลิกการ์ด) + ปุ่ม ประวัติ/แก้ไข/ลบ อยู่ข้างใน
 function showHardwareDetail(h, onChange) {
   document.querySelectorAll('.sup-panel-wrap').forEach(e => e.remove());
-  const statusMap = {
-    active:  ['background:rgba(16,185,129,.12);color:var(--green)', '✓ ใช้งาน'],
-    repair:  ['background:rgba(245,158,11,.15);color:#92400e', '🔧 ซ่อม / รอซ่อม'],
-    stock:   ['background:rgba(99,102,241,.10);color:#3730a3', '📦 Stock'],
-    retired: ['background:rgba(220,38,38,.10);color:var(--critical)', '⚠ สำรอง'],
-    decommissioned: ['background:rgba(82,82,82,.15);color:#404040', '⛔ ปลดระวาง'],
-  };
-  let statusBadge = '';
-  if (h.hw_type === 'pc' && h.status && statusMap[h.status]) {
-    const [st, lb] = statusMap[h.status];
-    statusBadge = `<span style="display:inline-flex;align-items:center;padding:3px 11px;border-radius:999px;font-size:11.5px;font-weight:700;${st}">${lb}</span>`;
-  }
+  const statusBadge = (h.hw_type === 'pc') ? hwStatusBadge(h.status, { size: 'lg', fullLabel: true }) : '';
   // v1.9.255 — เจ้าของ = การ์ดคลิกได้ (รูป+ชื่อ) → เปิดโปรไฟล์ · ไม่มี owner = badge เดิม
   let ownerCardHtml = '', ownerBadge = '';
   if (h.current_member_id) {
@@ -13636,18 +13606,7 @@ function renderMyDeviceCard(h) {
     : '<div style="font-size:12px;color:var(--text-muted);font-style:italic">— ไม่มีรายละเอียด —</div>';
 
   // Status badge (PC only)
-  let statusBadge = '';
-  if (h.hw_type === 'pc' && h.status) {
-    const map = {
-      active:  { c: 'rgba(16,185,129,.12);color:var(--green)',     l: '✓ ใช้งาน' },
-      repair:  { c: 'rgba(245,158,11,.15);color:#92400e',          l: '🔧 ซ่อม' },
-      stock:   { c: 'rgba(99,102,241,.10);color:#3730a3',          l: '📦 Stock' },
-      retired: { c: 'rgba(220,38,38,.10);color:var(--critical)',   l: '⚠ สำรอง' },
-      decommissioned: { c: 'rgba(82,82,82,.15);color:#404040',     l: '⛔ ปลดระวาง' },
-    };
-    const m = map[h.status];
-    if (m) statusBadge = `<span style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:${m.c}">${m.l}</span>`;
-  }
+  const statusBadge = (h.hw_type === 'pc') ? hwStatusBadge(h.status) : '';
 
   return `
     <div class="card" style="display:flex;gap:14px;flex-wrap:wrap;padding:14px;margin-bottom:10px;align-items:flex-start">
@@ -13735,18 +13694,7 @@ function renderTeamMemberPcCard(pc) {
   if (pc.display) specs.push(`🖥 ${escapeHtml(pc.display)}`);
   if (pc.os) specs.push(`💿 ${escapeHtml(pc.os)}${pc.os_version ? ' ' + escapeHtml(pc.os_version) : ''}`);
 
-  let statusBadge = '';
-  if (pc.status) {
-    const map = {
-      active:  { c: 'rgba(16,185,129,.12);color:var(--green)',     l: '✓ ใช้งาน' },
-      repair:  { c: 'rgba(245,158,11,.15);color:#92400e',          l: '🔧 ซ่อม' },
-      stock:   { c: 'rgba(99,102,241,.10);color:#3730a3',          l: '📦 Stock' },
-      retired: { c: 'rgba(220,38,38,.10);color:var(--critical)',   l: '⚠ สำรอง' },
-      decommissioned: { c: 'rgba(82,82,82,.15);color:#404040',     l: '⛔ ปลดระวาง' },
-    };
-    const mp = map[pc.status];
-    if (mp) statusBadge = `<span style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:700;background:${mp.c};white-space:nowrap">${mp.l}</span>`;
-  }
+  const statusBadge = hwStatusBadge(pc.status, { size: 'sm' });
 
   const headLine = pc.model
     ? `${escapeHtml(pc.name)} <span style="color:var(--text-muted);font-weight:500;font-size:12px">— ${escapeHtml(pc.model)}</span>`
@@ -13816,18 +13764,7 @@ function showTeamPcDetailModal(pc, teamId, afterEdit) {
     : '';
 
   // Status badge
-  let statusBadge = '';
-  if (pc.status) {
-    const map = {
-      active:  { c: 'rgba(16,185,129,.12);color:var(--green)',     l: '✓ ใช้งาน' },
-      repair:  { c: 'rgba(245,158,11,.15);color:#92400e',          l: '🔧 ซ่อม / รอซ่อม' },
-      stock:   { c: 'rgba(99,102,241,.10);color:#3730a3',          l: '📦 Stock' },
-      retired: { c: 'rgba(220,38,38,.10);color:var(--critical)',   l: '⚠ สำรอง' },
-      decommissioned: { c: 'rgba(82,82,82,.15);color:#404040',     l: '⛔ ปลดระวาง' },
-    };
-    const mp = map[pc.status];
-    if (mp) statusBadge = `<span style="display:inline-flex;align-items:center;padding:2px 10px;border-radius:999px;font-size:11.5px;font-weight:700;background:${mp.c};white-space:nowrap">${mp.l}</span>`;
-  }
+  const statusBadge = hwStatusBadge(pc.status, { size: 'lg', fullLabel: true });
 
   // Field rows helper
   const fieldRow = (label, val) => val
@@ -14191,14 +14128,10 @@ async function showHardwareModal(hw, type, afterSubmit) {
   // Owner picker HTML — สร้างก่อน (ใช้ใน 2 ฟอร์ม)
   const ownerPickerHtml = renderHwOwnerPickerHtml(isEdit ? hw.current_member_id : null);
 
-  // Status options
+  // Status options — derive จาก HW_STATUS_META (single source of truth)
   const HW_STATUS_OPTS = [
     { value: '', label: '— ไม่ระบุ —' },
-    { value: 'active', label: '✓ ใช้งาน' },
-    { value: 'repair', label: '🔧 ซ่อม / รอซ่อม' },
-    { value: 'stock', label: '📦 เก็บ stock' },
-    { value: 'retired', label: '⚠ สำรอง' },
-    { value: 'decommissioned', label: '⛔ ปลดระวาง' },
+    ...Object.entries(HW_STATUS_META).map(([value, m]) => ({ value, label: m.full })),
   ];
 
   // Inline section header — visual hint สำหรับการจัดกลุ่ม
