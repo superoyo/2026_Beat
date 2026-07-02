@@ -145,7 +145,13 @@ const ADMIN_ONLY_ROUTES = new Set(['security', 'iam', 'members', 'sites', 'logs'
 // (dashboard เห็นได้ทุกบทบาท — ใช้เป็นหน้าแรกของ member ด้วย)
 const HIDE_FROM_MEMBER_NAV = new Set(['security', 'iam', 'members', 'sites', 'logs', 'teams', 'access-requests', 'domains-config', 'services-config', 'websites', 'hardware-pc-dashboard', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'hardware-report', 'financial-documents', 'ads', 'ads-benchmark', 'ads-audience', 'ads-campaigns', 'sso']);
 // v1.9.162 — IAM: route → module ที่ต้องมีสิทธิ์ (member ที่ถูก grant ถึงเข้าได้)
-const ROUTE_MODULE = { platforms: 'platform', ads: 'ads', 'ads-benchmark': 'ads', 'ads-audience': 'ads', 'ads-campaigns': 'ads', calendar: 'customer', domains: 'customer', websites: 'customer', 'services-config': 'customer', 'domains-config': 'customer', tv: 'tv', 'tv-scheduling': 'tv' };
+const ROUTE_MODULE = { platforms: 'platform', ads: 'ads', 'ads-benchmark': 'ads', 'ads-audience': 'ads', 'ads-campaigns': 'ads', calendar: 'customer', domains: 'customer', websites: 'customer', 'services-config': 'customer', 'domains-config': 'customer', tv: 'tv', 'tv-scheduling': 'tv',
+  // v1.9.339 — Device & Software: สิทธิ์ระดับเมนูย่อย
+  'hardware-pc-dashboard': 'hw-dashboard', 'hardware-pc': 'hw-pc', 'hardware-pc-unassigned': 'hw-central',
+  'hardware-device': 'hw-device', 'hardware-network': 'hw-network', 'hardware-report': 'hw-report',
+  'financial-documents': 'hw-findoc' };
+// ลำดับเมนูย่อยของ Device & Software — ใช้หา "เมนูแรกที่มีสิทธิ์" ของ member
+const HW_NAV_ROUTES = ['hardware-pc-dashboard', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'hardware-report', 'financial-documents'];
 let currentModules = new Set();   // module ที่ผู้ใช้ปัจจุบันเข้าถึงได้ (member)
 
 // ---------- routing ----------

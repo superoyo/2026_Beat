@@ -86,7 +86,9 @@ def add_to_team(team_id: int, member_id: int) -> None:
 
 
 def member_login(client, member_id: int, phone="+66800000000"):
-    """สร้าง member session + set cookie — คืน client เดิม"""
+    """สร้าง member session + set cookie — คืน client เดิม
+    เคลียร์ admin cookie ด้วย (กันกรณี test ใช้ admin_client แล้วสลับมาเป็น member)"""
+    client.cookies.delete("fct_session")
     token = server.create_member_session(member_id, phone)
     client.cookies.set("fct_member_session", token)
     return client

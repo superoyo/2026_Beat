@@ -1866,7 +1866,8 @@ async function renderDeviceSoftwarePage(active, arg) {
     central = (s.by_assignment && s.by_assignment.central != null) ? s.by_assignment.central : '';
   } catch { /* ไม่มี badge ถ้าโหลดไม่ได้ */ }
   // v1.9.314 — ย้าย Int. Platforms Config ไปเป็นปุ่ม Configuration ใน Platforms > Platform (admin only)
-  return renderSubmenuPage({ title: '🖥️ Device & Software', active: active || 'hardware-pc-dashboard', arg, items: [
+  // v1.9.339 — member: กรองเมนูย่อยตามสิทธิ์ IAM (hw-* modules) — admin เห็นครบ
+  const allItems = [
     { group: 'Hardware',  route: 'hardware-pc-dashboard',  ico: '📊',  label: 'Dashboard',             render: () => renderPcDashboard() },
     { group: 'Hardware',  route: 'hardware-pc',            ico: '💻',  label: 'Personal Computer', badge: pcTotal, render: () => renderHardwarePage('pc') },
     { group: 'Hardware',  route: 'hardware-pc-unassigned', ico: '📦',  label: 'คอมส่วนกลาง',       badge: central, render: () => renderHardwareUnassignedPcsPage() },
@@ -1874,7 +1875,14 @@ async function renderDeviceSoftwarePage(active, arg) {
     { group: 'Hardware',  route: 'hardware-network',       ico: '📡',  label: 'Network',               render: () => renderHardwarePage('network') },
     { group: 'Hardware',  route: 'hardware-report',        ico: '📑',  label: 'Report',                render: () => renderHardwareReportPage() },
     { group: 'Document',  route: 'financial-documents',    ico: '💰',  label: 'Financial Document',    render: () => renderFinancialDocumentsPage() },
-  ]});
+  ];
+  const items = (currentRole === 'member')
+    ? allItems.filter(it => currentModules.has(ROUTE_MODULE[it.route]))
+    : allItems;
+  if (!items.length) { location.hash = '#/dashboard'; return; }
+  const wanted = active || 'hardware-pc-dashboard';
+  const effActive = items.some(it => it.route === wanted) ? wanted : items[0].route;
+  return renderSubmenuPage({ title: '🖥️ Device & Software', active: effActive, arg, items });
 }
 function renderSettingPage(active, arg) {
   return renderSubmenuPage({ title: '⚙️ Setting', active: active || 'logs', arg, items: [

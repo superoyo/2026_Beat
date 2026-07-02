@@ -8,9 +8,13 @@ def test_admin_endpoint_rejects_unauthenticated(client):
 
 
 def test_admin_endpoint_rejects_plain_member(client):
+    # v1.9.339 — /api/admin/hardware เปิดผ่าน IAM แล้ว: member ไม่มีสิทธิ์ = 403 (login แล้วแต่ไม่ได้ grant)
     mid = make_member("สมาชิกธรรมดา")
     member_login(client, mid)
     r = client.get("/api/admin/hardware")
+    assert r.status_code == 403
+    # endpoint ที่ยังเป็น admin-only แท้ ๆ ยังต้อง 401
+    r = client.get("/api/iam/modules")
     assert r.status_code == 401
 
 

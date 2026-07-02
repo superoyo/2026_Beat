@@ -196,11 +196,18 @@ function attachSidebarHandlers() {
   if (currentRole === 'member') {
     document.querySelectorAll('.nav a[data-route]').forEach(a => {
       const route = a.dataset.route;
-      const reqMod = ROUTE_MODULE[route];
       let show;
-      if (reqMod) show = currentModules.has(reqMod);            // Platform/Customer/Ads → ตามสิทธิ์ module
-      else if (HIDE_FROM_MEMBER_NAV.has(route) || ADMIN_ONLY_ROUTES.has(route)) show = false;  // admin-only อื่น ๆ
-      else show = true;                                          // dashboard / my profile
+      if (route === 'hardware-pc-dashboard') {
+        // v1.9.339 — link Device & Software: แสดงถ้ามีสิทธิ์เมนูย่อยใดก็ได้ + ชี้ href ไปเมนูแรกที่มีสิทธิ์
+        const granted = HW_NAV_ROUTES.filter(r => currentModules.has(ROUTE_MODULE[r]));
+        show = granted.length > 0;
+        if (show) a.href = '#/' + granted[0];
+      } else {
+        const reqMod = ROUTE_MODULE[route];
+        if (reqMod) show = currentModules.has(reqMod);            // Platform/Customer/Ads → ตามสิทธิ์ module
+        else if (HIDE_FROM_MEMBER_NAV.has(route) || ADMIN_ONLY_ROUTES.has(route)) show = false;  // admin-only อื่น ๆ
+        else show = true;                                          // dashboard / my profile
+      }
       a.style.display = show ? '' : 'none';
     });
     // section admin-only: แสดงเฉพาะถ้ามี item ที่เห็นได้ข้างใน

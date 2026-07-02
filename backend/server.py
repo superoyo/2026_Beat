@@ -988,7 +988,11 @@ def init_db() -> None:
             )
 
         # v1.9.162 — seed IAM module config (platform=ทุกคน, customer/ads=restricted ตามเดิม)
-        for _mk, _mode in [("platform", "all"), ("customer", "restricted"), ("ads", "restricted"), ("tv", "restricted")]:
+        # v1.9.339 — hw-* (Device & Software submenus) = restricted (admin เท่านั้น จนกว่าจะ grant)
+        for _mk, _mode in [("platform", "all"), ("customer", "restricted"), ("ads", "restricted"), ("tv", "restricted"),
+                           ("hw-dashboard", "restricted"), ("hw-pc", "restricted"), ("hw-central", "restricted"),
+                           ("hw-device", "restricted"), ("hw-network", "restricted"), ("hw-report", "restricted"),
+                           ("hw-findoc", "restricted")]:
             conn.execute(
                 "INSERT OR IGNORE INTO iam_module_config(module_key, mode, updated_at) VALUES (?,?,?)",
                 (_mk, _mode, _now),
@@ -1210,6 +1214,32 @@ def require_any_auth(
         update_extension_heartbeat()
         return "api_key"
     raise HTTPException(status_code=401, detail="ไม่ได้เข้าสู่ระบบ")
+
+
+# v1.9.339 — ผ่านถ้าเป็น admin หรือ member ที่ได้รับ IAM module ใดโมดูลหนึ่งใน list
+# (ใช้เปิด endpoint ที่เดิม require_admin ให้ member ที่ถูก grant ผ่าน IAM เข้าได้)
+_HW_MODULE_KEYS = ("hw-dashboard", "hw-pc", "hw-central", "hw-device",
+                   "hw-network", "hw-report", "hw-findoc")
+
+
+def require_admin_or_modules(*module_keys: str):
+    def _dep(fct_session: Optional[str] = Cookie(default=None),
+             fct_member_session: Optional[str] = Cookie(default=None)) -> dict[str, Any]:
+        sess = get_session(fct_session)
+        if sess:
+            return {**sess, "role": "admin", "is_super": True}
+        msess = get_member_session(fct_member_session)
+        if not msess:
+            raise HTTPException(status_code=401, detail="ไม่ได้เข้าสู่ระบบ")
+        mid = msess["member_id"]
+        with db_conn() as conn:
+            row = conn.execute("SELECT is_admin FROM members WHERE id = ?", (mid,)).fetchone()
+            is_admin = bool(row["is_admin"]) if row else False
+            mods = _member_accessible_modules(conn, mid, is_admin)
+        if is_admin or any(k in mods for k in module_keys):
+            return {**msess, "role": "admin" if is_admin else "member", "is_super": False}
+        raise HTTPException(status_code=403, detail="คุณไม่มีสิทธิ์เข้าถึงเมนูนี้")
+    return _dep
 
 
 # ---------------------------------------------------------------------------
@@ -2421,7 +2451,7 @@ class TeamSitePatchIn(BaseModel):
 
 
 @app.get("/api/admin/teams")
-def admin_list_teams(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
+def admin_list_teams(_sess: dict = Depends(require_admin_or_modules(*_HW_MODULE_KEYS))) -> dict[str, Any]:
     with db_conn() as conn:
         rows = conn.execute(
             "SELECT t.id, t.name, t.description, t.created_at, t.display_order, "
@@ -3010,7 +3040,7 @@ class MemberRolePatch(BaseModel):
 
 
 @app.get("/api/admin/members")
-def admin_list_members(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
+def admin_list_members(_sess: dict = Depends(require_admin_or_modules(*_HW_MODULE_KEYS))) -> dict[str, Any]:
     with db_conn() as conn:
         rows = conn.execute(
             "SELECT id, phone, email, display_name, enabled, is_admin, avatar_data, "
@@ -6374,7 +6404,7 @@ def _change_hardware_owner(conn: sqlite3.Connection, hw_id: int, new_member_id: 
 @app.get("/api/admin/hardware")
 def admin_list_hardware(
     type: Optional[str] = None,
-    _sess: dict = Depends(require_admin),
+    _sess: dict = Depends(require_admin_or_modules(*_HW_MODULE_KEYS)),
 ) -> dict[str, Any]:
     """รายการ hardware (filter ตาม type ได้)"""
     sql = "SELECT * FROM hardware"
@@ -6398,7 +6428,7 @@ def admin_list_hardware(
 @app.post("/api/admin/hardware")
 def admin_create_hardware(
     payload: HardwareIn,
-    _sess: dict = Depends(require_admin),
+    _sess: dict = Depends(require_admin_or_modules(*_HW_MODULE_KEYS)),
 ) -> dict[str, Any]:
     now = utc_now().isoformat()
     s = lambda v: (v.strip() if isinstance(v, str) else v) or None
@@ -6478,7 +6508,7 @@ def admin_create_hardware(
 def admin_update_hardware(
     hw_id: int,
     payload: HardwarePatchIn,
-    _sess: dict = Depends(require_admin),
+    _sess: dict = Depends(require_admin_or_modules(*_HW_MODULE_KEYS)),
 ) -> dict[str, Any]:
     """Update fields. ถ้า current_member_id เปลี่ยน → end old assignment + start new."""
     raw_body = payload.model_dump(exclude_unset=True)
@@ -6542,7 +6572,7 @@ def admin_update_hardware(
 
 
 @app.get("/api/admin/hardware/{hw_id}/status-log")
-def admin_hardware_status_log(hw_id: int, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+def admin_hardware_status_log(hw_id: int, _sess: dict = Depends(require_admin_or_modules(*_HW_MODULE_KEYS))) -> dict[str, Any]:
     """v1.9.291 — ประวัติสถานะ (หมายเหตุ + checkbox) ใหม่บนสุด · ถ้ายังไม่มี log → สังเคราะห์สถานะปัจจุบัน"""
     with db_conn() as conn:
         hw = conn.execute("SELECT * FROM hardware WHERE id = ?", (hw_id,)).fetchone()
@@ -6566,7 +6596,7 @@ def admin_hardware_status_log(hw_id: int, _sess: dict = Depends(require_admin)) 
 @app.delete("/api/admin/hardware/{hw_id}")
 def admin_delete_hardware(
     hw_id: int,
-    _sess: dict = Depends(require_admin),
+    _sess: dict = Depends(require_admin_or_modules(*_HW_MODULE_KEYS)),
 ) -> dict[str, Any]:
     with db_conn() as conn:
         cur = conn.execute("DELETE FROM hardware WHERE id = ?", (hw_id,))
@@ -6576,7 +6606,7 @@ def admin_delete_hardware(
 
 
 @app.get("/api/admin/hardware/unassigned-pcs")
-def admin_unassigned_pcs(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
+def admin_unassigned_pcs(_sess: dict = Depends(require_admin_or_modules(*_HW_MODULE_KEYS))) -> dict[str, Any]:
     """v1.9.68 — รายการ PC ทั้งหมดที่ไม่มี owner (คอมส่วนกลาง) — JOIN teams เพื่อ snapshot ชื่อ"""
     with db_conn() as conn:
         rows = conn.execute(
@@ -6592,7 +6622,7 @@ def admin_unassigned_pcs(_sess: dict = Depends(require_admin)) -> dict[str, Any]
 # v1.9.312 — รายงานคอมที่ซื้อใหม่/เปลี่ยน: ตามวันสั่งซื้อ (purchased_at) — ตรงกับ dashboard ปฏิทินการซื้อ
 @app.get("/api/admin/hardware/pc-replacement-report")
 def admin_hardware_pc_replacement_report(
-    _sess: dict = Depends(require_admin),
+    _sess: dict = Depends(require_admin_or_modules(*_HW_MODULE_KEYS)),
 ) -> dict[str, Any]:
     """รายงาน PC ที่ซื้อใหม่ — 1 แถว ต่อ 1 PC (filter โดย purchased_at IS NOT NULL)
 
@@ -6699,7 +6729,7 @@ def admin_hardware_pc_replacement_report(
 @app.get("/api/admin/hardware/{hw_id}/history")
 def admin_hardware_history(
     hw_id: int,
-    _sess: dict = Depends(require_admin),
+    _sess: dict = Depends(require_admin_or_modules(*_HW_MODULE_KEYS)),
 ) -> dict[str, Any]:
     """ประวัติการครอบครอง — เรียง assigned_at DESC"""
     with db_conn() as conn:
@@ -6721,7 +6751,7 @@ class HardwareAssignmentAddIn(BaseModel):
 
 @app.post("/api/admin/hardware/{hw_id}/history")
 def admin_add_hardware_history(hw_id: int, payload: HardwareAssignmentAddIn,
-                               _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+                               _sess: dict = Depends(require_admin_or_modules(*_HW_MODULE_KEYS))) -> dict[str, Any]:
     with db_conn() as conn:
         if not conn.execute("SELECT 1 FROM hardware WHERE id=?", (hw_id,)).fetchone():
             raise HTTPException(status_code=404, detail="ไม่พบอุปกรณ์")
@@ -6741,7 +6771,7 @@ def admin_add_hardware_history(hw_id: int, payload: HardwareAssignmentAddIn,
 
 
 @app.get("/api/admin/members/{mid}/device-history")
-def admin_member_device_history(mid: int, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+def admin_member_device_history(mid: int, _sess: dict = Depends(require_admin_or_modules(*_HW_MODULE_KEYS))) -> dict[str, Any]:
     """อุปกรณ์ที่ member นี้เคยถือแต่ปัจจุบันไม่ใช่ owner แล้ว + อยู่ที่ไหนตอนนี้"""
     with db_conn() as conn:
         rows = conn.execute(
@@ -6779,7 +6809,7 @@ class MemberOwnComputerIn(BaseModel):
 
 
 @app.get("/api/admin/members/{mid}/own-computer")
-def admin_get_member_own_computer(mid: int, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+def admin_get_member_own_computer(mid: int, _sess: dict = Depends(require_admin_or_modules(*_HW_MODULE_KEYS))) -> dict[str, Any]:
     """v1.9.263 — รวม flag ส่วนตัว: own-computer + alumni (panel โหลดครั้งเดียว)
     v1.9.328 — เพิ่ม replaces_member_id + alumni list สำหรับ dropdown 'มาแทน'"""
     with db_conn() as conn:
@@ -7187,7 +7217,7 @@ class HardwareAssignmentPatchIn(BaseModel):
 def admin_update_hardware_assignment(
     aid: int,
     payload: HardwareAssignmentPatchIn,
-    _sess: dict = Depends(require_admin),
+    _sess: dict = Depends(require_admin_or_modules(*_HW_MODULE_KEYS)),
 ) -> dict[str, Any]:
     """แก้ไขประวัติการครอบครอง — admin ปรับวันที่/หมายเหตุ/member ได้"""
     raw = payload.model_dump(exclude_unset=True)
@@ -7255,7 +7285,7 @@ def _normalize_assignment_ts(v: str) -> str:
 @app.delete("/api/admin/hardware-assignments/{aid}")
 def admin_delete_hardware_assignment(
     aid: int,
-    _sess: dict = Depends(require_admin),
+    _sess: dict = Depends(require_admin_or_modules(*_HW_MODULE_KEYS)),
 ) -> dict[str, Any]:
     """ลบ record ประวัติการครอบครอง — ไม่กระทบ hardware.current_member_id"""
     with db_conn() as conn:
@@ -7405,7 +7435,7 @@ def _findoc_row(r: sqlite3.Row) -> dict[str, Any]:
 
 
 @app.get("/api/admin/financial-documents")
-def admin_list_findocs(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
+def admin_list_findocs(_sess: dict = Depends(require_admin_or_modules("hw-findoc"))) -> dict[str, Any]:
     """List financial documents — รวม page_count + first_page_image (ใช้ thumb_data ถ้ามี ถอย fallback image_data)"""
     with db_conn() as conn:
         rows = conn.execute(
@@ -7423,7 +7453,7 @@ def admin_list_findocs(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
 @app.post("/api/admin/financial-documents")
 def admin_create_findoc(
     payload: FinDocIn,
-    _sess: dict = Depends(require_admin),
+    _sess: dict = Depends(require_admin_or_modules("hw-findoc")),
 ) -> dict[str, Any]:
     now = utc_now().isoformat()
     s = lambda v: (v.strip() if isinstance(v, str) else v) or None
@@ -7447,7 +7477,7 @@ def admin_create_findoc(
 @app.get("/api/admin/financial-documents/{doc_id}")
 def admin_get_findoc(
     doc_id: int,
-    _sess: dict = Depends(require_admin),
+    _sess: dict = Depends(require_admin_or_modules("hw-findoc")),
 ) -> dict[str, Any]:
     with db_conn() as conn:
         row = conn.execute(
@@ -7471,7 +7501,7 @@ def admin_get_findoc(
 def admin_update_findoc(
     doc_id: int,
     payload: FinDocPatchIn,
-    _sess: dict = Depends(require_admin),
+    _sess: dict = Depends(require_admin_or_modules("hw-findoc")),
 ) -> dict[str, Any]:
     raw = payload.model_dump(exclude_unset=True)
     updates: dict[str, Any] = {}
@@ -7505,7 +7535,7 @@ def admin_update_findoc(
 @app.delete("/api/admin/financial-documents/{doc_id}")
 def admin_delete_findoc(
     doc_id: int,
-    _sess: dict = Depends(require_admin),
+    _sess: dict = Depends(require_admin_or_modules("hw-findoc")),
 ) -> dict[str, Any]:
     with db_conn() as conn:
         cur = conn.execute("DELETE FROM financial_documents WHERE id = ?", (doc_id,))
@@ -7518,7 +7548,7 @@ def admin_delete_findoc(
 def admin_add_findoc_page(
     doc_id: int,
     payload: FinDocPageIn,
-    _sess: dict = Depends(require_admin),
+    _sess: dict = Depends(require_admin_or_modules("hw-findoc")),
 ) -> dict[str, Any]:
     """เพิ่มหน้าใหม่ — page_order = max + 1 (auto)"""
     now = utc_now().isoformat()
@@ -7564,7 +7594,7 @@ class HwFinDocLinkIn(BaseModel):
 @app.get("/api/admin/hardware/{hw_id}/financial-documents")
 def admin_list_hw_findocs(
     hw_id: int,
-    _sess: dict = Depends(require_admin),
+    _sess: dict = Depends(require_admin_or_modules(*_HW_MODULE_KEYS)),
 ) -> dict[str, Any]:
     """Documents ที่ผูกกับ hardware นี้ (รวม thumb หน้าแรก + page_count)"""
     with db_conn() as conn:
@@ -7587,7 +7617,7 @@ def admin_list_hw_findocs(
 def admin_link_hw_findoc(
     hw_id: int,
     payload: HwFinDocLinkIn,
-    _sess: dict = Depends(require_admin),
+    _sess: dict = Depends(require_admin_or_modules(*_HW_MODULE_KEYS)),
 ) -> dict[str, Any]:
     """ผูก financial document กับ hardware (M:N)"""
     now = utc_now().isoformat()
@@ -7615,7 +7645,7 @@ def admin_link_hw_findoc(
 def admin_unlink_hw_findoc(
     hw_id: int,
     doc_id: int,
-    _sess: dict = Depends(require_admin),
+    _sess: dict = Depends(require_admin_or_modules(*_HW_MODULE_KEYS)),
 ) -> dict[str, Any]:
     with db_conn() as conn:
         cur = conn.execute(
@@ -11252,6 +11282,14 @@ IAM_MODULES = [
     {"key": "customer", "label": "Customer", "icon": "🌐", "desc": "เมนู Customer (Calendar / Websites / Services)"},
     {"key": "ads",      "label": "Ads",      "icon": "💰", "desc": "เมนู Ads (ยอดใช้จ่ายค่าโฆษณา)"},
     {"key": "tv",       "label": "TV",       "icon": "📺", "desc": "เมนู TV (TV Ad Monitor — ฝัง Scheduling)"},
+    # v1.9.339 — Device & Software: กำหนดสิทธิ์ได้ถึงระดับเมนูย่อย
+    {"key": "hw-dashboard", "label": "Device & Software · Dashboard",          "icon": "📊", "desc": "ภาพรวมคอมพิวเตอร์ + ปฏิทินการซื้อ"},
+    {"key": "hw-pc",        "label": "Device & Software · Personal Computer",  "icon": "💻", "desc": "รายการ PC ทั้งหมด + แก้ไข"},
+    {"key": "hw-central",   "label": "Device & Software · คอมส่วนกลาง",        "icon": "📦", "desc": "PC ที่ไม่มี owner (stock / ส่วนกลาง)"},
+    {"key": "hw-device",    "label": "Device & Software · Device",             "icon": "📱", "desc": "อุปกรณ์อื่น (HDD / Monitor / WACOM ฯลฯ)"},
+    {"key": "hw-network",   "label": "Device & Software · Network",            "icon": "📡", "desc": "อุปกรณ์เครือข่าย"},
+    {"key": "hw-report",    "label": "Device & Software · Report",             "icon": "📑", "desc": "รายงานการเปลี่ยนเครื่อง"},
+    {"key": "hw-findoc",    "label": "Device & Software · Financial Document", "icon": "💰", "desc": "เอกสารการสั่งซื้อ (invoice / ใบเสร็จ)"},
 ]
 # v1.9.215 — client_id ของ SSO ที่ผูกกับ module (กันคนไม่มีสิทธิ์ขอ embed-token ไปเปิดเอง)
 SSO_CLIENT_MODULE = {TV_MONITOR_CLIENT_ID: "tv"}
