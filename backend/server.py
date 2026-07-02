@@ -11372,6 +11372,27 @@ def serve_admin() -> FileResponse:
                         headers={"Cache-Control": "no-store"})
 
 
+# v1.9.338 — admin SPA JS แยกเป็นโมดูลใน admin_js/ → ต่อกลับเป็นสคริปต์เดียวตอน serve
+# (browser เห็น script context เดียวเหมือน inline เดิม — hoisting/top-level scope ไม่เปลี่ยน)
+ADMIN_JS_DIR = BASE_DIR / "admin_js"
+
+
+@app.get("/admin-app.js", include_in_schema=False)
+def serve_admin_app_js() -> Response:
+    parts = sorted(ADMIN_JS_DIR.glob("*.js")) if ADMIN_JS_DIR.exists() else []
+    if not parts:
+        raise HTTPException(status_code=404, detail="admin_js missing")
+    chunks = []
+    for p in parts:
+        t = p.read_text(encoding="utf-8")
+        if not t.endswith("\n"):
+            t += "\n"
+        chunks.append(t)
+    return Response(content="".join(chunks),
+                    media_type="application/javascript; charset=utf-8",
+                    headers={"Cache-Control": "no-store"})
+
+
 @app.get("/admin/login", include_in_schema=False)
 def serve_admin_login_redirect() -> RedirectResponse:
     """รวมหน้า login เป็น /login เดียว — ระบบ auto-detect role จาก credential"""
