@@ -572,7 +572,7 @@ async function renderTvScheduling() {
   if (btn) btn.onclick = () => window.open(popUrl, '_blank', 'noopener,noreferrer');
 }
 // ===== Credit Card reconciliation (Platform tab) — v1.9.218 =====
-let _ccState = { view: 'bills', billId: null, bills: [], selInvoice: null, summaryBillId: null };
+let _ccState = { view: 'bills', billId: null, bills: [], selInvoice: null, summaryBillId: null, txnSort: 'doc' };   // txnSort: 'doc' = ตามเอกสาร | 'group' = ตามกลุ่ม platform (v1.9.345)
 const _CC_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 function _ccMoney(n){ if(n==null||isNaN(n))return '—'; return Number(n).toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function _ccMonthLabel(m,y){ const mm=(m>=1&&m<=12)?_CC_MONTHS[m-1]:'—'; return `${mm} ${y||'—'}`; }
@@ -1039,16 +1039,22 @@ async function _ccRenderDetail(v){
     </div>
     <div style="display:grid;grid-template-columns:minmax(300px,460px) 320px;gap:14px;align-items:start">
       <div>
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
           <span style="font-size:12px;font-weight:700;color:var(--text-muted)">รายการจากบัตร (${total})</span>
-          <input id="cc-txn-search" placeholder="🔍 ค้นหารายการ…" style="font-size:12px;padding:5px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);width:180px;max-width:55%" />
+          <div style="display:flex;gap:6px;align-items:center">
+            <select id="cc-txn-sort" title="เรียงลำดับ" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600">
+              <option value="doc" ${_ccState.txnSort!=='group'?'selected':''}>📄 เรียงตามเอกสาร</option>
+              <option value="group" ${_ccState.txnSort==='group'?'selected':''}>🗂 เรียงตามกลุ่ม</option>
+            </select>
+            <input id="cc-txn-search" placeholder="🔍 ค้นหารายการ…" style="font-size:12px;padding:5px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);width:140px" />
+          </div>
         </div>
         <div id="cc-txn-col"></div>
       </div>
       <div><div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px">Invoice / Receipt (${d.invoices.length})</div><div id="cc-inv-col"></div></div>
     </div>`;
   // v1.9.314 — รายการในบัตรกดเพื่อ edit description (user_note) ได้ inline
-  $('cc-txn-col').innerHTML=d.transactions.map(t=>{
+  const _txnCard=(t)=>{
     const ms=matchByTxn[t.id]||[];
     const chips=ms.map(mm=>`<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;background:rgba(16,185,129,.12);color:var(--green);font-weight:600;margin:3px 3px 0 0">${escapeHtml((mm.inv&&mm.inv.company)||'invoice')} ${_ccMoney(mm.inv&&mm.inv.amount)} <span class="cc-unmatch" data-match="${mm.matchId}" style="cursor:pointer;opacity:.7">✕</span></span>`).join('');
     const note=t.user_note||'';
@@ -1068,7 +1074,34 @@ async function _ccRenderDetail(v){
         <button type="button" class="btn cc-txn-cancel" title="ยกเลิก (Esc)" style="font-size:13px;padding:4px 9px;line-height:1">✕</button>
       </div>
     </div>`;
-  }).join('')||'<div class="empty" style="font-size:12px">ไม่มีรายการ</div>';
+  };
+  // v1.9.345 — เรียงตามเอกสาร (ลำดับใบแจ้งยอด) หรือ เรียงตามกลุ่ม platform (มี header + ยอดรวมต่อกลุ่ม)
+  let txnColHtml;
+  if(_ccState.txnSort==='group'){
+    const groups=new Map();
+    d.transactions.forEach(t=>{
+      let g=_ccDetectPlatform(t.description||'');
+      if(!g){ for(const mm of (matchByTxn[t.id]||[])){ if(mm.inv){ const q=_ccDetectPlatform(mm.inv.company||''); if(q){ g=q; break; } } } }
+      g=g||'อื่น ๆ';
+      if(!groups.has(g)) groups.set(g,[]);
+      groups.get(g).push(t);
+    });
+    const names=[...groups.keys()].filter(n=>n!=='อื่น ๆ').sort((a,b)=>a.localeCompare(b,'th'));
+    if(groups.has('อื่น ๆ')) names.push('อื่น ๆ');
+    txnColHtml=names.map(name=>{
+      const arr=groups.get(name);
+      const sum=arr.reduce((s,t)=>s+(t.amount||0),0);
+      return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:12px 0 6px;padding:0 2px">
+        <span style="font-size:11.5px;font-weight:700;color:var(--primary-dark);text-transform:uppercase;letter-spacing:.4px">🗂 ${escapeHtml(name)} <span style="color:var(--text-muted);font-weight:600">(${arr.length})</span></span>
+        <span style="font-size:11.5px;font-weight:700;color:var(--text-muted);font-variant-numeric:tabular-nums">${_ccMoney(sum)}</span>
+      </div>`+arr.map(_txnCard).join('');
+    }).join('');
+  }else{
+    txnColHtml=d.transactions.map(_txnCard).join('');
+  }
+  $('cc-txn-col').innerHTML=txnColHtml||'<div class="empty" style="font-size:12px">ไม่มีรายการ</div>';
+  const _txnSortSel=$('cc-txn-sort');
+  if(_txnSortSel) _txnSortSel.addEventListener('change',(e)=>{ _ccState.txnSort=e.target.value; _ccRenderDetail($('cc-view')); });
   const poolInv=d.pool_invoices||[];
   $('cc-inv-col').innerHTML=(
     d.invoices.map(i=>_ccInvCardHtml(i, matchedInvIds.has(i.id), false)).join('')
