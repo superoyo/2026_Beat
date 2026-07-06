@@ -777,7 +777,21 @@ function _ccRenderBills(v){
     ${bills.length?rows:'<div class="empty">ยังไม่มีบิล — กด “สร้างใบแจ้งหนี้บัตรเครดิต” แล้วอัพโหลดใบแจ้งยอดบัตรเครดิต</div>'}`;
   $('cc-new-bill').onclick=()=>_ccCreateBill();
   $('cc-up-invoice').onclick=()=>_ccUploadInvoice(null);
-  v.querySelectorAll('[data-cc-bill]').forEach(c=>c.addEventListener('click',()=>{ _ccState.billId=parseInt(c.dataset.ccBill,10); _ccRender(); }));
+  v.querySelectorAll('[data-cc-bill]').forEach(c=>c.addEventListener('click',(e)=>{
+    if(e.target.closest('.cc-bill-done')) return;   // ปุ่มเสร็จสิ้น — ไม่เปิดบิล
+    _ccState.billId=parseInt(c.dataset.ccBill,10); _ccRender();
+  }));
+  // v1.9.344 — toggle เสร็จสิ้น
+  v.querySelectorAll('.cc-bill-done').forEach(btn=>btn.addEventListener('click',async(e)=>{
+    e.stopPropagation();
+    const bid=parseInt(btn.dataset.bill,10);
+    const next=btn.dataset.done!=='1';
+    btn.disabled=true;
+    try{
+      await fetchJson('/api/creditcard/bills/'+bid+'/completed',{method:'PATCH',body:JSON.stringify({completed:next})});
+      await _ccLoadBills(); _ccRender();
+    }catch(err){ alert(err.message||err); btn.disabled=false; }
+  }));
 }
 // v1.9.342 — ปฏิทินเดือน/ปี (สไตล์เดียวกับ tile วันซื้อของ hardware — โทนน้ำเงิน)
 function _ccBillMonthTile(m,y){
@@ -795,22 +809,27 @@ function _ccFmtDue(iso){
 }
 function _ccBillCard(b,showTile){
   const complete=b.txn_count>0 && b.matched_txn>=b.txn_count;
+  const done=!!b.is_completed;   // v1.9.344 — ทำเครื่องหมายเสร็จสิ้นเอง
   const pct=b.txn_count?Math.round(b.matched_txn/b.txn_count*100):0;
   const tile=showTile?_ccBillMonthTile(b.bill_month,b.bill_year):'<div style="min-width:64px;flex-shrink:0"></div>';
-  // v1.9.343 — chip กำหนดชำระ หน้าเลขบัตร — เลยกำหนด (และยังจับคู่ไม่ครบ) = สีแดง
+  // v1.9.343 — chip กำหนดชำระ หน้าเลขบัตร — เลยกำหนด (ยังไม่ครบ + ยังไม่เสร็จสิ้น) = สีแดง
   let dueChip='';
   if(b.due_date){
-    const overdue=!complete && b.due_date < new Date().toISOString().slice(0,10);
+    const overdue=!complete && !done && b.due_date < new Date().toISOString().slice(0,10);
     dueChip=`<span title="วันกำหนดชำระ" style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:999px;font-size:11.5px;font-weight:700;vertical-align:middle;margin-right:7px;${overdue?'background:rgba(220,38,38,.12);color:var(--critical);border:1px solid rgba(220,38,38,.25)':'background:rgba(245,158,11,.13);color:#92400e;border:1px solid rgba(245,158,11,.28)'}">⏰ ชำระ ${escapeHtml(_ccFmtDue(b.due_date))}${overdue?' · เลยกำหนด':''}</span>`;
   }
+  // v1.9.344 — ปุ่ม toggle เสร็จสิ้น (คลิกไม่เปิดบิล)
+  const doneBtn=`<button type="button" class="cc-bill-done" data-bill="${b.id}" data-done="${done?1:0}" title="${done?'คลิกเพื่อยกเลิกเสร็จสิ้น':'คลิกเพื่อทำเครื่องหมายเสร็จสิ้น'}"
+    style="display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:999px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;${done?'background:var(--green);color:#fff;border:1px solid var(--green)':'background:var(--bg-card);color:var(--text-muted);border:1.5px dashed var(--border-strong)'}">${done?'✓ เสร็จสิ้น':'☐ เสร็จสิ้น'}</button>`;
   return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
     ${tile}
-    <div class="card hw-card" data-cc-bill="${b.id}" style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:0;padding:12px 16px;flex:1;min-width:0">
+    <div class="card hw-card" data-cc-bill="${b.id}" style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:0;padding:12px 16px;flex:1;min-width:0;${done?'opacity:.75':''}">
       <div style="min-width:0">
         <div style="font-size:15px;font-weight:800">${dueChip}💳 ${escapeHtml(b.card_number||'บัตรเครดิต')} · ${_ccMonthLabel(b.bill_month,b.bill_year)}</div>
         <div style="font-size:12px;color:var(--text-muted);margin-top:3px">${b.txn_count} รายการ · ยอดรวม ${_ccMoney(b.txn_total)} · invoice ${b.invoice_count} ใบ${b.created_by?' · โดย '+escapeHtml(b.created_by):''}</div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+        ${doneBtn}
         <span style="display:inline-flex;align-items:center;padding:3px 11px;border-radius:999px;font-size:12px;font-weight:700;${complete?'background:rgba(16,185,129,.12);color:var(--green)':'background:rgba(245,158,11,.14);color:#92400e'}">${complete?'✓ ครบ':'จับคู่ '+pct+'%'}</span>
         <span class="hw-chev" style="font-size:22px;line-height:1">›</span>
       </div>

@@ -962,9 +962,14 @@ def init_db() -> None:
         if "user_note" not in _cct:
             conn.execute("ALTER TABLE cc_transactions ADD COLUMN user_note TEXT")
         # v1.9.343 — cc_bills: วันกำหนดชำระ (ISO YYYY-MM-DD)
+        # v1.9.344 — is_completed: ทำเครื่องหมายเสร็จสิ้น (ปิดการเตือนเลยกำหนด)
         _ccb = [r["name"] for r in conn.execute("PRAGMA table_info(cc_bills)").fetchall()]
         if "due_date" not in _ccb:
             conn.execute("ALTER TABLE cc_bills ADD COLUMN due_date TEXT")
+        if "is_completed" not in _ccb:
+            conn.execute("ALTER TABLE cc_bills ADD COLUMN is_completed INTEGER NOT NULL DEFAULT 0")
+        if "completed_at" not in _ccb:
+            conn.execute("ALTER TABLE cc_bills ADD COLUMN completed_at TEXT")
 
         # ---- 4. seed config defaults
         for key, value in DEFAULT_CONFIG.items():
@@ -10908,6 +10913,23 @@ def cc_delete_bill_page(bid: int, page_id: int,
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="ไม่พบหน้าเอกสาร")
     return {"ok": True}
+
+
+# v1.9.344 — toggle เสร็จสิ้น (completed) ของบิล
+class CcBillCompletedIn(BaseModel):
+    completed: bool
+
+
+@app.patch("/api/creditcard/bills/{bid}/completed")
+def cc_set_bill_completed(bid: int, payload: CcBillCompletedIn,
+                          _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        if not conn.execute("SELECT 1 FROM cc_bills WHERE id=?", (bid,)).fetchone():
+            raise HTTPException(status_code=404, detail="ไม่พบบิล")
+        conn.execute("UPDATE cc_bills SET is_completed=?, completed_at=?, updated_at=? WHERE id=?",
+                     (1 if payload.completed else 0, now if payload.completed else None, now, bid))
+    return {"ok": True, "is_completed": payload.completed}
 
 
 @app.delete("/api/creditcard/bills/{bid}")

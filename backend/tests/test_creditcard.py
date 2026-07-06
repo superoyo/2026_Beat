@@ -144,3 +144,26 @@ def test_due_date_roundtrip(admin_client):
     assert r.status_code == 200
     d = admin_client.get(f"/api/creditcard/bills/{bid}").json()
     assert d["bill"]["due_date"] == "2026-07-01"
+
+
+def test_bill_completed_toggle(admin_client):
+    # v1.9.344 — ทำเครื่องหมายเสร็จสิ้น (ปิดเตือนเลยกำหนด)
+    r = admin_client.post("/api/creditcard/bills", json={
+        "card_number": "DONE", "bill_month": 5, "bill_year": 2026,
+        "due_date": "2026-05-25", "pages": [], "transactions": []})
+    bid = r.json()["id"]
+
+    r = admin_client.patch(f"/api/creditcard/bills/{bid}/completed", json={"completed": True})
+    assert r.status_code == 200
+    me = [b for b in admin_client.get("/api/creditcard/bills").json()["bills"] if b["id"] == bid][0]
+    assert me["is_completed"] == 1
+    assert me["completed_at"] is not None
+
+    r = admin_client.patch(f"/api/creditcard/bills/{bid}/completed", json={"completed": False})
+    assert r.status_code == 200
+    me = [b for b in admin_client.get("/api/creditcard/bills").json()["bills"] if b["id"] == bid][0]
+    assert me["is_completed"] == 0
+    assert me["completed_at"] is None
+
+    assert admin_client.patch("/api/creditcard/bills/999999/completed",
+                              json={"completed": True}).status_code == 404
