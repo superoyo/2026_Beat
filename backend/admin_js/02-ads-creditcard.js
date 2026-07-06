@@ -974,6 +974,17 @@ async function _ccRenderDetail(v){
       </div>
     </div>
     <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:10px">ลาก invoice จากขวา → วางบนรายการซ้ายเพื่อจับคู่ · หรือคลิก invoice แล้วคลิกรายการ</div>
+    <!-- v1.9.341 — เอกสารต้นฉบับ (statement pages): ดูรูปที่อัพตอน OCR + อัพเพิ่ม/ลบ -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <span style="font-size:12px;font-weight:700;color:var(--text-muted)">📄 เอกสารต้นฉบับ (${(d.pages||[]).length})</span>
+      ${(d.pages||[]).map((p,i)=>`
+        <span class="cc-page-chip" data-page="${p.id}" title="ดูหน้า ${i+1}" style="display:inline-flex;align-items:center;gap:5px;padding:3px 6px 3px 10px;border:1px solid var(--border);border-radius:999px;background:var(--bg-card);cursor:pointer;font-size:11.5px;font-weight:600;color:var(--primary)">
+          🖼 หน้า ${i+1}
+          <span class="cc-page-del" data-page="${p.id}" title="ลบหน้านี้" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:999px;background:rgba(220,38,38,.10);color:var(--critical);font-size:10px">✕</span>
+        </span>`).join('')}
+      <button type="button" class="btn" id="cc-add-pages" style="font-size:11.5px;padding:4px 10px">＋ อัพเอกสารเพิ่ม</button>
+      <input type="file" id="cc-add-pages-file" accept="image/*" multiple style="display:none" />
+    </div>
     <div style="display:grid;grid-template-columns:minmax(300px,460px) 320px;gap:14px;align-items:start">
       <div>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
@@ -1015,6 +1026,44 @@ async function _ccRenderDetail(v){
   $('cc-edit-bill').onclick=()=>_ccEditBill(d);
   $('cc-add-inv').onclick=()=>_ccUploadInvoice(_ccState.billId);
   $('cc-del-bill').onclick=async ()=>{ if(!confirm('ลบบิลนี้ทั้งหมด? (รายการ/invoice/การจับคู่จะถูกลบด้วย)'))return; await fetchJson('/api/creditcard/bills/'+_ccState.billId,{method:'DELETE'}); _ccState.billId=null; await _ccLoadBills(); _ccRender(); };
+  // v1.9.341 — เอกสารต้นฉบับ: preview / ลบ / อัพเพิ่ม
+  v.querySelectorAll('.cc-page-chip').forEach(ch=>ch.addEventListener('click',(e)=>{
+    if(e.target.closest('.cc-page-del')) return;
+    const pid=parseInt(ch.dataset.page,10);
+    const url=API+'/api/creditcard/bills/'+_ccState.billId+'/pages/'+pid+'/image';
+    const bg=document.createElement('div'); bg.className='modal-bg'; bg.style.zIndex='1200';
+    bg.innerHTML=`<div class="modal modal-xwide" style="max-width:940px;padding:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">
+        <div style="font-size:13px;font-weight:700">📄 เอกสารต้นฉบับ</div>
+        <div style="display:flex;gap:8px"><a href="${url}" target="_blank" rel="noopener" class="btn" style="font-size:12px">↗ แท็บใหม่</a><button class="btn" id="cc-pgprev-close" style="font-size:12px">ปิด</button></div>
+      </div>
+      <div style="border-radius:10px;overflow:hidden;border:1px solid var(--border)"><img src="${url}" alt="" style="width:100%;max-height:78vh;object-fit:contain;display:block;background:#0f172a" /></div>
+    </div>`;
+    document.body.appendChild(bg);
+    const close=()=>bg.remove();
+    bg.querySelector('#cc-pgprev-close').onclick=close;
+    bg.addEventListener('click',ev=>{ if(ev.target===bg) close(); });
+  }));
+  v.querySelectorAll('.cc-page-del').forEach(x=>x.addEventListener('click',async(e)=>{
+    e.stopPropagation();
+    if(!confirm('ลบหน้าเอกสารนี้?'))return;
+    await fetchJson('/api/creditcard/bills/'+_ccState.billId+'/pages/'+x.dataset.page,{method:'DELETE'});
+    _ccRenderDetail($('cc-view'));
+  }));
+  const _pgBtn=$('cc-add-pages'), _pgFile=$('cc-add-pages-file');
+  if(_pgBtn&&_pgFile){
+    _pgBtn.onclick=()=>_pgFile.click();
+    _pgFile.onchange=async ()=>{
+      const files=Array.from(_pgFile.files||[]); if(!files.length) return;
+      _pgBtn.disabled=true; _pgBtn.textContent='กำลังอัพโหลด…';
+      try{
+        const pages=[];
+        for(const f of files) pages.push({ image_data: await compressImageToJpeg(f), ocr_text: null });
+        await fetchJson('/api/creditcard/bills/'+_ccState.billId+'/pages',{method:'POST',body:JSON.stringify({pages})});
+        _ccRenderDetail($('cc-view'));
+      }catch(err){ alert('อัพโหลดไม่สำเร็จ: '+(err.message||err)); _pgBtn.disabled=false; _pgBtn.textContent='＋ อัพเอกสารเพิ่ม'; }
+    };
+  }
   v.querySelectorAll('.cc-unmatch').forEach(x=>x.addEventListener('click',async(e)=>{ e.stopPropagation(); await fetchJson('/api/creditcard/matches/'+x.dataset.match,{method:'DELETE'}); _ccRenderDetail($('cc-view')); }));
   v.querySelectorAll('.cc-inv-prev').forEach(x=>x.addEventListener('click',(e)=>{ e.stopPropagation(); const inv=allInvById[parseInt(x.dataset.inv,10)]; if(inv) _ccPreviewInvoice(inv); }));
   v.querySelectorAll('.cc-inv-edit').forEach(x=>x.addEventListener('click',(e)=>{ e.stopPropagation(); const inv=allInvById[parseInt(x.dataset.inv,10)]; if(inv) _ccEditInvoice(inv,()=>_ccRenderDetail($('cc-view'))); }));

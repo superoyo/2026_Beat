@@ -10844,6 +10844,65 @@ def cc_bill_detail(bid: int, _sess: dict = Depends(_require_module("platform")))
             "pages": [dict(p) for p in pages]}
 
 
+# v1.9.341 — เอกสารต้นฉบับของบิล (statement pages): ดูรูป / อัพเพิ่ม / ลบ
+@app.get("/api/creditcard/bills/{bid}/pages/{page_id}/image")
+def cc_bill_page_image(bid: int, page_id: int,
+                       _sess: dict = Depends(_require_module("platform"))) -> Response:
+    with db_conn() as conn:
+        r = conn.execute("SELECT image_data FROM cc_statement_pages WHERE id=? AND bill_id=?",
+                         (page_id, bid)).fetchone()
+    if not r or not r["image_data"]:
+        raise HTTPException(status_code=404, detail="ไม่มีรูป")
+    raw = r["image_data"]
+    mime = "image/jpeg"
+    if raw.startswith("data:"):
+        head, _, b64 = raw.partition(",")
+        if ";base64" in head and head[5:].split(";")[0]:
+            mime = head[5:].split(";")[0]
+        raw = b64
+    try:
+        data = base64.b64decode(raw)
+    except Exception:
+        raise HTTPException(status_code=500, detail="ไฟล์เสียหาย")
+    return Response(content=data, media_type=mime)
+
+
+class CcPagesAddIn(BaseModel):
+    pages: list[CcPageIn] = Field(default_factory=list)
+
+
+@app.post("/api/creditcard/bills/{bid}/pages")
+def cc_add_bill_pages(bid: int, payload: CcPagesAddIn,
+                      _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    if not payload.pages:
+        raise HTTPException(status_code=400, detail="ไม่มีหน้าเอกสาร")
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        if not conn.execute("SELECT 1 FROM cc_bills WHERE id=?", (bid,)).fetchone():
+            raise HTTPException(status_code=404, detail="ไม่พบบิล")
+        next_order = conn.execute(
+            "SELECT COALESCE(MAX(page_order), -1) + 1 AS n FROM cc_statement_pages WHERE bill_id=?",
+            (bid,)).fetchone()["n"]
+        ids = []
+        for i, p in enumerate(payload.pages):
+            cur = conn.execute(
+                "INSERT INTO cc_statement_pages(bill_id,page_order,image_data,ocr_text,created_at) "
+                "VALUES (?,?,?,?,?)",
+                (bid, next_order + i, p.image_data, p.ocr_text, now))
+            ids.append(cur.lastrowid)
+    return {"ok": True, "ids": ids}
+
+
+@app.delete("/api/creditcard/bills/{bid}/pages/{page_id}")
+def cc_delete_bill_page(bid: int, page_id: int,
+                        _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    with db_conn() as conn:
+        cur = conn.execute("DELETE FROM cc_statement_pages WHERE id=? AND bill_id=?", (page_id, bid))
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="ไม่พบหน้าเอกสาร")
+    return {"ok": True}
+
+
 @app.delete("/api/creditcard/bills/{bid}")
 def cc_delete_bill(bid: int, _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
     with db_conn() as conn:
