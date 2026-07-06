@@ -761,27 +761,47 @@ function _ccRender(){
 // ---- bills list (home) ----
 function _ccRenderBills(v){
   const bills=_ccState.bills;
+  // v1.9.342 — ปฏิทินเดือน/ปีหน้าแต่ละรายการ — เดือนเดียวกันติดกันแสดงเฉพาะใบบนสุด
+  let _prevYm=null;
+  const rows=bills.map(b=>{
+    const ym=(b.bill_year||0)+'-'+(b.bill_month||0);
+    const showTile=ym!==_prevYm;
+    _prevYm=ym;
+    return _ccBillCard(b,showTile);
+  }).join('');
   v.innerHTML=`
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
       <button class="btn primary" id="cc-new-bill">+ สร้างใบแจ้งหนี้บัตรเครดิต</button>
       <button class="btn" id="cc-up-invoice">⬆️ อัพโหลด</button>
     </div>
-    ${bills.length?bills.map(_ccBillCard).join(''):'<div class="empty">ยังไม่มีบิล — กด “สร้างใบแจ้งหนี้บัตรเครดิต” แล้วอัพโหลดใบแจ้งยอดบัตรเครดิต</div>'}`;
+    ${bills.length?rows:'<div class="empty">ยังไม่มีบิล — กด “สร้างใบแจ้งหนี้บัตรเครดิต” แล้วอัพโหลดใบแจ้งยอดบัตรเครดิต</div>'}`;
   $('cc-new-bill').onclick=()=>_ccCreateBill();
   $('cc-up-invoice').onclick=()=>_ccUploadInvoice(null);
   v.querySelectorAll('[data-cc-bill]').forEach(c=>c.addEventListener('click',()=>{ _ccState.billId=parseInt(c.dataset.ccBill,10); _ccRender(); }));
 }
-function _ccBillCard(b){
+// v1.9.342 — ปฏิทินเดือน/ปี (สไตล์เดียวกับ tile วันซื้อของ hardware — โทนน้ำเงิน)
+function _ccBillMonthTile(m,y){
+  const mm=(m>=1&&m<=12)?_CC_MONTHS[m-1]:'—';
+  return `<div style="display:inline-flex;flex-direction:column;align-items:stretch;border-radius:9px;overflow:hidden;border:1px solid rgba(37,99,235,.20);box-shadow:0 2px 6px rgba(37,99,235,.12);min-width:64px;flex-shrink:0">
+    <div style="background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;padding:2px 12px;font-size:10.5px;font-weight:700;letter-spacing:.5px;text-align:center;line-height:1.5">${escapeHtml(mm)}</div>
+    <div style="background:#fff;color:#0f172a;padding:4px 12px;font-size:15px;font-weight:800;line-height:1.1;text-align:center;font-variant-numeric:tabular-nums">${y||'—'}</div>
+  </div>`;
+}
+function _ccBillCard(b,showTile){
   const complete=b.txn_count>0 && b.matched_txn>=b.txn_count;
   const pct=b.txn_count?Math.round(b.matched_txn/b.txn_count*100):0;
-  return `<div class="card hw-card" data-cc-bill="${b.id}" style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px;padding:12px 16px">
-    <div style="min-width:0">
-      <div style="font-size:15px;font-weight:800">💳 ${escapeHtml(b.card_number||'บัตรเครดิต')} · ${_ccMonthLabel(b.bill_month,b.bill_year)}</div>
-      <div style="font-size:12px;color:var(--text-muted);margin-top:3px">${b.txn_count} รายการ · ยอดรวม ${_ccMoney(b.txn_total)} · invoice ${b.invoice_count} ใบ${b.created_by?' · โดย '+escapeHtml(b.created_by):''}</div>
-    </div>
-    <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
-      <span style="display:inline-flex;align-items:center;padding:3px 11px;border-radius:999px;font-size:12px;font-weight:700;${complete?'background:rgba(16,185,129,.12);color:var(--green)':'background:rgba(245,158,11,.14);color:#92400e'}">${complete?'✓ ครบ':'จับคู่ '+pct+'%'}</span>
-      <span class="hw-chev" style="font-size:22px;line-height:1">›</span>
+  const tile=showTile?_ccBillMonthTile(b.bill_month,b.bill_year):'<div style="min-width:64px;flex-shrink:0"></div>';
+  return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+    ${tile}
+    <div class="card hw-card" data-cc-bill="${b.id}" style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:0;padding:12px 16px;flex:1;min-width:0">
+      <div style="min-width:0">
+        <div style="font-size:15px;font-weight:800">💳 ${escapeHtml(b.card_number||'บัตรเครดิต')} · ${_ccMonthLabel(b.bill_month,b.bill_year)}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:3px">${b.txn_count} รายการ · ยอดรวม ${_ccMoney(b.txn_total)} · invoice ${b.invoice_count} ใบ${b.created_by?' · โดย '+escapeHtml(b.created_by):''}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+        <span style="display:inline-flex;align-items:center;padding:3px 11px;border-radius:999px;font-size:12px;font-weight:700;${complete?'background:rgba(16,185,129,.12);color:var(--green)':'background:rgba(245,158,11,.14);color:#92400e'}">${complete?'✓ ครบ':'จับคู่ '+pct+'%'}</span>
+        <span class="hw-chev" style="font-size:22px;line-height:1">›</span>
+      </div>
     </div>
   </div>`;
 }
