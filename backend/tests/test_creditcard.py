@@ -126,3 +126,21 @@ def test_delete_bill_cascades(admin_client):
     assert db_row("SELECT 1 AS x FROM cc_transactions WHERE id = ?", (txn["id"],)) is None
     r = admin_client.get(f"/api/creditcard/bills/{bid}")
     assert r.status_code == 404
+
+
+def test_due_date_roundtrip(admin_client):
+    # v1.9.343 — กำหนดชำระ: create → list → edit
+    r = admin_client.post("/api/creditcard/bills", json={
+        "card_number": "DUE", "bill_month": 6, "bill_year": 2026,
+        "due_date": "2026-06-25", "pages": [], "transactions": []})
+    bid = r.json()["id"]
+    bills = admin_client.get("/api/creditcard/bills").json()["bills"]
+    me = [b for b in bills if b["id"] == bid][0]
+    assert me["due_date"] == "2026-06-25"
+
+    r = admin_client.put(f"/api/creditcard/bills/{bid}", json={
+        "card_number": "DUE", "bill_month": 6, "bill_year": 2026,
+        "due_date": "2026-07-01", "transactions": []})
+    assert r.status_code == 200
+    d = admin_client.get(f"/api/creditcard/bills/{bid}").json()
+    assert d["bill"]["due_date"] == "2026-07-01"

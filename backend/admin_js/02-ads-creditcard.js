@@ -787,15 +787,27 @@ function _ccBillMonthTile(m,y){
     <div style="background:#fff;color:#0f172a;padding:4px 12px;font-size:15px;font-weight:800;line-height:1.1;text-align:center;font-variant-numeric:tabular-nums">${y||'—'}</div>
   </div>`;
 }
+// v1.9.343 — วันกำหนดชำระ: '25 มิ.ย. 2026'
+function _ccFmtDue(iso){
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(iso||'');
+  if(!m) return iso||'';
+  return `${parseInt(m[3],10)} ${_CC_MONTHS[parseInt(m[2],10)-1]} ${m[1]}`;
+}
 function _ccBillCard(b,showTile){
   const complete=b.txn_count>0 && b.matched_txn>=b.txn_count;
   const pct=b.txn_count?Math.round(b.matched_txn/b.txn_count*100):0;
   const tile=showTile?_ccBillMonthTile(b.bill_month,b.bill_year):'<div style="min-width:64px;flex-shrink:0"></div>';
+  // v1.9.343 — chip กำหนดชำระ หน้าเลขบัตร — เลยกำหนด (และยังจับคู่ไม่ครบ) = สีแดง
+  let dueChip='';
+  if(b.due_date){
+    const overdue=!complete && b.due_date < new Date().toISOString().slice(0,10);
+    dueChip=`<span title="วันกำหนดชำระ" style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:999px;font-size:11.5px;font-weight:700;vertical-align:middle;margin-right:7px;${overdue?'background:rgba(220,38,38,.12);color:var(--critical);border:1px solid rgba(220,38,38,.25)':'background:rgba(245,158,11,.13);color:#92400e;border:1px solid rgba(245,158,11,.28)'}">⏰ ชำระ ${escapeHtml(_ccFmtDue(b.due_date))}${overdue?' · เลยกำหนด':''}</span>`;
+  }
   return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
     ${tile}
     <div class="card hw-card" data-cc-bill="${b.id}" style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:0;padding:12px 16px;flex:1;min-width:0">
       <div style="min-width:0">
-        <div style="font-size:15px;font-weight:800">💳 ${escapeHtml(b.card_number||'บัตรเครดิต')} · ${_ccMonthLabel(b.bill_month,b.bill_year)}</div>
+        <div style="font-size:15px;font-weight:800">${dueChip}💳 ${escapeHtml(b.card_number||'บัตรเครดิต')} · ${_ccMonthLabel(b.bill_month,b.bill_year)}</div>
         <div style="font-size:12px;color:var(--text-muted);margin-top:3px">${b.txn_count} รายการ · ยอดรวม ${_ccMoney(b.txn_total)} · invoice ${b.invoice_count} ใบ${b.created_by?' · โดย '+escapeHtml(b.created_by):''}</div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
@@ -820,6 +832,7 @@ function _ccCreateBill(){
           <label style="flex:1;min-width:150px;font-size:12px">เลขบัตร<input id="cc-bill-card" style="width:100%" /></label>
           <label style="width:120px;font-size:12px">เดือน${_ccMonthSelect('cc-bill-month')}</label>
           <label style="width:110px;font-size:12px">ปี (ค.ศ.)<input id="cc-bill-year" type="number" placeholder="${new Date().getFullYear()}" style="width:100%" /></label>
+          <label style="width:150px;font-size:12px">กำหนดชำระ<input id="cc-bill-due" type="date" style="width:100%" /></label>
         </div>
         <div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:6px">รายการจากบัตร (<span id="cc-bill-count">0</span>)</div>
         <div id="cc-bill-txns"></div>
@@ -833,7 +846,7 @@ function _ccCreateBill(){
         amount:parseFloat(r.querySelector('.cc-t-amt').value)||null,
       })).filter(t=>t.description||t.amount!=null);
       const body={ card_number:$('cc-bill-card').value.trim()||null, bill_month:parseInt($('cc-bill-month').value,10)||null,
-        bill_year:parseInt($('cc-bill-year').value,10)||null, pages, transactions:rows };
+        bill_year:parseInt($('cc-bill-year').value,10)||null, due_date:$('cc-bill-due').value||null, pages, transactions:rows };
       await fetchJson('/api/creditcard/bills',{method:'POST',body:JSON.stringify(body)});
       await _ccLoadBills(); _ccState.view='bills'; _ccState.billId=null; _ccRender();
     },
@@ -1261,6 +1274,7 @@ function _ccEditBill(d){
         <label style="flex:1;min-width:150px;font-size:12px">เลขบัตร<input id="cc-eb-card" value="${escapeHtml(bill.card_number||'')}" style="width:100%" /></label>
         <label style="width:120px;font-size:12px">เดือน${_ccMonthSelect('cc-eb-month',bill.bill_month||null)}</label>
         <label style="width:110px;font-size:12px">ปี (ค.ศ.)<input id="cc-eb-year" type="number" value="${bill.bill_year||''}" style="width:100%" /></label>
+        <label style="width:150px;font-size:12px">กำหนดชำระ<input id="cc-eb-due" type="date" value="${escapeHtml(bill.due_date||'')}" style="width:100%" /></label>
       </div>
       <div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:6px">รายการจากบัตร (<span id="cc-eb-count">0</span>) · ลบแถว = ยกเลิกการจับคู่ของแถวนั้นด้วย</div>
       <div id="cc-eb-txns"></div>
@@ -1273,7 +1287,7 @@ function _ccEditBill(d){
         amount:parseFloat(r.querySelector('.cc-t-amt').value)||null,
       })).filter(t=>t.description||t.amount!=null||t.id);
       const body={ card_number:$('cc-eb-card').value.trim()||null, bill_month:parseInt($('cc-eb-month').value,10)||null,
-        bill_year:parseInt($('cc-eb-year').value,10)||null, transactions:rows };
+        bill_year:parseInt($('cc-eb-year').value,10)||null, due_date:$('cc-eb-due').value||null, transactions:rows };
       await fetchJson('/api/creditcard/bills/'+bill.id,{method:'PUT',body:JSON.stringify(body)});
       await _ccLoadBills(); _ccRenderDetail($('cc-view'));
     },

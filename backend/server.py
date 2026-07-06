@@ -961,6 +961,10 @@ def init_db() -> None:
         _cct = [r["name"] for r in conn.execute("PRAGMA table_info(cc_transactions)").fetchall()]
         if "user_note" not in _cct:
             conn.execute("ALTER TABLE cc_transactions ADD COLUMN user_note TEXT")
+        # v1.9.343 — cc_bills: วันกำหนดชำระ (ISO YYYY-MM-DD)
+        _ccb = [r["name"] for r in conn.execute("PRAGMA table_info(cc_bills)").fetchall()]
+        if "due_date" not in _ccb:
+            conn.execute("ALTER TABLE cc_bills ADD COLUMN due_date TEXT")
 
         # ---- 4. seed config defaults
         for key, value in DEFAULT_CONFIG.items():
@@ -10695,6 +10699,7 @@ class CcBillIn(BaseModel):
     bill_month: Optional[int] = None
     bill_year: Optional[int] = None
     note: Optional[str] = None
+    due_date: Optional[str] = Field(None, max_length=20)   # v1.9.343 — ISO YYYY-MM-DD
     pages: list[CcPageIn] = Field(default_factory=list)
     transactions: list[CcTxnIn] = Field(default_factory=list)
 
@@ -10741,6 +10746,7 @@ class CcBillEdit(BaseModel):
     bill_month: Optional[int] = None
     bill_year: Optional[int] = None
     note: Optional[str] = None
+    due_date: Optional[str] = Field(None, max_length=20)   # v1.9.343
     transactions: list[dict] = Field(default_factory=list)   # [{id?, txn_date, description, amount}]
 
 
@@ -10809,8 +10815,9 @@ def cc_create_bill(payload: CcBillIn,
     now = utc_now().isoformat()
     with db_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO cc_bills(card_number,bill_month,bill_year,note,created_by_id,created_by,created_at) VALUES (?,?,?,?,?,?,?)",
-            (payload.card_number, payload.bill_month, payload.bill_year, payload.note, mid, name, now))
+            "INSERT INTO cc_bills(card_number,bill_month,bill_year,note,due_date,created_by_id,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)",
+            (payload.card_number, payload.bill_month, payload.bill_year, payload.note,
+             (payload.due_date or "").strip() or None, mid, name, now))
         bid = cur.lastrowid
         for i, pg in enumerate(payload.pages):
             conn.execute("INSERT INTO cc_statement_pages(bill_id,page_order,image_data,ocr_text,created_at) VALUES (?,?,?,?,?)",
@@ -10971,8 +10978,9 @@ def cc_edit_bill(bid: int, payload: CcBillEdit, _sess: dict = Depends(_require_m
         conn.execute("PRAGMA foreign_keys = ON")   # ลบรายการที่หาย → cascade ลบ match ของแถวนั้น (ต้องสั่งก่อน DML)
         if not conn.execute("SELECT 1 FROM cc_bills WHERE id=?", (bid,)).fetchone():
             raise HTTPException(status_code=404, detail="ไม่พบบิล")
-        conn.execute("UPDATE cc_bills SET card_number=?, bill_month=?, bill_year=?, note=?, updated_at=? WHERE id=?",
-                     (payload.card_number, payload.bill_month, payload.bill_year, payload.note, now, bid))
+        conn.execute("UPDATE cc_bills SET card_number=?, bill_month=?, bill_year=?, note=?, due_date=?, updated_at=? WHERE id=?",
+                     (payload.card_number, payload.bill_month, payload.bill_year, payload.note,
+                      (payload.due_date or "").strip() or None, now, bid))
         # upsert transactions by id; delete ที่หายไป (รักษา match ของแถวเดิมที่ไม่ถูกลบ)
         keep_ids = []
         for i, t in enumerate(payload.transactions):
