@@ -1051,7 +1051,7 @@ async function _ccRenderDetail(v){
         </div>
         <div id="cc-txn-col"></div>
       </div>
-      <div><div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px">Invoice / Receipt (${d.invoices.length})</div><div id="cc-inv-col"></div></div>
+      <div><div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px">Invoice / Receipt — ยังไม่จับคู่ (${d.invoices.filter(i=>!matchedInvIds.has(i.id)).length}/${d.invoices.length})</div><div id="cc-inv-col"></div></div>
     </div>`;
   // v1.9.314 — รายการในบัตรกดเพื่อ edit description (user_note) ได้ inline
   const _txnCard=(t)=>{
@@ -1103,10 +1103,15 @@ async function _ccRenderDetail(v){
   const _txnSortSel=$('cc-txn-sort');
   if(_txnSortSel) _txnSortSel.addEventListener('change',(e)=>{ _ccState.txnSort=e.target.value; _ccRenderDetail($('cc-view')); });
   const poolInv=d.pool_invoices||[];
+  // v1.9.346 — คอลัมน์ขวาแสดงเฉพาะ invoice ที่ยังไม่จับคู่ (จับคู่แล้วเห็นเป็น chip บนรายการซ้าย + ถอดได้จาก ✕)
+  const unmatchedInv=d.invoices.filter(i=>!matchedInvIds.has(i.id));
+  const matchedCount=d.invoices.length-unmatchedInv.length;
   $('cc-inv-col').innerHTML=(
-    d.invoices.map(i=>_ccInvCardHtml(i, matchedInvIds.has(i.id), false)).join('')
+    unmatchedInv.map(i=>_ccInvCardHtml(i, false, false)).join('')
     + (poolInv.length?`<div style="font-size:11px;color:#92400e;margin:10px 0 6px;font-weight:700">📥 ลอย (ยังไม่ผูกบิล) — ลากมาจับคู่เพื่อผูกเข้าบิลนี้</div>`+poolInv.map(i=>_ccInvCardHtml(i,false,true)).join(''):'')
-  )||'<div class="empty" style="font-size:12px">ยังไม่มี invoice — กด “เพิ่ม invoice”</div>';
+  )||(matchedCount>0
+    ?`<div class="empty" style="font-size:12px;text-align:center;padding:20px 10px">🎉 จับคู่ครบทุกใบแล้ว<br><span style="font-size:11px;color:var(--text-soft)">invoice ที่จับคู่แล้ว (${matchedCount}) อยู่บนรายการฝั่งซ้าย — กด ✕ เพื่อถอด</span></div>`
+    :'<div class="empty" style="font-size:12px">ยังไม่มี invoice — กด “เพิ่ม invoice”</div>');
   $('cc-back').onclick=()=>{ _ccState.billId=null; _ccState.selInvoice=null; _ccRender(); };
   $('cc-edit-bill').onclick=()=>_ccEditBill(d);
   $('cc-add-inv').onclick=()=>_ccUploadInvoice(_ccState.billId);
