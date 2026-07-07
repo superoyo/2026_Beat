@@ -1167,11 +1167,12 @@ async function _ccRenderDetail(v){
         </div>
         <div id="cc-txn-col"></div>
       </div>
-      <div>
-        <div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px">Invoice / Receipt — ยังไม่จับคู่ (${d.invoices.filter(i=>!matchedInvIds.has(i.id)).length}/${d.invoices.length})</div>
-        <div id="cc-inv-col"></div>
+      <!-- v1.9.361 — คอลัมน์ขวา sticky สูงพอดีจอ · list เลื่อน scroll ภายใน · drop zone อยู่ล่างเสมอ -->
+      <div style="position:sticky;top:8px;display:flex;flex-direction:column;max-height:calc(100vh - 120px)">
+        <div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px;flex-shrink:0">Invoice / Receipt — ยังไม่จับคู่ (${d.invoices.filter(i=>!matchedInvIds.has(i.id)).length}/${d.invoices.length})</div>
+        <div id="cc-inv-col" style="flex:1;min-height:0;overflow-y:auto;padding-right:2px"></div>
         <!-- v1.9.347 — กล่องเส้นประ: คลิกหรือลากไฟล์มาวางเพื่ออัพโหลด invoice เข้าบิลนี้ -->
-        <div id="cc-inv-drop" style="border:2px dashed var(--border);border-radius:12px;padding:14px;text-align:center;color:var(--text-muted);font-size:12px;margin-top:10px;transition:border-color .12s,background .12s;cursor:pointer;line-height:1.6">
+        <div id="cc-inv-drop" style="border:2px dashed var(--border);border-radius:12px;padding:14px;text-align:center;color:var(--text-muted);font-size:12px;margin-top:10px;transition:border-color .12s,background .12s;cursor:pointer;line-height:1.6;flex-shrink:0">
           <b>＋ เพิ่ม Invoice / Receipt</b><br><span style="font-size:11px">คลิก หรือลากไฟล์ (PDF / รูป) มาวางที่นี่</span>
         </div>
       </div>
@@ -1396,9 +1397,17 @@ function _ccPreviewInvoice(inv,zIndex){
   const bg=document.createElement('div'); bg.className='modal-bg'; bg.style.zIndex=String(zIndex||1200);
   bg.innerHTML=`<div class="modal modal-xwide" style="max-width:940px;padding:16px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">
-      <div style="min-width:0">
-        <div style="font-size:15px;font-weight:800">${escapeHtml(inv.company||'—')} · ${_ccMoney(inv.amount)}</div>
-        <div style="font-size:11.5px;color:var(--text-muted)">${inv.kind==='receipt'?'ใบเสร็จ':'invoice'} · ${_ccMonthLabel(inv.inv_month,inv.inv_year)} · ${_ccUploaderChip(inv)}${inv.description?' · 📝 '+escapeHtml(inv.description):''}</div>
+      <div style="min-width:0;flex:1">
+        <div style="display:flex;align-items:center;gap:8px;min-width:0">
+          <div id="cc-prev-title" style="font-size:15px;font-weight:800;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span id="cc-prev-company">${escapeHtml(inv.company||'—')}</span> · ${_ccMoney(inv.amount)}</div>
+          <button type="button" id="cc-prev-editname" title="แก้ชื่อเอกสาร" style="border:none;background:none;cursor:pointer;font-size:13px;opacity:.55;padding:0;flex-shrink:0">✏️</button>
+        </div>
+        <div id="cc-prev-editrow" style="display:none;align-items:center;gap:6px;margin-top:4px">
+          <input id="cc-prev-nameinp" type="text" value="${escapeHtml(inv.company||'')}" maxlength="300" placeholder="ชื่อเอกสาร / บริษัท" style="font-size:13px;padding:5px 9px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);color:var(--text);width:320px;max-width:60vw" />
+          <button type="button" class="btn cc-prev-namesave" style="font-size:13px;padding:4px 10px;color:var(--green)">✓ บันทึก</button>
+          <button type="button" class="btn cc-prev-namecancel" style="font-size:13px;padding:4px 9px">✕</button>
+        </div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px">${inv.kind==='receipt'?'ใบเสร็จ':'invoice'} · ${_ccMonthLabel(inv.inv_month,inv.inv_year)} · ${_ccUploaderChip(inv)}${inv.description?' · 📝 '+escapeHtml(inv.description):''}</div>
       </div>
       <div style="display:flex;gap:8px;flex-shrink:0">
         <a href="${url}" target="_blank" rel="noopener" class="btn" style="font-size:12px">↗ แท็บใหม่</a>
@@ -1411,6 +1420,23 @@ function _ccPreviewInvoice(inv,zIndex){
   const close=()=>bg.remove();
   bg.querySelector('#cc-prev-close').onclick=close;
   bg.addEventListener('click',e=>{ if(e.target===bg) close(); });
+  // v1.9.360 — inline แก้ชื่อเอกสาร (company)
+  const _titleEl=bg.querySelector('#cc-prev-title'), _editBtn=bg.querySelector('#cc-prev-editname'), _editRow=bg.querySelector('#cc-prev-editrow');
+  const _nameInp=bg.querySelector('#cc-prev-nameinp'), _companyEl=bg.querySelector('#cc-prev-company');
+  const _openEdit=()=>{ _titleEl.style.display='none'; _editBtn.style.display='none'; _editRow.style.display='flex'; _nameInp.focus(); _nameInp.select(); };
+  const _closeEdit=()=>{ _editRow.style.display='none'; _titleEl.style.display=''; _editBtn.style.display=''; };
+  const _save=async()=>{
+    const val=_nameInp.value.trim();
+    try{ const r=await fetchJson('/api/creditcard/invoices/'+inv.id+'/company',{method:'PATCH',body:JSON.stringify({company:val})});
+      inv.company=r.company||''; _companyEl.textContent=inv.company||'—'; _closeEdit();
+      try{ await _ccLoadBills(); }catch(_){}
+      if(_ccState.billId) _ccRenderDetail($('cc-view')); else if(_ccState.view==='pool') _ccRenderPool($('cc-view'));
+    }catch(err){ alert(err.message||err); }
+  };
+  _editBtn.onclick=_openEdit;
+  bg.querySelector('.cc-prev-namecancel').onclick=()=>{ _nameInp.value=inv.company||''; _closeEdit(); };
+  bg.querySelector('.cc-prev-namesave').onclick=_save;
+  _nameInp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); _save(); } else if(e.key==='Escape'){ e.preventDefault(); _nameInp.value=inv.company||''; _closeEdit(); } });
 }
 
 // ---- edit invoice (แก้ไขข้อมูล invoice/receipt ที่อัพไปแล้ว) ----
