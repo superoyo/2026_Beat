@@ -1709,7 +1709,7 @@ async function _ccRenderSummary(v){
   let d; try{ d=await fetchJson('/api/creditcard/bills/'+_ccState.summaryBillId); }
   catch(e){ $('cc-sum-body').innerHTML=`<div class="empty">${escapeHtml(e.message)}</div>`; return; }
   const invById={}; d.invoices.forEach(i=>invById[i.id]=i);
-  const matchByTxn={}; d.matches.forEach(m=>{ (matchByTxn[m.transaction_id]=matchByTxn[m.transaction_id]||[]).push(invById[m.invoice_id]); });
+  const matchByTxn={}; d.matches.forEach(m=>{ (matchByTxn[m.transaction_id]=matchByTxn[m.transaction_id]||[]).push({inv:invById[m.invoice_id],matchId:m.id}); });
   const total=d.transactions.length, matched=Object.keys(matchByTxn).filter(k=>matchByTxn[k].length).length, unmatched=total-matched;
   const txnTotal=d.transactions.reduce((s,t)=>s+(t.amount||0),0);
   const invTotal=d.invoices.reduce((s,i)=>s+(i.amount||0),0);
@@ -1718,20 +1718,21 @@ async function _ccRenderSummary(v){
   // v1.9.223 — platform ของแต่ละรายการ (จาก description ก่อน, ไม่เจอลองจาก invoice ที่จับคู่, สุดท้าย 'อื่น ๆ')
   const platOf=(t)=>{
     const p=_ccDetectPlatform(t.description||''); if(p) return p;
-    for(const i of (matchByTxn[t.id]||[])){ if(i){ const q=_ccDetectPlatform(i.company||''); if(q) return q; } }
+    for(const mm of (matchByTxn[t.id]||[])){ if(mm.inv){ const q=_ccDetectPlatform(mm.inv.company||''); if(q) return q; } }
     return 'อื่น ๆ';
   };
   const platCount={}; d.transactions.forEach(t=>{ const p=platOf(t); platCount[p]=(platCount[p]||0)+1; });
   const orderedPlats=[...Object.keys(platCount).filter(p=>p!=='อื่น ๆ').sort(), ...(platCount['อื่น ๆ']?['อื่น ๆ']:[])];
   // v1.9.317 — Summary: แสดง user_note ของรายการในบัตร + แก้ไข inline เหมือนหน้า bill detail
+  // v1.9.362 — เอกสารที่พ่วง ตัดออกได้ด้วยปุ่ม ✕ (unmatch)
   const rows=d.transactions.map(t=>{
     const ms=matchByTxn[t.id]||[]; const ok=ms.length>0;
-    const invSum=ms.reduce((s,i)=>s+((i&&i.amount)||0),0); const diff=Math.abs(invSum-(t.amount||0));
+    const invSum=ms.reduce((s,mm)=>s+((mm.inv&&mm.inv.amount)||0),0); const diff=Math.abs(invSum-(t.amount||0));
     const invCells=ms.length
-      ? ms.map(i=>i?`<span class="cc-sum-prev" data-inv="${i.id}" title="ดู PDF / ไฟล์" style="cursor:pointer;color:var(--primary);border-bottom:1px dashed var(--primary);white-space:nowrap">👁 ${escapeHtml(i.company||'invoice')} ${_ccMoney(i.amount)}</span>`:'invoice').join('<br>')
+      ? ms.map(mm=>{const i=mm.inv; return i?`<span style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><span class="cc-sum-unmatch" data-match="${mm.matchId}" title="ตัดการจับคู่" style="cursor:pointer;color:var(--critical);opacity:.6;font-size:11px">✕</span><span class="cc-sum-prev" data-inv="${i.id}" title="ดู PDF / ไฟล์" style="cursor:pointer;color:var(--primary);border-bottom:1px dashed var(--primary)">👁 ${escapeHtml(i.company||'invoice')} ${_ccMoney(i.amount)}</span></span>`:'invoice';}).join('<br>')
       : '<span style="color:var(--text-muted)">— ยังไม่จับคู่ —</span>';
     const ownerCells=ms.length
-      ? ms.map(i=>i?`<div style="margin-bottom:4px">${i.description?`<div style="font-size:13px;color:var(--text)">📝 ${escapeHtml(i.description)}</div>`:'<span style="font-size:11px;color:var(--text-muted)">— ไม่มีรายละเอียด —</span>'}<div style="font-size:10.5px;color:var(--text-muted)">${_ccUploaderChip(i,13)}</div></div>`:'').join('')
+      ? ms.map(mm=>{const i=mm.inv; return i?`<div style="margin-bottom:4px">${i.description?`<div style="font-size:13px;color:var(--text)">📝 ${escapeHtml(i.description)}</div>`:'<span style="font-size:11px;color:var(--text-muted)">— ไม่มีรายละเอียด —</span>'}<div style="font-size:10.5px;color:var(--text-muted)">${_ccUploaderChip(i,13)}</div></div>`:'';}).join('')
       : '<span style="color:var(--text-muted);font-size:12px">—</span>';
     const un=t.user_note||'';
     const noteHtml=`<div class="cc-sum-note" style="${un?'':'display:none;'}font-size:11px;color:var(--text-muted);margin-top:3px;font-style:italic">${un?'📝 '+escapeHtml(un):''}</div>`;
@@ -1777,6 +1778,13 @@ async function _ccRenderSummary(v){
       </tr></thead><tbody>${rows||'<tr><td colspan="6" style="padding:14px;text-align:center;color:var(--text-muted)">ไม่มีรายการ</td></tr>'}</tbody>
     </table></div>`;
   v.querySelectorAll('.cc-sum-prev').forEach(x=>x.addEventListener('click',()=>{ const inv=invById[parseInt(x.dataset.inv,10)]; if(inv) _ccPreviewInvoice(inv); }));
+  // v1.9.362 — ตัดการจับคู่จากหน้า Summary
+  v.querySelectorAll('.cc-sum-unmatch').forEach(x=>x.addEventListener('click',async()=>{
+    if(!confirm('ตัดการจับคู่เอกสารนี้ออกจากรายการ?'))return;
+    try{ await fetchJson('/api/creditcard/matches/'+x.dataset.match,{method:'DELETE'}); }
+    catch(err){ alert(err.message||err); return; }
+    _ccRenderSummary(v);
+  }));
   // v1.9.317 — inline edit user_note ใน Summary
   v.querySelectorAll('.cc-sum-desc').forEach(el=>el.addEventListener('click',(e)=>{
     e.stopPropagation();
