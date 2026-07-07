@@ -1842,7 +1842,7 @@ async function _ccRenderSummary(v){
       <button type="button" class="btn cc-sum-save" title="บันทึก (Enter)" style="font-size:13px;padding:4px 9px;line-height:1;color:var(--green)">✓</button>
       <button type="button" class="btn cc-sum-cancel" title="ยกเลิก (Esc)" style="font-size:13px;padding:4px 9px;line-height:1">✕</button>
     </div>`;
-    return `<tr data-platform="${escapeHtml(platOf(t))}" data-txn="${t.id}" style="border-bottom:1px solid var(--border)">
+    return `<tr data-platform="${escapeHtml(platOf(t))}" data-matched="${ok?1:0}" data-txn="${t.id}" style="border-bottom:1px solid var(--border)">
       <td style="padding:7px 3px;text-align:center;width:18px;vertical-align:top">${ok?'<span style="color:var(--green);font-weight:800">✓</span>':'<span style="color:var(--critical);font-weight:800">✗</span>'}</td>
       <td style="padding:7px 8px;font-size:12.5px;vertical-align:top">
         <div class="cc-sum-desc" style="cursor:pointer" title="คลิกเพื่อเพิ่ม/แก้ไข description">
@@ -1865,9 +1865,9 @@ async function _ccRenderSummary(v){
   </div>`;
   $('cc-sum-body').innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px;margin-bottom:16px">
-      ${_ccStat('รายการทั้งหมด',total)}
-      ${_ccStat('จับคู่แล้ว',matched,'var(--green)')}
-      ${_ccStat('ยังไม่จับคู่',unmatched,unmatched?'#92400e':'var(--text)')}
+      ${_ccStat('รายการทั้งหมด',total,'',{match:''})}
+      ${_ccStat('จับคู่แล้ว',matched,'var(--green)',{match:'1'})}
+      ${_ccStat('ยังไม่จับคู่',unmatched,unmatched?'#92400e':'var(--text)',{match:'0'})}
       ${_ccStat('ยอดบัตรรวม',_ccMoney(txnTotal))}
       ${_ccStat('ยอด invoice รวม',_ccMoney(invTotal))}
       ${_ccStat('invoice ยังไม่ใช้',unusedInv,unusedInv?'#92400e':'var(--text)')}
@@ -1924,15 +1924,28 @@ async function _ccRenderSummary(v){
       else if(e.key==='Escape'){ e.preventDefault(); inp.closest('tr[data-txn]').querySelector('.cc-sum-cancel').click(); }
     });
   });
-  const applyFilter=(plat)=>{
-    v.querySelectorAll('.cc-sum-filter').forEach(b=>b.classList.toggle('primary', b.dataset.plat===plat));
-    v.querySelectorAll('#cc-sum-table tbody tr[data-platform]').forEach(tr=>{ tr.style.display=(!plat||tr.dataset.platform===plat)?'':'none'; });
+  // v1.9.364 — filter รวม platform + สถานะจับคู่ (คลิกการ์ด จับคู่แล้ว/ยังไม่จับคู่)
+  let _fPlat='', _fMatch='';
+  const applyFilter=()=>{
+    v.querySelectorAll('.cc-sum-filter').forEach(b=>b.classList.toggle('primary', b.dataset.plat===_fPlat));
+    v.querySelectorAll('.cc-sum-mstat').forEach(b=>{ const on=b.dataset.match===_fMatch&&_fMatch!==''; b.style.outline=on?'2px solid var(--primary)':''; b.style.outlineOffset=on?'-2px':''; });
+    v.querySelectorAll('#cc-sum-table tbody tr[data-platform]').forEach(tr=>{
+      const okP=!_fPlat||tr.dataset.platform===_fPlat;
+      const okM=!_fMatch||tr.dataset.matched===_fMatch;
+      tr.style.display=(okP&&okM)?'':'none';
+    });
   };
-  v.querySelectorAll('.cc-sum-filter').forEach(b=>b.addEventListener('click',()=>applyFilter(b.dataset.plat)));
-  applyFilter('');
+  v.querySelectorAll('.cc-sum-filter').forEach(b=>b.addEventListener('click',()=>{ _fPlat=b.dataset.plat; applyFilter(); }));
+  // การ์ด จับคู่แล้ว / ยังไม่จับคู่ → toggle match filter
+  v.querySelectorAll('.cc-sum-mstat').forEach(b=>b.addEventListener('click',()=>{ const k=b.dataset.match; _fMatch=(_fMatch===k)?'':k; applyFilter(); }));
+  applyFilter();
 }
-function _ccStat(label,val,color){
-  return `<div class="card" style="padding:10px 12px"><div style="font-size:11px;color:var(--text-muted)">${label}</div><div style="font-size:18px;font-weight:800;${color?'color:'+color:''}">${val}</div></div>`;
+// v1.9.364 — clickOpt = {match:'1'|'0'|''} ทำให้การ์ดคลิกได้ (filter สถานะจับคู่)
+function _ccStat(label,val,color,clickOpt){
+  const clk=clickOpt&&clickOpt.match!==undefined
+    ? ` class="cc-sum-mstat" data-match="${clickOpt.match}" title="คลิกเพื่อกรองตามสถานะนี้" style="padding:10px 12px;cursor:pointer;border-radius:10px"`
+    : ' style="padding:10px 12px"';
+  return `<div class="card"${clk}><div style="font-size:11px;color:var(--text-muted)">${label}</div><div style="font-size:18px;font-weight:800;${color?'color:'+color:''}">${val}</div></div>`;
 }
 
 // ===== Claude RateLimit (Platform tab) =====
