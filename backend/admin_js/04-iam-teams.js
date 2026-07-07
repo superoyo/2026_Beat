@@ -352,6 +352,8 @@ async function renderPlatformsPage(initialTab) {
   function showPlatPanel(panel) {
     document.querySelectorAll('[data-plat-panel]').forEach(p => { p.style.display = (p.dataset.platPanel === panel) ? '' : 'none'; });
     document.querySelectorAll('[data-plat-tab]').forEach(b => b.classList.toggle('active', b.dataset.platTab === panel));
+    // v1.9.348 — sync hash ให้ refresh แล้วกลับมา tab เดิม (replaceState — ไม่ trigger hashchange/navigate)
+    try { history.replaceState(null, '', panel === 'platform' ? '#/platforms' : '#/platforms/' + panel); } catch (_) {}
     if (panel === 'skill' && !_skillMpLoaded) { _skillMpLoaded = true; renderSkillMarketplace(); }
     if (panel === 'aiproject' && !_aiprojLoaded) { _aiprojLoaded = true; renderAiProjects(); }
     if (panel === 'claude-rl' && !_clrlLoaded) { _clrlLoaded = true; renderClaudeRL(); }

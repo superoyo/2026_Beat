@@ -1012,16 +1012,25 @@ async function _ccRenderDetail(v){
   d.matches.forEach(m=>{ (matchByTxn[m.transaction_id]=matchByTxn[m.transaction_id]||[]).push({matchId:m.id,inv:invById[m.invoice_id]}); matchedInvIds.add(m.invoice_id); });
   const total=d.transactions.length, matchedTxn=Object.keys(matchByTxn).filter(k=>matchByTxn[k].length).length;
   const complete=total>0 && matchedTxn>=total;
+  // v1.9.348 — หัวบิลใช้รูปแบบเดียวกับหน้ารวม: ปฏิทิน + chip กำหนดชำระ + เลขบัตร + สรุปย่อย
+  let _hdrDue='';
+  if(d.bill.due_date){
+    const _od=!complete && !d.bill.is_completed && d.bill.due_date < new Date().toISOString().slice(0,10);
+    _hdrDue=`<span title="วันกำหนดชำระ" style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:999px;font-size:11.5px;font-weight:700;vertical-align:middle;margin-right:7px;${_od?'background:rgba(220,38,38,.12);color:var(--critical);border:1px solid rgba(220,38,38,.25)':'background:rgba(245,158,11,.13);color:#92400e;border:1px solid rgba(245,158,11,.28)'}">⏰ ชำระ ${escapeHtml(_ccFmtDue(d.bill.due_date))}${_od?' · เลยกำหนด':''}</span>`;
+  }
   v.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
-      <div style="display:flex;align-items:center;gap:8px">
-        <button class="btn" id="cc-back" style="font-size:12px">← กลับ</button>
-        <span style="font-size:16px;font-weight:800">💳 ${escapeHtml(d.bill.card_number||'บัตร')} · ${_ccMonthLabel(d.bill.bill_month,d.bill.bill_year)}</span>
+      <div style="display:flex;align-items:center;gap:12px;min-width:0">
+        <button class="btn" id="cc-back" style="font-size:12px;flex-shrink:0">← กลับ</button>
+        ${_ccBillMonthTile(d.bill.bill_month,d.bill.bill_year)}
+        <div style="min-width:0">
+          <div style="font-size:16px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_hdrDue}💳 ${escapeHtml(d.bill.card_number||'บัตร')} · ${_ccMonthLabel(d.bill.bill_month,d.bill.bill_year)}</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px">${total} รายการ · ยอดรวม ${_ccMoney(d.transactions.reduce((s,t)=>s+(t.amount||0),0))} · invoice ${d.invoices.length} ใบ</div>
+        </div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <span style="font-size:12.5px;font-weight:700;${complete?'color:var(--green)':'color:#92400e'}">${complete?'✓ จับคู่ครบ':matchedTxn+'/'+total+' จับคู่แล้ว'}</span>
         <button class="btn" id="cc-edit-bill" style="font-size:12px">✏️ แก้ไขบิล</button>
-        <button class="btn" id="cc-add-inv" style="font-size:12px">⬆️ เพิ่ม invoice</button>
         <button class="btn danger" id="cc-del-bill" style="font-size:12px">🗑 ลบบิล</button>
       </div>
     </div>
@@ -1125,7 +1134,6 @@ async function _ccRenderDetail(v){
     :'<div class="empty" style="font-size:12px">ยังไม่มี invoice — กด “เพิ่ม invoice”</div>');
   $('cc-back').onclick=()=>{ _ccState.billId=null; _ccState.selInvoice=null; _ccRender(); };
   $('cc-edit-bill').onclick=()=>_ccEditBill(d);
-  $('cc-add-inv').onclick=()=>_ccUploadInvoice(_ccState.billId);
   // v1.9.347 — drop zone ท้ายคอลัมน์ invoice: คลิกเลือกไฟล์ หรือลากมาวาง → อัพเข้าบิลนี้
   const _invDz=$('cc-inv-drop');
   if(_invDz){
