@@ -1160,13 +1160,21 @@ async function _ccRenderDetail(v){
   v.querySelectorAll('.cc-inv-prev').forEach(x=>x.addEventListener('click',(e)=>{ e.stopPropagation(); const inv=allInvById[parseInt(x.dataset.inv,10)]; if(inv) _ccPreviewInvoice(inv); }));
   v.querySelectorAll('.cc-inv-edit').forEach(x=>x.addEventListener('click',(e)=>{ e.stopPropagation(); const inv=allInvById[parseInt(x.dataset.inv,10)]; if(inv) _ccEditInvoice(inv,()=>_ccRenderDetail($('cc-view'))); }));
   v.querySelectorAll('.cc-inv-del').forEach(x=>x.addEventListener('click',async(e)=>{ e.stopPropagation(); if(!confirm('ลบ invoice นี้?'))return; await fetchJson('/api/creditcard/invoices/'+x.dataset.inv,{method:'DELETE'}); await _ccLoadBills(); _ccRenderDetail($('cc-view')); }));
+  // v1.9.350 — ปล่อยลอย: ถอด invoice ออกจากบิลนี้ → กลับไปเป็นใบลอย ใช้กับบิลอื่นได้
+  v.querySelectorAll('.cc-inv-detach').forEach(x=>x.addEventListener('click',async(e)=>{
+    e.stopPropagation();
+    if(!confirm('ถอด invoice นี้ออกจากบิล? (จะกลับเป็นใบลอย — ลากจับคู่เข้าบิลไหนก็ได้)'))return;
+    try{ await fetchJson('/api/creditcard/invoices/'+x.dataset.inv+'/detach',{method:'POST'}); }
+    catch(err){ alert(err.message||err); return; }
+    await _ccLoadBills(); _ccRenderDetail($('cc-view'));
+  }));
   const _ccTxnSearch=$('cc-txn-search');
   if(_ccTxnSearch) _ccTxnSearch.addEventListener('input',()=>{ const q=_ccTxnSearch.value.trim().toLowerCase(); v.querySelectorAll('.cc-txn').forEach(el=>{ el.style.display=(!q||(el.textContent||'').toLowerCase().includes(q))?'':'none'; }); });
   let dragInv=null;
   const doMatch=async(txnId,invId)=>{ try{ await fetchJson('/api/creditcard/matches',{method:'POST',body:JSON.stringify({transaction_id:txnId,invoice_id:invId})}); _ccState.selInvoice=null; await _ccLoadBills(); _ccRenderDetail($('cc-view')); }catch(e){ alert(e.message); } };
   v.querySelectorAll('.cc-inv').forEach(el=>{
     el.addEventListener('dragstart',e=>{ dragInv=parseInt(el.dataset.inv,10); e.dataTransfer.effectAllowed='move'; });
-    el.addEventListener('click',(e)=>{ if(e.target.closest('a,.cc-inv-del,.cc-inv-edit,.cc-inv-prev'))return; const id=parseInt(el.dataset.inv,10); _ccState.selInvoice=(_ccState.selInvoice===id)?null:id; v.querySelectorAll('.cc-inv').forEach(x=>x.style.outline=''); if(_ccState.selInvoice) el.style.outline='2px solid var(--primary)'; });
+    el.addEventListener('click',(e)=>{ if(e.target.closest('a,.cc-inv-del,.cc-inv-edit,.cc-inv-prev,.cc-inv-detach'))return; const id=parseInt(el.dataset.inv,10); _ccState.selInvoice=(_ccState.selInvoice===id)?null:id; v.querySelectorAll('.cc-inv').forEach(x=>x.style.outline=''); if(_ccState.selInvoice) el.style.outline='2px solid var(--primary)'; });
   });
   v.querySelectorAll('.cc-txn').forEach(el=>{
     el.addEventListener('dragover',e=>{ e.preventDefault(); el.style.background='var(--bg-soft)'; });
@@ -1228,9 +1236,10 @@ function _ccInvCardHtml(i,isMatched,isPool){
     <div style="font-size:11px;color:var(--text-muted)">${_ccMonthLabel(i.inv_month,i.inv_year)} · ${_ccUploaderChip(i)}</div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px">
       <span style="font-weight:700;color:var(--green);font-variant-numeric:tabular-nums">${_ccMoney(i.amount)}</span>
-      <span style="display:flex;gap:11px">
+      <span style="display:flex;gap:11px;align-items:center">
         <span class="cc-inv-prev" data-inv="${i.id}" style="font-size:12px;cursor:pointer" title="preview">👁</span>
         <span class="cc-inv-edit" data-inv="${i.id}" style="font-size:12px;cursor:pointer" title="แก้ไข">✏️</span>
+        ${isPool?'':`<span class="cc-inv-detach" data-inv="${i.id}" style="font-size:11px;color:#92400e;cursor:pointer" title="ถอดออกจากบิลนี้ — กลับเป็นใบลอย ใช้กับบิลอื่นได้">ปล่อยลอย</span>`}
         <span class="cc-inv-del" data-inv="${i.id}" style="font-size:11px;color:var(--critical);cursor:pointer">ลบ</span>
       </span>
     </div>

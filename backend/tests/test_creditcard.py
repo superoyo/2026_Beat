@@ -167,3 +167,33 @@ def test_bill_completed_toggle(admin_client):
 
     assert admin_client.patch("/api/creditcard/bills/999999/completed",
                               json={"completed": True}).status_code == 404
+
+
+def test_detach_invoice_from_bill(admin_client):
+    # v1.9.350 — ปล่อยลอย: ถอด invoice ออกจากบิล → กลับเป็นใบลอย
+    bid = _create_bill(admin_client)
+    r = admin_client.post("/api/creditcard/invoices",
+                          json={"company": "Windsor", "kind": "invoice",
+                                "bill_id": bid, "amount": 299.0})
+    inv_id = r.json()["id"]
+
+    r = admin_client.post(f"/api/creditcard/invoices/{inv_id}/detach")
+    assert r.status_code == 200
+    assert db_row("SELECT bill_id FROM cc_invoices WHERE id = ?", (inv_id,))["bill_id"] is None
+    # กลับไปโผล่ใน pool
+    pool = admin_client.get("/api/creditcard/pool-invoices").json()["invoices"]
+    assert inv_id in [i["id"] for i in pool]
+    # ลอยอยู่แล้ว → 400
+    assert admin_client.post(f"/api/creditcard/invoices/{inv_id}/detach").status_code == 400
+
+
+def test_detach_blocked_when_matched(admin_client):
+    bid = _create_bill(admin_client)
+    txn = admin_client.get(f"/api/creditcard/bills/{bid}").json()["transactions"][0]
+    inv_id = admin_client.post("/api/creditcard/invoices",
+                               json={"company": "X", "kind": "invoice",
+                                     "bill_id": bid, "amount": 1.0}).json()["id"]
+    admin_client.post("/api/creditcard/matches",
+                      json={"transaction_id": txn["id"], "invoice_id": inv_id})
+    r = admin_client.post(f"/api/creditcard/invoices/{inv_id}/detach")
+    assert r.status_code == 400  # ต้องถอดการจับคู่ก่อน

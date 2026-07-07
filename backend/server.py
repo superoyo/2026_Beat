@@ -11063,6 +11063,21 @@ def cc_invoice_file(iid: int, _sess: dict = Depends(_require_module("platform"))
     return Response(content=data, media_type=mime)
 
 
+# v1.9.350 — ถอด invoice ออกจากบิล (ปล่อยลอย) — ใช้ย้ายใบที่อัพผิดบิลไปใช้กับบิลอื่น
+@app.post("/api/creditcard/invoices/{iid}/detach")
+def cc_detach_invoice(iid: int, _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    with db_conn() as conn:
+        r = conn.execute("SELECT bill_id FROM cc_invoices WHERE id=?", (iid,)).fetchone()
+        if not r:
+            raise HTTPException(status_code=404, detail="ไม่พบ invoice")
+        if r["bill_id"] is None:
+            raise HTTPException(status_code=400, detail="invoice นี้ลอยอยู่แล้ว")
+        if conn.execute("SELECT 1 FROM cc_matches WHERE invoice_id=?", (iid,)).fetchone():
+            raise HTTPException(status_code=400, detail="ต้องถอดการจับคู่ (✕) ก่อน จึงจะปล่อยลอยได้")
+        conn.execute("UPDATE cc_invoices SET bill_id=NULL WHERE id=?", (iid,))
+    return {"ok": True}
+
+
 @app.delete("/api/creditcard/invoices/{iid}")
 def cc_delete_invoice(iid: int, _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
     with db_conn() as conn:
