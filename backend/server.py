@@ -11023,12 +11023,39 @@ def cc_edit_invoice(iid: int, payload: CcInvoiceEdit, _sess: dict = Depends(_req
 
 
 @app.get("/api/creditcard/pool-invoices")
-def cc_pool_invoices(_sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+def cc_pool_invoices(scope: str = "unmatched",
+                     _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    """รายการใบเสร็จ/invoice
+    scope='unmatched' (default) → เฉพาะที่ยังไม่จับคู่ (ลอย + ผูกบิลแต่ยังไม่ match)
+    scope='all' → ทุกใบ พร้อมข้อมูลว่าจับคู่กับอะไร (matched_txn / matched_bill)"""
+    cols = ("id,bill_id,company,kind,inv_month,inv_year,amount,description,"
+            "job_number,product_name,am_name,note,expense_category,file_name,file_mime,"
+            "uploaded_by,uploaded_by_id,created_at")
     with db_conn() as conn:
         rows = conn.execute(
-            "SELECT id,bill_id,company,kind,inv_month,inv_year,amount,description,job_number,product_name,am_name,note,expense_category,file_name,file_mime,uploaded_by,uploaded_by_id,created_at "
-            "FROM cc_invoices WHERE bill_id IS NULL ORDER BY id DESC", ()).fetchall()
-    return {"invoices": [dict(r) for r in rows]}
+            f"SELECT {cols} FROM cc_invoices ORDER BY id DESC").fetchall()
+        # map invoice_id → ข้อมูลรายการที่จับคู่ + บิล
+        match_rows = conn.execute(
+            "SELECT m.invoice_id, t.description AS txn_desc, t.amount AS txn_amount, "
+            "       b.id AS bill_id, b.card_number, b.bill_month, b.bill_year "
+            "FROM cc_matches m "
+            "JOIN cc_transactions t ON t.id = m.transaction_id "
+            "JOIN cc_bills b ON b.id = m.bill_id").fetchall()
+        matched_map: dict[int, dict[str, Any]] = {}
+        for r in match_rows:
+            matched_map[r["invoice_id"]] = {
+                "txn_description": r["txn_desc"], "txn_amount": r["txn_amount"],
+                "bill_id": r["bill_id"], "card_number": r["card_number"],
+                "bill_month": r["bill_month"], "bill_year": r["bill_year"],
+            }
+    out = []
+    for r in rows:
+        d = dict(r)
+        m = matched_map.get(d["id"])
+        d["matched"] = m if m else None
+        if scope == "all" or m is None:
+            out.append(d)
+    return {"invoices": out, "scope": scope}
 
 
 @app.put("/api/creditcard/bills/{bid}")

@@ -244,3 +244,35 @@ def test_search_transactions_includes_matched_invoices(admin_client):
     # รายการที่ไม่ได้จับคู่ → invoices ว่าง
     other = [t for t in txns if t["id"] != txn["id"]]
     assert all(t["invoices"] == [] for t in other)
+
+
+def test_pool_invoices_scope(admin_client):
+    # v1.9.357 — pool: scope unmatched (default) vs all + ข้อมูล matched
+    bid = _create_bill(admin_client)
+    txn = admin_client.get(f"/api/creditcard/bills/{bid}").json()["transactions"][0]
+    # ใบที่จะจับคู่
+    inv_matched = admin_client.post("/api/creditcard/invoices",
+                                    json={"company": "Anthropic", "kind": "invoice",
+                                          "bill_id": bid, "amount": 100.0}).json()["id"]
+    admin_client.post("/api/creditcard/matches",
+                      json={"transaction_id": txn["id"], "invoice_id": inv_matched})
+    # ใบลอย (ยังไม่จับคู่)
+    inv_float = admin_client.post("/api/creditcard/invoices",
+                                  json={"company": "Google", "kind": "receipt",
+                                        "amount": 50.0}).json()["id"]
+
+    # default (unmatched) → เห็นเฉพาะใบลอย
+    un = admin_client.get("/api/creditcard/pool-invoices").json()["invoices"]
+    ids = [i["id"] for i in un]
+    assert inv_float in ids and inv_matched not in ids
+
+    # scope=all → เห็นทั้งคู่ + ใบที่จับคู่มีข้อมูล matched
+    allinv = admin_client.get("/api/creditcard/pool-invoices?scope=all").json()["invoices"]
+    ids2 = [i["id"] for i in allinv]
+    assert inv_float in ids2 and inv_matched in ids2
+    m = [i for i in allinv if i["id"] == inv_matched][0]
+    assert m["matched"] is not None
+    assert m["matched"]["bill_id"] == bid
+    assert m["matched"]["txn_description"] == txn["description"]
+    f = [i for i in allinv if i["id"] == inv_float][0]
+    assert f["matched"] is None
