@@ -879,19 +879,28 @@ function _ccOpenSearchPopup(){
     const sum=list.reduce((s,t)=>s+(t.amount||0),0);
     cntEl.textContent=list.length?`${list.length} รายการ · รวม ${_ccMoney(sum)}`:'';
     resEl.innerHTML=list.map(t=>`
-      <div class="ccs-row" data-bill="${t.bill_id}" title="คลิกเพื่อเปิดบิลนี้" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px;cursor:pointer;transition:background .1s" onmouseenter="this.style.background='var(--bg-soft)'" onmouseleave="this.style.background='transparent'">
-        <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+      <div class="ccs-row" data-bill="${t.bill_id}" title="คลิกเพื่อเปิดบิลนี้" style="display:flex;gap:12px;align-items:center;padding:9px 12px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px;cursor:pointer;transition:background .1s" onmouseenter="this.style.background='var(--bg-soft)'" onmouseleave="this.style.background='transparent'">
+        ${_ccBillMonthTile(t.bill_month,t.bill_year)}
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex:1;min-width:0">
           <div style="min-width:0">
             <div style="font-size:13px;font-weight:600">${escapeHtml(t.description||'—')}</div>
             ${t.user_note?`<div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-top:1px">${escapeHtml(t.user_note)}</div>`:''}
-            <div style="font-size:10.5px;color:var(--text-soft);margin-top:3px">💳 ${escapeHtml(t.card_number||'บัตร')} · ${_ccMonthLabel(t.bill_month,t.bill_year)}${t.txn_date?' · '+escapeHtml(t.txn_date):''}</div>
+            <div style="font-size:10.5px;color:var(--text-soft);margin-top:3px">💳 ${escapeHtml(t.card_number||'บัตร')}${t.txn_date?' · '+escapeHtml(t.txn_date):''}</div>
+            ${(t.invoices&&t.invoices.length)?`<div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap">${t.invoices.map((iv,k)=>`<span class="ccs-inv" data-txn="${t.id}" data-k="${k}" title="คลิกเพื่อเปิดดูเอกสาร" style="display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:999px;font-size:11px;background:rgba(16,185,129,.12);color:var(--green);font-weight:600;cursor:pointer">✓ ${escapeHtml(iv.company||'invoice')} ${_ccMoney(iv.amount)} <span style="opacity:.75">👁</span></span>`).join('')}</div>`:''}
           </div>
           <div style="font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap">${_ccMoney(t.amount)}</div>
         </div>
       </div>`).join('')||(inp.value.trim()?'<div class="empty" style="font-size:12.5px">ไม่พบรายการ</div>':'<div class="empty" style="font-size:12.5px">พิมพ์ keyword เพื่อค้นหา</div>');
-    resEl.querySelectorAll('.ccs-row').forEach(r=>r.addEventListener('click',()=>{
+    resEl.querySelectorAll('.ccs-row').forEach(r=>r.addEventListener('click',(e)=>{
+      if(e.target.closest('.ccs-inv')) return;   // chip เอกสาร — ไม่เปิดบิล
       close(); document.removeEventListener('keydown',onKey);
       _ccState.billId=parseInt(r.dataset.bill,10); _ccState.selInvoice=null; _ccRender();
+    }));
+    resEl.querySelectorAll('.ccs-inv').forEach(ch=>ch.addEventListener('click',(e)=>{
+      e.stopPropagation();
+      const t=all.find(x=>x.id===parseInt(ch.dataset.txn,10));
+      const iv=t&&t.invoices&&t.invoices[parseInt(ch.dataset.k,10)];
+      if(iv) _ccPreviewInvoice(iv,3000);   // ทับ popup search (z=2500)
     }));
   };
   const setupRange=()=>{
@@ -1352,13 +1361,13 @@ function _ccPreviewDataUrl(dataUrl,mime,name){
   bg.querySelector('#cc-dprev-close').onclick=close;
   bg.addEventListener('click',e=>{ if(e.target===bg) close(); });
 }
-function _ccPreviewInvoice(inv){
+function _ccPreviewInvoice(inv,zIndex){
   const url=API+'/api/creditcard/invoices/'+inv.id+'/file';
   const isImg=(inv.file_mime||'').startsWith('image/')||/\.(png|jpe?g|gif|webp|bmp)$/i.test(inv.file_name||'');
   const inner=isImg
     ? `<img src="${url}" alt="" style="width:100%;max-height:78vh;object-fit:contain;display:block;background:#0f172a" />`
     : `<iframe src="${url}" style="width:100%;height:78vh;border:0;background:#fff;display:block" title="preview"></iframe>`;
-  const bg=document.createElement('div'); bg.className='modal-bg'; bg.style.zIndex='1200';
+  const bg=document.createElement('div'); bg.className='modal-bg'; bg.style.zIndex=String(zIndex||1200);
   bg.innerHTML=`<div class="modal modal-xwide" style="max-width:940px;padding:16px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">
       <div style="min-width:0">

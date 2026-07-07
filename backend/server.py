@@ -10932,7 +10932,25 @@ def cc_search_transactions(q: str = "",
         sql += ("ORDER BY COALESCE(b.bill_year,0) DESC, COALESCE(b.bill_month,0) DESC, "
                 "t.row_order, t.id LIMIT 500")
         rows = conn.execute(sql, params).fetchall()
-    return {"transactions": [dict(r) for r in rows]}
+        # v1.9.353 — แนบ invoice ที่จับคู่แล้วของแต่ละรายการ (ใช้แสดง chip + เปิดดูเอกสาร)
+        out = [dict(r) for r in rows]
+        if out:
+            ids = [t["id"] for t in out]
+            pl = ",".join("?" * len(ids))
+            mrows = conn.execute(
+                f"SELECT m.transaction_id, i.id, i.company, i.kind, i.amount, "
+                f"       i.inv_month, i.inv_year, i.description, i.file_name, i.file_mime, "
+                f"       i.uploaded_by, i.uploaded_by_id "
+                f"FROM cc_matches m JOIN cc_invoices i ON i.id = m.invoice_id "
+                f"WHERE m.transaction_id IN ({pl})", ids).fetchall()
+            by_txn: dict[int, list[dict[str, Any]]] = {}
+            for r in mrows:
+                d = dict(r)
+                tid = d.pop("transaction_id")
+                by_txn.setdefault(tid, []).append(d)
+            for t in out:
+                t["invoices"] = by_txn.get(t["id"], [])
+    return {"transactions": out if rows else []}
 
 
 # v1.9.344 — toggle เสร็จสิ้น (completed) ของบิล

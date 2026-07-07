@@ -224,3 +224,23 @@ def test_search_transactions_across_bills(admin_client):
 
     # ไม่เจอ = list ว่าง
     assert admin_client.get("/api/creditcard/search-transactions?q=ZZZNOTFOUND").json()["transactions"] == []
+
+
+def test_search_transactions_includes_matched_invoices(admin_client):
+    # v1.9.353 — ผล search แนบ invoice ที่จับคู่แล้ว
+    bid = _create_bill(admin_client)
+    txn = admin_client.get(f"/api/creditcard/bills/{bid}").json()["transactions"][0]
+    inv_id = admin_client.post("/api/creditcard/invoices",
+                               json={"company": "Anthropic", "kind": "invoice",
+                                     "bill_id": bid, "amount": 100.0}).json()["id"]
+    admin_client.post("/api/creditcard/matches",
+                      json={"transaction_id": txn["id"], "invoice_id": inv_id})
+
+    txns = admin_client.get("/api/creditcard/search-transactions?q=ANTHROPIC").json()["transactions"]
+    me = [t for t in txns if t["id"] == txn["id"]][0]
+    assert len(me["invoices"]) == 1
+    assert me["invoices"][0]["id"] == inv_id
+    assert me["invoices"][0]["company"] == "Anthropic"
+    # รายการที่ไม่ได้จับคู่ → invoices ว่าง
+    other = [t for t in txns if t["id"] != txn["id"]]
+    assert all(t["invoices"] == [] for t in other)
