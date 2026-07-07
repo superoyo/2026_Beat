@@ -1028,37 +1028,48 @@ async function _ccRenderDetail(v){
     <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:10px">ลาก invoice จากขวา → วางบนรายการซ้ายเพื่อจับคู่ · หรือคลิก invoice แล้วคลิกรายการ</div>
     <!-- v1.9.341 — เอกสารต้นฉบับ (statement pages): ดูรูปที่อัพตอน OCR + อัพเพิ่ม/ลบ -->
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-      <span style="font-size:12px;font-weight:700;color:var(--text-muted)">📄 เอกสารต้นฉบับ (${(d.pages||[]).length})</span>
+      <span style="font-size:12px;font-weight:700;color:var(--text-muted)">เอกสารต้นฉบับ (${(d.pages||[]).length})</span>
       ${(d.pages||[]).map((p,i)=>`
         <span class="cc-page-chip" data-page="${p.id}" title="ดูหน้า ${i+1}" style="display:inline-flex;align-items:center;gap:5px;padding:3px 6px 3px 10px;border:1px solid var(--border);border-radius:999px;background:var(--bg-card);cursor:pointer;font-size:11.5px;font-weight:600;color:var(--primary)">
-          🖼 หน้า ${i+1}
+          หน้า ${i+1}
           <span class="cc-page-del" data-page="${p.id}" title="ลบหน้านี้" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:999px;background:rgba(220,38,38,.10);color:var(--critical);font-size:10px">✕</span>
         </span>`).join('')}
       <button type="button" class="btn" id="cc-add-pages" style="font-size:11.5px;padding:4px 10px">＋ อัพเอกสารเพิ่ม</button>
       <input type="file" id="cc-add-pages-file" accept="image/*" multiple style="display:none" />
     </div>
-    <div style="display:grid;grid-template-columns:minmax(300px,460px) 320px;gap:14px;align-items:start">
+    <div style="display:grid;grid-template-columns:minmax(300px,460px) 320px;gap:40px;align-items:start">
       <div>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
           <span style="font-size:12px;font-weight:700;color:var(--text-muted)">รายการจากบัตร (${total})</span>
           <div style="display:flex;gap:6px;align-items:center">
             <select id="cc-txn-sort" title="เรียงลำดับ" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600">
-              <option value="doc" ${_ccState.txnSort!=='group'?'selected':''}>📄 เรียงตามเอกสาร</option>
-              <option value="group" ${_ccState.txnSort==='group'?'selected':''}>🗂 เรียงตามกลุ่ม</option>
+              <option value="doc" ${_ccState.txnSort!=='group'?'selected':''}>เรียงตามเอกสาร</option>
+              <option value="group" ${_ccState.txnSort==='group'?'selected':''}>เรียงตามกลุ่ม</option>
             </select>
-            <input id="cc-txn-search" placeholder="🔍 ค้นหารายการ…" style="font-size:12px;padding:5px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);width:140px" />
+            <input id="cc-txn-search" placeholder="ค้นหารายการ…" style="font-size:12px;padding:5px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);width:140px" />
           </div>
         </div>
         <div id="cc-txn-col"></div>
       </div>
-      <div><div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px">Invoice / Receipt — ยังไม่จับคู่ (${d.invoices.filter(i=>!matchedInvIds.has(i.id)).length}/${d.invoices.length})</div><div id="cc-inv-col"></div></div>
+      <div>
+        <div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px">Invoice / Receipt — ยังไม่จับคู่ (${d.invoices.filter(i=>!matchedInvIds.has(i.id)).length}/${d.invoices.length})</div>
+        <div id="cc-inv-col"></div>
+        <!-- v1.9.347 — กล่องเส้นประ: คลิกหรือลากไฟล์มาวางเพื่ออัพโหลด invoice เข้าบิลนี้ -->
+        <div id="cc-inv-drop" style="border:2px dashed var(--border);border-radius:12px;padding:14px;text-align:center;color:var(--text-muted);font-size:12px;margin-top:10px;transition:border-color .12s,background .12s;cursor:pointer;line-height:1.6">
+          <b>＋ เพิ่ม Invoice / Receipt</b><br><span style="font-size:11px">คลิก หรือลากไฟล์ (PDF / รูป) มาวางที่นี่</span>
+        </div>
+      </div>
     </div>`;
   // v1.9.314 — รายการในบัตรกดเพื่อ edit description (user_note) ได้ inline
   const _txnCard=(t)=>{
     const ms=matchByTxn[t.id]||[];
-    const chips=ms.map(mm=>`<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;background:rgba(16,185,129,.12);color:var(--green);font-weight:600;margin:3px 3px 0 0">${escapeHtml((mm.inv&&mm.inv.company)||'invoice')} ${_ccMoney(mm.inv&&mm.inv.amount)} <span class="cc-unmatch" data-match="${mm.matchId}" style="cursor:pointer;opacity:.7">✕</span></span>`).join('');
+    // v1.9.347 — เอกสารแนบเป็นแถวของตัวเอง: ยอดชิดขวาตรงแนวเดียวกับยอดรายการ
+    const chips=ms.map(mm=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:5px;padding-top:5px;border-top:1px dashed var(--border)">
+        <span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--green);font-weight:600;min-width:0"><span class="cc-unmatch" data-match="${mm.matchId}" title="ถอดการจับคู่" style="cursor:pointer;opacity:.6;flex-shrink:0">✕</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml((mm.inv&&mm.inv.company)||'invoice')}</span></span>
+        <span style="font-size:12px;font-weight:700;color:var(--green);font-variant-numeric:tabular-nums;white-space:nowrap">${_ccMoney(mm.inv&&mm.inv.amount)}</span>
+      </div>`).join('');
     const note=t.user_note||'';
-    const noteLine=`<div class="cc-txn-note" style="${note?'':'display:none;'}font-size:11px;color:var(--text-muted);margin-top:3px;font-style:italic">${note?'📝 '+escapeHtml(note):''}</div>`;
+    const noteLine=`<div class="cc-txn-note" style="${note?'':'display:none;'}font-size:11px;color:var(--text-muted);margin-top:3px;font-style:italic">${note?escapeHtml(note):''}</div>`;
     return `<div class="cc-txn card" data-txn="${t.id}" style="padding:9px 12px;margin-bottom:6px;border:1px solid ${ms.length?'rgba(16,185,129,.45)':'var(--border)'};transition:background .1s;cursor:pointer" title="คลิกเพื่อเพิ่ม description">
       <div style="display:flex;justify-content:space-between;gap:8px">
         <div style="min-width:0">
@@ -1067,7 +1078,7 @@ async function _ccRenderDetail(v){
           ${noteLine}
         </div>
         <div style="font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap">${_ccMoney(t.amount)}</div>
-      </div>${chips?`<div>${chips}</div>`:''}
+      </div>${chips}
       <div class="cc-txn-edit" style="display:none;margin-top:8px;gap:6px;align-items:center">
         <input class="cc-txn-input" type="text" value="${escapeHtml(note)}" placeholder="ใส่ description..." maxlength="500" style="flex:1;font-size:12px;padding:5px 9px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);color:var(--text);min-width:0" />
         <button type="button" class="btn cc-txn-save" title="บันทึก (Enter)" style="font-size:13px;padding:4px 9px;line-height:1;color:var(--green)">✓</button>
@@ -1092,7 +1103,7 @@ async function _ccRenderDetail(v){
       const arr=groups.get(name);
       const sum=arr.reduce((s,t)=>s+(t.amount||0),0);
       return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:12px 0 6px;padding:0 2px">
-        <span style="font-size:11.5px;font-weight:700;color:var(--primary-dark);text-transform:uppercase;letter-spacing:.4px">🗂 ${escapeHtml(name)} <span style="color:var(--text-muted);font-weight:600">(${arr.length})</span></span>
+        <span style="font-size:11.5px;font-weight:700;color:var(--primary-dark);text-transform:uppercase;letter-spacing:.4px">${escapeHtml(name)} <span style="color:var(--text-muted);font-weight:600">(${arr.length})</span></span>
         <span style="font-size:11.5px;font-weight:700;color:var(--text-muted);font-variant-numeric:tabular-nums">${_ccMoney(sum)}</span>
       </div>`+arr.map(_txnCard).join('');
     }).join('');
@@ -1108,13 +1119,27 @@ async function _ccRenderDetail(v){
   const matchedCount=d.invoices.length-unmatchedInv.length;
   $('cc-inv-col').innerHTML=(
     unmatchedInv.map(i=>_ccInvCardHtml(i, false, false)).join('')
-    + (poolInv.length?`<div style="font-size:11px;color:#92400e;margin:10px 0 6px;font-weight:700">📥 ลอย (ยังไม่ผูกบิล) — ลากมาจับคู่เพื่อผูกเข้าบิลนี้</div>`+poolInv.map(i=>_ccInvCardHtml(i,false,true)).join(''):'')
+    + (poolInv.length?`<div style="font-size:11px;color:#92400e;margin:10px 0 6px;font-weight:700">ลอย (ยังไม่ผูกบิล) — ลากมาจับคู่เพื่อผูกเข้าบิลนี้</div>`+poolInv.map(i=>_ccInvCardHtml(i,false,true)).join(''):'')
   )||(matchedCount>0
     ?`<div class="empty" style="font-size:12px;text-align:center;padding:20px 10px">🎉 จับคู่ครบทุกใบแล้ว<br><span style="font-size:11px;color:var(--text-soft)">invoice ที่จับคู่แล้ว (${matchedCount}) อยู่บนรายการฝั่งซ้าย — กด ✕ เพื่อถอด</span></div>`
     :'<div class="empty" style="font-size:12px">ยังไม่มี invoice — กด “เพิ่ม invoice”</div>');
   $('cc-back').onclick=()=>{ _ccState.billId=null; _ccState.selInvoice=null; _ccRender(); };
   $('cc-edit-bill').onclick=()=>_ccEditBill(d);
   $('cc-add-inv').onclick=()=>_ccUploadInvoice(_ccState.billId);
+  // v1.9.347 — drop zone ท้ายคอลัมน์ invoice: คลิกเลือกไฟล์ หรือลากมาวาง → อัพเข้าบิลนี้
+  const _invDz=$('cc-inv-drop');
+  if(_invDz){
+    _invDz.onclick=()=>_ccUploadInvoice(_ccState.billId);
+    const _on=()=>{ _invDz.style.borderColor='var(--primary)'; _invDz.style.background='rgba(37,99,235,.06)'; };
+    const _off=()=>{ _invDz.style.borderColor='var(--border)'; _invDz.style.background='transparent'; };
+    _invDz.addEventListener('dragover',e=>{ e.preventDefault(); _on(); });
+    _invDz.addEventListener('dragleave',e=>{ e.preventDefault(); _off(); });
+    _invDz.addEventListener('drop',e=>{
+      e.preventDefault(); _off();
+      const fs=e.dataTransfer&&e.dataTransfer.files;
+      if(fs&&fs.length) _ccUploadInvoice(_ccState.billId,fs);   // ไฟล์จากเครื่อง — ไม่ชนกับการลาก invoice ภายใน (ไม่มี files)
+    });
+  }
   $('cc-del-bill').onclick=async ()=>{ if(!confirm('ลบบิลนี้ทั้งหมด? (รายการ/invoice/การจับคู่จะถูกลบด้วย)'))return; await fetchJson('/api/creditcard/bills/'+_ccState.billId,{method:'DELETE'}); _ccState.billId=null; await _ccLoadBills(); _ccRender(); };
   // v1.9.341 — เอกสารต้นฉบับ: preview / ลบ / อัพเพิ่ม
   v.querySelectorAll('.cc-page-chip').forEach(ch=>ch.addEventListener('click',(e)=>{
@@ -1192,7 +1217,7 @@ async function _ccRenderDetail(v){
       const newNote=r.user_note||'';
       const t=d.transactions.find(x=>x.id===tid); if(t) t.user_note=newNote;
       const noteEl=card.querySelector('.cc-txn-note');
-      if(noteEl){ if(newNote){ noteEl.style.display=''; noteEl.innerHTML='📝 '+escapeHtml(newNote); } else { noteEl.style.display='none'; noteEl.textContent=''; } }
+      if(noteEl){ if(newNote){ noteEl.style.display=''; noteEl.innerHTML=escapeHtml(newNote); } else { noteEl.style.display='none'; noteEl.textContent=''; } }
       card.querySelector('.cc-txn-edit').style.display='none';
     }catch(err){ alert(err.message); }
     finally{ if(saveBtn) saveBtn.disabled=false; }
@@ -1220,9 +1245,9 @@ let _ccPoolCatFilter='all';
 function _ccInvCardHtml(i,isMatched,isPool){
   return `<div class="cc-inv card" draggable="true" data-inv="${i.id}" style="padding:9px 11px;margin-bottom:6px;cursor:grab;border:1px solid ${isPool?'rgba(245,158,11,.5)':(isMatched?'rgba(16,185,129,.45)':'var(--border)')}">
     <div style="font-size:12.5px;font-weight:700">${escapeHtml(i.company||'—')} <span style="font-size:10px;color:var(--text-muted);font-weight:500">${i.kind==='receipt'?'ใบเสร็จ':'invoice'}</span>${isPool?' <span style="font-size:9.5px;color:#92400e;background:rgba(245,158,11,.15);padding:1px 6px;border-radius:999px">ลอย</span>':''}</div>
-    ${i.description?`<div style="font-size:11px;color:var(--text);margin-top:1px">📝 ${escapeHtml(i.description)}</div>`:''}
-    ${(i.job_number||i.product_name||i.am_name)?`<div style="font-size:10.5px;color:var(--text-muted);margin-top:1px;display:flex;gap:7px;flex-wrap:wrap">${i.job_number?`<span>🔖 ${escapeHtml(i.job_number)}</span>`:''}${i.product_name?`<span>📦 ${escapeHtml(i.product_name)}</span>`:''}${i.am_name?`<span>👤 ${escapeHtml(i.am_name)}</span>`:''}</div>`:''}
-    ${i.note?`<div style="font-size:10.5px;color:#92400e;margin-top:1px">🗒️ ${escapeHtml(i.note)}</div>`:''}
+    ${i.description?`<div style="font-size:11px;color:var(--text);margin-top:1px">${escapeHtml(i.description)}</div>`:''}
+    ${(i.job_number||i.product_name||i.am_name)?`<div style="font-size:10.5px;color:var(--text-muted);margin-top:1px;display:flex;gap:7px;flex-wrap:wrap">${i.job_number?`<span>Job: ${escapeHtml(i.job_number)}</span>`:''}${i.product_name?`<span>${escapeHtml(i.product_name)}</span>`:''}${i.am_name?`<span>AM: ${escapeHtml(i.am_name)}</span>`:''}</div>`:''}
+    ${i.note?`<div style="font-size:10.5px;color:#92400e;margin-top:1px">${escapeHtml(i.note)}</div>`:''}
     <div style="font-size:11px;color:var(--text-muted)">${_ccMonthLabel(i.inv_month,i.inv_year)} · ${_ccUploaderChip(i)}</div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px">
       <span style="font-weight:700;color:var(--green);font-variant-numeric:tabular-nums">${_ccMoney(i.amount)}</span>
@@ -1430,19 +1455,49 @@ async function _ccRenderPool(v){
 }
 
 // ---- summary (completeness per bill + navigate bills) ----
+// v1.9.347 — แถวบิลใน dropdown เลือกบิล (Summary) — design เดียวกับหน้ารวมบัตรเครดิต
+function _ccSumBillRowHtml(b){
+  const done=!!b.is_completed;
+  const complete=b.txn_count>0&&b.matched_txn>=b.txn_count;
+  const pct=b.txn_count?Math.round(b.matched_txn/b.txn_count*100):0;
+  const due=b.due_date
+    ?`<span style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:700;background:rgba(245,158,11,.13);color:#92400e;border:1px solid rgba(245,158,11,.28);margin-left:7px;vertical-align:middle">ชำระ ${escapeHtml(_ccFmtDue(b.due_date))}</span>`:'';
+  return `${_ccBillMonthTile(b.bill_month,b.bill_year)}
+    <div style="min-width:0;flex:1">
+      <div style="font-size:13.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(b.card_number||'บัตร')} · ${_ccMonthLabel(b.bill_month,b.bill_year)}${due}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${b.txn_count} รายการ · ยอดรวม ${_ccMoney(b.txn_total)} · invoice ${b.invoice_count} ใบ</div>
+    </div>
+    <div style="display:flex;gap:6px;flex-shrink:0;align-items:center">
+      ${done?'<span style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:10.5px;font-weight:700;background:var(--green);color:#fff">✓ เสร็จสิ้น</span>':''}
+      <span style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:10.5px;font-weight:700;${complete?'background:rgba(16,185,129,.12);color:var(--green)':'background:rgba(245,158,11,.14);color:#92400e'}">${complete?'✓ ครบ':'จับคู่ '+pct+'%'}</span>
+    </div>`;
+}
 async function _ccRenderSummary(v){
   const bills=_ccState.bills;
   if(!bills.length){ v.innerHTML='<div class="empty">ยังไม่มีบิล</div>'; return; }
   if(!_ccState.summaryBillId||!bills.find(b=>b.id===_ccState.summaryBillId)) _ccState.summaryBillId=bills[0].id;
+  const selBill=bills.find(b=>b.id===_ccState.summaryBillId);
   v.innerHTML=`
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
-      <span style="font-size:12.5px;color:var(--text-muted)">เลือกบิล:</span>
-      <select id="cc-sum-bill" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);min-width:240px">
-        ${bills.map(b=>`<option value="${b.id}" ${b.id===_ccState.summaryBillId?'selected':''}>${escapeHtml(b.card_number||'บัตร')} · ${_ccMonthLabel(b.bill_month,b.bill_year)} ${b.txn_count&&b.matched_txn>=b.txn_count?'✓':''}</option>`).join('')}
-      </select>
+      <span style="font-size:12.5px;color:var(--text-muted);flex-shrink:0">เลือกบิล:</span>
+      <div id="cc-sum-billpick" style="position:relative;flex:1;min-width:340px;max-width:680px">
+        <button type="button" id="cc-sum-billpick-trg" style="width:100%;display:flex;align-items:center;gap:12px;padding:7px 12px;border:1px solid var(--border);border-radius:12px;background:var(--bg-input);cursor:pointer;font-family:inherit;text-align:left">
+          ${_ccSumBillRowHtml(selBill)}
+          <span style="color:var(--text-muted);font-size:12px;flex-shrink:0">▾</span>
+        </button>
+        <div id="cc-sum-billpick-pnl" style="display:none;position:absolute;z-index:60;top:calc(100% + 6px);left:0;right:0;max-height:60vh;overflow-y:auto;border:1px solid var(--border);border-radius:12px;background:var(--bg-card);box-shadow:0 12px 32px rgba(15,23,42,.16);padding:8px">
+          ${bills.map(b=>`<div class="cc-sum-billopt" data-bill="${b.id}" style="display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:9px;cursor:pointer;transition:background .1s;${b.id===_ccState.summaryBillId?'background:var(--primary-soft)':''}" onmouseenter="if(!this.style.background||this.style.background==='transparent')this.style.background='var(--bg-soft)'" onmouseleave="this.style.background='${b.id===_ccState.summaryBillId?'var(--primary-soft)':'transparent'}'">${_ccSumBillRowHtml(b)}</div>`).join('')}
+        </div>
+      </div>
     </div>
     <div id="cc-sum-body"><div class="empty">กำลังโหลด…</div></div>`;
-  $('cc-sum-bill').onchange=(e)=>{ _ccState.summaryBillId=parseInt(e.target.value,10); _ccRenderSummary(v); };
+  // wire custom dropdown
+  const _bpTrg=$('cc-sum-billpick-trg'), _bpPnl=$('cc-sum-billpick-pnl'), _bpRoot=$('cc-sum-billpick');
+  _bpTrg.onclick=(e)=>{ e.stopPropagation(); _bpPnl.style.display=_bpPnl.style.display==='none'?'block':'none'; };
+  v.querySelectorAll('.cc-sum-billopt').forEach(o=>o.addEventListener('click',()=>{ _ccState.summaryBillId=parseInt(o.dataset.bill,10); _ccRenderSummary(v); }));
+  if(window._ccSumPickOutside) document.removeEventListener('mousedown',window._ccSumPickOutside,true);
+  window._ccSumPickOutside=(e)=>{ if(_bpRoot&&!_bpRoot.contains(e.target)&&_bpPnl) _bpPnl.style.display='none'; };
+  document.addEventListener('mousedown',window._ccSumPickOutside,true);
   let d; try{ d=await fetchJson('/api/creditcard/bills/'+_ccState.summaryBillId); }
   catch(e){ $('cc-sum-body').innerHTML=`<div class="empty">${escapeHtml(e.message)}</div>`; return; }
   const invById={}; d.invoices.forEach(i=>invById[i.id]=i);
