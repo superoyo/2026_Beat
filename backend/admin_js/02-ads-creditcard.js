@@ -591,6 +591,16 @@ function _ccUploaderChip(inv,px){
     : `<span style="display:inline-flex;width:${px}px;height:${px}px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-size:${fs}px;align-items:center;justify-content:center;vertical-align:${va}">${escapeHtml((String(name).trim().charAt(0)||'?').toUpperCase())}</span>`;
   return `${av} ${escapeHtml(name)}`;
 }
+// v1.9.359 — avatar-only ของผู้อัพโหลด (มี tooltip เป็นชื่อ) — ใช้ใน chip เอกสารที่จับคู่
+function _ccUploaderAvatar(inv,px){
+  px=px||16; const fs=Math.round(px*0.6);
+  const m=_ccMembers.find(x=>x.id===inv.uploaded_by_id);
+  const name=(m&&m.name)||inv.uploaded_by||'—';
+  const t=escapeHtml(name);
+  return (m&&m.avatar)
+    ? `<img src="${m.avatar}" title="${t}" style="width:${px}px;height:${px}px;border-radius:50%;object-fit:cover;flex-shrink:0" />`
+    : `<span title="${t}" style="display:inline-flex;width:${px}px;height:${px}px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-size:${fs}px;font-weight:700;align-items:center;justify-content:center;flex-shrink:0">${escapeHtml((String(name).trim().charAt(0)||'?').toUpperCase())}</span>`;
+}
 function _ccFileToDataUrl(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error('อ่านไฟล์ไม่ได้')); r.readAsDataURL(file); }); }
 function _ccDownscale(dataUrl,maxW){ return new Promise((res)=>{ const img=new Image(); img.onload=()=>{ const scale=Math.min(1,maxW/img.width); if(scale>=1){ res(dataUrl); return; } const c=document.createElement('canvas'); c.width=Math.round(img.width*scale); c.height=Math.round(img.height*scale); c.getContext('2d').drawImage(img,0,0,c.width,c.height); try{ res(c.toDataURL('image/jpeg',0.82)); }catch(_){ res(dataUrl); } }; img.onerror=()=>res(dataUrl); img.src=dataUrl; }); }
 
@@ -1171,7 +1181,7 @@ async function _ccRenderDetail(v){
     const ms=matchByTxn[t.id]||[];
     // v1.9.347 — เอกสารแนบเป็นแถวของตัวเอง: ยอดชิดขวาตรงแนวเดียวกับยอดรายการ
     const chips=ms.map(mm=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:5px;padding-top:5px;border-top:1px dashed var(--border)">
-        <span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--green);font-weight:600;min-width:0"><span class="cc-unmatch" data-match="${mm.matchId}" title="ถอดการจับคู่" style="cursor:pointer;opacity:.6;flex-shrink:0">✕</span><span class="cc-txn-invprev" data-inv="${mm.inv&&mm.inv.id}" title="คลิกดูไฟล์เอกสาร" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px">${escapeHtml((mm.inv&&mm.inv.company)||'invoice')} 👁</span></span>
+        <span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--green);font-weight:600;min-width:0"><span class="cc-unmatch" data-match="${mm.matchId}" title="ถอดการจับคู่" style="cursor:pointer;opacity:.6;flex-shrink:0">✕</span>${mm.inv?_ccUploaderAvatar(mm.inv,16):''}<span class="cc-txn-invprev" data-inv="${mm.inv&&mm.inv.id}" title="คลิกดูไฟล์เอกสาร" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px">${escapeHtml((mm.inv&&mm.inv.company)||'invoice')} 👁</span></span>
         <span style="font-size:12px;font-weight:700;color:var(--green);font-variant-numeric:tabular-nums;white-space:nowrap">${_ccMoney(mm.inv&&mm.inv.amount)}</span>
       </div>`).join('');
     const note=t.user_note||'';
