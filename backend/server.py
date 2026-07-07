@@ -10915,6 +10915,20 @@ def cc_delete_bill_page(bid: int, page_id: int,
     return {"ok": True}
 
 
+# v1.9.363 — Analytics: รายการทุกใบ (join บิล) → JS aggregate/filter/detect platform เอง
+@app.get("/api/creditcard/analytics-transactions")
+def cc_analytics_transactions(_sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT t.id, t.description, t.amount, t.user_note, "
+            "       b.id AS bill_id, b.card_number, b.bill_month, b.bill_year "
+            "FROM cc_transactions t JOIN cc_bills b ON b.id = t.bill_id "
+            "WHERE t.amount IS NOT NULL "
+            "ORDER BY COALESCE(b.bill_year,0), COALESCE(b.bill_month,0)"
+        ).fetchall()
+    return {"transactions": [dict(r) for r in rows]}
+
+
 # v1.9.352 — ค้นหารายการในบัตรทุกใบ (description + user_note) — ใช้ใน popup search
 @app.get("/api/creditcard/search-transactions")
 def cc_search_transactions(q: str = "",

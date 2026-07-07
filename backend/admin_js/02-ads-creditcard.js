@@ -753,6 +753,7 @@ async function renderCreditCard(){
       <button class="btn cc-nav" data-cc-view="bills">🧾 ใบแจ้งหนี้บัตรเครดิต</button>
       <button class="btn cc-nav" data-cc-view="pool">📥 อัพโหลดใบเสร็จ</button>
       <button class="btn cc-nav" data-cc-view="summary">📊 Summary</button>
+      <button class="btn cc-nav" data-cc-view="analytics">📈 Analytics</button>
       <button class="btn" id="cc-global-search" title="ค้นหารายการในบัตรทุกใบ" style="margin-left:auto;font-size:13px">🔍 Search</button>
       <button class="btn primary" id="cc-new-bill-top" style="font-size:13px">＋ สร้างใบแจ้งหนี้บัตรเครดิต</button>
     </div>
@@ -771,6 +772,7 @@ function _ccRender(){
   if(_ccState.billId) return _ccRenderDetail(v);
   if(_ccState.view==='pool') return _ccRenderPool(v);
   if(_ccState.view==='summary') return _ccRenderSummary(v);
+  if(_ccState.view==='analytics') return _ccRenderAnalytics(v);
   return _ccRenderBills(v);
 }
 
@@ -1660,6 +1662,105 @@ async function _ccRenderPool(v){
     le.querySelectorAll('.cc-pool-del').forEach(x=>x.addEventListener('click',async()=>{ if(!confirm('ลบใบเสร็จนี้?'))return; await fetchJson('/api/creditcard/invoices/'+x.dataset.inv,{method:'DELETE'}); _ccRenderPool($('cc-view')); }));
   };
   renderFilter(); paint();
+}
+
+// ---- v1.9.363 — Analytics: กราฟยอดใช้จ่ายรายเดือน + filter ปี/บัตร/platform ----
+let _ccAnalytics={ year:'', card:'', platform:'', data:null };
+const _CC_ANALYTICS_COLORS=['#2563eb','#f59e0b','#10b981','#a855f7','#0ea5e9','#ec4899','#ef4444','#14b8a6','#8b5cf6','#f97316','#64748b'];
+async function _ccRenderAnalytics(v){
+  v.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  if(!_ccAnalytics.data){
+    try{ _ccAnalytics.data=(await fetchJson('/api/creditcard/analytics-transactions')).transactions||[]; }
+    catch(e){ v.innerHTML=`<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`; return; }
+  }
+  const all=_ccAnalytics.data;
+  // platform ของแต่ละรายการ (detect จาก description)
+  const platOf=(t)=>_ccDetectPlatform(t.description||'')||'อื่น ๆ';
+  // ตัวเลือก filter
+  const years=[...new Set(all.map(t=>t.bill_year).filter(Boolean))].sort((a,b)=>b-a);
+  const cards=[...new Set(all.map(t=>t.card_number).filter(Boolean))].sort();
+  const plats=[...new Set(all.map(platOf))].sort((a,b)=>a==='อื่น ๆ'?1:b==='อื่น ๆ'?-1:a.localeCompare(b));
+  const selS='padding:7px 11px;border:1px solid var(--border);border-radius:8px;font-size:12.5px;font-family:inherit;background:var(--bg-card);color:var(--text);cursor:pointer;font-weight:600';
+  v.innerHTML=`
+    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+      <select id="cc-an-year" style="${selS}"><option value="">— ทุกปี —</option>${years.map(y=>`<option value="${y}" ${String(y)===_ccAnalytics.year?'selected':''}>ปี ${y}</option>`).join('')}</select>
+      <select id="cc-an-card" style="${selS};max-width:260px"><option value="">— ทุกบัตร —</option>${cards.map(c=>`<option value="${escapeHtml(c)}" ${c===_ccAnalytics.card?'selected':''}>${escapeHtml(c)}</option>`).join('')}</select>
+      <select id="cc-an-plat" style="${selS}"><option value="">— ทุก platform —</option>${plats.map(p=>`<option value="${escapeHtml(p)}" ${p===_ccAnalytics.platform?'selected':''}>${escapeHtml(p)}</option>`).join('')}</select>
+    </div>
+    <div id="cc-an-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px"></div>
+    <div style="font-size:13px;font-weight:800;margin-bottom:8px">📈 ยอดใช้จ่ายรายเดือน</div>
+    <div id="cc-an-chart" style="border:1px solid var(--border);border-radius:12px;padding:16px 14px;margin-bottom:16px;background:var(--bg-card);overflow-x:auto"></div>
+    <div style="font-size:13px;font-weight:800;margin-bottom:8px">🗂 แยกตาม Platform</div>
+    <div id="cc-an-table"></div>`;
+  const rerun=()=>{ _ccAnalytics.year=$('cc-an-year').value; _ccAnalytics.card=$('cc-an-card').value; _ccAnalytics.platform=$('cc-an-plat').value; _paintAnalytics(all,platOf); };
+  $('cc-an-year').onchange=rerun; $('cc-an-card').onchange=rerun; $('cc-an-plat').onchange=rerun;
+  _paintAnalytics(all,platOf);
+}
+function _paintAnalytics(all,platOf){
+  const fy=_ccAnalytics.year, fc=_ccAnalytics.card, fp=_ccAnalytics.platform;
+  const list=all.filter(t=>{
+    if(fy&&String(t.bill_year)!==fy) return false;
+    if(fc&&t.card_number!==fc) return false;
+    if(fp&&platOf(t)!==fp) return false;
+    return true;
+  });
+  const total=list.reduce((s,t)=>s+(t.amount||0),0);
+  // summary cards
+  const sumEl=$('cc-an-summary');
+  if(sumEl){
+    const cardS='background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:12px 14px';
+    const uniqPlat=new Set(list.map(platOf)).size;
+    sumEl.innerHTML=`
+      <div style="${cardS}"><div style="font-size:11.5px;color:var(--text-muted);font-weight:600">ยอดรวม</div><div style="font-size:22px;font-weight:800;color:var(--primary)">${_ccMoney(total)}</div></div>
+      <div style="${cardS}"><div style="font-size:11.5px;color:var(--text-muted);font-weight:600">จำนวนรายการ</div><div style="font-size:22px;font-weight:800">${list.length}</div></div>
+      <div style="${cardS}"><div style="font-size:11.5px;color:var(--text-muted);font-weight:600">Platform</div><div style="font-size:22px;font-weight:800">${uniqPlat}</div></div>`;
+  }
+  // group by month bucket (year-month)
+  const buckets=new Map();   // key 'YYYY-MM' → {y,m,total}
+  list.forEach(t=>{
+    const y=t.bill_year||0, m=t.bill_month||0; if(!y||!m) return;
+    const k=y+'-'+String(m).padStart(2,'0');
+    if(!buckets.has(k)) buckets.set(k,{y,m,total:0});
+    buckets.get(k).total+=(t.amount||0);
+  });
+  let keys=[...buckets.keys()].sort();
+  // ถ้าเลือกปีเดียว → เติมให้ครบ 12 เดือน
+  if(fy){ keys=[]; for(let m=1;m<=12;m++){ const k=fy+'-'+String(m).padStart(2,'0'); keys.push(k); if(!buckets.has(k)) buckets.set(k,{y:+fy,m,total:0}); } }
+  const chartEl=$('cc-an-chart');
+  if(chartEl){
+    if(!keys.length){ chartEl.innerHTML='<div class="empty" style="font-size:12.5px">ไม่มีข้อมูลตาม filter</div>'; }
+    else{
+      const maxV=Math.max(...keys.map(k=>buckets.get(k).total),1);
+      const H=200;
+      const bars=keys.map(k=>{
+        const b=buckets.get(k); const h=Math.round(b.total/maxV*H);
+        const lbl=fy?_CC_MONTHS[b.m-1]:(_CC_MONTHS[b.m-1]+' '+String(b.y).slice(2));
+        return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;min-width:38px;flex:1">
+          <div style="font-size:9.5px;color:var(--text-muted);font-weight:600;white-space:nowrap">${b.total?_ccMoney(b.total):''}</div>
+          <div title="${escapeHtml(lbl)}: ${_ccMoney(b.total)}" style="width:60%;min-width:16px;height:${h}px;background:linear-gradient(180deg,#2563eb,#3b82f6);border-radius:5px 5px 0 0;transition:height .2s"></div>
+          <div style="font-size:10px;color:var(--text-muted);white-space:nowrap">${escapeHtml(lbl)}</div>
+        </div>`;
+      }).join('');
+      chartEl.innerHTML=`<div style="display:flex;align-items:flex-end;gap:6px;min-height:${H+40}px;min-width:${keys.length*44}px">${bars}</div>`;
+    }
+  }
+  // table by platform
+  const byPlat=new Map();
+  list.forEach(t=>{ const p=platOf(t); if(!byPlat.has(p)) byPlat.set(p,{total:0,count:0}); const o=byPlat.get(p); o.total+=(t.amount||0); o.count++; });
+  const platRows=[...byPlat.entries()].sort((a,b)=>b[1].total-a[1].total);
+  const tblEl=$('cc-an-table');
+  if(tblEl){
+    const th='text-align:left;padding:8px 12px;font-size:11.5px;color:var(--text-muted);font-weight:700;background:var(--bg-soft);border-bottom:1px solid var(--border)';
+    const td='padding:8px 12px;font-size:13px;border-bottom:1px solid var(--border)';
+    tblEl.innerHTML=platRows.length?`<div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--bg-card)"><table style="width:100%;border-collapse:collapse">
+      <thead><tr><th style="${th}">Platform</th><th style="${th};text-align:right">จำนวน</th><th style="${th};text-align:right">ยอดรวม</th><th style="${th};text-align:right">%</th></tr></thead>
+      <tbody>${platRows.map(([p,o],i)=>`<tr>
+        <td style="${td};font-weight:600"><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${_CC_ANALYTICS_COLORS[i%_CC_ANALYTICS_COLORS.length]};margin-right:7px"></span>${escapeHtml(p)}</td>
+        <td style="${td};text-align:right;color:var(--text-muted)">${o.count}</td>
+        <td style="${td};text-align:right;font-weight:700;font-variant-numeric:tabular-nums">${_ccMoney(o.total)}</td>
+        <td style="${td};text-align:right;color:var(--text-muted)">${total?Math.round(o.total/total*100):0}%</td>
+      </tr>`).join('')}</tbody></table></div>`:'<div class="empty" style="font-size:12.5px">ไม่มีข้อมูล</div>';
+  }
 }
 
 // ---- summary (completeness per bill + navigate bills) ----

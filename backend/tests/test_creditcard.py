@@ -298,3 +298,23 @@ def test_invoice_company_patch(admin_client):
                               json={"company": "  "}).json()["company"] is None
     assert admin_client.patch("/api/creditcard/invoices/999999/company",
                               json={"company": "x"}).status_code == 404
+
+
+def test_analytics_transactions_endpoint(admin_client):
+    # v1.9.363 — analytics: รายการทุกใบ join บิล (เรียงตามปี/เดือน)
+    _create_bill(admin_client)  # bill_month=6 bill_year=2026, 2 txns
+    admin_client.post("/api/creditcard/bills", json={
+        "card_number": "CARD-2", "bill_month": 5, "bill_year": 2026,
+        "pages": [], "transactions": [
+            {"txn_date": "01/05", "description": "GOOGLE ADS", "amount": 500.0}]})
+
+    r = admin_client.get("/api/creditcard/analytics-transactions")
+    assert r.status_code == 200
+    txns = r.json()["transactions"]
+    assert len(txns) == 3
+    # ทุกแถวมี field บิลครบ
+    for t in txns:
+        assert "card_number" in t and "bill_month" in t and "bill_year" in t and "amount" in t
+    # เรียงตามปี/เดือน → เดือน 5 มาก่อนเดือน 6
+    months = [t["bill_month"] for t in txns]
+    assert months == sorted(months)
