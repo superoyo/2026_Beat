@@ -1836,22 +1836,23 @@ async function _ccRenderSummary(v){
       ? ms.map(mm=>{const i=mm.inv; return i?`<div style="margin-bottom:4px">${i.description?`<div style="font-size:13px;color:var(--text)">📝 ${escapeHtml(i.description)}</div>`:'<span style="font-size:11px;color:var(--text-muted)">— ไม่มีรายละเอียด —</span>'}<div style="font-size:10.5px;color:var(--text-muted)">${_ccUploaderChip(i,13)}</div></div>`:'';}).join('')
       : '<span style="color:var(--text-muted);font-size:12px">—</span>';
     const un=t.user_note||'';
-    const noteHtml=`<div class="cc-sum-note" style="${un?'':'display:none;'}font-size:11px;color:var(--text-muted);margin-top:3px;font-style:italic">${un?'📝 '+escapeHtml(un):''}</div>`;
     const editHtml=`<div class="cc-sum-edit" style="display:none;margin-top:6px;gap:6px;align-items:center">
       <input class="cc-sum-input" type="text" value="${escapeHtml(un)}" placeholder="ใส่ description..." maxlength="500" style="flex:1;font-size:12px;padding:5px 9px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);color:var(--text);min-width:0" />
       <button type="button" class="btn cc-sum-save" title="บันทึก (Enter)" style="font-size:13px;padding:4px 9px;line-height:1;color:var(--green)">✓</button>
       <button type="button" class="btn cc-sum-cancel" title="ยกเลิก (Esc)" style="font-size:13px;padding:4px 9px;line-height:1">✕</button>
     </div>`;
+    // v1.9.365 — รายละเอียดรายการ (user_note) แยกเป็นคอลัมน์ของตัวเอง (คลิกเพื่อแก้)
+    const noteCell=`<div class="cc-sum-desc" style="cursor:pointer;min-height:20px" title="คลิกเพื่อเพิ่ม/แก้ไขรายละเอียด">
+        ${un?`<span class="cc-sum-note" style="font-size:12px;color:var(--text)">${escapeHtml(un)}</span>`:`<span class="cc-sum-note" style="display:none"></span><span style="font-size:11.5px;color:var(--text-soft);font-style:italic">＋ เพิ่มรายละเอียด</span>`}
+      </div>
+      ${editHtml}`;
     return `<tr data-platform="${escapeHtml(platOf(t))}" data-matched="${ok?1:0}" data-txn="${t.id}" style="border-bottom:1px solid var(--border)">
       <td style="padding:7px 3px;text-align:center;width:18px;vertical-align:top">${ok?'<span style="color:var(--green);font-weight:800">✓</span>':'<span style="color:var(--critical);font-weight:800">✗</span>'}</td>
       <td style="padding:7px 8px;font-size:12.5px;vertical-align:top">
-        <div class="cc-sum-desc" style="cursor:pointer" title="คลิกเพื่อเพิ่ม/แก้ไข description">
-          ${escapeHtml(t.description||'—')}
-          <div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t.txn_date||'')}</div>
-          ${noteHtml}
-        </div>
-        ${editHtml}
+        ${escapeHtml(t.description||'—')}
+        <div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t.txn_date||'')}</div>
       </td>
+      <td style="padding:7px 8px;font-size:12px;vertical-align:top;min-width:160px">${noteCell}</td>
       <td style="padding:7px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;vertical-align:top">${_ccMoney(t.amount)}</td>
       <td style="padding:7px 8px;font-size:12px;vertical-align:top">${invCells}</td>
       <td style="padding:7px 8px;vertical-align:top">${ownerCells}</td>
@@ -1875,8 +1876,8 @@ async function _ccRenderSummary(v){
     ${filterChips}
     <div style="overflow-x:auto"><table id="cc-sum-table" style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase">
-        <th style="padding:6px 3px;width:18px"></th><th style="padding:6px 8px">รายการบัตร</th><th style="padding:6px 8px;text-align:right">ยอด</th><th style="padding:6px 8px">Invoice / Receipt</th><th style="padding:6px 8px">รายละเอียด / เจ้าของ</th><th style="padding:6px 8px;text-align:right">ผลต่าง</th>
-      </tr></thead><tbody>${rows||'<tr><td colspan="6" style="padding:14px;text-align:center;color:var(--text-muted)">ไม่มีรายการ</td></tr>'}</tbody>
+        <th style="padding:6px 3px;width:18px"></th><th style="padding:6px 8px">รายการบัตร</th><th style="padding:6px 8px">รายละเอียดรายการ</th><th style="padding:6px 8px;text-align:right">ยอด</th><th style="padding:6px 8px">Invoice / Receipt</th><th style="padding:6px 8px">รายละเอียด / เจ้าของ</th><th style="padding:6px 8px;text-align:right">ผลต่าง</th>
+      </tr></thead><tbody>${rows||'<tr><td colspan="7" style="padding:14px;text-align:center;color:var(--text-muted)">ไม่มีรายการ</td></tr>'}</tbody>
     </table></div>`;
   v.querySelectorAll('.cc-sum-prev').forEach(x=>x.addEventListener('click',()=>{ const inv=invById[parseInt(x.dataset.inv,10)]; if(inv) _ccPreviewInvoice(inv); }));
   // v1.9.362 — ตัดการจับคู่จากหน้า Summary
@@ -1903,8 +1904,11 @@ async function _ccRenderSummary(v){
       const r=await fetchJson('/api/creditcard/transactions/'+tid,{method:'PATCH',body:JSON.stringify({user_note:inp.value})});
       const newNote=r.user_note||'';
       const t=d.transactions.find(x=>x.id===tid); if(t) t.user_note=newNote;
-      const noteEl=tr.querySelector('.cc-sum-note');
-      if(noteEl){ if(newNote){ noteEl.style.display=''; noteEl.innerHTML='📝 '+escapeHtml(newNote); } else { noteEl.style.display='none'; noteEl.textContent=''; } }
+      // v1.9.365 — rebuild cell (note หรือ placeholder) ให้ตรงกับ initial render
+      const descEl=tr.querySelector('.cc-sum-desc');
+      if(descEl) descEl.innerHTML=newNote
+        ? `<span class="cc-sum-note" style="font-size:12px;color:var(--text)">${escapeHtml(newNote)}</span>`
+        : `<span class="cc-sum-note" style="display:none"></span><span style="font-size:11.5px;color:var(--text-soft);font-style:italic">＋ เพิ่มรายละเอียด</span>`;
       tr.querySelector('.cc-sum-edit').style.display='none';
     }catch(err){ alert(err.message); }
     finally{ if(saveBtn) saveBtn.disabled=false; }
