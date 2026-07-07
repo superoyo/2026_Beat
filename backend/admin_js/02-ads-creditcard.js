@@ -743,14 +743,18 @@ async function renderCreditCard(){
       <button class="btn cc-nav" data-cc-view="bills">🧾 ใบแจ้งหนี้บัตรเครดิต</button>
       <button class="btn cc-nav" data-cc-view="pool">📥 ใบเสร็จ / ใบแจ้งหนี้ จากแพลตฟอร์ม</button>
       <button class="btn cc-nav" data-cc-view="summary">📊 Summary</button>
+      <button class="btn primary" id="cc-new-bill-top" style="margin-left:auto;font-size:13px">＋ สร้างใบแจ้งหนี้บัตรเครดิต</button>
     </div>
     <div id="cc-view"><div class="empty">กำลังโหลด…</div></div>`;
   root.querySelectorAll('.cc-nav').forEach(b=>b.addEventListener('click',()=>{ _ccState.view=b.dataset.ccView; _ccState.billId=null; _ccRender(); }));
+  const _nbTop=$('cc-new-bill-top'); if(_nbTop) _nbTop.onclick=()=>_ccCreateBill();
   await Promise.all([_ccLoadBills(), _ccLoadMembers()]); _ccRender();
 }
 async function _ccLoadBills(){ try{ _ccState.bills=(await fetchJson('/api/creditcard/bills')).bills||[]; }catch(e){ _ccState.bills=[]; } }
 function _ccRender(){
   document.querySelectorAll('.cc-nav').forEach(b=>b.classList.toggle('primary', b.dataset.ccView===_ccState.view && !_ccState.billId));
+  // v1.9.351 — ปุ่มสร้างบิลอยู่ขวาสุดของแถวเมนู — โชว์เฉพาะตอนอยู่หน้ารายการใบแจ้งหนี้บัตรเครดิต
+  const _nb=$('cc-new-bill-top'); if(_nb) _nb.style.display=(_ccState.view==='bills'&&!_ccState.billId)?'':'none';
   const v=$('cc-view'); if(!v) return;
   if(_ccState.billId) return _ccRenderDetail(v);
   if(_ccState.view==='pool') return _ccRenderPool(v);
@@ -769,14 +773,7 @@ function _ccRenderBills(v){
     _prevYm=ym;
     return _ccBillCard(b,showTile);
   }).join('');
-  v.innerHTML=`
-    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
-      <button class="btn primary" id="cc-new-bill">+ สร้างใบแจ้งหนี้บัตรเครดิต</button>
-      <button class="btn" id="cc-up-invoice">⬆️ อัพโหลด</button>
-    </div>
-    ${bills.length?rows:'<div class="empty">ยังไม่มีบิล — กด “สร้างใบแจ้งหนี้บัตรเครดิต” แล้วอัพโหลดใบแจ้งยอดบัตรเครดิต</div>'}`;
-  $('cc-new-bill').onclick=()=>_ccCreateBill();
-  $('cc-up-invoice').onclick=()=>_ccUploadInvoice(null);
+  v.innerHTML=bills.length?rows:'<div class="empty">ยังไม่มีบิล — กด “＋ สร้างใบแจ้งหนี้บัตรเครดิต” มุมขวาบน แล้วอัพโหลดใบแจ้งยอดบัตรเครดิต</div>';
   v.querySelectorAll('[data-cc-bill]').forEach(c=>c.addEventListener('click',(e)=>{
     if(e.target.closest('.cc-bill-done')) return;   // ปุ่มเสร็จสิ้น — ไม่เปิดบิล
     _ccState.billId=parseInt(c.dataset.ccBill,10); _ccRender();
