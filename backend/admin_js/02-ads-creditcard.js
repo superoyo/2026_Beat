@@ -837,7 +837,7 @@ function _ccBillCard(b,showTile){
 }
 
 // ---- v1.9.352 — Global search: ค้นหารายการในบัตรทุกใบ + slider กรองช่วงยอด ----
-function _ccOpenSearchPopup(){
+function _ccOpenSearchPopup(initialQ){
   const bg=document.createElement('div'); bg.className='modal-bg'; bg.style.zIndex='2500';
   bg.innerHTML=`<div class="modal" style="max-width:700px;width:92vw;padding:18px;max-height:86vh;display:flex;flex-direction:column">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
@@ -920,19 +920,19 @@ function _ccOpenSearchPopup(){
   minR.addEventListener('input',renderResults);
   maxR.addEventListener('input',renderResults);
   bg.querySelector('#ccs-range-reset').addEventListener('click',()=>{ minR.value=minR.min; maxR.value=maxR.max; renderResults(); });
+  const doFetch=async ()=>{
+    const q=inp.value.trim();
+    if(!q){ all=[]; rangeBox.style.display='none'; cntEl.textContent=''; resEl.innerHTML='<div class="empty" style="font-size:12.5px">พิมพ์ keyword เพื่อค้นหา</div>'; return; }
+    cntEl.textContent='กำลังค้นหา…';
+    try{ all=(await fetchJson('/api/creditcard/search-transactions?q='+encodeURIComponent(q))).transactions||[]; }
+    catch(e){ cntEl.textContent=''; resEl.innerHTML=`<div class="empty" style="font-size:12.5px">${escapeHtml(e.message)}</div>`; return; }
+    setupRange();
+  };
   let _t=null;
-  inp.addEventListener('input',()=>{
-    clearTimeout(_t);
-    _t=setTimeout(async ()=>{
-      const q=inp.value.trim();
-      if(!q){ all=[]; rangeBox.style.display='none'; cntEl.textContent=''; resEl.innerHTML='<div class="empty" style="font-size:12.5px">พิมพ์ keyword เพื่อค้นหา</div>'; return; }
-      cntEl.textContent='กำลังค้นหา…';
-      try{ all=(await fetchJson('/api/creditcard/search-transactions?q='+encodeURIComponent(q))).transactions||[]; }
-      catch(e){ cntEl.textContent=''; resEl.innerHTML=`<div class="empty" style="font-size:12.5px">${escapeHtml(e.message)}</div>`; return; }
-      setupRange();
-    },250);
-  });
+  inp.addEventListener('input',()=>{ clearTimeout(_t); _t=setTimeout(doFetch,250); });
   resEl.innerHTML='<div class="empty" style="font-size:12.5px">พิมพ์ keyword เพื่อค้นหา</div>';
+  // v1.9.356 — เปิดพร้อม keyword ตั้งต้น (จากปุ่ม 🔍 บนรายการ) → ค้นหาทันที
+  if(initialQ){ inp.value=initialQ; doFetch(); }
   setTimeout(()=>inp.focus(),30);
 }
 
@@ -1183,7 +1183,10 @@ async function _ccRenderDetail(v){
           <div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t.txn_date||'')}</div>
           ${noteLine}
         </div>
-        <div style="font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap">${_ccMoney(t.amount)}</div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
+          <div style="font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap">${_ccMoney(t.amount)}</div>
+          <button type="button" class="cc-txn-find" data-q="${escapeHtml(((t.description||'').replace(/[^A-Za-z0-9ก-๙. ]+/g,' ').trim().split(/\s+/).slice(0,2).join(' ')))}" title="ค้นหารายการคล้ายกันในบัตรทุกใบ" style="border:none;background:none;cursor:pointer;font-size:12px;opacity:.45;padding:0;line-height:1">🔍</button>
+        </div>
       </div>${chips}
       <div class="cc-txn-edit" style="display:none;margin-top:8px;gap:6px;align-items:center">
         <input class="cc-txn-input" type="text" value="${escapeHtml(note)}" placeholder="ใส่ description..." maxlength="500" style="flex:1;font-size:12px;padding:5px 9px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);color:var(--text);min-width:0" />
@@ -1315,6 +1318,11 @@ async function _ccRenderDetail(v){
       else if(e.key==='Escape'){ e.preventDefault(); inp.closest('.cc-txn').querySelector('.cc-txn-cancel').click(); }
     });
   });
+  // v1.9.356 — ปุ่ม 🔍 ต่อรายการ: เปิด popup search พร้อมเติมคำต้นของรายการ
+  v.querySelectorAll('.cc-txn-find').forEach(b=>b.addEventListener('click',(e)=>{
+    e.stopPropagation();
+    _ccOpenSearchPopup(b.dataset.q||'');
+  }));
 }
 
 // v1.9.309 — หมวดค่าใช้จ่ายของใบเสร็จ/ใบแจ้งหนี้
