@@ -878,9 +878,14 @@ function _ccOpenSearchPopup(){
     const list=all.filter(t=>{ const a=t.amount||0; return a>=lo&&a<=hi; });
     const sum=list.reduce((s,t)=>s+(t.amount||0),0);
     cntEl.textContent=list.length?`${list.length} รายการ · รวม ${_ccMoney(sum)}`:'';
-    resEl.innerHTML=list.map(t=>`
+    let _prevYm=null;   // v1.9.354 — เดือนเดียวกันติดกันแสดงปฏิทินเฉพาะแถวบนสุด
+    resEl.innerHTML=list.map(t=>{
+      const _ym=(t.bill_year||0)+'-'+(t.bill_month||0);
+      const _tile=_ym!==_prevYm?_ccBillMonthTile(t.bill_month,t.bill_year):'<div style="min-width:64px;flex-shrink:0"></div>';
+      _prevYm=_ym;
+      return `
       <div class="ccs-row" data-bill="${t.bill_id}" title="คลิกเพื่อเปิดบิลนี้" style="display:flex;gap:12px;align-items:center;padding:9px 12px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px;cursor:pointer;transition:background .1s" onmouseenter="this.style.background='var(--bg-soft)'" onmouseleave="this.style.background='transparent'">
-        ${_ccBillMonthTile(t.bill_month,t.bill_year)}
+        ${_tile}
         <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex:1;min-width:0">
           <div style="min-width:0">
             <div style="font-size:13px;font-weight:600">${escapeHtml(t.description||'—')}</div>
@@ -890,7 +895,7 @@ function _ccOpenSearchPopup(){
           </div>
           <div style="font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap">${_ccMoney(t.amount)}</div>
         </div>
-      </div>`).join('')||(inp.value.trim()?'<div class="empty" style="font-size:12.5px">ไม่พบรายการ</div>':'<div class="empty" style="font-size:12.5px">พิมพ์ keyword เพื่อค้นหา</div>');
+      </div>`;}).join('')||(inp.value.trim()?'<div class="empty" style="font-size:12.5px">ไม่พบรายการ</div>':'<div class="empty" style="font-size:12.5px">พิมพ์ keyword เพื่อค้นหา</div>');
     resEl.querySelectorAll('.ccs-row').forEach(r=>r.addEventListener('click',(e)=>{
       if(e.target.closest('.ccs-inv')) return;   // chip เอกสาร — ไม่เปิดบิล
       close(); document.removeEventListener('keydown',onKey);
