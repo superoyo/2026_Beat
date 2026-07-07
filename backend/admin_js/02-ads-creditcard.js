@@ -741,7 +741,7 @@ async function renderCreditCard(){
   root.innerHTML=`
     <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
       <button class="btn cc-nav" data-cc-view="bills">🧾 ใบแจ้งหนี้บัตรเครดิต</button>
-      <button class="btn cc-nav" data-cc-view="pool">📥 ใบเสร็จ / ใบแจ้งหนี้ จากแพลตฟอร์ม</button>
+      <button class="btn cc-nav" data-cc-view="pool">📥 อัพโหลดใบเสร็จ</button>
       <button class="btn cc-nav" data-cc-view="summary">📊 Summary</button>
       <button class="btn" id="cc-global-search" title="ค้นหารายการในบัตรทุกใบ" style="margin-left:auto;font-size:13px">🔍 Search</button>
       <button class="btn primary" id="cc-new-bill-top" style="font-size:13px">＋ สร้างใบแจ้งหนี้บัตรเครดิต</button>
