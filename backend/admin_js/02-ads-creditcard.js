@@ -743,11 +743,13 @@ async function renderCreditCard(){
       <button class="btn cc-nav" data-cc-view="bills">🧾 ใบแจ้งหนี้บัตรเครดิต</button>
       <button class="btn cc-nav" data-cc-view="pool">📥 ใบเสร็จ / ใบแจ้งหนี้ จากแพลตฟอร์ม</button>
       <button class="btn cc-nav" data-cc-view="summary">📊 Summary</button>
-      <button class="btn primary" id="cc-new-bill-top" style="margin-left:auto;font-size:13px">＋ สร้างใบแจ้งหนี้บัตรเครดิต</button>
+      <button class="btn" id="cc-global-search" title="ค้นหารายการในบัตรทุกใบ" style="margin-left:auto;font-size:13px">🔍 Search</button>
+      <button class="btn primary" id="cc-new-bill-top" style="font-size:13px">＋ สร้างใบแจ้งหนี้บัตรเครดิต</button>
     </div>
     <div id="cc-view"><div class="empty">กำลังโหลด…</div></div>`;
   root.querySelectorAll('.cc-nav').forEach(b=>b.addEventListener('click',()=>{ _ccState.view=b.dataset.ccView; _ccState.billId=null; _ccRender(); }));
   const _nbTop=$('cc-new-bill-top'); if(_nbTop) _nbTop.onclick=()=>_ccCreateBill();
+  const _gsBtn=$('cc-global-search'); if(_gsBtn) _gsBtn.onclick=()=>_ccOpenSearchPopup();
   await Promise.all([_ccLoadBills(), _ccLoadMembers()]); _ccRender();
 }
 async function _ccLoadBills(){ try{ _ccState.bills=(await fetchJson('/api/creditcard/bills')).bills||[]; }catch(e){ _ccState.bills=[]; } }
@@ -832,6 +834,92 @@ function _ccBillCard(b,showTile){
       </div>
     </div>
   </div>`;
+}
+
+// ---- v1.9.352 — Global search: ค้นหารายการในบัตรทุกใบ + slider กรองช่วงยอด ----
+function _ccOpenSearchPopup(){
+  const bg=document.createElement('div'); bg.className='modal-bg'; bg.style.zIndex='2500';
+  bg.innerHTML=`<div class="modal" style="max-width:700px;width:92vw;padding:18px;max-height:86vh;display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+      <div style="font-size:15px;font-weight:800">🔍 ค้นหารายการในบัตรทุกใบ</div>
+      <button class="btn" id="ccs-close" style="font-size:12px">✕ ปิด</button>
+    </div>
+    <input id="ccs-q" type="text" placeholder="พิมพ์ keyword เช่น ANTHROPIC, Google, ชื่อโปรเจค..." autocomplete="off"
+      style="width:100%;padding:11px 14px;font-size:14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-input);color:var(--text);box-sizing:border-box;font-family:inherit" />
+    <div id="ccs-range" style="display:none;margin-top:12px;padding:10px 14px;background:var(--bg-soft);border-radius:10px">
+      <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--text-muted);font-weight:600;margin-bottom:6px">
+        <span>กรองช่วงยอด: <b id="ccs-min-l" style="color:var(--text)">—</b> ถึง <b id="ccs-max-l" style="color:var(--text)">—</b></span>
+        <button type="button" id="ccs-range-reset" style="border:none;background:none;color:var(--primary);cursor:pointer;font-size:11px;font-family:inherit;font-weight:600;padding:0">รีเซ็ต</button>
+      </div>
+      <div style="display:flex;gap:14px;align-items:center">
+        <label style="flex:1;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-muted)">ต่ำสุด<input id="ccs-min" type="range" style="flex:1;accent-color:var(--primary)" /></label>
+        <label style="flex:1;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-muted)">สูงสุด<input id="ccs-max" type="range" style="flex:1;accent-color:var(--primary)" /></label>
+      </div>
+    </div>
+    <div id="ccs-count" style="font-size:11.5px;color:var(--text-muted);margin:10px 0 6px"></div>
+    <div id="ccs-results" style="flex:1;overflow-y:auto;min-height:60px"></div>
+  </div>`;
+  document.body.appendChild(bg);
+  const close=()=>bg.remove();
+  bg.querySelector('#ccs-close').onclick=close;
+  bg.addEventListener('click',e=>{ if(e.target===bg) close(); });
+  const onKey=(e)=>{ if(e.key==='Escape'){ close(); document.removeEventListener('keydown',onKey); } };
+  document.addEventListener('keydown',onKey);
+
+  const inp=bg.querySelector('#ccs-q'), resEl=bg.querySelector('#ccs-results'), cntEl=bg.querySelector('#ccs-count');
+  const rangeBox=bg.querySelector('#ccs-range'), minR=bg.querySelector('#ccs-min'), maxR=bg.querySelector('#ccs-max');
+  const minL=bg.querySelector('#ccs-min-l'), maxL=bg.querySelector('#ccs-max-l');
+  let all=[];   // ผลลัพธ์ keyword ปัจจุบัน (ก่อนกรองช่วงยอด)
+
+  const renderResults=()=>{
+    let lo=parseFloat(minR.value), hi=parseFloat(maxR.value);
+    if(lo>hi){ const t=lo; lo=hi; hi=t; }   // เลื่อนสลับกัน = swap อัตโนมัติ
+    minL.textContent=_ccMoney(lo); maxL.textContent=_ccMoney(hi);
+    const list=all.filter(t=>{ const a=t.amount||0; return a>=lo&&a<=hi; });
+    const sum=list.reduce((s,t)=>s+(t.amount||0),0);
+    cntEl.textContent=list.length?`${list.length} รายการ · รวม ${_ccMoney(sum)}`:'';
+    resEl.innerHTML=list.map(t=>`
+      <div class="ccs-row" data-bill="${t.bill_id}" title="คลิกเพื่อเปิดบิลนี้" style="padding:9px 12px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px;cursor:pointer;transition:background .1s" onmouseenter="this.style.background='var(--bg-soft)'" onmouseleave="this.style.background='transparent'">
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+          <div style="min-width:0">
+            <div style="font-size:13px;font-weight:600">${escapeHtml(t.description||'—')}</div>
+            ${t.user_note?`<div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-top:1px">${escapeHtml(t.user_note)}</div>`:''}
+            <div style="font-size:10.5px;color:var(--text-soft);margin-top:3px">💳 ${escapeHtml(t.card_number||'บัตร')} · ${_ccMonthLabel(t.bill_month,t.bill_year)}${t.txn_date?' · '+escapeHtml(t.txn_date):''}</div>
+          </div>
+          <div style="font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap">${_ccMoney(t.amount)}</div>
+        </div>
+      </div>`).join('')||(inp.value.trim()?'<div class="empty" style="font-size:12.5px">ไม่พบรายการ</div>':'<div class="empty" style="font-size:12.5px">พิมพ์ keyword เพื่อค้นหา</div>');
+    resEl.querySelectorAll('.ccs-row').forEach(r=>r.addEventListener('click',()=>{
+      close(); document.removeEventListener('keydown',onKey);
+      _ccState.billId=parseInt(r.dataset.bill,10); _ccState.selInvoice=null; _ccRender();
+    }));
+  };
+  const setupRange=()=>{
+    if(!all.length){ rangeBox.style.display='none'; renderResults(); return; }
+    const amts=all.map(t=>t.amount||0);
+    const lo=Math.floor(Math.min(...amts)), hi=Math.ceil(Math.max(...amts));
+    [minR,maxR].forEach(r=>{ r.min=lo; r.max=hi; r.step='1'; });
+    minR.value=lo; maxR.value=hi;
+    rangeBox.style.display='';
+    renderResults();
+  };
+  minR.addEventListener('input',renderResults);
+  maxR.addEventListener('input',renderResults);
+  bg.querySelector('#ccs-range-reset').addEventListener('click',()=>{ minR.value=minR.min; maxR.value=maxR.max; renderResults(); });
+  let _t=null;
+  inp.addEventListener('input',()=>{
+    clearTimeout(_t);
+    _t=setTimeout(async ()=>{
+      const q=inp.value.trim();
+      if(!q){ all=[]; rangeBox.style.display='none'; cntEl.textContent=''; resEl.innerHTML='<div class="empty" style="font-size:12.5px">พิมพ์ keyword เพื่อค้นหา</div>'; return; }
+      cntEl.textContent='กำลังค้นหา…';
+      try{ all=(await fetchJson('/api/creditcard/search-transactions?q='+encodeURIComponent(q))).transactions||[]; }
+      catch(e){ cntEl.textContent=''; resEl.innerHTML=`<div class="empty" style="font-size:12.5px">${escapeHtml(e.message)}</div>`; return; }
+      setupRange();
+    },250);
+  });
+  resEl.innerHTML='<div class="empty" style="font-size:12.5px">พิมพ์ keyword เพื่อค้นหา</div>';
+  setTimeout(()=>inp.focus(),30);
 }
 
 // ---- create monthly bill (upload statement images → OCR → preview → save) ----

@@ -10915,6 +10915,26 @@ def cc_delete_bill_page(bid: int, page_id: int,
     return {"ok": True}
 
 
+# v1.9.352 — ค้นหารายการในบัตรทุกใบ (description + user_note) — ใช้ใน popup search
+@app.get("/api/creditcard/search-transactions")
+def cc_search_transactions(q: str = "",
+                           _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    q = (q or "").strip()
+    with db_conn() as conn:
+        sql = ("SELECT t.id, t.txn_date, t.description, t.amount, t.user_note, "
+               "       b.id AS bill_id, b.card_number, b.bill_month, b.bill_year "
+               "FROM cc_transactions t JOIN cc_bills b ON b.id = t.bill_id ")
+        params: list[Any] = []
+        if q:
+            sql += "WHERE t.description LIKE ? OR t.user_note LIKE ? "
+            like = f"%{q}%"
+            params += [like, like]
+        sql += ("ORDER BY COALESCE(b.bill_year,0) DESC, COALESCE(b.bill_month,0) DESC, "
+                "t.row_order, t.id LIMIT 500")
+        rows = conn.execute(sql, params).fetchall()
+    return {"transactions": [dict(r) for r in rows]}
+
+
 # v1.9.344 — toggle เสร็จสิ้น (completed) ของบิล
 class CcBillCompletedIn(BaseModel):
     completed: bool

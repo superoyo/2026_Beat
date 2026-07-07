@@ -197,3 +197,30 @@ def test_detach_blocked_when_matched(admin_client):
                       json={"transaction_id": txn["id"], "invoice_id": inv_id})
     r = admin_client.post(f"/api/creditcard/invoices/{inv_id}/detach")
     assert r.status_code == 400  # ต้องถอดการจับคู่ก่อน
+
+
+def test_search_transactions_across_bills(admin_client):
+    # v1.9.352 — ค้นหารายการข้ามทุกบิล
+    b1 = _create_bill(admin_client)
+    admin_client.post("/api/creditcard/bills", json={
+        "card_number": "OTHER-CARD", "bill_month": 7, "bill_year": 2026,
+        "pages": [], "transactions": [
+            {"txn_date": "01/07", "description": "ANTHROPIC CLAUDE MAX", "amount": 6700.0}]})
+
+    r = admin_client.get("/api/creditcard/search-transactions?q=ANTHROPIC")
+    assert r.status_code == 200
+    txns = r.json()["transactions"]
+    assert len(txns) == 2                     # เจอทั้งสองบิล
+    cards = {t["card_number"] for t in txns}
+    assert "OTHER-CARD" in cards and "4513-47XX-XXXX-7528" in cards
+    assert all("bill_month" in t and "bill_year" in t for t in txns)
+
+    # ค้นจาก user_note ได้ด้วย
+    tid = [t for t in txns if t["card_number"] != "OTHER-CARD"][0]["id"]
+    admin_client.patch(f"/api/creditcard/transactions/{tid}",
+                       json={"user_note": "โปรเจคลับสุดยอด"})
+    r = admin_client.get("/api/creditcard/search-transactions?q=โปรเจคลับ")
+    assert [t["id"] for t in r.json()["transactions"]] == [tid]
+
+    # ไม่เจอ = list ว่าง
+    assert admin_client.get("/api/creditcard/search-transactions?q=ZZZNOTFOUND").json()["transactions"] == []
