@@ -276,3 +276,25 @@ def test_pool_invoices_scope(admin_client):
     assert m["matched"]["txn_description"] == txn["description"]
     f = [i for i in allinv if i["id"] == inv_float][0]
     assert f["matched"] is None
+
+
+def test_invoice_company_patch(admin_client):
+    # v1.9.360 — แก้ชื่อเอกสาร (company) inline
+    bid = _create_bill(admin_client)
+    inv_id = admin_client.post("/api/creditcard/invoices",
+                               json={"company": "เดิม", "kind": "invoice",
+                                     "bill_id": bid, "amount": 10.0,
+                                     "description": "คงไว้"}).json()["id"]
+    r = admin_client.patch(f"/api/creditcard/invoices/{inv_id}/company",
+                           json={"company": "Wix.com LTD"})
+    assert r.status_code == 200
+    assert r.json()["company"] == "Wix.com LTD"
+    # description ไม่ถูกแตะ
+    row = db_row("SELECT company, description FROM cc_invoices WHERE id=?", (inv_id,))
+    assert row["company"] == "Wix.com LTD"
+    assert row["description"] == "คงไว้"
+    # ว่าง → null
+    assert admin_client.patch(f"/api/creditcard/invoices/{inv_id}/company",
+                              json={"company": "  "}).json()["company"] is None
+    assert admin_client.patch("/api/creditcard/invoices/999999/company",
+                              json={"company": "x"}).status_code == 404

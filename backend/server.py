@@ -11108,6 +11108,22 @@ def cc_update_txn_note(tid: int, payload: CcTxnNoteIn,
     return {"ok": True, "user_note": note}
 
 
+# v1.9.360 — แก้ชื่อเอกสาร (company) แบบ inline จากหน้า preview
+class CcInvoiceCompanyIn(BaseModel):
+    company: Optional[str] = Field(None, max_length=300)
+
+
+@app.patch("/api/creditcard/invoices/{iid}/company")
+def cc_update_invoice_company(iid: int, payload: CcInvoiceCompanyIn,
+                              _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    with db_conn() as conn:
+        if not conn.execute("SELECT 1 FROM cc_invoices WHERE id=?", (iid,)).fetchone():
+            raise HTTPException(status_code=404, detail="ไม่พบ invoice")
+        company = (payload.company or "").strip() or None
+        conn.execute("UPDATE cc_invoices SET company=? WHERE id=?", (company, iid))
+    return {"ok": True, "company": company}
+
+
 @app.get("/api/creditcard/invoices/{iid}/file")
 def cc_invoice_file(iid: int, _sess: dict = Depends(_require_module("platform"))) -> Response:
     with db_conn() as conn:
