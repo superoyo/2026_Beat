@@ -41,6 +41,7 @@ let _hwSearch = '';
 let _hwOsFilter = '';       // PC only: '' | 'mac' | 'windows' | 'linux' | 'other'
 let _hwDeptFilter = '';     // PC only: '' หรือ team_id string (subtree) — v1.9.61: เปลี่ยนจาก dept name → team tree
 let _hwLinkFilter = '';     // PC only: '' (ทั้งหมด) | 'linked' (มี owner) | 'unlinked' (ยังไม่ผูก)
+let _hwGraveyard = false;   // v1.9.366 PC only: true = แสดงเฉพาะเครื่องพัง (note_category general + notes มี 'พัง')
 let _hwSort = '';           // v1.9.251 PC only: '' (ชื่อ) | 'purchase_desc' | 'purchase_asc'
 let _hwTeamsCache = [];     // v1.9.61: cache teams (hierarchy) สำหรับ "แผนก" filter
 let _hwMembersCache = [];   // members list (สำหรับ owner dropdown)
@@ -2178,6 +2179,7 @@ async function renderHardwarePage(type) {
   _hwOsFilter = '';
   _hwDeptFilter = '';
   _hwLinkFilter = '';
+  _hwGraveyard = false;
   _hwSort = '';
   const tab = HW_TYPES.find(t => t.id === _hwActiveType) || HW_TYPES[0];
   const isPc = _hwActiveType === 'pc';
@@ -2186,7 +2188,10 @@ async function renderHardwarePage(type) {
   _subMain().innerHTML = `
     <div class="page-head">
       <h2 class="page-title">${tab.icon} ${escapeHtml(tab.label)}</h2>
-      <button class="btn primary" id="hw-add-btn">+ เพิ่ม ${escapeHtml(tab.label)}</button>
+      <div style="display:flex;gap:8px;align-items:center">
+        ${isPc ? `<button class="btn" id="hw-graveyard-btn" title="เครื่องพัง (สถานะทั่วไป + หมายเหตุมีคำว่า 'พัง')" style="font-size:13px">🪦 Graveyard</button>` : ''}
+        <button class="btn primary" id="hw-add-btn">+ เพิ่ม ${escapeHtml(tab.label)}</button>
+      </div>
     </div>
     <div class="hint" style="margin-bottom:14px;color:var(--text-muted);font-size:13px">
       จัดการ ${escapeHtml(tab.label)} — ผูกกับผู้ดูแลปัจจุบัน + เก็บประวัติการครอบครอง
@@ -2217,6 +2222,15 @@ async function renderHardwarePage(type) {
     _hwSearch = e.target.value;
     renderHardwareRows();
   });
+  // v1.9.366 — Graveyard toggle: แสดงเฉพาะเครื่องพัง
+  if (isPc) {
+    const gvBtn = $('hw-graveyard-btn');
+    if (gvBtn) gvBtn.addEventListener('click', () => {
+      _hwGraveyard = !_hwGraveyard;
+      gvBtn.classList.toggle('primary', _hwGraveyard);
+      renderHardwareRows();
+    });
+  }
   if (isPc) {
     $('hw-f-link').addEventListener('change', (e) => { _hwLinkFilter = e.target.value; renderHardwareRows(); });
     $('hw-f-dept').addEventListener('change', (e) => { _hwDeptFilter = e.target.value; renderHardwareRows(); });
@@ -2263,6 +2277,12 @@ function _isHwCentral(h) {
 // apply all PC filters except `excludeKey` ('os' | 'dept' | 'link' | null = all)
 function applyHwFiltersExcept(h, excludeKey, q) {
   if (!_searchMatchHw(h, q)) return false;
+  // v1.9.366 — Graveyard: สถานะทั่วไป (note_category ว่าง/general) + หมายเหตุมีคำว่า 'พัง'
+  if (_hwGraveyard) {
+    const cat = h.note_category || 'general';
+    if (cat !== 'general') return false;
+    if (!(h.notes && h.notes.includes('พัง'))) return false;
+  }
   if (excludeKey !== 'os' && _hwOsFilter && classifyHwOs(h.os) !== _hwOsFilter) return false;
   if (excludeKey !== 'link') {
     if (_hwLinkFilter === 'linked' && !h.current_member_id) return false;
@@ -2426,7 +2446,7 @@ function renderHardwareRows() {
     ? _hwCache.filter(h => applyHwFiltersExcept(h, null, q))
     : _hwCache.filter(h => _searchMatchHw(h, q));
 
-  const filterActive = !!q || (isPc && (_hwOsFilter || _hwDeptFilter || _hwLinkFilter));
+  const filterActive = !!q || (isPc && (_hwOsFilter || _hwDeptFilter || _hwLinkFilter || _hwGraveyard));
   if ($('hw-count')) {
     $('hw-count').textContent = filterActive
       ? `${list.length} / ${_hwCache.length} รายการ`
