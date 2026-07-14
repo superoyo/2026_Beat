@@ -2275,13 +2275,18 @@ function _isHwCentral(h) {
     || h.status === 'stock';
 }
 // apply all PC filters except `excludeKey` ('os' | 'dept' | 'link' | null = all)
+// v1.9.367 — เกณฑ์ Graveyard: สถานะทั่วไป (note_category ว่าง/general) + หมายเหตุมีคำว่า 'พัง'
+function _isHwGrave(h) {
+  const cat = h.note_category || 'general';
+  return cat === 'general' && !!(h.notes && h.notes.includes('พัง'));
+}
 function applyHwFiltersExcept(h, excludeKey, q) {
   if (!_searchMatchHw(h, q)) return false;
-  // v1.9.366 — Graveyard: สถานะทั่วไป (note_category ว่าง/general) + หมายเหตุมีคำว่า 'พัง'
+  // v1.9.367 — สถานะปกติ (ไม่กด Graveyard) ซ่อนเครื่องพัง · กด Graveyard = แสดงเฉพาะเครื่องพัง
   if (_hwGraveyard) {
-    const cat = h.note_category || 'general';
-    if (cat !== 'general') return false;
-    if (!(h.notes && h.notes.includes('พัง'))) return false;
+    if (!_isHwGrave(h)) return false;
+  } else {
+    if (_isHwGrave(h)) return false;
   }
   if (excludeKey !== 'os' && _hwOsFilter && classifyHwOs(h.os) !== _hwOsFilter) return false;
   if (excludeKey !== 'link') {
@@ -2447,10 +2452,14 @@ function renderHardwareRows() {
     : _hwCache.filter(h => _searchMatchHw(h, q));
 
   const filterActive = !!q || (isPc && (_hwOsFilter || _hwDeptFilter || _hwLinkFilter || _hwGraveyard));
+  // v1.9.367 — baseline ของ PC หน้าปกติ = ไม่รวมเครื่อง graveyard (โชว์เฉพาะตอนกดปุ่ม Graveyard)
+  const baseCount = (isPc && !_hwGraveyard)
+    ? _hwCache.filter(h => !_isHwGrave(h)).length
+    : _hwCache.length;
   if ($('hw-count')) {
     $('hw-count').textContent = filterActive
-      ? `${list.length} / ${_hwCache.length} รายการ`
-      : `${_hwCache.length} รายการ`;
+      ? `${list.length} / ${baseCount} รายการ`
+      : `${list.length} รายการ`;
   }
   if (_hwCache.length === 0) {
     listEl.innerHTML = `<div class="empty">${escapeHtml(tab.emptyText)} — กด <strong>+ เพิ่ม</strong></div>`;
