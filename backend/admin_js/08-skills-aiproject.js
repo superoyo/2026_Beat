@@ -620,10 +620,14 @@ async function renderAiProjects() {
   Object.keys(counts).sort((a, b) => a.localeCompare(b, 'th')).forEach(d => { chips += chip(d, '🏢 ' + d, counts[d]); });
   const cards = all.length === 0
     ? '<div class="empty" style="padding:30px;text-align:center;color:var(--text-muted)">— ไม่พบ AI Project —</div>'
-    : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">` + all.map(p => `
+    : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">` + all.map(p => {
+        // v1.9.368 — ปุ่มเปิดลิงก์ภายนอกบนการ์ด (เติม https:// ถ้าไม่มี)
+        const safeUrl = p.url ? (/^https?:\/\//i.test(p.url) ? p.url : 'https://' + p.url) : '';
+        return `
         <div class="card aiproj-card" data-id="${p.id}" style="display:flex;flex-direction:column;padding:0;cursor:pointer;overflow:hidden">
-          <div style="width:100%;aspect-ratio:16/9;background:var(--bg-soft);overflow:hidden;flex-shrink:0">
+          <div style="width:100%;aspect-ratio:16/9;background:var(--bg-soft);overflow:hidden;flex-shrink:0;position:relative">
             ${p.image_data ? `<img src="${p.image_data}" alt="" style="width:100%;height:100%;object-fit:cover;display:block" />` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-soft);font-size:34px">🤖</div>`}
+            ${safeUrl ? `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer" class="aiproj-open" title="เปิดเว็บไซต์ในแท็บใหม่" style="position:absolute;top:8px;right:8px;display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;background:rgba(0,0,0,.55);color:#fff;font-size:14px;text-decoration:none;backdrop-filter:blur(3px)">🔗</a>` : ''}
           </div>
           <div style="padding:13px 15px;display:flex;flex-direction:column;gap:7px;flex:1">
             ${p.department ? `<span style="align-self:flex-start;font-size:10.5px;padding:1px 8px;border-radius:999px;background:rgba(37,99,235,.10);color:var(--primary);font-weight:600">🏢 ${escapeHtml(p.department)}</span>` : ''}
@@ -635,8 +639,10 @@ async function renderAiProjects() {
               <span style="font-size:11px;color:var(--text-soft);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">${escapeHtml(p.owner_name || p.creator_name || '—')}</span>
               ${p.started_month ? `<span style="font-size:10.5px;color:var(--text-soft);white-space:nowrap" title="เริ่มสร้าง">📅 ${_aiprojMonthLabel(p.started_month)}</span>` : ''}
             </div>
+            ${safeUrl ? `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer" class="aiproj-open btn" style="font-size:12px;padding:7px 10px;text-decoration:none;text-align:center;justify-content:center;display:flex;align-items:center;gap:5px">🔗 เปิดเว็บไซต์</a>` : ''}
           </div>
-        </div>`).join('') + `</div>`;
+        </div>`;
+      }).join('') + `</div>`;
   root.innerHTML = `
     <div id="aiproj-scroll" style="overflow-y:auto;max-height:calc(100vh - 110px)">
       <!-- hero — เลื่อนหายไปตอน scroll -->
@@ -664,6 +670,8 @@ async function renderAiProjects() {
   si.addEventListener('input', (e) => { clearTimeout(_t); const v = e.target.value; _t = setTimeout(() => { _aiprojSearch = v; renderAiProjects().then(() => { const el = $('aiproj-search'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }); }, 280); });
   root.querySelectorAll('.aiproj-dept').forEach(b => b.addEventListener('click', () => { _aiprojDept = b.dataset.dept; renderAiProjects(); }));
   root.querySelectorAll('.aiproj-card').forEach(c => c.addEventListener('click', () => showAiProjectDetail(parseInt(c.dataset.id, 10))));
+  // v1.9.368 — ปุ่มเปิดลิงก์บนการ์ด: กดแล้วเปิดแท็บใหม่ ไม่เด้งเข้าหน้ารายละเอียด
+  root.querySelectorAll('.aiproj-open').forEach(a => a.addEventListener('click', (e) => e.stopPropagation()));
   $('aiproj-add-btn').addEventListener('click', () => openAiProjectModal(null));
 }
 
