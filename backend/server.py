@@ -757,6 +757,17 @@ def init_db() -> None:
             "ON members(email) WHERE email IS NOT NULL"
         )
 
+        # v1.9.369 — ai_projects: pin โปรเจกต์สำคัญไว้บนสุด
+        aiproj_cols = {
+            row["name"] for row in conn.execute("PRAGMA table_info(ai_projects)").fetchall()
+        }
+        for col_name, col_def in [
+            ("pinned",    "INTEGER NOT NULL DEFAULT 0"),
+            ("pinned_at", "TEXT"),
+        ]:
+            if col_name not in aiproj_cols:
+                conn.execute(f"ALTER TABLE ai_projects ADD COLUMN {col_name} {col_def}")
+
         # ---- 3. indexes ที่ขึ้นกับคอลัมน์ใหม่ (สร้างหลัง migration)
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_snapshots_profile ON snapshots(profile_name)"
@@ -9497,6 +9508,10 @@ class AiProjectPatch(BaseModel):
     creator_unspecified: Optional[bool] = None   # v1.9.144 — ตั้งผู้สร้าง = ไม่ระบุ
 
 
+class AiProjectPinIn(BaseModel):
+    pinned: bool
+
+
 def _aiproj_can_edit(row, actor_mid, is_admin) -> bool:
     if is_admin:
         return True
@@ -9504,14 +9519,16 @@ def _aiproj_can_edit(row, actor_mid, is_admin) -> bool:
 
 
 @app.get("/api/ai-projects")
-def list_ai_projects(_auth: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+def list_ai_projects(sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
     with db_conn() as conn:
+        actor_mid, _n, is_admin = _skill_actor(conn, sess)
         rows = conn.execute(
             "SELECT id, title, url, description, department, tags, image_data, started_month, "
-            "  owner_name, creator_name, "
+            "  owner_name, creator_name, owner_member_id, pinned, pinned_at, "
             "  (SELECT avatar_data FROM members WHERE id = COALESCE(ai_projects.owner_member_id, ai_projects.creator_member_id)) AS owner_avatar, "
             "  created_at, updated_at "
-            "FROM ai_projects ORDER BY COALESCE(started_month,'') DESC, created_at DESC"
+            "FROM ai_projects "
+            "ORDER BY pinned DESC, COALESCE(pinned_at,'') DESC, COALESCE(started_month,'') DESC, created_at DESC"
         ).fetchall()
         dept_counts: dict[str, int] = {}
         for r in conn.execute(
@@ -9519,7 +9536,13 @@ def list_ai_projects(_auth: dict = Depends(require_admin_or_member)) -> dict[str
         ).fetchall():
             dept_counts[r["d"]] = r["n"]
         total = conn.execute("SELECT COUNT(*) AS n FROM ai_projects").fetchone()["n"]
-    return {"projects": [dict(r) for r in rows], "department_counts": dept_counts, "total": total}
+    projects = []
+    for r in rows:
+        d = dict(r)
+        d["can_edit"] = _aiproj_can_edit(r, actor_mid, is_admin)
+        d["pinned"] = bool(d.get("pinned"))
+        projects.append(d)
+    return {"projects": projects, "department_counts": dept_counts, "total": total}
 
 
 @app.get("/api/ai-projects/{proj_id}")
@@ -9531,6 +9554,7 @@ def get_ai_project(proj_id: int, sess: dict = Depends(require_admin_or_member)) 
         actor_mid, _n, is_admin = _skill_actor(conn, sess)
     d = dict(row)
     d["can_edit"] = _aiproj_can_edit(row, actor_mid, is_admin)
+    d["pinned"] = bool(d.get("pinned"))
     return d
 
 
@@ -9611,6 +9635,24 @@ def delete_ai_project(proj_id: int, sess: dict = Depends(require_admin_or_member
             raise HTTPException(status_code=403, detail="คุณไม่มีสิทธิ์ลบ AI Project นี้")
         conn.execute("DELETE FROM ai_projects WHERE id = ?", (proj_id,))
     return {"ok": True}
+
+
+# v1.9.369 — pin/unpin โปรเจกต์สำคัญให้อยู่บนสุด (เจ้าของ/admin เท่านั้น)
+@app.post("/api/ai-projects/{proj_id}/pin")
+def pin_ai_project(proj_id: int, payload: AiProjectPinIn, sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM ai_projects WHERE id = ?", (proj_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="ไม่พบ AI Project")
+        actor_mid, _n, is_admin = _skill_actor(conn, sess)
+        if not _aiproj_can_edit(row, actor_mid, is_admin):
+            raise HTTPException(status_code=403, detail="คุณไม่มีสิทธิ์ปักหมุด AI Project นี้ (เฉพาะเจ้าของ/admin)")
+        pinned_at = utc_now().isoformat() if payload.pinned else None
+        conn.execute(
+            "UPDATE ai_projects SET pinned = ?, pinned_at = ? WHERE id = ?",
+            (1 if payload.pinned else 0, pinned_at, proj_id),
+        )
+    return {"ok": True, "pinned": payload.pinned}
 
 
 # v1.9.143 — รายชื่อทีม (แผนก) สำหรับ dropdown — logged-in ทุกคนเรียกได้

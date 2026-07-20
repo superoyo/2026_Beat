@@ -623,10 +623,15 @@ async function renderAiProjects() {
     : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">` + all.map(p => {
         // v1.9.368 — ปุ่มเปิดลิงก์ภายนอกบนการ์ด (เติม https:// ถ้าไม่มี)
         const safeUrl = p.url ? (/^https?:\/\//i.test(p.url) ? p.url : 'https://' + p.url) : '';
+        // v1.9.369 — pin: เจ้าของ/admin กดปักหมุดได้ · คนอื่นเห็นป้าย 📌 อย่างเดียว
+        const pinCtrl = p.can_edit
+          ? `<button type="button" class="aiproj-pin" data-id="${p.id}" data-pinned="${p.pinned ? '1' : '0'}" title="${p.pinned ? 'เลิกปักหมุด' : 'ปักหมุดขึ้นบนสุด'}" style="position:absolute;top:8px;left:8px;display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;border:none;cursor:pointer;font-size:14px;background:${p.pinned ? 'var(--primary)' : 'rgba(0,0,0,.55)'};color:#fff;backdrop-filter:blur(3px)">📌</button>`
+          : (p.pinned ? `<span title="ปักหมุด" style="position:absolute;top:8px;left:8px;display:inline-flex;align-items:center;gap:3px;height:26px;padding:0 9px;border-radius:8px;background:var(--primary);color:#fff;font-size:11px;font-weight:700;backdrop-filter:blur(3px)">📌 Pinned</span>` : '');
         return `
-        <div class="card aiproj-card" data-id="${p.id}" style="display:flex;flex-direction:column;padding:0;cursor:pointer;overflow:hidden">
+        <div class="card aiproj-card" data-id="${p.id}" style="display:flex;flex-direction:column;padding:0;cursor:pointer;overflow:hidden${p.pinned ? ';box-shadow:0 0 0 2px var(--primary)' : ''}">
           <div style="width:100%;aspect-ratio:16/9;background:var(--bg-soft);overflow:hidden;flex-shrink:0;position:relative">
             ${p.image_data ? `<img src="${p.image_data}" alt="" style="width:100%;height:100%;object-fit:cover;display:block" />` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-soft);font-size:34px">🤖</div>`}
+            ${pinCtrl}
             ${safeUrl ? `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer" class="aiproj-open" title="เปิดเว็บไซต์ในแท็บใหม่" style="position:absolute;top:8px;right:8px;display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;background:rgba(0,0,0,.55);color:#fff;font-size:14px;text-decoration:none;backdrop-filter:blur(3px)">🔗</a>` : ''}
           </div>
           <div style="padding:13px 15px;display:flex;flex-direction:column;gap:7px;flex:1">
@@ -672,6 +677,18 @@ async function renderAiProjects() {
   root.querySelectorAll('.aiproj-card').forEach(c => c.addEventListener('click', () => showAiProjectDetail(parseInt(c.dataset.id, 10))));
   // v1.9.368 — ปุ่มเปิดลิงก์บนการ์ด: กดแล้วเปิดแท็บใหม่ ไม่เด้งเข้าหน้ารายละเอียด
   root.querySelectorAll('.aiproj-open').forEach(a => a.addEventListener('click', (e) => e.stopPropagation()));
+  // v1.9.369 — ปักหมุด/เลิกปักหมุดจากการ์ด (ไม่เด้งเข้าหน้ารายละเอียด)
+  root.querySelectorAll('.aiproj-pin').forEach(b => b.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const id = parseInt(b.dataset.id, 10);
+    const next = b.dataset.pinned !== '1';
+    b.disabled = true;
+    try {
+      await fetchJson(`/api/ai-projects/${id}/pin`, { method: 'POST', body: JSON.stringify({ pinned: next }) });
+      showSavedToast(next ? '📌 ปักหมุดขึ้นบนสุดแล้ว' : '✓ เลิกปักหมุดแล้ว');
+      renderAiProjects();
+    } catch (err) { b.disabled = false; showSavedToast('❌ ' + err.message, 'error'); }
+  }));
   $('aiproj-add-btn').addEventListener('click', () => openAiProjectModal(null));
 }
 
@@ -684,6 +701,10 @@ async function showAiProjectDetail(id) {
   const editBtns = p.can_edit ? `
     <button type="button" class="btn" id="aiproj-edit-btn" style="font-size:12.5px;padding:7px 12px">✏️ แก้ไข</button>
     <button type="button" class="btn danger" id="aiproj-del-btn" style="font-size:12.5px;padding:7px 12px">🗑 ลบ</button>` : '';
+  // v1.9.369 — ปุ่มปักหมุด (เจ้าของ/admin)
+  const pinBtn = p.can_edit
+    ? `<button type="button" class="btn" id="aiproj-pin-btn" style="font-size:12.5px;padding:7px 12px${p.pinned ? ';background:var(--primary);color:#fff;border-color:var(--primary)' : ''}">📌 ${p.pinned ? 'เลิกปักหมุด' : 'ปักหมุด'}</button>`
+    : '';
   const safeUrl = p.url && /^https?:\/\//i.test(p.url) ? p.url : (p.url ? 'https://' + p.url : '');
   root.innerHTML = `
     <button type="button" class="btn" id="aiproj-back" style="font-size:13px;padding:7px 14px;margin-bottom:14px">← กลับ AI Project</button>
@@ -694,10 +715,11 @@ async function showAiProjectDetail(id) {
       <div style="padding:20px 22px">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:8px">
           <div>
+            ${p.pinned ? `<div style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:700;color:#fff;background:var(--primary);padding:2px 10px;border-radius:999px;margin-bottom:6px">📌 Pinned</div>` : ''}
             ${p.department ? `<div style="font-size:12px;color:var(--primary);font-weight:600;margin-bottom:4px">🏢 ${escapeHtml(p.department)}</div>` : ''}
             <h2 style="margin:0;font-size:22px;font-weight:800">${escapeHtml(p.title)}</h2>
           </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">${editBtns}${safeUrl ? `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer" class="btn primary" style="font-size:13px;padding:8px 16px;text-decoration:none">🔗 เปิดเว็บไซต์</a>` : ''}</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">${pinBtn}${editBtns}${safeUrl ? `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer" class="btn primary" style="font-size:13px;padding:8px 16px;text-decoration:none">🔗 เปิดเว็บไซต์</a>` : ''}</div>
         </div>
         <div style="font-size:13.5px;color:var(--text-muted);line-height:1.6;margin-bottom:12px;white-space:pre-wrap">${escapeHtml(p.description || '')}</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">${(p.tags || '').split(',').filter(Boolean).map(t => `<span style="font-size:11px;padding:2px 9px;border-radius:999px;background:var(--bg-soft);color:var(--text-muted)">${escapeHtml(t.trim())}</span>`).join('')}</div>
@@ -716,6 +738,17 @@ async function showAiProjectDetail(id) {
       if (!confirm(`ลบ AI Project "${p.title}"?`)) return;
       try { await fetchJson(`/api/ai-projects/${id}`, { method: 'DELETE' }); showSavedToast('✓ ลบแล้ว'); renderAiProjects(); }
       catch (e) { showSavedToast('❌ ' + e.message, 'error'); }
+    });
+    // v1.9.369 — ปักหมุด/เลิกปักหมุดจากหน้ารายละเอียด
+    const pb = $('aiproj-pin-btn');
+    if (pb) pb.addEventListener('click', async () => {
+      const next = !p.pinned;
+      pb.disabled = true;
+      try {
+        await fetchJson(`/api/ai-projects/${id}/pin`, { method: 'POST', body: JSON.stringify({ pinned: next }) });
+        showSavedToast(next ? '📌 ปักหมุดขึ้นบนสุดแล้ว' : '✓ เลิกปักหมุดแล้ว');
+        showAiProjectDetail(id);
+      } catch (e) { pb.disabled = false; showSavedToast('❌ ' + e.message, 'error'); }
     });
   }
 }
