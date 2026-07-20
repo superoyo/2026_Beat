@@ -868,6 +868,7 @@ function _ccOpenSearchPopup(initialQ){
         <label style="flex:1;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-muted)">สูงสุด<input id="ccs-max" type="range" style="flex:1;accent-color:var(--primary)" /></label>
       </div>
     </div>
+    <div id="ccs-cards" style="display:none;margin-top:10px;gap:6px;flex-wrap:wrap;align-items:center;overflow-x:auto"></div>
     <div id="ccs-count" style="font-size:11.5px;color:var(--text-muted);margin:10px 0 6px"></div>
     <div id="ccs-results" style="flex:1;overflow-y:auto;min-height:60px"></div>
   </div>`;
@@ -881,13 +882,17 @@ function _ccOpenSearchPopup(initialQ){
   const inp=bg.querySelector('#ccs-q'), resEl=bg.querySelector('#ccs-results'), cntEl=bg.querySelector('#ccs-count');
   const rangeBox=bg.querySelector('#ccs-range'), minR=bg.querySelector('#ccs-min'), maxR=bg.querySelector('#ccs-max');
   const minL=bg.querySelector('#ccs-min-l'), maxL=bg.querySelector('#ccs-max-l');
+  const cardsBox=bg.querySelector('#ccs-cards');
   let all=[];   // ผลลัพธ์ keyword ปัจจุบัน (ก่อนกรองช่วงยอด)
+  // v1.9.370 — filter ตามเลขบัตร 4 ตัวท้าย
+  let cardFilter=null;
+  const _last4=(c)=>{ const d=(c||'').replace(/\D/g,''); return d.length>=4?d.slice(-4):''; };
 
   const renderResults=()=>{
     let lo=parseFloat(minR.value), hi=parseFloat(maxR.value);
     if(lo>hi){ const t=lo; lo=hi; hi=t; }   // เลื่อนสลับกัน = swap อัตโนมัติ
     minL.textContent=_ccMoney(lo); maxL.textContent=_ccMoney(hi);
-    const list=all.filter(t=>{ const a=t.amount||0; return a>=lo&&a<=hi; });
+    const list=all.filter(t=>{ const a=t.amount||0; if(a<lo||a>hi) return false; if(cardFilter&&_last4(t.card_number)!==cardFilter) return false; return true; });
     const sum=list.reduce((s,t)=>s+(t.amount||0),0);
     cntEl.textContent=list.length?`${list.length} รายการ · รวม ${_ccMoney(sum)}`:'';
     let _prevYm=null;   // v1.9.354 — เดือนเดียวกันติดกันแสดงปฏิทินเฉพาะแถวบนสุด
@@ -920,13 +925,28 @@ function _ccOpenSearchPopup(initialQ){
       if(iv) _ccPreviewInvoice(iv,3000);   // ทับ popup search (z=2500)
     }));
   };
+  // v1.9.370 — chips เลือกบัตรจาก 4 ตัวท้าย (โผล่เมื่อผลลัพธ์มีบัตร ≥ 2 ใบ)
+  const buildCards=()=>{
+    const counts={};
+    all.forEach(t=>{ const l=_last4(t.card_number); if(l) counts[l]=(counts[l]||0)+1; });
+    const keys=Object.keys(counts).sort();
+    if(keys.length<2){ cardsBox.style.display='none'; cardsBox.innerHTML=''; cardFilter=null; return; }
+    const chip=(val,label,n)=>{ const active=(val===cardFilter);
+      return `<button type="button" class="ccs-card-chip" data-card="${val==null?'':val}" style="flex-shrink:0;padding:5px 11px;border-radius:999px;font-size:11.5px;font-weight:600;font-family:inherit;cursor:pointer;white-space:nowrap;border:1px solid ${active?'var(--primary)':'var(--border)'};background:${active?'var(--primary)':'var(--bg-card)'};color:${active?'#fff':'var(--text)'}">${label}${n!=null?` <span style="opacity:.7">${n}</span>`:''}</button>`; };
+    cardsBox.style.display='flex';
+    cardsBox.innerHTML=`<span style="font-size:11px;color:var(--text-muted);font-weight:600;margin-right:2px">บัตร:</span>`
+      +chip(null,'ทั้งหมด',all.length)+keys.map(k=>chip(k,'💳 ••'+k,counts[k])).join('');
+    cardsBox.querySelectorAll('.ccs-card-chip').forEach(b=>b.addEventListener('click',()=>{ cardFilter=b.dataset.card||null; buildCards(); renderResults(); }));
+  };
   const setupRange=()=>{
-    if(!all.length){ rangeBox.style.display='none'; renderResults(); return; }
+    cardFilter=null;
+    if(!all.length){ rangeBox.style.display='none'; cardsBox.style.display='none'; renderResults(); return; }
     const amts=all.map(t=>t.amount||0);
     const lo=Math.floor(Math.min(...amts)), hi=Math.ceil(Math.max(...amts));
     [minR,maxR].forEach(r=>{ r.min=lo; r.max=hi; r.step='1'; });
     minR.value=lo; maxR.value=hi;
     rangeBox.style.display='';
+    buildCards();
     renderResults();
   };
   minR.addEventListener('input',renderResults);
