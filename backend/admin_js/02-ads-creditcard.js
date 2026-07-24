@@ -1927,7 +1927,7 @@ async function _ccRenderSummary(v){
     const ms=matchByTxn[t.id]||[]; const ok=ms.length>0;
     const invSum=ms.reduce((s,mm)=>s+((mm.inv&&mm.inv.amount)||0),0); const diff=Math.abs(invSum-(t.amount||0));
     const invCells=ms.length
-      ? ms.map(mm=>{const i=mm.inv; return i?`<span style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><span class="cc-sum-unmatch" data-match="${mm.matchId}" title="ตัดการจับคู่" style="cursor:pointer;color:var(--critical);opacity:.6;font-size:11px">✕</span><span class="cc-sum-prev" data-inv="${i.id}" title="ดู PDF / ไฟล์" style="cursor:pointer;color:var(--primary);border-bottom:1px dashed var(--primary)">👁 ${escapeHtml(i.company||'invoice')} ${_ccMoney(i.amount)}</span></span>`:'invoice';}).join('<br>')
+      ? ms.map(mm=>{const i=mm.inv; return i?`<span style="display:inline-flex;align-items:center;gap:5px;max-width:230px;vertical-align:top"><span class="cc-sum-unmatch" data-match="${mm.matchId}" title="ตัดการจับคู่" style="cursor:pointer;color:var(--critical);opacity:.6;font-size:11px;flex-shrink:0">✕</span><span class="cc-sum-prev" data-inv="${i.id}" title="ดู PDF / ไฟล์" style="cursor:pointer;color:var(--primary);display:inline-flex;align-items:center;gap:4px;min-width:0;flex:1"><span style="flex-shrink:0">👁</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1;border-bottom:1px dashed var(--primary)">${escapeHtml(i.company||'invoice')}</span><span style="flex-shrink:0;font-variant-numeric:tabular-nums">${_ccMoney(i.amount)}</span></span></span>`:'invoice';}).join('<br>')
       : '<span style="color:var(--text-muted)">— ยังไม่จับคู่ —</span>';
     const ownerCells=ms.length
       ? ms.map(mm=>{const i=mm.inv; return i?`<div style="margin-bottom:4px">${i.description?`<div style="font-size:13px;color:var(--text)">📝 ${escapeHtml(i.description)}</div>`:'<span style="font-size:11px;color:var(--text-muted)">— ไม่มีรายละเอียด —</span>'}<div style="font-size:10.5px;color:var(--text-muted)">${_ccUploaderChip(i,13)}</div></div>`:'';}).join('')
@@ -1951,7 +1951,7 @@ async function _ccRenderSummary(v){
       </td>
       <td style="padding:7px 8px;font-size:12px;vertical-align:top;min-width:160px">${noteCell}</td>
       <td style="padding:7px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;vertical-align:top">${_ccMoney(t.amount)}</td>
-      <td style="padding:7px 8px;font-size:12px;vertical-align:top">${invCells}</td>
+      <td style="padding:7px 8px;font-size:12px;vertical-align:top;width:1%">${invCells}</td>
       <td style="padding:7px 8px;vertical-align:top">${ownerCells}</td>
       <td style="padding:7px 8px;text-align:right;font-size:12px;white-space:nowrap;vertical-align:top;${ok&&diff>0.01?'color:#92400e;font-weight:700':''}">${ok?(diff>0.01?'Δ '+_ccMoney(diff):'ตรง'):''}</td>
     </tr>`;
@@ -1973,7 +1973,7 @@ async function _ccRenderSummary(v){
     ${filterChips}
     <div style="overflow-x:auto"><table id="cc-sum-table" style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase">
-        <th style="padding:6px 3px;width:18px"></th><th style="padding:6px 8px">รายการบัตร</th><th style="padding:6px 8px">รายละเอียดรายการ</th><th style="padding:6px 8px;text-align:right">ยอด</th><th style="padding:6px 8px">Invoice / Receipt</th><th style="padding:6px 8px">รายละเอียด / เจ้าของ</th><th style="padding:6px 8px;text-align:right">ผลต่าง</th>
+        <th style="padding:6px 3px;width:18px"></th><th style="padding:6px 8px">รายการบัตร</th><th style="padding:6px 8px">รายละเอียดรายการ</th><th style="padding:6px 8px;text-align:right">ยอด</th><th style="padding:6px 8px;width:1%;white-space:nowrap">Invoice / Receipt</th><th style="padding:6px 8px">รายละเอียด / เจ้าของ</th><th style="padding:6px 8px;text-align:right">ผลต่าง</th>
       </tr></thead><tbody>${rows||'<tr><td colspan="7" style="padding:14px;text-align:center;color:var(--text-muted)">ไม่มีรายการ</td></tr>'}</tbody>
     </table></div>`;
   v.querySelectorAll('.cc-sum-prev').forEach(x=>x.addEventListener('click',()=>{ const inv=invById[parseInt(x.dataset.inv,10)]; if(inv) _ccPreviewInvoice(inv); }));
