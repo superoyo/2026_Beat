@@ -1791,7 +1791,7 @@ function _paintAnalytics(all,platOf){
 }
 
 // ---- v1.9.372 — Analytics > ปฏิทิน: รายการจ่ายบัตรทุกใบ วางลงปฏิทินรายเดือน + เลือกเอา/ไม่เอารายการ ----
-let _ccCal={ ym:'', excluded:null, plat:'' };   // ym='YYYY-MM' (จาก bill), excluded=Set(txn id ที่ไม่เอา), plat=filter ตามชื่อ
+let _ccCal={ ym:'', excluded:null, exPlats:null };   // ym='YYYY-MM', excluded=Set(txn id ไม่เอา), exPlats=Set(ชื่อที่กดออก/ไม่เอา)
 function _ccParseDay(s){ const m=(s||'').match(/^\s*0*(\d{1,2})/); if(!m) return null; const d=+m[1]; return (d>=1&&d<=31)?d:null; }
 function _ccRenderCalendar(body,all,platOf){
   // เดือนที่มีข้อมูล — ใช้ bill_year/bill_month (เชื่อถือได้) เป็นตัวเลื่อนเดือน
@@ -1802,13 +1802,15 @@ function _ccRenderCalendar(body,all,platOf){
   const idx=months.indexOf(_ccCal.ym);
   const [Y,M]=_ccCal.ym.split('-').map(Number);   // M=1..12
   const monthTxns=all.filter(t=>t.bill_year===Y&&t.bill_month===M);
-  const platList=[...new Set(all.map(platOf))];
-  const platColor=(p)=>_CC_ANALYTICS_COLORS[(Math.max(0,platList.indexOf(p)))%_CC_ANALYTICS_COLORS.length];
-  // v1.9.375 — filter ตามชื่อ (platform) ในปฏิทิน เช่นเลือก X → แสดงเฉพาะรายการ X
-  const fp=_ccCal.plat||'';
-  const platCount={}; monthTxns.forEach(t=>{ const p=platOf(t); platCount[p]=(platCount[p]||0)+1; });
-  const platsInMonth=Object.keys(platCount).sort((a,b)=>a==='อื่น ๆ'?1:b==='อื่น ๆ'?-1:a.localeCompare(b,'th'));
-  const list=fp?monthTxns.filter(t=>platOf(t)===fp):monthTxns;
+  // v1.9.376 — ชื่อ = platform ที่ detect ได้ หรือชื่อร้าน (คลี่ออกทุกชื่อ ไม่รวมเป็น 'อื่น ๆ')
+  const nameOf=(t)=>_ccDetectPlatform(t.description||'')||((t.description||'').trim().split(/\s+/).slice(0,2).join(' ')||'—');
+  const nameList=[...new Set(all.map(nameOf))];
+  const nameColor=(p)=>_CC_ANALYTICS_COLORS[(Math.max(0,nameList.indexOf(p)))%_CC_ANALYTICS_COLORS.length];
+  if(!_ccCal.exPlats) _ccCal.exPlats=new Set();
+  // filter ตามชื่อ (multi-select): กดเลือก=เอา, กดออก=ไม่เอา (เก็บชื่อที่ "ไม่เอา" ใน exPlats)
+  const nameCount={}; monthTxns.forEach(t=>{ const n=nameOf(t); nameCount[n]=(nameCount[n]||0)+1; });
+  const namesInMonth=Object.keys(nameCount).sort((a,b)=>nameCount[b]-nameCount[a]||a.localeCompare(b,'th'));
+  const list=monthTxns.filter(t=>!_ccCal.exPlats.has(nameOf(t)));
   const daysIn=new Date(Y,M,0).getDate();
   const firstDow=new Date(Y,M-1,1).getDay();   // 0=อา
   const byDay=new Map(); const noDay=[];
@@ -1818,9 +1820,9 @@ function _ccRenderCalendar(body,all,platOf){
   const inclTotal=incl.reduce((s,t)=>s+(t.amount||0),0);
   const txnChip=(t)=>{
     const ex=isEx(t);
-    const label=_ccDetectPlatform(t.description||'')||((t.description||'').trim().split(/\s+/).slice(0,2).join(' ')||'—');
+    const label=nameOf(t);
     return `<div class="cc-cal-txn" data-id="${t.id}" title="${escapeHtml((t.description||'—')+' · '+_ccMoney(t.amount)+(t.card_number?' · '+t.card_number:''))}" style="display:flex;align-items:center;gap:4px;padding:2px 4px;border-radius:5px;cursor:pointer;font-size:10px;line-height:1.3;margin-top:2px;${ex?'opacity:.4;text-decoration:line-through':'background:var(--bg-soft)'}">
-      <span style="width:6px;height:6px;border-radius:2px;background:${platColor(platOf(t))};flex-shrink:0"></span>
+      <span style="width:6px;height:6px;border-radius:2px;background:${nameColor(nameOf(t))};flex-shrink:0"></span>
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">${escapeHtml(label)}</span>
       <span style="flex-shrink:0;font-variant-numeric:tabular-nums;color:var(--text-muted)">${_ccMoney(t.amount)}</span>
     </div>`;
@@ -1838,8 +1840,12 @@ function _ccRenderCalendar(body,all,platOf){
       </div>${arr.map(txnChip).join('')}
     </div>`;
   }
-  const _calChip=(val,label,n)=>{ const a=fp===val; const dot=val?`<span style="width:7px;height:7px;border-radius:2px;background:${platColor(val)};display:inline-block;margin-right:5px;flex-shrink:0"></span>`:''; return `<button type="button" class="cc-cal-plat" data-plat="${escapeHtml(val)}" style="display:inline-flex;align-items:center;padding:5px 11px;border-radius:999px;font-size:11.5px;font-weight:600;font-family:inherit;cursor:pointer;white-space:nowrap;border:1px solid ${a?'var(--primary)':'var(--border)'};background:${a?'var(--primary)':'var(--bg-card)'};color:${a?'#fff':'var(--text)'}">${dot}${escapeHtml(label)}${n!=null?` <span style="opacity:.7;margin-left:4px">${n}</span>`:''}</button>`; };
-  const platChipsHtml=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px"><span style="font-size:11.5px;color:var(--text-muted);margin-right:2px">กรองตามชื่อ:</span>${_calChip('','ทั้งหมด',monthTxns.length)}${platsInMonth.map(p=>_calChip(p,p,platCount[p])).join('')}</div>`;
+  const _calChip=(name,label,n,isAll)=>{
+    const active=isAll?namesInMonth.every(x=>!_ccCal.exPlats.has(x)):!_ccCal.exPlats.has(name);
+    const dot=isAll?'':`<span style="width:7px;height:7px;border-radius:2px;background:${nameColor(name)};display:inline-block;margin-right:5px;flex-shrink:0"></span>`;
+    return `<button type="button" class="cc-cal-plat" data-plat="${escapeHtml(isAll?'__all__':name)}" style="display:inline-flex;align-items:center;max-width:210px;padding:5px 11px;border-radius:999px;font-size:11.5px;font-weight:600;font-family:inherit;cursor:pointer;white-space:nowrap;border:1px solid ${active?'var(--primary)':'var(--border)'};background:${active?'var(--primary)':'var(--bg-card)'};color:${active?'#fff':'var(--text)'};${active?'':'opacity:.5'}">${dot}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${escapeHtml(label)}</span>${n!=null?` <span style="opacity:.7;margin-left:4px;flex-shrink:0">${n}</span>`:''}</button>`;
+  };
+  const platChipsHtml=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px"><span style="font-size:11.5px;color:var(--text-muted);margin-right:2px">กรองตามชื่อ (กดเลือก=เอา / กดออก=ไม่เอา):</span>${_calChip(null,'ทั้งหมด',monthTxns.length,true)}${namesInMonth.map(p=>_calChip(p,p,nameCount[p],false)).join('')}</div>`;
   body.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
       <div style="display:flex;align-items:center;gap:8px">
@@ -1865,7 +1871,7 @@ function _ccRenderCalendar(body,all,platOf){
   $('cc-cal-prev').onclick=()=>nav(-1); $('cc-cal-next').onclick=()=>nav(1);
   $('cc-cal-all').onclick=()=>{ list.forEach(t=>_ccCal.excluded.delete(t.id)); _ccRenderCalendar(body,all,platOf); };
   $('cc-cal-none').onclick=()=>{ list.forEach(t=>_ccCal.excluded.add(t.id)); _ccRenderCalendar(body,all,platOf); };
-  body.querySelectorAll('.cc-cal-plat').forEach(b=>b.addEventListener('click',()=>{ _ccCal.plat=b.dataset.plat; _ccRenderCalendar(body,all,platOf); }));
+  body.querySelectorAll('.cc-cal-plat').forEach(b=>b.addEventListener('click',()=>{ const k=b.dataset.plat; if(k==='__all__'){ _ccCal.exPlats.clear(); } else if(_ccCal.exPlats.has(k)){ _ccCal.exPlats.delete(k); } else { _ccCal.exPlats.add(k); } _ccRenderCalendar(body,all,platOf); }));
   body.querySelectorAll('.cc-cal-txn').forEach(el=>el.addEventListener('click',()=>{ const id=parseInt(el.dataset.id,10); if(_ccCal.excluded.has(id)) _ccCal.excluded.delete(id); else _ccCal.excluded.add(id); _ccRenderCalendar(body,all,platOf); }));
 }
 
