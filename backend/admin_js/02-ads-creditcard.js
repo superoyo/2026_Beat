@@ -849,9 +849,14 @@ function _ccBillCard(b,showTile){
 }
 
 // ---- v1.9.352 — Global search: ค้นหารายการในบัตรทุกใบ + slider กรองช่วงยอด ----
-function _ccOpenSearchPopup(initialQ){
-  const bg=document.createElement('div'); bg.className='modal-bg'; bg.style.zIndex='2500';
-  bg.innerHTML=`<div class="modal" style="max-width:700px;width:92vw;padding:18px;max-height:86vh;display:flex;flex-direction:column">
+function _ccOpenSearchPopup(initialQ,opts){
+  opts=opts||{};
+  const slide=!!opts.slide;   // v1.9.377 — โหมดสไลด์จากด้านขวา (เรียกจากรายการในปฏิทิน) — ใช้ .modal-bg.is-slide เดิม
+  const bg=document.createElement('div'); bg.className='modal-bg'+(slide?' is-slide':''); bg.style.zIndex='2500';
+  const modalStyle=slide
+    ? 'width:min(580px,96vw);padding:18px;display:flex;flex-direction:column'
+    : 'max-width:700px;width:92vw;padding:18px;max-height:86vh;display:flex;flex-direction:column';
+  bg.innerHTML=`<div class="modal" style="${modalStyle}">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
       <div style="font-size:15px;font-weight:800">🔍 ค้นหารายการในบัตรทุกใบ</div>
       <button class="btn" id="ccs-close" style="font-size:12px">✕ ปิด</button>
@@ -873,6 +878,7 @@ function _ccOpenSearchPopup(initialQ){
     <div id="ccs-results" style="flex:1;overflow-y:auto;min-height:60px"></div>
   </div>`;
   document.body.appendChild(bg);
+  if(slide) requestAnimationFrame(()=>bg.classList.add('is-open'));   // v1.9.377 — trigger สไลด์เข้า
   const close=()=>bg.remove();
   bg.querySelector('#ccs-close').onclick=close;
   bg.addEventListener('click',e=>{ if(e.target===bg) close(); });
@@ -1791,14 +1797,13 @@ function _paintAnalytics(all,platOf){
 }
 
 // ---- v1.9.372 — Analytics > ปฏิทิน: รายการจ่ายบัตรทุกใบ วางลงปฏิทินรายเดือน + เลือกเอา/ไม่เอารายการ ----
-let _ccCal={ ym:'', excluded:null, exPlats:null };   // ym='YYYY-MM', excluded=Set(txn id ไม่เอา), exPlats=Set(ชื่อที่กดออก/ไม่เอา)
+let _ccCal={ ym:'', exPlats:null };   // ym='YYYY-MM', exPlats=Set(ชื่อที่กดออก/ไม่เอา)
 function _ccParseDay(s){ const m=(s||'').match(/^\s*0*(\d{1,2})/); if(!m) return null; const d=+m[1]; return (d>=1&&d<=31)?d:null; }
 function _ccRenderCalendar(body,all,platOf){
   // เดือนที่มีข้อมูล — ใช้ bill_year/bill_month (เชื่อถือได้) เป็นตัวเลื่อนเดือน
   const months=[...new Set(all.filter(t=>t.bill_year&&t.bill_month).map(t=>t.bill_year+'-'+String(t.bill_month).padStart(2,'0')))].sort();
   if(!months.length){ body.innerHTML='<div class="empty" style="font-size:12.5px">ยังไม่มีรายการ</div>'; return; }
   if(!_ccCal.ym||!months.includes(_ccCal.ym)) _ccCal.ym=months[months.length-1];
-  if(!_ccCal.excluded) _ccCal.excluded=new Set();
   const idx=months.indexOf(_ccCal.ym);
   const [Y,M]=_ccCal.ym.split('-').map(Number);   // M=1..12
   const monthTxns=all.filter(t=>t.bill_year===Y&&t.bill_month===M);
@@ -1815,13 +1820,13 @@ function _ccRenderCalendar(body,all,platOf){
   const firstDow=new Date(Y,M-1,1).getDay();   // 0=อา
   const byDay=new Map(); const noDay=[];
   list.forEach(t=>{ const d=_ccParseDay(t.txn_date); if(d&&d<=daysIn){ if(!byDay.has(d)) byDay.set(d,[]); byDay.get(d).push(t); } else noDay.push(t); });
-  const isEx=(t)=>_ccCal.excluded.has(t.id);
-  const incl=list.filter(t=>!isEx(t));
+  const incl=list;   // v1.9.377 — ยอดรวม = รายการที่ผ่าน filter ชื่อ (เอา/ไม่เอา ทำที่ chip ด้านบน)
   const inclTotal=incl.reduce((s,t)=>s+(t.amount||0),0);
+  // คลิกรายการ → เปิด search สไลด์ด้านข้าง (query = 2 คำแรกของชื่อรายการ)
+  const _calQ=(t)=>(t.description||'').replace(/[^A-Za-z0-9ก-๙. ]+/g,' ').trim().split(/\s+/).slice(0,2).join(' ');
   const txnChip=(t)=>{
-    const ex=isEx(t);
     const label=nameOf(t);
-    return `<div class="cc-cal-txn" data-id="${t.id}" title="${escapeHtml((t.description||'—')+' · '+_ccMoney(t.amount)+(t.card_number?' · '+t.card_number:''))}" style="display:flex;align-items:center;gap:4px;padding:2px 4px;border-radius:5px;cursor:pointer;font-size:10px;line-height:1.3;margin-top:2px;${ex?'opacity:.4;text-decoration:line-through':'background:var(--bg-soft)'}">
+    return `<div class="cc-cal-txn" data-q="${escapeHtml(_calQ(t))}" title="${escapeHtml('🔍 ค้นหา: '+(t.description||'—')+' · '+_ccMoney(t.amount))}" style="display:flex;align-items:center;gap:4px;padding:2px 4px;border-radius:5px;cursor:pointer;font-size:10px;line-height:1.3;margin-top:2px;background:var(--bg-soft)">
       <span style="width:6px;height:6px;border-radius:2px;background:${nameColor(nameOf(t))};flex-shrink:0"></span>
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">${escapeHtml(label)}</span>
       <span style="flex-shrink:0;font-variant-numeric:tabular-nums;color:var(--text-muted)">${_ccMoney(t.amount)}</span>
@@ -1832,7 +1837,7 @@ function _ccRenderCalendar(body,all,platOf){
   for(let i=0;i<firstDow;i++) cells+=`<div style="background:var(--bg-soft);border-radius:8px;min-height:72px;opacity:.35"></div>`;
   for(let d=1;d<=daysIn;d++){
     const arr=byDay.get(d)||[];
-    const dayTotal=arr.filter(t=>!isEx(t)).reduce((s,t)=>s+(t.amount||0),0);
+    const dayTotal=arr.reduce((s,t)=>s+(t.amount||0),0);
     cells+=`<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;min-height:72px;padding:4px 5px;display:flex;flex-direction:column;overflow:hidden">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <span style="font-size:11px;font-weight:700;color:var(--text-muted)">${d}</span>
@@ -1854,7 +1859,7 @@ function _ccRenderCalendar(body,all,platOf){
         <button type="button" id="cc-cal-next" class="btn" ${idx>=months.length-1?'disabled':''} style="font-size:13px;padding:5px 11px">▶</button>
       </div>
       <div style="display:flex;align-items:center;gap:14px;font-size:12.5px;flex-wrap:wrap">
-        <span style="color:var(--text-muted)">เลือกไว้ <b style="color:var(--text)">${incl.length}</b>/${list.length} รายการ</span>
+        <span style="color:var(--text-muted)">เลือกไว้ <b style="color:var(--text)">${list.length}</b>/${monthTxns.length} รายการ</span>
         <span>รวมที่เลือก: <b style="color:var(--primary);font-size:15px">${_ccMoney(inclTotal)}</b></span>
         <button type="button" id="cc-cal-all" class="btn" style="font-size:11.5px;padding:4px 9px">✓ เอาทั้งหมด</button>
         <button type="button" id="cc-cal-none" class="btn" style="font-size:11.5px;padding:4px 9px">✕ ไม่เอาทั้งหมด</button>
@@ -1866,13 +1871,15 @@ function _ccRenderCalendar(body,all,platOf){
     </div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">${cells}</div>
     ${noDay.length?`<div style="margin-top:16px"><div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:6px">🕓 ไม่ระบุวันที่ (${noDay.length})</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px">${noDay.map(txnChip).join('')}</div></div>`:''}
-    <div style="font-size:11px;color:var(--text-soft);margin-top:12px">💡 คลิกรายการเพื่อสลับ "เอา / ไม่เอา" ออกจากยอดรวม</div>`;
+    <div style="font-size:11px;color:var(--text-soft);margin-top:12px">💡 คลิกรายการเพื่อค้นหารายการนั้นในบัตรทุกใบ · กดชื่อด้านบนเพื่อเลือก/ตัดออกจากยอดรวม</div>`;
   const nav=(delta)=>{ const ni=idx+delta; if(ni<0||ni>=months.length) return; _ccCal.ym=months[ni]; _ccRenderCalendar(body,all,platOf); };
   $('cc-cal-prev').onclick=()=>nav(-1); $('cc-cal-next').onclick=()=>nav(1);
-  $('cc-cal-all').onclick=()=>{ list.forEach(t=>_ccCal.excluded.delete(t.id)); _ccRenderCalendar(body,all,platOf); };
-  $('cc-cal-none').onclick=()=>{ list.forEach(t=>_ccCal.excluded.add(t.id)); _ccRenderCalendar(body,all,platOf); };
+  // v1.9.377 — ปุ่มบน = คุม filter ชื่อ: เอาทั้งหมด (เลือกทุกชื่อ) / ไม่เอาทั้งหมด (ไม่เลือกเลย)
+  $('cc-cal-all').onclick=()=>{ _ccCal.exPlats.clear(); _ccRenderCalendar(body,all,platOf); };
+  $('cc-cal-none').onclick=()=>{ _ccCal.exPlats=new Set(nameList); _ccRenderCalendar(body,all,platOf); };
   body.querySelectorAll('.cc-cal-plat').forEach(b=>b.addEventListener('click',()=>{ const k=b.dataset.plat; if(k==='__all__'){ _ccCal.exPlats.clear(); } else if(_ccCal.exPlats.has(k)){ _ccCal.exPlats.delete(k); } else { _ccCal.exPlats.add(k); } _ccRenderCalendar(body,all,platOf); }));
-  body.querySelectorAll('.cc-cal-txn').forEach(el=>el.addEventListener('click',()=>{ const id=parseInt(el.dataset.id,10); if(_ccCal.excluded.has(id)) _ccCal.excluded.delete(id); else _ccCal.excluded.add(id); _ccRenderCalendar(body,all,platOf); }));
+  // v1.9.377 — คลิกรายการในปฏิทิน → เปิด search สไลด์ด้านข้าง พร้อมค้นหาทันที
+  body.querySelectorAll('.cc-cal-txn').forEach(el=>el.addEventListener('click',()=>{ _ccOpenSearchPopup(el.dataset.q||'', {slide:true}); }));
 }
 
 // ---- summary (completeness per bill + navigate bills) ----
