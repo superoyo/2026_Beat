@@ -1818,6 +1818,9 @@ function _ccRenderCalendar(body,all,platOf){
   const list=monthTxns.filter(t=>!_ccCal.exPlats.has(nameOf(t)));
   const daysIn=new Date(Y,M,0).getDate();
   const firstDow=new Date(Y,M-1,1).getDay();   // 0=อา
+  // v1.9.378 — วันนี้ (ไฮไลต์ช่อง ถ้าเดือน/ปีตรงกับที่แสดง)
+  const _now=new Date();
+  const todayD=(_now.getFullYear()===Y && _now.getMonth()+1===M)?_now.getDate():0;
   const byDay=new Map(); const noDay=[];
   list.forEach(t=>{ const d=_ccParseDay(t.txn_date); if(d&&d<=daysIn){ if(!byDay.has(d)) byDay.set(d,[]); byDay.get(d).push(t); } else noDay.push(t); });
   const incl=list;   // v1.9.377 — ยอดรวม = รายการที่ผ่าน filter ชื่อ (เอา/ไม่เอา ทำที่ chip ด้านบน)
@@ -1838,9 +1841,10 @@ function _ccRenderCalendar(body,all,platOf){
   for(let d=1;d<=daysIn;d++){
     const arr=byDay.get(d)||[];
     const dayTotal=arr.reduce((s,t)=>s+(t.amount||0),0);
-    cells+=`<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;min-height:72px;padding:4px 5px;display:flex;flex-direction:column;overflow:hidden">
+    const isToday=d===todayD;
+    cells+=`<div style="background:${isToday?'rgba(37,99,235,.09)':'var(--bg-card)'};border:1px solid ${isToday?'var(--primary)':'var(--border)'};${isToday?'box-shadow:0 0 0 1px var(--primary) inset;':''}border-radius:8px;min-height:72px;padding:4px 5px;display:flex;flex-direction:column;overflow:hidden">
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <span style="font-size:11px;font-weight:700;color:var(--text-muted)">${d}</span>
+        <span style="font-size:11px;font-weight:700;${isToday?'background:var(--primary);color:#fff;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center':'color:var(--text-muted)'}">${d}</span>
         ${dayTotal?`<span style="font-size:9px;font-weight:700;color:var(--primary);font-variant-numeric:tabular-nums">${_ccMoney(dayTotal)}</span>`:''}
       </div>${arr.map(txnChip).join('')}
     </div>`;
