@@ -1685,7 +1685,7 @@ async function _ccRenderPool(v){
 }
 
 // ---- v1.9.363 — Analytics: กราฟยอดใช้จ่ายรายเดือน + filter ปี/บัตร/platform ----
-let _ccAnalytics={ year:'', card:'', platform:'', data:null };
+let _ccAnalytics={ year:'', card:'', platform:'', sub:'overview', data:null };
 const _CC_ANALYTICS_COLORS=['#2563eb','#f59e0b','#10b981','#a855f7','#0ea5e9','#ec4899','#ef4444','#14b8a6','#8b5cf6','#f97316','#64748b'];
 async function _ccRenderAnalytics(v){
   v.innerHTML='<div class="empty">กำลังโหลด…</div>';
@@ -1696,12 +1696,19 @@ async function _ccRenderAnalytics(v){
   const all=_ccAnalytics.data;
   // platform ของแต่ละรายการ (detect จาก description)
   const platOf=(t)=>_ccDetectPlatform(t.description||'')||'อื่น ๆ';
-  // ตัวเลือก filter
+  // v1.9.372 — เมนูย่อย: ภาพรวม (กราฟ) / ปฏิทิน
+  const sub=_ccAnalytics.sub||'overview';
+  const subTab=(k,label)=>{ const a=sub===k; return `<button type="button" class="cc-an-sub" data-sub="${k}" style="padding:8px 16px;border-radius:9px;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;border:1px solid ${a?'var(--primary)':'var(--border)'};background:${a?'var(--primary)':'var(--bg-card)'};color:${a?'#fff':'var(--text)'}">${label}</button>`; };
+  v.innerHTML=`<div style="display:flex;gap:8px;margin-bottom:16px">${subTab('overview','📈 ภาพรวม')}${subTab('calendar','🗓 ปฏิทิน')}</div><div id="cc-an-body"></div>`;
+  v.querySelectorAll('.cc-an-sub').forEach(b=>b.addEventListener('click',()=>{ _ccAnalytics.sub=b.dataset.sub; _ccRenderAnalytics(v); }));
+  const body=$('cc-an-body');
+  if(sub==='calendar'){ _ccRenderCalendar(body,all,platOf); return; }
+  // ---- ภาพรวม (เดิม) ----
   const years=[...new Set(all.map(t=>t.bill_year).filter(Boolean))].sort((a,b)=>b-a);
   const cards=[...new Set(all.map(t=>t.card_number).filter(Boolean))].sort();
   const plats=[...new Set(all.map(platOf))].sort((a,b)=>a==='อื่น ๆ'?1:b==='อื่น ๆ'?-1:a.localeCompare(b));
   const selS='padding:7px 11px;border:1px solid var(--border);border-radius:8px;font-size:12.5px;font-family:inherit;background:var(--bg-card);color:var(--text);cursor:pointer;font-weight:600';
-  v.innerHTML=`
+  body.innerHTML=`
     <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
       <select id="cc-an-year" style="${selS}"><option value="">— ทุกปี —</option>${years.map(y=>`<option value="${y}" ${String(y)===_ccAnalytics.year?'selected':''}>ปี ${y}</option>`).join('')}</select>
       <select id="cc-an-card" style="${selS};max-width:260px"><option value="">— ทุกบัตร —</option>${cards.map(c=>`<option value="${escapeHtml(c)}" ${c===_ccAnalytics.card?'selected':''}>${escapeHtml(c)}</option>`).join('')}</select>
@@ -1781,6 +1788,76 @@ function _paintAnalytics(all,platOf){
         <td style="${td};text-align:right;color:var(--text-muted)">${total?Math.round(o.total/total*100):0}%</td>
       </tr>`).join('')}</tbody></table></div>`:'<div class="empty" style="font-size:12.5px">ไม่มีข้อมูล</div>';
   }
+}
+
+// ---- v1.9.372 — Analytics > ปฏิทิน: รายการจ่ายบัตรทุกใบ วางลงปฏิทินรายเดือน + เลือกเอา/ไม่เอารายการ ----
+let _ccCal={ ym:'', excluded:null };   // ym='YYYY-MM' (จาก bill), excluded=Set(txn id ที่ไม่เอา)
+function _ccParseDay(s){ const m=(s||'').match(/^\s*0*(\d{1,2})/); if(!m) return null; const d=+m[1]; return (d>=1&&d<=31)?d:null; }
+function _ccRenderCalendar(body,all,platOf){
+  // เดือนที่มีข้อมูล — ใช้ bill_year/bill_month (เชื่อถือได้) เป็นตัวเลื่อนเดือน
+  const months=[...new Set(all.filter(t=>t.bill_year&&t.bill_month).map(t=>t.bill_year+'-'+String(t.bill_month).padStart(2,'0')))].sort();
+  if(!months.length){ body.innerHTML='<div class="empty" style="font-size:12.5px">ยังไม่มีรายการ</div>'; return; }
+  if(!_ccCal.ym||!months.includes(_ccCal.ym)) _ccCal.ym=months[months.length-1];
+  if(!_ccCal.excluded) _ccCal.excluded=new Set();
+  const idx=months.indexOf(_ccCal.ym);
+  const [Y,M]=_ccCal.ym.split('-').map(Number);   // M=1..12
+  const monthTxns=all.filter(t=>t.bill_year===Y&&t.bill_month===M);
+  const platList=[...new Set(all.map(platOf))];
+  const platColor=(p)=>_CC_ANALYTICS_COLORS[(Math.max(0,platList.indexOf(p)))%_CC_ANALYTICS_COLORS.length];
+  const daysIn=new Date(Y,M,0).getDate();
+  const firstDow=new Date(Y,M-1,1).getDay();   // 0=อา
+  const byDay=new Map(); const noDay=[];
+  monthTxns.forEach(t=>{ const d=_ccParseDay(t.txn_date); if(d&&d<=daysIn){ if(!byDay.has(d)) byDay.set(d,[]); byDay.get(d).push(t); } else noDay.push(t); });
+  const isEx=(t)=>_ccCal.excluded.has(t.id);
+  const incl=monthTxns.filter(t=>!isEx(t));
+  const inclTotal=incl.reduce((s,t)=>s+(t.amount||0),0);
+  const txnChip=(t)=>{
+    const ex=isEx(t);
+    const label=_ccDetectPlatform(t.description||'')||((t.description||'').trim().split(/\s+/).slice(0,2).join(' ')||'—');
+    return `<div class="cc-cal-txn" data-id="${t.id}" title="${escapeHtml((t.description||'—')+' · '+_ccMoney(t.amount)+(t.card_number?' · '+t.card_number:''))}" style="display:flex;align-items:center;gap:4px;padding:2px 4px;border-radius:5px;cursor:pointer;font-size:10px;line-height:1.3;margin-top:2px;${ex?'opacity:.4;text-decoration:line-through':'background:var(--bg-soft)'}">
+      <span style="width:6px;height:6px;border-radius:2px;background:${platColor(platOf(t))};flex-shrink:0"></span>
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">${escapeHtml(label)}</span>
+      <span style="flex-shrink:0;font-variant-numeric:tabular-nums;color:var(--text-muted)">${_ccMoney(t.amount)}</span>
+    </div>`;
+  };
+  const dow=['อา','จ','อ','พ','พฤ','ศ','ส'];
+  let cells='';
+  for(let i=0;i<firstDow;i++) cells+=`<div style="background:var(--bg-soft);border-radius:8px;min-height:72px;opacity:.35"></div>`;
+  for(let d=1;d<=daysIn;d++){
+    const arr=byDay.get(d)||[];
+    const dayTotal=arr.filter(t=>!isEx(t)).reduce((s,t)=>s+(t.amount||0),0);
+    cells+=`<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;min-height:72px;padding:4px 5px;display:flex;flex-direction:column;overflow:hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:11px;font-weight:700;color:var(--text-muted)">${d}</span>
+        ${dayTotal?`<span style="font-size:9px;font-weight:700;color:var(--primary);font-variant-numeric:tabular-nums">${_ccMoney(dayTotal)}</span>`:''}
+      </div>${arr.map(txnChip).join('')}
+    </div>`;
+  }
+  body.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <button type="button" id="cc-cal-prev" class="btn" ${idx<=0?'disabled':''} style="font-size:13px;padding:5px 11px">◀</button>
+        <span style="font-size:15px;font-weight:800;min-width:110px;text-align:center">${_CC_MONTHS[M-1]} ${Y}</span>
+        <button type="button" id="cc-cal-next" class="btn" ${idx>=months.length-1?'disabled':''} style="font-size:13px;padding:5px 11px">▶</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;font-size:12.5px;flex-wrap:wrap">
+        <span style="color:var(--text-muted)">เลือกไว้ <b style="color:var(--text)">${incl.length}</b>/${monthTxns.length} รายการ</span>
+        <span>รวมที่เลือก: <b style="color:var(--primary);font-size:15px">${_ccMoney(inclTotal)}</b></span>
+        <button type="button" id="cc-cal-all" class="btn" style="font-size:11.5px;padding:4px 9px">✓ เอาทั้งหมด</button>
+        <button type="button" id="cc-cal-none" class="btn" style="font-size:11.5px;padding:4px 9px">✕ ไม่เอาทั้งหมด</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:5px">
+      ${dow.map(x=>`<div style="text-align:center;font-size:11px;font-weight:700;color:var(--text-muted);padding:2px 0">${x}</div>`).join('')}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">${cells}</div>
+    ${noDay.length?`<div style="margin-top:16px"><div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:6px">🕓 ไม่ระบุวันที่ (${noDay.length})</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px">${noDay.map(txnChip).join('')}</div></div>`:''}
+    <div style="font-size:11px;color:var(--text-soft);margin-top:12px">💡 คลิกรายการเพื่อสลับ "เอา / ไม่เอา" ออกจากยอดรวม</div>`;
+  const nav=(delta)=>{ const ni=idx+delta; if(ni<0||ni>=months.length) return; _ccCal.ym=months[ni]; _ccRenderCalendar(body,all,platOf); };
+  $('cc-cal-prev').onclick=()=>nav(-1); $('cc-cal-next').onclick=()=>nav(1);
+  $('cc-cal-all').onclick=()=>{ monthTxns.forEach(t=>_ccCal.excluded.delete(t.id)); _ccRenderCalendar(body,all,platOf); };
+  $('cc-cal-none').onclick=()=>{ monthTxns.forEach(t=>_ccCal.excluded.add(t.id)); _ccRenderCalendar(body,all,platOf); };
+  body.querySelectorAll('.cc-cal-txn').forEach(el=>el.addEventListener('click',()=>{ const id=parseInt(el.dataset.id,10); if(_ccCal.excluded.has(id)) _ccCal.excluded.delete(id); else _ccCal.excluded.add(id); _ccRenderCalendar(body,all,platOf); }));
 }
 
 // ---- summary (completeness per bill + navigate bills) ----

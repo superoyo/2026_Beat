@@ -10962,7 +10962,7 @@ def cc_delete_bill_page(bid: int, page_id: int,
 def cc_analytics_transactions(_sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
     with db_conn() as conn:
         rows = conn.execute(
-            "SELECT t.id, t.description, t.amount, t.user_note, "
+            "SELECT t.id, t.txn_date, t.description, t.amount, t.user_note, "
             "       b.id AS bill_id, b.card_number, b.bill_month, b.bill_year "
             "FROM cc_transactions t JOIN cc_bills b ON b.id = t.bill_id "
             "WHERE t.amount IS NOT NULL "
