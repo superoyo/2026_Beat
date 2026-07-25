@@ -1829,10 +1829,15 @@ function _ccRenderCalendar(body,all,platOf){
   const _calQ=(t)=>(t.description||'').replace(/[^A-Za-z0-9ก-๙. ]+/g,' ').trim().split(/\s+/).slice(0,2).join(' ');
   const txnChip=(t)=>{
     const label=nameOf(t);
-    return `<div class="cc-cal-txn" data-q="${escapeHtml(_calQ(t))}" title="${escapeHtml('🔍 ค้นหา: '+(t.description||'—')+' · '+_ccMoney(t.amount))}" style="display:flex;align-items:center;gap:4px;padding:2px 4px;border-radius:5px;cursor:pointer;font-size:10px;line-height:1.3;margin-top:2px;background:var(--bg-soft)">
-      <span style="width:6px;height:6px;border-radius:2px;background:${nameColor(nameOf(t))};flex-shrink:0"></span>
-      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">${escapeHtml(label)}</span>
-      <span style="flex-shrink:0;font-variant-numeric:tabular-nums;color:var(--text-muted)">${_ccMoney(t.amount)}</span>
+    const note=(t.user_note||'').trim();   // v1.9.379 — หมายเหตุ (สีเทา) ใต้รายการ
+    const noteTitle=note?' · '+note:'';
+    return `<div class="cc-cal-txn" data-q="${escapeHtml(_calQ(t))}" title="${escapeHtml('🔍 ค้นหา: '+(t.description||'—')+' · '+_ccMoney(t.amount)+noteTitle)}" style="padding:2px 4px;border-radius:5px;cursor:pointer;margin-top:2px;background:var(--bg-soft)">
+      <div style="display:flex;align-items:center;gap:4px;font-size:10px;line-height:1.3">
+        <span style="width:6px;height:6px;border-radius:2px;background:${nameColor(nameOf(t))};flex-shrink:0"></span>
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">${escapeHtml(label)}</span>
+        <span style="flex-shrink:0;font-variant-numeric:tabular-nums;color:var(--text-muted)">${_ccMoney(t.amount)}</span>
+      </div>
+      ${note?`<div style="font-size:9px;color:var(--text-soft);line-height:1.25;margin-top:1px;padding-left:10px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">📝 ${escapeHtml(note)}</div>`:''}
     </div>`;
   };
   const dow=['อา','จ','อ','พ','พฤ','ศ','ส'];
