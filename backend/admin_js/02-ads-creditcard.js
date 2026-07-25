@@ -1811,6 +1811,9 @@ function _ccRenderCalendar(body,all,platOf){
   const nameOf=(t)=>_ccDetectPlatform(t.description||'')||((t.description||'').trim().split(/\s+/).slice(0,2).join(' ')||'—');
   const nameList=[...new Set(all.map(nameOf))];
   const nameColor=(p)=>_CC_ANALYTICS_COLORS[(Math.max(0,nameList.indexOf(p)))%_CC_ANALYTICS_COLORS.length];
+  // v1.9.380 — เม็ดสีของรายการอ้างอิงตามเลขบัตรเครดิต (ไม่ใช่ชื่อ) + legend ใต้ปฏิทิน
+  const cardList=[...new Set(all.map(t=>t.card_number).filter(Boolean))].sort();
+  const cardColor=(c)=>_CC_ANALYTICS_COLORS[(Math.max(0,cardList.indexOf(c)))%_CC_ANALYTICS_COLORS.length];
   if(!_ccCal.exPlats) _ccCal.exPlats=new Set();
   // filter ตามชื่อ (multi-select): กดเลือก=เอา, กดออก=ไม่เอา (เก็บชื่อที่ "ไม่เอา" ใน exPlats)
   const nameCount={}; monthTxns.forEach(t=>{ const n=nameOf(t); nameCount[n]=(nameCount[n]||0)+1; });
@@ -1833,7 +1836,7 @@ function _ccRenderCalendar(body,all,platOf){
     const noteTitle=note?' · '+note:'';
     return `<div class="cc-cal-txn" data-q="${escapeHtml(_calQ(t))}" title="${escapeHtml('🔍 ค้นหา: '+(t.description||'—')+' · '+_ccMoney(t.amount)+noteTitle)}" style="padding:2px 4px;border-radius:5px;cursor:pointer;margin-top:2px;background:var(--bg-soft)">
       <div style="display:flex;align-items:center;gap:4px;font-size:10px;line-height:1.3">
-        <span style="width:6px;height:6px;border-radius:2px;background:${nameColor(nameOf(t))};flex-shrink:0"></span>
+        <span style="width:6px;height:6px;border-radius:2px;background:${cardColor(t.card_number)};flex-shrink:0" title="${escapeHtml(t.card_number||'บัตร')}"></span>
         <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">${escapeHtml(label)}</span>
         <span style="flex-shrink:0;font-variant-numeric:tabular-nums;color:var(--text-muted)">${_ccMoney(t.amount)}</span>
       </div>
@@ -1860,6 +1863,9 @@ function _ccRenderCalendar(body,all,platOf){
     return `<button type="button" class="cc-cal-plat" data-plat="${escapeHtml(isAll?'__all__':name)}" style="display:inline-flex;align-items:center;max-width:210px;padding:5px 11px;border-radius:999px;font-size:11.5px;font-weight:600;font-family:inherit;cursor:pointer;white-space:nowrap;border:1px solid ${active?'var(--primary)':'var(--border)'};background:${active?'var(--primary)':'var(--bg-card)'};color:${active?'#fff':'var(--text)'};${active?'':'opacity:.5'}">${dot}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${escapeHtml(label)}</span>${n!=null?` <span style="opacity:.7;margin-left:4px;flex-shrink:0">${n}</span>`:''}</button>`;
   };
   const platChipsHtml=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px"><span style="font-size:11.5px;color:var(--text-muted);margin-right:2px">กรองตามชื่อ (กดเลือก=เอา / กดออก=ไม่เอา):</span>${_calChip(null,'ทั้งหมด',monthTxns.length,true)}${namesInMonth.map(p=>_calChip(p,p,nameCount[p],false)).join('')}</div>`;
+  // v1.9.380 — legend: เม็ดสี = เลขบัตรเครดิต (เฉพาะบัตรที่มีรายการในเดือนที่แสดง)
+  const cardsShown=[...new Set(list.map(t=>t.card_number).filter(Boolean))].sort();
+  const cardLegendHtml=cardsShown.length?`<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-top:12px;padding-top:10px;border-top:1px solid var(--border)"><span style="font-size:11.5px;color:var(--text-muted);font-weight:700">💳 เม็ดสี = บัตรเครดิต:</span>${cardsShown.map(c=>`<span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px"><span style="width:10px;height:10px;border-radius:3px;background:${cardColor(c)};flex-shrink:0"></span>${escapeHtml(c)}</span>`).join('')}</div>`:'';
   body.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
       <div style="display:flex;align-items:center;gap:8px">
@@ -1879,6 +1885,7 @@ function _ccRenderCalendar(body,all,platOf){
       ${dow.map(x=>`<div style="text-align:center;font-size:11px;font-weight:700;color:var(--text-muted);padding:2px 0">${x}</div>`).join('')}
     </div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">${cells}</div>
+    ${cardLegendHtml}
     ${noDay.length?`<div style="margin-top:16px"><div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:6px">🕓 ไม่ระบุวันที่ (${noDay.length})</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px">${noDay.map(txnChip).join('')}</div></div>`:''}
     <div style="font-size:11px;color:var(--text-soft);margin-top:12px">💡 คลิกรายการเพื่อค้นหารายการนั้นในบัตรทุกใบ · กดชื่อด้านบนเพื่อเลือก/ตัดออกจากยอดรวม</div>`;
   const nav=(delta)=>{ const ni=idx+delta; if(ni<0||ni>=months.length) return; _ccCal.ym=months[ni]; _ccRenderCalendar(body,all,platOf); };
