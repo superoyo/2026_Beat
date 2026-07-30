@@ -540,6 +540,7 @@ async function _absLoad() {
     const data = await r.json();
     if (!r.ok) throw new Error(data.detail || ('HTTP ' + r.status));
     _absData = data.messages || [];
+    _absData.forEach((m, i) => { m.__id = i; });   // v1.9.383 — index สำหรับเปิดดูอีเมลเต็ม
     st.style.color = 'var(--green)';
     st.textContent = `✓ พบ ${_absData.length} รายการ (ปี 2026) · ดึงจากกล่องเมลทั้งหมด ${data.total_fetched} ฉบับ`;
     _absRenderCal();
@@ -551,11 +552,90 @@ async function _absLoad() {
   }
 }
 
+// ---- v1.9.383 — parser: อ่าน body อีเมลแจ้งลา → ชื่อ + ประเภท + ช่วงวันลา ----
+function _absType(m) {
+  const s = (m.subject || '').toLowerCase();
+  if (s.includes('cancel')) return 'cancel';                       // ยกเลิกการลา
+  if (s.includes('in-out') || s.includes('time in') || s.includes('time-in')) return 'timeio';  // ลงเวลา (ไม่ใช่การลา)
+  if (s.includes('leave') || s.includes('absence') || s.includes('ลา')) return 'leave';
+  return 'other';
+}
+function _absToISO(d, mo, y) {
+  d = +d; mo = +mo; y = +y;
+  if (y >= 2500) y -= 543;   // พ.ศ. → ค.ศ.
+  if (!(mo >= 1 && mo <= 12) || !(d >= 1 && d <= 31) || y < 2000 || y > 2100) return null;
+  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+function _absParse(m) {
+  const txt = ((m.bodyText || '') + '\n' + (m.bodyPreview || '')).replace(/\r/g, '\n');
+  let emp = '';
+  const em = txt.match(/(?:พนักงานที่ขอลา|พนักงาน|Employee)\s*(?:\([^)]*\))?\s*[:：]\s*([^\n]+)/i);
+  if (em) emp = em[1].replace(/\s*\([^)]*\)\s*$/, '').trim().slice(0, 60);
+  let lt = '';
+  const lm = txt.match(/(?:ประเภทการลา|Leave\s*Type)\s*(?:\([^)]*\))?\s*[:：]\s*([^\n]+)/i);
+  if (lm) lt = lm[1].replace(/\s*\([^)]*\)\s*$/, '').trim().slice(0, 40);
+  const dre = /(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/;
+  const nearDate = (re) => { const i = txt.search(re); if (i < 0) return null; const md = txt.slice(i, i + 90).match(dre); return md ? _absToISO(md[1], md[2], md[3]) : null; };
+  let from = nearDate(/ตั้งแต่วันที่|วันที่เริ่ม|วันที่ลา|\bFrom\b/i);
+  let to = nearDate(/ถึงวันที่|วันที่สิ้นสุด|\bTo\b/i);
+  const allISO = []; let md; const g = /(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/g;
+  while ((md = g.exec(txt))) { const iso = _absToISO(md[1], md[2], md[3]); if (iso) allISO.push(iso); }
+  const sorted = allISO.slice().sort();
+  if (!from && sorted.length) from = sorted[0];
+  if (!to && sorted.length) to = sorted[sorted.length - 1];
+  if (from && !to) to = from;
+  return { employee: emp, leaveType: lt, from, to };
+}
+function _absDays(from, to) {
+  const out = []; if (!from) return out;
+  const s = new Date(from + 'T00:00:00'); if (isNaN(s)) return [];
+  let e = new Date((to || from) + 'T00:00:00'); if (isNaN(e) || e < s) e = s;
+  let d = new Date(s), guard = 0;
+  while (d <= e && guard < 370) {
+    if (d.getFullYear() === 2026) out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+    d.setDate(d.getDate() + 1); guard++;
+  }
+  return out;
+}
+function _absThai(iso) { if (!iso) return ''; const p = iso.split('-'); return `${+p[2]} ${_ABS_MONTHS[+p[1] - 1]}`; }
+function _absBuildEntries() {
+  const seen = new Set(); const entries = []; let skipped = 0;
+  (_absData || []).forEach(m => {
+    const kind = _absType(m);
+    if (kind === 'timeio' || kind === 'other') { skipped++; return; }
+    const p = _absParse(m);
+    let days = _absDays(p.from, p.to), guess = false;
+    if (!days.length) { const rd = (m.receivedDateTime || '').slice(0, 10); if (rd.slice(0, 4) === '2026') { days = [rd]; guess = true; } }
+    const label = p.employee || (m.subject || '(ไม่ระบุ)');
+    days.forEach(iso => {
+      const key = kind + '|' + label + '|' + (p.leaveType || '') + '|' + iso;
+      if (seen.has(key)) return; seen.add(key);
+      entries.push({ iso, ym: iso.slice(0, 7), day: +iso.slice(8, 10), mid: m.__id, label, leaveType: p.leaveType, kind, guess, from: p.from, to: p.to });
+    });
+  });
+  return { entries, skipped };
+}
+function _absShowFull(mid) {
+  const m = (_absData || [])[mid]; if (!m) return;
+  const bg = document.createElement('div'); bg.className = 'modal-bg is-slide'; bg.style.zIndex = '3000';
+  bg.innerHTML = `<div class="modal" style="width:min(640px,96vw);padding:18px;display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px">
+      <div style="font-size:14px;font-weight:800;line-height:1.35">${escapeHtml(m.subject || '(ไม่มีหัวข้อ)')}</div>
+      <button class="btn" id="absf-close" style="font-size:12px;flex-shrink:0">✕ ปิด</button>
+    </div>
+    <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:10px">📅 ได้รับ: ${escapeHtml((m.receivedDateTime || '').replace('T', ' ').slice(0, 16))} · จาก ${escapeHtml(m.from || '')}</div>
+    <div style="flex:1;overflow-y:auto;white-space:pre-wrap;word-break:break-word;font-size:12.5px;line-height:1.65;background:var(--bg-soft);border-radius:8px;padding:12px">${escapeHtml(m.bodyText || m.bodyPreview || '(ไม่มีเนื้อหา)')}</div>`;
+  document.body.appendChild(bg);
+  requestAnimationFrame(() => bg.classList.add('is-open'));
+  const close = () => bg.remove();
+  bg.querySelector('#absf-close').onclick = close;
+  bg.addEventListener('click', (e) => { if (e.target === bg) close(); });
+}
 function _absRenderCal() {
   const body = $('abs-body'); if (!body) return;
-  const msgs = _absData || [];
-  if (!msgs.length) { body.innerHTML = '<div class="empty" style="font-size:12.5px">— ไม่พบอีเมลแจ้งลาในปี 2026 —</div>'; return; }
-  const months = [...new Set(msgs.map(m => (m.receivedDateTime || '').slice(0, 7)).filter(Boolean))].sort();
+  const { entries, skipped } = _absBuildEntries();
+  if (!entries.length) { body.innerHTML = '<div class="empty" style="font-size:12.5px">— ไม่พบรายการลาในปี 2026 —</div>'; return; }
+  const months = [...new Set(entries.map(e => e.ym))].sort();
   if (!_absYM || !months.includes(_absYM)) _absYM = months[months.length - 1];
   const idx = months.indexOf(_absYM);
   const [Y, M] = _absYM.split('-').map(Number);
@@ -564,19 +644,15 @@ function _absRenderCal() {
   const _now = new Date();
   const todayD = (_now.getFullYear() === Y && _now.getMonth() + 1 === M) ? _now.getDate() : 0;
   const byDay = new Map();
-  msgs.filter(m => (m.receivedDateTime || '').slice(0, 7) === _absYM).forEach(m => {
-    const d = parseInt((m.receivedDateTime || '').slice(8, 10), 10);
-    if (!d) return;
-    if (!byDay.has(d)) byDay.set(d, []);
-    byDay.get(d).push(m);
-  });
+  entries.filter(e => e.ym === _absYM).forEach(e => { if (!byDay.has(e.day)) byDay.set(e.day, []); byDay.get(e.day).push(e); });
   const monthCount = [...byDay.values()].reduce((s, a) => s + a.length, 0);
-  const item = (m) => {
-    const subj = m.subject || '(ไม่มีหัวข้อ)';
-    const note = (m.bodyPreview || '').trim();
-    return `<div title="${escapeHtml(subj + (note ? ' — ' + note : ''))}" style="padding:2px 4px;border-radius:5px;margin-top:2px;background:var(--bg-soft)">
-      <div style="font-size:10px;font-weight:600;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🌴 ${escapeHtml(subj)}</div>
-      ${note ? `<div style="font-size:9px;color:var(--text-soft);line-height:1.25;margin-top:1px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escapeHtml(note)}</div>` : ''}
+  const item = (en) => {
+    const ic = en.kind === 'cancel' ? '❌' : '🌴';
+    const rng = en.from ? (en.from === en.to ? _absThai(en.from) : _absThai(en.from) + '–' + _absThai(en.to)) : '';
+    const sub = en.guess ? '(ตามวันรับเมล)' : [en.leaveType, rng].filter(Boolean).join(' · ');
+    return `<div class="abs-item" data-mid="${en.mid}" title="คลิกดูอีเมลเต็ม" style="padding:2px 4px;border-radius:5px;margin-top:2px;cursor:pointer;background:${en.guess ? 'transparent' : 'var(--bg-soft)'};${en.guess ? 'opacity:.55' : ''}">
+      <div style="font-size:10px;font-weight:600;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ic} ${escapeHtml(en.label)}</div>
+      ${sub ? `<div style="font-size:9px;color:var(--text-soft);line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(sub)}</div>` : ''}
     </div>`;
   };
   const dow = ['อา','จ','อ','พ','พฤ','ศ','ส'];
@@ -599,14 +675,15 @@ function _absRenderCal() {
         <span style="font-size:15px;font-weight:800;min-width:110px;text-align:center">${_ABS_MONTHS[M - 1]} ${Y}</span>
         <button class="btn" id="abs-next" ${idx >= months.length - 1 ? 'disabled' : ''} style="font-size:13px;padding:5px 11px">▶</button>
       </div>
-      <span style="font-size:12.5px;color:var(--text-muted)">${monthCount} รายการในเดือนนี้</span>
+      <span style="font-size:12.5px;color:var(--text-muted)">${monthCount} วันลาในเดือนนี้${skipped ? ` · ไม่รวมลงเวลา ${skipped} ฉบับ` : ''}</span>
     </div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:5px">${dow.map(x => `<div style="text-align:center;font-size:11px;font-weight:700;color:var(--text-muted);padding:2px 0">${x}</div>`).join('')}</div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">${cells}</div>
-    <div style="font-size:11px;color:var(--text-soft);margin-top:12px">💡 วางเมาส์บนรายการเพื่อดูรายละเอียดเต็ม · ขณะนี้วางตาม<b>วันที่ได้รับอีเมล</b> — เมื่อทราบรูปแบบอีเมล จะปรับให้วางตามวันลาจริง + แยกรายคน</div>`;
+    <div style="font-size:11px;color:var(--text-soft);margin-top:12px">💡 ปักตาม<b>วันลาจริง</b> (อ่านจากเนื้อหาอีเมล) · 🌴 = ลา · ❌ = ยกเลิกลา · รายการจาง = อ่านวันลาไม่ได้ (วางตามวันรับเมล) · <b>คลิกรายการเพื่อดูอีเมลเต็ม</b></div>`;
   const nav = (delta) => { const ni = idx + delta; if (ni < 0 || ni >= months.length) return; _absYM = months[ni]; _absRenderCal(); };
   $('abs-prev').onclick = () => nav(-1);
   $('abs-next').onclick = () => nav(1);
+  body.querySelectorAll('.abs-item').forEach(el => el.addEventListener('click', () => _absShowFull(parseInt(el.dataset.mid, 10))));
 }
 
 async function renderMemberAccountPage() {

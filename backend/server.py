@@ -10986,13 +10986,18 @@ def absence_messages(request: Request, _sess: dict = Depends(require_admin_or_me
         raise HTTPException(status_code=401, detail="access token ว่าง")
     from urllib.parse import quote
     flt = quote(f"from/emailAddress/address eq '{_ABSENCE_SENDER}'")
-    sel = quote("subject,receivedDateTime,bodyPreview,from")
+    # v1.9.383 — ดึง body เต็มมาด้วย (plain text ผ่าน Prefer header) เพื่อ parse วันลา
+    sel = quote("subject,receivedDateTime,bodyPreview,body,from")
     url = (f"https://graph.microsoft.com/v1.0/me/messages?$filter={flt}"
-           f"&$select={sel}&$top=50")
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+           f"&$select={sel}&$top=25")
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "Prefer": 'outlook.body-content-type="text"',
+    }
     out: list[dict[str, Any]] = []
     pages = 0
-    while url and pages < 20:
+    while url and pages < 40:
         req = urllib.request.Request(url, headers=headers, method="GET")
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
@@ -11023,10 +11028,12 @@ def absence_messages(request: Request, _sess: dict = Depends(require_admin_or_me
         rd = m.get("receivedDateTime") or ""
         if rd[:4] == "2026":
             frm = (m.get("from") or {}).get("emailAddress") or {}
+            body = m.get("body") or {}
             msgs.append({
                 "subject": m.get("subject") or "",
                 "receivedDateTime": rd,
                 "bodyPreview": m.get("bodyPreview") or "",
+                "bodyText": (body.get("content") or "")[:8000],
                 "from": frm.get("address") or "",
             })
     msgs.sort(key=lambda x: x["receivedDateTime"])
