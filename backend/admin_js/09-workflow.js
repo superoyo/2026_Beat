@@ -386,42 +386,62 @@ async function renderAdminAccountPage() {
     <div class="page-head">
       <h2 class="page-title">👤 My Profile</h2>
     </div>
-    <div class="warning-box">
-      ⚠️ <strong>คำเตือน:</strong> นี่คือบัญชี <strong>super admin</strong> ที่ใช้จัดการระบบทั้งหมด
-      หากเปลี่ยน username/password แล้วลืม จะ recover ไม่ได้ — ระวังเก็บไว้ดีๆ
-    </div>
+    <div class="acc-layout">
+      <div class="acc-menu">
+        <button type="button" class="acc-menu-item active" data-acc-tab="account"><span class="acc-menu-ico">🔑</span> บัญชี</button>
+        <button type="button" class="acc-menu-item" data-acc-tab="absence"><span class="acc-menu-ico">🌴</span> Absence</button>
+      </div>
+      <div class="acc-detail">
+        <div data-acc-panel="account">
+          <div class="warning-box">
+            ⚠️ <strong>คำเตือน:</strong> นี่คือบัญชี <strong>super admin</strong> ที่ใช้จัดการระบบทั้งหมด
+            หากเปลี่ยน username/password แล้วลืม จะ recover ไม่ได้ — ระวังเก็บไว้ดีๆ
+          </div>
 
-    <div class="card" style="display:block;margin-bottom:14px">
-      <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">ข้อมูลปัจจุบัน</h3>
-      <div style="display:grid;grid-template-columns:120px 1fr;gap:8px 16px;font-size:13.5px">
-        <div style="color:var(--text-muted)">Username</div>
-        <div id="cur-username" style="font-weight:500">…</div>
-      </div>
-    </div>
+          <div class="card" style="display:block;margin-bottom:14px">
+            <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">ข้อมูลปัจจุบัน</h3>
+            <div style="display:grid;grid-template-columns:120px 1fr;gap:8px 16px;font-size:13.5px">
+              <div style="color:var(--text-muted)">Username</div>
+              <div id="cur-username" style="font-weight:500">…</div>
+            </div>
+          </div>
 
-    <div class="card" style="display:block">
-      <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">เปลี่ยน Username / Password</h3>
-      <div class="hint" style="margin-bottom:14px;font-size:12.5px;color:var(--text-muted)">
-        เว้นช่องที่ไม่ต้องการเปลี่ยนได้ (กรอกเฉพาะที่ต้องการแก้ไข)
-      </div>
+          <div class="card" style="display:block">
+            <h3 style="margin:0 0 12px;font-size:15px;font-weight:600">เปลี่ยน Username / Password</h3>
+            <div class="hint" style="margin-bottom:14px;font-size:12.5px;color:var(--text-muted)">
+              เว้นช่องที่ไม่ต้องการเปลี่ยนได้ (กรอกเฉพาะที่ต้องการแก้ไข)
+            </div>
 
-      <div class="field">
-        <label>Username ใหม่</label>
-        <input id="new-username" type="text" autocomplete="username" placeholder="เช่น admin@gmail.com" />
-      </div>
-      <div class="field">
-        <label>Password ใหม่ (อย่างน้อย 4 ตัว)</label>
-        <input id="new-password" type="password" autocomplete="new-password" placeholder="ปล่อยว่างถ้าไม่เปลี่ยน" />
-      </div>
-      <div class="field">
-        <label>ยืนยัน Password ใหม่</label>
-        <input id="confirm-password" type="password" autocomplete="new-password" />
-      </div>
+            <div class="field">
+              <label>Username ใหม่</label>
+              <input id="new-username" type="text" autocomplete="username" placeholder="เช่น admin@gmail.com" />
+            </div>
+            <div class="field">
+              <label>Password ใหม่ (อย่างน้อย 4 ตัว)</label>
+              <input id="new-password" type="password" autocomplete="new-password" placeholder="ปล่อยว่างถ้าไม่เปลี่ยน" />
+            </div>
+            <div class="field">
+              <label>ยืนยัน Password ใหม่</label>
+              <input id="confirm-password" type="password" autocomplete="new-password" />
+            </div>
 
-      <div class="hint" id="acc-msg" style="margin-bottom:10px;display:none"></div>
-      <button class="btn primary" id="save-acc-btn">บันทึก</button>
+            <div class="hint" id="acc-msg" style="margin-bottom:10px;display:none"></div>
+            <button class="btn primary" id="save-acc-btn">บันทึก</button>
+          </div>
+        </div>
+        <div data-acc-panel="absence" style="display:none"><div id="absence-root"></div></div>
+      </div>
     </div>
   `;
+
+  // v1.9.381 — สลับแท็บ บัญชี / Absence
+  const _accPanels = $('main').querySelectorAll('[data-acc-panel]');
+  $('main').querySelectorAll('[data-acc-tab]').forEach(btn => btn.addEventListener('click', () => {
+    const tab = btn.dataset.accTab;
+    $('main').querySelectorAll('[data-acc-tab]').forEach(b => b.classList.toggle('active', b === btn));
+    _accPanels.forEach(p => { p.style.display = (p.dataset.accPanel === tab) ? '' : 'none'; });
+    if (tab === 'absence') renderAbsence();
+  }));
 
   // โหลด state ปัจจุบัน
   try {
@@ -477,6 +497,116 @@ async function renderAdminAccountPage() {
       $('save-acc-btn').disabled = false;
     }
   });
+}
+
+// ==== v1.9.381 — Absence: ดึงเมลแจ้งลาจาก Microsoft Graph (me/messages) มาทำปฏิทินสรุปการลา (ปี 2026) ====
+let _absToken = '';
+let _absData = null;   // array ของ messages ที่โหลดแล้ว (ปี 2026)
+let _absYM = '';       // เดือนที่กำลังดู 'YYYY-MM'
+const _ABS_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+
+function renderAbsence() {
+  const root = $('absence-root'); if (!root) return;
+  if (!_absToken) _absToken = sessionStorage.getItem('ms_graph_token') || '';
+  root.innerHTML = `
+    <div class="card" style="display:block;margin-bottom:14px">
+      <h3 style="margin:0 0 8px;font-size:15px;font-weight:700">🌴 สรุปการลา (ปี 2026)</h3>
+      <div style="font-size:12.5px;color:var(--text-muted);line-height:1.7;margin-bottom:12px">
+        ดึงอีเมลแจ้งลาจาก <b>notify.tigersoft1998@gmail.com</b> ผ่าน Microsoft Graph<br>
+        <b>วิธีเอา token:</b> เปิด <a href="https://developer.microsoft.com/en-us/graph/graph-explorer" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:600">Graph Explorer</a> → Sign in บัญชี Microsoft → คัดลอกจากแท็บ <b>"Access token"</b> มาวางด้านล่าง (token มีอายุ ~1 ชม.)
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input id="abs-token" type="password" placeholder="วาง Microsoft Graph access token ที่นี่" value="${escapeHtml(_absToken)}" style="flex:1;min-width:240px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;font-size:12.5px;box-sizing:border-box" />
+        <button class="btn primary" id="abs-load" style="font-size:13px">โหลดข้อมูล</button>
+      </div>
+      <div id="abs-status" style="font-size:12px;color:var(--text-muted);margin-top:9px"></div>
+    </div>
+    <div id="abs-body"></div>`;
+  $('abs-load').onclick = _absLoad;
+  const inp = $('abs-token');
+  if (inp) inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') _absLoad(); });
+  if (_absData) _absRenderCal();
+}
+
+async function _absLoad() {
+  const tok = ($('abs-token').value || '').trim();
+  if (!tok) { $('abs-status').textContent = '⚠️ วาง access token ก่อน'; return; }
+  _absToken = tok; sessionStorage.setItem('ms_graph_token', tok);
+  const st = $('abs-status'); const btn = $('abs-load');
+  st.textContent = 'กำลังดึงข้อมูลจาก Microsoft Graph…'; st.style.color = 'var(--text-muted)';
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch('/api/absence/messages', { headers: { 'Authorization': 'Bearer ' + tok }, credentials: 'same-origin' });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || ('HTTP ' + r.status));
+    _absData = data.messages || [];
+    st.style.color = 'var(--green)';
+    st.textContent = `✓ พบ ${_absData.length} รายการ (ปี 2026) · ดึงจากกล่องเมลทั้งหมด ${data.total_fetched} ฉบับ`;
+    _absRenderCal();
+  } catch (e) {
+    st.style.color = 'var(--critical)';
+    st.textContent = '❌ ' + (e.message || e);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function _absRenderCal() {
+  const body = $('abs-body'); if (!body) return;
+  const msgs = _absData || [];
+  if (!msgs.length) { body.innerHTML = '<div class="empty" style="font-size:12.5px">— ไม่พบอีเมลแจ้งลาในปี 2026 —</div>'; return; }
+  const months = [...new Set(msgs.map(m => (m.receivedDateTime || '').slice(0, 7)).filter(Boolean))].sort();
+  if (!_absYM || !months.includes(_absYM)) _absYM = months[months.length - 1];
+  const idx = months.indexOf(_absYM);
+  const [Y, M] = _absYM.split('-').map(Number);
+  const daysIn = new Date(Y, M, 0).getDate();
+  const firstDow = new Date(Y, M - 1, 1).getDay();
+  const _now = new Date();
+  const todayD = (_now.getFullYear() === Y && _now.getMonth() + 1 === M) ? _now.getDate() : 0;
+  const byDay = new Map();
+  msgs.filter(m => (m.receivedDateTime || '').slice(0, 7) === _absYM).forEach(m => {
+    const d = parseInt((m.receivedDateTime || '').slice(8, 10), 10);
+    if (!d) return;
+    if (!byDay.has(d)) byDay.set(d, []);
+    byDay.get(d).push(m);
+  });
+  const monthCount = [...byDay.values()].reduce((s, a) => s + a.length, 0);
+  const item = (m) => {
+    const subj = m.subject || '(ไม่มีหัวข้อ)';
+    const note = (m.bodyPreview || '').trim();
+    return `<div title="${escapeHtml(subj + (note ? ' — ' + note : ''))}" style="padding:2px 4px;border-radius:5px;margin-top:2px;background:var(--bg-soft)">
+      <div style="font-size:10px;font-weight:600;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🌴 ${escapeHtml(subj)}</div>
+      ${note ? `<div style="font-size:9px;color:var(--text-soft);line-height:1.25;margin-top:1px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escapeHtml(note)}</div>` : ''}
+    </div>`;
+  };
+  const dow = ['อา','จ','อ','พ','พฤ','ศ','ส'];
+  let cells = '';
+  for (let i = 0; i < firstDow; i++) cells += `<div style="background:var(--bg-soft);border-radius:8px;min-height:76px;opacity:.35"></div>`;
+  for (let d = 1; d <= daysIn; d++) {
+    const arr = byDay.get(d) || [];
+    const isToday = d === todayD;
+    cells += `<div style="background:${isToday ? 'rgba(37,99,235,.09)' : 'var(--bg-card)'};border:1px solid ${isToday ? 'var(--primary)' : 'var(--border)'};border-radius:8px;min-height:76px;padding:4px 5px;display:flex;flex-direction:column;overflow:hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:11px;font-weight:700;${isToday ? 'background:var(--primary);color:#fff;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center' : 'color:var(--text-muted)'}">${d}</span>
+        ${arr.length ? `<span style="font-size:9px;font-weight:700;color:var(--primary)">${arr.length}</span>` : ''}
+      </div>${arr.map(item).join('')}
+    </div>`;
+  }
+  body.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="btn" id="abs-prev" ${idx <= 0 ? 'disabled' : ''} style="font-size:13px;padding:5px 11px">◀</button>
+        <span style="font-size:15px;font-weight:800;min-width:110px;text-align:center">${_ABS_MONTHS[M - 1]} ${Y}</span>
+        <button class="btn" id="abs-next" ${idx >= months.length - 1 ? 'disabled' : ''} style="font-size:13px;padding:5px 11px">▶</button>
+      </div>
+      <span style="font-size:12.5px;color:var(--text-muted)">${monthCount} รายการในเดือนนี้</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:5px">${dow.map(x => `<div style="text-align:center;font-size:11px;font-weight:700;color:var(--text-muted);padding:2px 0">${x}</div>`).join('')}</div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">${cells}</div>
+    <div style="font-size:11px;color:var(--text-soft);margin-top:12px">💡 วางเมาส์บนรายการเพื่อดูรายละเอียดเต็ม · ขณะนี้วางตาม<b>วันที่ได้รับอีเมล</b> — เมื่อทราบรูปแบบอีเมล จะปรับให้วางตามวันลาจริง + แยกรายคน</div>`;
+  const nav = (delta) => { const ni = idx + delta; if (ni < 0 || ni >= months.length) return; _absYM = months[ni]; _absRenderCal(); };
+  $('abs-prev').onclick = () => nav(-1);
+  $('abs-next').onclick = () => nav(1);
 }
 
 async function renderMemberAccountPage() {

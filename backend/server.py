@@ -10971,6 +10971,68 @@ def cc_analytics_transactions(_sess: dict = Depends(_require_module("platform"))
     return {"transactions": [dict(r) for r in rows]}
 
 
+# v1.9.381 — Absence: proxy ดึงเมลแจ้งลาจาก Microsoft Graph (me/messages)
+# ผู้ใช้วาง access token เอง (จาก Graph Explorer) → ส่งมาเป็น Bearer เหมือน pattern Wazzup
+_ABSENCE_SENDER = "notify.tigersoft1998@gmail.com"
+
+
+@app.get("/api/absence/messages")
+def absence_messages(request: Request, _sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    auth = request.headers.get("Authorization", "")
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="ต้องมี Microsoft Graph access token (Bearer) — วาง token จาก Graph Explorer")
+    token = auth.split(" ", 1)[1].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="access token ว่าง")
+    from urllib.parse import quote
+    flt = quote(f"from/emailAddress/address eq '{_ABSENCE_SENDER}'")
+    sel = quote("subject,receivedDateTime,bodyPreview,from")
+    url = (f"https://graph.microsoft.com/v1.0/me/messages?$filter={flt}"
+           f"&$select={sel}&$top=50")
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    out: list[dict[str, Any]] = []
+    pages = 0
+    while url and pages < 20:
+        req = urllib.request.Request(url, headers=headers, method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as e:
+            body = ""
+            try:
+                body = e.read().decode("utf-8", errors="replace")[:400]
+            except Exception:
+                pass
+            if e.code == 401:
+                raise HTTPException(status_code=401, detail="token หมดอายุ/ไม่ถูกต้อง — ขอ token ใหม่จาก Graph Explorer")
+            if e.code == 403:
+                raise HTTPException(status_code=403, detail="token ไม่มีสิทธิ์ Mail.Read — เปิด scope Mail.Read ใน Graph Explorer แล้วขอ token ใหม่")
+            raise HTTPException(status_code=502, detail=f"Microsoft Graph error HTTP {e.code}: {body}")
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"เชื่อมต่อ Microsoft Graph ไม่สำเร็จ: {e}")
+        try:
+            data = _json.loads(raw)
+        except Exception:
+            raise HTTPException(status_code=502, detail="Graph response ไม่ใช่ JSON")
+        out.extend(data.get("value", []) or [])
+        url = data.get("@odata.nextLink")
+        pages += 1
+    # v1.9.381 — เอาเฉพาะปี 2026 (ตาม receivedDateTime = ISO 8601, ปีอยู่ 4 ตัวแรก)
+    msgs: list[dict[str, Any]] = []
+    for m in out:
+        rd = m.get("receivedDateTime") or ""
+        if rd[:4] == "2026":
+            frm = (m.get("from") or {}).get("emailAddress") or {}
+            msgs.append({
+                "subject": m.get("subject") or "",
+                "receivedDateTime": rd,
+                "bodyPreview": m.get("bodyPreview") or "",
+                "from": frm.get("address") or "",
+            })
+    msgs.sort(key=lambda x: x["receivedDateTime"])
+    return {"messages": msgs, "total_fetched": len(out), "sender": _ABSENCE_SENDER}
+
+
 # v1.9.352 — ค้นหารายการในบัตรทุกใบ (description + user_note) — ใช้ใน popup search
 @app.get("/api/creditcard/search-transactions")
 def cc_search_transactions(q: str = "",
