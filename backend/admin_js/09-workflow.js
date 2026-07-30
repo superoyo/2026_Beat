@@ -583,13 +583,20 @@ function _absDateFrom(seg) {
 }
 function _absParse(m) {
   const txt = ((m.bodyText || '') + '\n' + (m.bodyPreview || '')).replace(/\r/g, '\n');
-  let emp = '';
+  // v1.9.386 — รหัสพนักงานฝังหน้าชื่อในช่อง Employee เช่น "200023 นายทรงพล ..." → แยกเป็น empId + ชื่อ
+  let emp = '', empId = '';
   const em = txt.match(/(?:พนักงานที่ขอลา|พนักงาน|Employee)\s*(?:\([^)]*\))?\s*[:：]\s*([^\n]+)/i);
-  if (em) emp = em[1].replace(/\s*\([^)]*\)\s*$/, '').trim().slice(0, 60);
-  // v1.9.385 — รหัสพนักงาน (ใช้จับคู่กับ hr_employee_id ของ member)
-  let empId = '';
-  const im = txt.match(/(?:รหัสพนักงาน|Employee\s*(?:Code|ID|No\.?)|Emp\s*(?:Code|ID)|รหัส)\s*(?:\([^)]*\))?\s*[:：]\s*([A-Za-z0-9][A-Za-z0-9\-\/]*)/i);
-  if (im) empId = im[1].trim();
+  if (em) {
+    let raw = em[1].trim();
+    const idm = raw.match(/^([A-Za-z]{0,3}\d{3,}[A-Za-z0-9\-\/]*)\s+(.+)$/);
+    if (idm) { empId = idm[1]; raw = idm[2].trim(); }
+    emp = raw.replace(/\s*\([^)]*\)\s*$/, '').trim().slice(0, 60);
+  }
+  // fallback: ช่องรหัสพนักงานแยกต่างหาก (ถ้ามี)
+  if (!empId) {
+    const im = txt.match(/(?:รหัสพนักงาน|Employee\s*(?:Code|ID|No\.?)|Emp\s*(?:Code|ID))\s*(?:\([^)]*\))?\s*[:：]\s*([A-Za-z0-9][A-Za-z0-9\-\/]*)/i);
+    if (im) empId = im[1].trim();
+  }
   let lt = '';
   const lm = txt.match(/(?:ประเภทการลา|Leave\s*Type)\s*(?:\([^)]*\))?\s*[:：]\s*([^\n]+)/i);
   if (lm) lt = lm[1].replace(/\s*\([^)]*\)\s*$/, '').trim().slice(0, 40);
