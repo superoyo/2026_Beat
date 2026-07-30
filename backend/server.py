@@ -748,6 +748,9 @@ def init_db() -> None:
             ("last_working_day",       "TEXT"),
             # v1.9.328 — คนที่ replace (มาแทน) — ชี้ไป member_id ของ alumni ที่คนนี้มาแทน
             ("replaces_member_id",     "INTEGER REFERENCES members(id) ON DELETE SET NULL"),
+            # v1.9.385 — ข้อมูลตามระบบ HR (admin แก้ไขได้) — hr_employee_id ใช้จับคู่ประวัติการลา (Absence)
+            ("hr_name",                "TEXT"),
+            ("hr_employee_id",         "TEXT"),
         ]:
             if col_name not in member_cols:
                 conn.execute(f"ALTER TABLE members ADD COLUMN {col_name} {col_def}")
@@ -8971,7 +8974,8 @@ def member_supervised_detail(
             raise HTTPException(status_code=403, detail="คนนี้ไม่ได้อยู่ในทีมที่คุณดูแล")
         row = conn.execute(
             "SELECT id, phone, email, display_name, avatar_data, shirt_size, birthdate, "
-            "       wazzup_emp_code, share_birthdate, share_shirt_size, share_phone, "
+            "       wazzup_emp_code, hr_name, hr_employee_id, "
+            "       share_birthdate, share_shirt_size, share_phone, "
             "       created_at, last_login_at "
             "FROM members WHERE id = ?", (target_id,),
         ).fetchone()
@@ -9027,10 +9031,33 @@ def member_supervised_detail(
             "created_at": row["created_at"],
             "last_login_at": row["last_login_at"],
             "teams": visible_teams,
+            "hr_name": row["hr_name"],
+            "hr_employee_id": row["hr_employee_id"],
         },
         "devices": [dict(r) for r in hw_rows],
         "previous_devices": prev_devices,
     }
+
+
+# v1.9.385 — admin แก้ไข ชื่อ/รหัสพนักงาน ตามระบบ HR ของ member
+class HrInfoIn(BaseModel):
+    hr_name: Optional[str] = Field(None, max_length=200)
+    hr_employee_id: Optional[str] = Field(None, max_length=60)
+
+
+@app.patch("/api/member/{target_id}/hr")
+def member_update_hr(target_id: int, payload: HrInfoIn, _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    hr_name = (payload.hr_name or "").strip() or None
+    hr_emp = (payload.hr_employee_id or "").strip() or None
+    with db_conn() as conn:
+        row = conn.execute("SELECT id FROM members WHERE id = ?", (target_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="ไม่พบ member")
+        conn.execute(
+            "UPDATE members SET hr_name = ?, hr_employee_id = ? WHERE id = ?",
+            (hr_name, hr_emp, target_id),
+        )
+    return {"ok": True, "hr_name": hr_name, "hr_employee_id": hr_emp}
 
 
 def _assert_supervises(conn, supervisor_id: int, target_id: int) -> None:

@@ -586,6 +586,10 @@ function _absParse(m) {
   let emp = '';
   const em = txt.match(/(?:พนักงานที่ขอลา|พนักงาน|Employee)\s*(?:\([^)]*\))?\s*[:：]\s*([^\n]+)/i);
   if (em) emp = em[1].replace(/\s*\([^)]*\)\s*$/, '').trim().slice(0, 60);
+  // v1.9.385 — รหัสพนักงาน (ใช้จับคู่กับ hr_employee_id ของ member)
+  let empId = '';
+  const im = txt.match(/(?:รหัสพนักงาน|Employee\s*(?:Code|ID|No\.?)|Emp\s*(?:Code|ID)|รหัส)\s*(?:\([^)]*\))?\s*[:：]\s*([A-Za-z0-9][A-Za-z0-9\-\/]*)/i);
+  if (im) empId = im[1].trim();
   let lt = '';
   const lm = txt.match(/(?:ประเภทการลา|Leave\s*Type)\s*(?:\([^)]*\))?\s*[:：]\s*([^\n]+)/i);
   if (lm) lt = lm[1].replace(/\s*\([^)]*\)\s*$/, '').trim().slice(0, 40);
@@ -594,7 +598,25 @@ function _absParse(m) {
   let from = nearDate(/วันที่เริ่มลา|Beginning\s*date|Beginning|ตั้งแต่วันที่|วันที่เริ่ม|วันที่ลา|\bFrom\b/i);
   let to = nearDate(/วันที่สิ้นสุดการลา|Ending\s*date|Ending|ถึงวันที่|วันที่สิ้นสุด|\bTo\b/i);
   if (from && !to) to = from;
-  return { employee: emp, leaveType: lt, from, to };
+  return { employee: emp, empId, leaveType: lt, from, to };
+}
+// v1.9.385 — รายการวันลาของพนักงานคนหนึ่ง (จับคู่ด้วยรหัสพนักงาน) — ใช้ในแท็บประวัติการลา
+function _absEntriesForEmp(empId) {
+  const entries = []; const seen = new Set();
+  const target = String(empId || '').trim().toLowerCase();
+  if (!target) return entries;
+  (_absData || []).forEach(m => {
+    const kind = _absType(m);
+    if (kind === 'timeio' || kind === 'other') return;
+    const p = _absParse(m);
+    if (String(p.empId || '').trim().toLowerCase() !== target) return;
+    _absDays(p.from, p.to).forEach(iso => {
+      const key = kind + '|' + (p.leaveType || '') + '|' + iso;
+      if (seen.has(key)) return; seen.add(key);
+      entries.push({ iso, ym: iso.slice(0, 7), day: +iso.slice(8, 10), mid: m.__id, label: p.employee || (p.leaveType || 'ลา'), leaveType: p.leaveType, kind, from: p.from, to: p.to });
+    });
+  });
+  return entries;
 }
 function _absDays(from, to) {
   const out = []; if (!from) return out;

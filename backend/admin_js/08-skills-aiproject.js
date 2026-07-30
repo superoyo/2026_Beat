@@ -915,6 +915,9 @@ function renderSupPanel(body, data, memberId) {
   const fmtDate = iso => iso ? new Date(iso).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
   const teamChips = (p.teams || []).map(t => `<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:500;background:rgba(37,99,235,.10);color:var(--primary);border:1px solid rgba(37,99,235,.20)">${escapeHtml(t.name)}</span>`).join('') || '<span style="color:var(--text-muted)">—</span>';
   const HW_LABEL = { pc: '💻 คอมพิวเตอร์', device: '📱 อุปกรณ์', network: '📡 เครือข่าย' };
+  // v1.9.385 — admin (super หรือ admin-member) แก้ไขข้อมูล HR ได้
+  const _supIsAdmin = (typeof currentRole !== 'undefined' && currentRole === 'admin') || (typeof currentIsSuper !== 'undefined' && currentIsSuper);
+  const _dash = '<span style="color:var(--text-soft)">—</span>';
   const profileHtml = `
     <div style="display:grid;grid-template-columns:130px 1fr;gap:11px 14px;font-size:13.5px">
       <div style="color:var(--text-muted)">เบอร์มือถือ</div><div>${p.phone ? '📞 ' + escapeHtml(p.phone) : '—'}</div>
@@ -923,6 +926,22 @@ function renderSupPanel(body, data, memberId) {
       <div style="color:var(--text-muted)">ขนาดเสื้อ</div><div>${p.shirt_size ? escapeHtml(p.shirt_size) : '—'}</div>
       <div style="color:var(--text-muted)">เข้าระบบล่าสุด</div><div>${escapeHtml(fmtDate(p.last_login_at))}</div>
       <div style="color:var(--text-muted)">ทีม</div><div style="display:flex;flex-wrap:wrap;gap:4px">${teamChips}</div>
+    </div>
+    <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:9px">
+        <div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">📋 ข้อมูลตามระบบ HR</div>
+        ${_supIsAdmin ? `<button class="btn" id="sup-hr-edit" style="font-size:11.5px;padding:4px 10px">✏️ แก้ไข</button>` : ''}
+      </div>
+      <div id="sup-hr-view" style="display:grid;grid-template-columns:130px 1fr;gap:9px 14px;font-size:13.5px">
+        <div style="color:var(--text-muted)">ชื่อ (ตาม HR)</div><div id="sup-hr-name">${p.hr_name ? escapeHtml(p.hr_name) : _dash}</div>
+        <div style="color:var(--text-muted)">รหัสพนักงาน</div><div id="sup-hr-empid">${p.hr_employee_id ? escapeHtml(p.hr_employee_id) : _dash}</div>
+      </div>
+      ${_supIsAdmin ? `<div id="sup-hr-form" style="display:none;margin-top:6px">
+        <div class="field" style="margin-bottom:8px"><label style="font-size:12px">ชื่อ (ตามระบบ HR)</label><input id="sup-hr-name-in" type="text" value="${escapeHtml(p.hr_name || '')}" style="width:100%" /></div>
+        <div class="field" style="margin-bottom:8px"><label style="font-size:12px">รหัสพนักงาน (ตามระบบ HR)</label><input id="sup-hr-empid-in" type="text" value="${escapeHtml(p.hr_employee_id || '')}" placeholder="ใช้จับคู่ประวัติการลา" style="width:100%" /></div>
+        <div style="display:flex;gap:8px"><button class="btn primary" id="sup-hr-save" style="font-size:12.5px">บันทึก</button><button class="btn" id="sup-hr-cancel" style="font-size:12.5px">ยกเลิก</button></div>
+        <div id="sup-hr-msg" style="font-size:11.5px;margin-top:7px;display:none"></div>
+      </div>` : ''}
     </div>`;
   const deviceHtml = devs.length === 0
     ? '<div class="empty" style="padding:20px;color:var(--text-muted)">— ไม่มีอุปกรณ์ที่ผูกไว้ —</div>'
@@ -961,11 +980,13 @@ function renderSupPanel(body, data, memberId) {
       <button class="sup-tab" data-sup-pane="device">Device <span style="opacity:.7">(${devs.length})</span></button>
       <button class="sup-tab" data-sup-pane="usage">การใช้งาน</button>
       <button class="sup-tab" data-sup-pane="checkin">Check-in</button>
+      <button class="sup-tab" data-sup-pane="leave">🌴 ประวัติการลา</button>
     </div>
     <div data-sup-pane-body="profile">${profileHtml}</div>
     <div data-sup-pane-body="device" style="display:none">${deviceHtml}${prevHtml}</div>
     <div data-sup-pane-body="usage" style="display:none"></div>
     <div data-sup-pane-body="checkin" style="display:none"></div>
+    <div data-sup-pane-body="leave" style="display:none"></div>
   `;
   const loaded = {};
   body.querySelectorAll('.sup-tab').forEach(t => t.addEventListener('click', () => {
@@ -974,7 +995,101 @@ function renderSupPanel(body, data, memberId) {
     body.querySelectorAll('[data-sup-pane-body]').forEach(pb => pb.style.display = pb.dataset.supPaneBody === pane ? '' : 'none');
     if (pane === 'usage' && !loaded.usage) { loaded.usage = true; loadSupUsage(body, memberId); }
     if (pane === 'checkin' && !loaded.checkin) { loaded.checkin = true; loadSupCheckin(body, memberId); }
+    if (pane === 'leave') loadSupLeave(body, p);   // v1.9.385 — โหลดใหม่ทุกครั้ง (เผื่อแก้รหัส/โหลด Absence เพิ่ม)
   }));
+  // v1.9.385 — admin แก้ไขข้อมูล HR
+  if (_supIsAdmin) {
+    const editBtn = body.querySelector('#sup-hr-edit');
+    const view = body.querySelector('#sup-hr-view');
+    const form = body.querySelector('#sup-hr-form');
+    const closeForm = () => { form.style.display = 'none'; view.style.display = 'grid'; if (editBtn) editBtn.textContent = '✏️ แก้ไข'; };
+    if (editBtn) editBtn.addEventListener('click', () => {
+      const open = form.style.display === 'none';
+      form.style.display = open ? '' : 'none'; view.style.display = open ? 'none' : 'grid';
+      editBtn.textContent = open ? '✕ ปิด' : '✏️ แก้ไข';
+    });
+    const cancel = body.querySelector('#sup-hr-cancel');
+    if (cancel) cancel.addEventListener('click', closeForm);
+    const save = body.querySelector('#sup-hr-save');
+    if (save) save.addEventListener('click', async () => {
+      const nm = body.querySelector('#sup-hr-name-in').value.trim();
+      const eid = body.querySelector('#sup-hr-empid-in').value.trim();
+      const msg = body.querySelector('#sup-hr-msg');
+      save.disabled = true;
+      try {
+        const r = await fetchJson(`/api/member/${memberId}/hr`, { method: 'PATCH', body: JSON.stringify({ hr_name: nm, hr_employee_id: eid }) });
+        p.hr_name = r.hr_name; p.hr_employee_id = r.hr_employee_id;
+        body.querySelector('#sup-hr-name').innerHTML = r.hr_name ? escapeHtml(r.hr_name) : _dash;
+        body.querySelector('#sup-hr-empid').innerHTML = r.hr_employee_id ? escapeHtml(r.hr_employee_id) : _dash;
+        msg.style.display = ''; msg.style.color = 'var(--green)'; msg.textContent = '✓ บันทึกแล้ว';
+        setTimeout(() => { closeForm(); msg.style.display = 'none'; }, 800);
+      } catch (e) {
+        msg.style.display = ''; msg.style.color = 'var(--critical)'; msg.textContent = '❌ ' + e.message;
+      } finally { save.disabled = false; }
+    });
+  }
+}
+// v1.9.385 — แท็บประวัติการลาใน slide-out: ดึงจาก _absData (โหลดที่ Absence) จับคู่ด้วย hr_employee_id
+function loadSupLeave(body, profile) {
+  const box = body.querySelector('[data-sup-pane-body="leave"]');
+  if (!box) return;
+  const empId = profile.hr_employee_id;
+  if (typeof _absData === 'undefined' || !_absData || !_absData.length) {
+    box.innerHTML = '<div class="empty" style="padding:20px;color:var(--text-muted);font-size:12.5px">⚠️ ยังไม่มีข้อมูลการลาในเซสชันนี้ — ไปที่ <strong>My Profile → Absence</strong> แล้วกด “โหลดข้อมูล” ก่อน</div>';
+    return;
+  }
+  if (!empId) {
+    box.innerHTML = '<div class="empty" style="padding:20px;color:var(--text-muted);font-size:12.5px">⚠️ ยังไม่ได้ตั้ง <strong>รหัสพนักงาน (HR)</strong> ของคนนี้ — กดแก้ไขในแท็บ Profile ก่อน</div>';
+    return;
+  }
+  const entries = _absEntriesForEmp(empId);
+  if (!entries.length) {
+    box.innerHTML = `<div class="empty" style="padding:20px;color:var(--text-muted);font-size:12.5px">— ไม่พบการลาที่ตรงกับรหัสพนักงาน <strong>${escapeHtml(empId)}</strong> ในปี 2026 —</div>`;
+    return;
+  }
+  _supRenderLeaveCal(box, entries, empId);
+}
+let _supLeaveYM = '';
+function _supRenderLeaveCal(box, entries, empId) {
+  const months = [...new Set(entries.map(e => e.ym))].sort();
+  if (!_supLeaveYM || !months.includes(_supLeaveYM)) _supLeaveYM = months[months.length - 1];
+  const idx = months.indexOf(_supLeaveYM);
+  const [Y, M] = _supLeaveYM.split('-').map(Number);
+  const daysIn = new Date(Y, M, 0).getDate();
+  const firstDow = new Date(Y, M - 1, 1).getDay();
+  const _now = new Date();
+  const todayD = (_now.getFullYear() === Y && _now.getMonth() + 1 === M) ? _now.getDate() : 0;
+  const byDay = new Map();
+  entries.filter(e => e.ym === _supLeaveYM).forEach(e => { if (!byDay.has(e.day)) byDay.set(e.day, []); byDay.get(e.day).push(e); });
+  const MON = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  const dow = ['อา','จ','อ','พ','พฤ','ศ','ส'];
+  let cells = '';
+  for (let i = 0; i < firstDow; i++) cells += `<div style="background:var(--bg-soft);border-radius:6px;min-height:46px;opacity:.35"></div>`;
+  for (let d = 1; d <= daysIn; d++) {
+    const arr = byDay.get(d) || [];
+    const isToday = d === todayD;
+    const cancel = arr.length && arr.every(e => e.kind === 'cancel');
+    const bg = arr.length ? (cancel ? 'rgba(220,38,38,.10)' : 'rgba(16,185,129,.14)') : (isToday ? 'rgba(37,99,235,.08)' : 'var(--bg-card)');
+    cells += `<div title="${escapeHtml(arr.map(e => (e.kind === 'cancel' ? 'ยกเลิก: ' : '') + (e.leaveType || 'ลา')).join(', '))}" style="background:${bg};border:1px solid ${isToday ? 'var(--primary)' : 'var(--border)'};border-radius:6px;min-height:46px;padding:3px 4px;display:flex;flex-direction:column;overflow:hidden">
+      <span style="font-size:10px;font-weight:700;color:${isToday ? 'var(--primary)' : 'var(--text-muted)'}">${d}</span>
+      ${arr.length ? `<span style="font-size:9px;line-height:1.2;margin-top:1px;color:${cancel ? 'var(--critical)' : 'var(--green)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${cancel ? '❌' : '🌴'} ${escapeHtml(arr[0].leaveType || 'ลา')}</span>` : ''}
+    </div>`;
+  }
+  const total = entries.filter(e => e.kind !== 'cancel').length;
+  box.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:6px">
+        <button class="btn" id="sup-lv-prev" ${idx <= 0 ? 'disabled' : ''} style="font-size:12px;padding:4px 9px">◀</button>
+        <span style="font-size:14px;font-weight:800;min-width:92px;text-align:center">${MON[M - 1]} ${Y}</span>
+        <button class="btn" id="sup-lv-next" ${idx >= months.length - 1 ? 'disabled' : ''} style="font-size:12px;padding:4px 9px">▶</button>
+      </div>
+      <span style="font-size:11.5px;color:var(--text-muted)">รหัส ${escapeHtml(empId)} · รวม ${total} วันลา</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:3px">${dow.map(x => `<div style="text-align:center;font-size:10px;font-weight:700;color:var(--text-muted)">${x}</div>`).join('')}</div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">${cells}</div>`;
+  const nav = (delta) => { const ni = idx + delta; if (ni < 0 || ni >= months.length) return; _supLeaveYM = months[ni]; _supRenderLeaveCal(box, entries, empId); };
+  box.querySelector('#sup-lv-prev').onclick = () => nav(-1);
+  box.querySelector('#sup-lv-next').onclick = () => nav(1);
 }
 
 // v1.9.123 — Peoples: หน้าเดียวมีเมนูย่อย 2-column (รายชื่อ Members / Teams / Access Requests) แบบ Profile
