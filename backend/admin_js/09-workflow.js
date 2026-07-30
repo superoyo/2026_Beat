@@ -503,6 +503,7 @@ async function renderAdminAccountPage() {
 let _absToken = '';
 let _absData = null;   // array ของ messages ที่โหลดแล้ว (ปี 2026)
 let _absYM = '';       // เดือนที่กำลังดู 'YYYY-MM'
+let _absSearch = '';   // v1.9.387 — ค้นหาชื่อผู้ลา
 const _ABS_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 
 function renderAbsence() {
@@ -521,10 +522,26 @@ function renderAbsence() {
       </div>
       <div id="abs-status" style="font-size:12px;color:var(--text-muted);margin-top:9px"></div>
     </div>
+    <div id="abs-search-row" style="display:${_absData ? 'flex' : 'none'};gap:8px;align-items:center;margin-bottom:12px">
+      <div style="position:relative;flex:1;max-width:380px">
+        <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:13px">🔍</span>
+        <input id="abs-search" type="text" value="${escapeHtml(_absSearch)}" placeholder="ค้นหาชื่อผู้ลา (บางส่วนของชื่อก็ได้)…" autocomplete="off" style="width:100%;padding:8px 12px 8px 34px;border:1px solid var(--border);border-radius:999px;background:var(--bg-card);color:var(--text);font-family:inherit;font-size:13px;box-sizing:border-box" />
+      </div>
+      ${_absSearch ? `<button class="btn" id="abs-search-clear" style="font-size:12px;padding:6px 11px">✕ ล้าง</button>` : ''}
+    </div>
     <div id="abs-body"></div>`;
   $('abs-load').onclick = _absLoad;
   const inp = $('abs-token');
   if (inp) inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') _absLoad(); });
+  const si = $('abs-search');
+  if (si) si.addEventListener('input', (e) => {
+    _absSearch = e.target.value;
+    const clr = $('abs-search-clear');
+    if (clr) clr.style.display = _absSearch ? '' : 'none';
+    _absRenderCal();
+  });
+  const clrBtn = $('abs-search-clear');
+  if (clrBtn) clrBtn.addEventListener('click', () => { _absSearch = ''; renderAbsence(); });
   if (_absData) _absRenderCal();
 }
 
@@ -541,6 +558,7 @@ async function _absLoad() {
     if (!r.ok) throw new Error(data.detail || ('HTTP ' + r.status));
     _absData = data.messages || [];
     _absData.forEach((m, i) => { m.__id = i; });   // v1.9.383 — index สำหรับเปิดดูอีเมลเต็ม
+    const sr = $('abs-search-row'); if (sr) sr.style.display = 'flex';   // v1.9.387
     st.style.color = 'var(--green)';
     st.textContent = `✓ พบ ${_absData.length} รายการ (ปี 2026) · ดึงจากกล่องเมลทั้งหมด ${data.total_fetched} ฉบับ`;
     _absRenderCal();
@@ -639,13 +657,18 @@ function _absDays(from, to) {
 function _absThai(iso) { if (!iso) return ''; const p = iso.split('-'); return `${+p[2]} ${_ABS_MONTHS[+p[1] - 1]}`; }
 function _absBuildEntries() {
   const seen = new Set(); const entries = []; const unparsed = []; let skipped = 0;
+  const q = (_absSearch || '').trim().toLowerCase();   // v1.9.387 — ค้นหาชื่อผู้ลา
   (_absData || []).forEach(m => {
     const kind = _absType(m);
     if (kind === 'timeio' || kind === 'other') { skipped++; return; }
     const p = _absParse(m);
     const days = _absDays(p.from, p.to);
-    if (!days.length) { unparsed.push(m); return; }   // v1.9.384 — อ่านวันเริ่มลาไม่ได้ → ไม่ปักตามวันรับเมล
+    if (!days.length) {
+      if (!q || (((m.bodyText || '') + (m.subject || '')).toLowerCase().includes(q))) unparsed.push(m);
+      return;
+    }
     const label = p.employee || (m.subject || '(ไม่ระบุ)');
+    if (q && !(String(label).toLowerCase().includes(q) || String(p.empId || '').toLowerCase().includes(q))) return;
     days.forEach(iso => {
       const key = kind + '|' + label + '|' + (p.leaveType || '') + '|' + iso;
       if (seen.has(key)) return; seen.add(key);
@@ -673,7 +696,7 @@ function _absShowFull(mid) {
 function _absRenderCal() {
   const body = $('abs-body'); if (!body) return;
   const { entries, skipped, unparsed } = _absBuildEntries();
-  if (!entries.length && !unparsed.length) { body.innerHTML = '<div class="empty" style="font-size:12.5px">— ไม่พบรายการลาในปี 2026 —</div>'; return; }
+  if (!entries.length && !unparsed.length) { body.innerHTML = `<div class="empty" style="font-size:12.5px">${_absSearch ? '— ไม่พบชื่อ &quot;' + escapeHtml(_absSearch) + '&quot; —' : '— ไม่พบรายการลาในปี 2026 —'}</div>`; return; }
   const unparsedHtml = unparsed.length ? `<div style="margin-top:18px;border-top:1px solid var(--border);padding-top:12px"><div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:8px">⚠️ อ่านวันเริ่มลาไม่ได้ (${unparsed.length}) — คลิกดูอีเมลเพื่อตรวจรูปแบบ</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:5px">${unparsed.map(m => `<div class="abs-item" data-mid="${m.__id}" title="คลิกดูอีเมลเต็ม" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📧 ${escapeHtml(m.subject || '(ไม่มีหัวข้อ)')}</div>`).join('')}</div></div>` : '';
   if (!entries.length) {
     body.innerHTML = `<div class="empty" style="font-size:12.5px;margin-bottom:4px">— ยังอ่านวันเริ่มลาจากอีเมลไม่ได้ —</div>` + unparsedHtml;
