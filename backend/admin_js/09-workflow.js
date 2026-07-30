@@ -566,6 +566,21 @@ function _absToISO(d, mo, y) {
   if (!(mo >= 1 && mo <= 12) || !(d >= 1 && d <= 31) || y < 2000 || y > 2100) return null;
   return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
+const _ABS_THMON = { 'มกราคม':1,'กุมภาพันธ์':2,'มีนาคม':3,'เมษายน':4,'พฤษภาคม':5,'มิถุนายน':6,'กรกฎาคม':7,'สิงหาคม':8,'กันยายน':9,'ตุลาคม':10,'พฤศจิกายน':11,'ธันวาคม':12,'ม.ค.':1,'ก.พ.':2,'มี.ค.':3,'เม.ย.':4,'พ.ค.':5,'มิ.ย.':6,'ก.ค.':7,'ส.ค.':8,'ก.ย.':9,'ต.ค.':10,'พ.ย.':11,'ธ.ค.':12 };
+const _ABS_ENMON = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
+// อ่านวันที่ตัวแรกในข้อความสั้น ๆ — รองรับ dd/mm/yyyy, yyyy-mm-dd, "3 ก.ค. 2569", "3 July 2026"
+function _absDateFrom(seg) {
+  if (!seg) return null;
+  let m = seg.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
+  if (m) return _absToISO(m[1], m[2], m[3]);
+  m = seg.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return _absToISO(m[3], m[2], m[1]);
+  m = seg.match(/(\d{1,2})\s*([ก-๛.]{2,12})\s*(\d{4})/);
+  if (m) { const mo = _ABS_THMON[m[2]] || _ABS_THMON[m[2].replace(/\.$/, '')]; if (mo) return _absToISO(m[1], mo, m[3]); }
+  m = seg.match(/(\d{1,2})\s*([A-Za-z]{3,})\.?,?\s*(\d{4})/);
+  if (m) { const mo = _ABS_ENMON[m[2].slice(0, 3).toLowerCase()]; if (mo) return _absToISO(m[1], mo, m[3]); }
+  return null;
+}
 function _absParse(m) {
   const txt = ((m.bodyText || '') + '\n' + (m.bodyPreview || '')).replace(/\r/g, '\n');
   let emp = '';
@@ -574,15 +589,10 @@ function _absParse(m) {
   let lt = '';
   const lm = txt.match(/(?:ประเภทการลา|Leave\s*Type)\s*(?:\([^)]*\))?\s*[:：]\s*([^\n]+)/i);
   if (lm) lt = lm[1].replace(/\s*\([^)]*\)\s*$/, '').trim().slice(0, 40);
-  const dre = /(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/;
-  const nearDate = (re) => { const i = txt.search(re); if (i < 0) return null; const md = txt.slice(i, i + 90).match(dre); return md ? _absToISO(md[1], md[2], md[3]) : null; };
-  let from = nearDate(/ตั้งแต่วันที่|วันที่เริ่ม|วันที่ลา|\bFrom\b/i);
-  let to = nearDate(/ถึงวันที่|วันที่สิ้นสุด|\bTo\b/i);
-  const allISO = []; let md; const g = /(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/g;
-  while ((md = g.exec(txt))) { const iso = _absToISO(md[1], md[2], md[3]); if (iso) allISO.push(iso); }
-  const sorted = allISO.slice().sort();
-  if (!from && sorted.length) from = sorted[0];
-  if (!to && sorted.length) to = sorted[sorted.length - 1];
+  // v1.9.384 — ปักตาม "วันที่เริ่มลา (Beginning date)" เป็นหลัก (ไม่ใช้วันรับเมล)
+  const nearDate = (re) => { const i = txt.search(re); if (i < 0) return null; return _absDateFrom(txt.slice(i, i + 110)); };
+  let from = nearDate(/วันที่เริ่มลา|Beginning\s*date|Beginning|ตั้งแต่วันที่|วันที่เริ่ม|วันที่ลา|\bFrom\b/i);
+  let to = nearDate(/วันที่สิ้นสุดการลา|Ending\s*date|Ending|ถึงวันที่|วันที่สิ้นสุด|\bTo\b/i);
   if (from && !to) to = from;
   return { employee: emp, leaveType: lt, from, to };
 }
@@ -599,21 +609,21 @@ function _absDays(from, to) {
 }
 function _absThai(iso) { if (!iso) return ''; const p = iso.split('-'); return `${+p[2]} ${_ABS_MONTHS[+p[1] - 1]}`; }
 function _absBuildEntries() {
-  const seen = new Set(); const entries = []; let skipped = 0;
+  const seen = new Set(); const entries = []; const unparsed = []; let skipped = 0;
   (_absData || []).forEach(m => {
     const kind = _absType(m);
     if (kind === 'timeio' || kind === 'other') { skipped++; return; }
     const p = _absParse(m);
-    let days = _absDays(p.from, p.to), guess = false;
-    if (!days.length) { const rd = (m.receivedDateTime || '').slice(0, 10); if (rd.slice(0, 4) === '2026') { days = [rd]; guess = true; } }
+    const days = _absDays(p.from, p.to);
+    if (!days.length) { unparsed.push(m); return; }   // v1.9.384 — อ่านวันเริ่มลาไม่ได้ → ไม่ปักตามวันรับเมล
     const label = p.employee || (m.subject || '(ไม่ระบุ)');
     days.forEach(iso => {
       const key = kind + '|' + label + '|' + (p.leaveType || '') + '|' + iso;
       if (seen.has(key)) return; seen.add(key);
-      entries.push({ iso, ym: iso.slice(0, 7), day: +iso.slice(8, 10), mid: m.__id, label, leaveType: p.leaveType, kind, guess, from: p.from, to: p.to });
+      entries.push({ iso, ym: iso.slice(0, 7), day: +iso.slice(8, 10), mid: m.__id, label, leaveType: p.leaveType, kind, from: p.from, to: p.to });
     });
   });
-  return { entries, skipped };
+  return { entries, skipped, unparsed };
 }
 function _absShowFull(mid) {
   const m = (_absData || [])[mid]; if (!m) return;
@@ -633,8 +643,14 @@ function _absShowFull(mid) {
 }
 function _absRenderCal() {
   const body = $('abs-body'); if (!body) return;
-  const { entries, skipped } = _absBuildEntries();
-  if (!entries.length) { body.innerHTML = '<div class="empty" style="font-size:12.5px">— ไม่พบรายการลาในปี 2026 —</div>'; return; }
+  const { entries, skipped, unparsed } = _absBuildEntries();
+  if (!entries.length && !unparsed.length) { body.innerHTML = '<div class="empty" style="font-size:12.5px">— ไม่พบรายการลาในปี 2026 —</div>'; return; }
+  const unparsedHtml = unparsed.length ? `<div style="margin-top:18px;border-top:1px solid var(--border);padding-top:12px"><div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:8px">⚠️ อ่านวันเริ่มลาไม่ได้ (${unparsed.length}) — คลิกดูอีเมลเพื่อตรวจรูปแบบ</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:5px">${unparsed.map(m => `<div class="abs-item" data-mid="${m.__id}" title="คลิกดูอีเมลเต็ม" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📧 ${escapeHtml(m.subject || '(ไม่มีหัวข้อ)')}</div>`).join('')}</div></div>` : '';
+  if (!entries.length) {
+    body.innerHTML = `<div class="empty" style="font-size:12.5px;margin-bottom:4px">— ยังอ่านวันเริ่มลาจากอีเมลไม่ได้ —</div>` + unparsedHtml;
+    body.querySelectorAll('.abs-item').forEach(el => el.addEventListener('click', () => _absShowFull(parseInt(el.dataset.mid, 10))));
+    return;
+  }
   const months = [...new Set(entries.map(e => e.ym))].sort();
   if (!_absYM || !months.includes(_absYM)) _absYM = months[months.length - 1];
   const idx = months.indexOf(_absYM);
@@ -649,8 +665,8 @@ function _absRenderCal() {
   const item = (en) => {
     const ic = en.kind === 'cancel' ? '❌' : '🌴';
     const rng = en.from ? (en.from === en.to ? _absThai(en.from) : _absThai(en.from) + '–' + _absThai(en.to)) : '';
-    const sub = en.guess ? '(ตามวันรับเมล)' : [en.leaveType, rng].filter(Boolean).join(' · ');
-    return `<div class="abs-item" data-mid="${en.mid}" title="คลิกดูอีเมลเต็ม" style="padding:2px 4px;border-radius:5px;margin-top:2px;cursor:pointer;background:${en.guess ? 'transparent' : 'var(--bg-soft)'};${en.guess ? 'opacity:.55' : ''}">
+    const sub = [en.leaveType, rng].filter(Boolean).join(' · ');
+    return `<div class="abs-item" data-mid="${en.mid}" title="คลิกดูอีเมลเต็ม" style="padding:2px 4px;border-radius:5px;margin-top:2px;cursor:pointer;background:var(--bg-soft)">
       <div style="font-size:10px;font-weight:600;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ic} ${escapeHtml(en.label)}</div>
       ${sub ? `<div style="font-size:9px;color:var(--text-soft);line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(sub)}</div>` : ''}
     </div>`;
@@ -679,7 +695,8 @@ function _absRenderCal() {
     </div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:5px">${dow.map(x => `<div style="text-align:center;font-size:11px;font-weight:700;color:var(--text-muted);padding:2px 0">${x}</div>`).join('')}</div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">${cells}</div>
-    <div style="font-size:11px;color:var(--text-soft);margin-top:12px">💡 ปักตาม<b>วันลาจริง</b> (อ่านจากเนื้อหาอีเมล) · 🌴 = ลา · ❌ = ยกเลิกลา · รายการจาง = อ่านวันลาไม่ได้ (วางตามวันรับเมล) · <b>คลิกรายการเพื่อดูอีเมลเต็ม</b></div>`;
+    <div style="font-size:11px;color:var(--text-soft);margin-top:12px">💡 ปักตาม<b>วันที่เริ่มลา</b> (Beginning date) · 🌴 = ลา · ❌ = ยกเลิกลา · <b>คลิกรายการเพื่อดูอีเมลเต็ม</b></div>
+    ${unparsedHtml}`;
   const nav = (delta) => { const ni = idx + delta; if (ni < 0 || ni >= months.length) return; _absYM = months[ni]; _absRenderCal(); };
   $('abs-prev').onclick = () => nav(-1);
   $('abs-next').onclick = () => nav(1);
