@@ -643,6 +643,71 @@ function _absEntriesForEmp(empId) {
   });
   return entries;
 }
+// v1.9.388 — รายการวันลาของสมาชิกหลายคน (จับคู่ด้วย set ของรหัสพนักงาน) — ใช้ปฏิทินการลาทีม
+function _absEntriesForEmpSet(empSet) {
+  const entries = []; const seen = new Set();
+  if (!empSet || !empSet.size) return entries;
+  (_absData || []).forEach(m => {
+    const kind = _absType(m);
+    if (kind === 'timeio' || kind === 'other') return;
+    const p = _absParse(m);
+    const eid = String(p.empId || '').trim();
+    if (!eid || !empSet.has(eid)) return;
+    _absDays(p.from, p.to).forEach(iso => {
+      const key = eid + '|' + kind + '|' + (p.leaveType || '') + '|' + iso;
+      if (seen.has(key)) return; seen.add(key);
+      entries.push({ iso, ym: iso.slice(0, 7), day: +iso.slice(8, 10), mid: m.__id, label: p.employee || (p.leaveType || 'ลา'), leaveType: p.leaveType, kind, from: p.from, to: p.to });
+    });
+  });
+  return entries;
+}
+// v1.9.388 — ปฏิทินการลาของทีม (ใต้การ์ดสมาชิกในแท็บ Team)
+function _teamLeaveRenderInto(box, empIds) {
+  if (!box) return;
+  box.innerHTML = `<div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">🌴 ปฏิทินการลาของทีม</div><div id="m-team-leave-body"></div>`;
+  const body = box.querySelector('#m-team-leave-body');
+  if (typeof _absData === 'undefined' || !_absData || !_absData.length) {
+    box.style.display = 'none'; return;   // ยังไม่โหลด Absence → ไม่แสดงส่วนนี้
+  }
+  box.style.display = '';
+  if (!empIds || !empIds.size) { body.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">— ยังไม่ได้ตั้งรหัสพนักงาน (HR) ให้สมาชิกทีมนี้ (ตั้งได้ในโปรไฟล์แต่ละคน) —</div>'; return; }
+  const entries = _absEntriesForEmpSet(empIds);
+  if (!entries.length) { body.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">— ไม่พบการลาของสมาชิกทีมนี้ในปี 2026 —</div>'; return; }
+  _teamLeaveRenderCal(body, entries);
+}
+let _teamLeaveYM = '';
+function _teamLeaveRenderCal(body, entries) {
+  const months = [...new Set(entries.map(e => e.ym))].sort();
+  if (!_teamLeaveYM || !months.includes(_teamLeaveYM)) _teamLeaveYM = months[months.length - 1];
+  const idx = months.indexOf(_teamLeaveYM);
+  const [Y, M] = _teamLeaveYM.split('-').map(Number);
+  const daysIn = new Date(Y, M, 0).getDate();
+  const firstDow = new Date(Y, M - 1, 1).getDay();
+  const _now = new Date();
+  const todayD = (_now.getFullYear() === Y && _now.getMonth() + 1 === M) ? _now.getDate() : 0;
+  const byDay = new Map();
+  entries.filter(e => e.ym === _teamLeaveYM).forEach(e => { if (!byDay.has(e.day)) byDay.set(e.day, []); byDay.get(e.day).push(e); });
+  const monthCount = [...byDay.values()].reduce((s, a) => s + a.length, 0);
+  const item = (en) => {
+    const ic = en.kind === 'cancel' ? '❌' : '🌴';
+    const rng = en.from ? (en.from === en.to ? _absThai(en.from) : _absThai(en.from) + '–' + _absThai(en.to)) : '';
+    const sub = [en.leaveType, rng].filter(Boolean).join(' · ');
+    return `<div class="abs-item" data-mid="${en.mid}" title="คลิกดูอีเมลเต็ม" style="padding:2px 4px;border-radius:5px;margin-top:2px;cursor:pointer;background:var(--bg-soft)"><div style="font-size:10px;font-weight:600;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ic} ${escapeHtml(en.label)}</div>${sub ? `<div style="font-size:9px;color:var(--text-soft);line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(sub)}</div>` : ''}</div>`;
+  };
+  const dow = ['อา','จ','อ','พ','พฤ','ศ','ส'];
+  let cells = '';
+  for (let i = 0; i < firstDow; i++) cells += `<div style="background:var(--bg-soft);border-radius:8px;min-height:70px;opacity:.35"></div>`;
+  for (let d = 1; d <= daysIn; d++) {
+    const arr = byDay.get(d) || [];
+    const isToday = d === todayD;
+    cells += `<div style="background:${isToday ? 'rgba(37,99,235,.09)' : 'var(--bg-card)'};border:1px solid ${isToday ? 'var(--primary)' : 'var(--border)'};border-radius:8px;min-height:70px;padding:4px 5px;display:flex;flex-direction:column;overflow:hidden"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:11px;font-weight:700;${isToday ? 'background:var(--primary);color:#fff;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center' : 'color:var(--text-muted)'}">${d}</span>${arr.length ? `<span style="font-size:9px;font-weight:700;color:var(--primary)">${arr.length}</span>` : ''}</div>${arr.map(item).join('')}</div>`;
+  }
+  body.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px"><div style="display:flex;align-items:center;gap:8px"><button class="btn" id="tl-prev" ${idx <= 0 ? 'disabled' : ''} style="font-size:12px;padding:4px 10px">◀</button><span style="font-size:14px;font-weight:800;min-width:100px;text-align:center">${_ABS_MONTHS[M - 1]} ${Y}</span><button class="btn" id="tl-next" ${idx >= months.length - 1 ? 'disabled' : ''} style="font-size:12px;padding:4px 10px">▶</button></div><span style="font-size:12px;color:var(--text-muted)">${monthCount} วันลาในเดือนนี้</span></div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px">${dow.map(x => `<div style="text-align:center;font-size:10.5px;font-weight:700;color:var(--text-muted)">${x}</div>`).join('')}</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${cells}</div>`;
+  const nav = (delta) => { const ni = idx + delta; if (ni < 0 || ni >= months.length) return; _teamLeaveYM = months[ni]; _teamLeaveRenderCal(body, entries); };
+  body.querySelector('#tl-prev').onclick = () => nav(-1);
+  body.querySelector('#tl-next').onclick = () => nav(1);
+  body.querySelectorAll('.abs-item').forEach(el => el.addEventListener('click', () => _absShowFull(parseInt(el.dataset.mid, 10))));
+}
 function _absDays(from, to) {
   const out = []; if (!from) return out;
   const s = new Date(from + 'T00:00:00'); if (isNaN(s)) return [];
@@ -1617,12 +1682,18 @@ async function renderMemberAccountPage() {
           }).join('')}
         </div>
       </div>` : '';
-    grid.innerHTML = memberGrid + platHtml + pcHtml + alumniHtml;
+    // v1.9.388 — ปฏิทินการลาของทีม (ใต้การ์ดสมาชิก ก่อนแพลตฟอร์ม)
+    const teamLeaveHtml = '<div id="m-team-leave" style="margin-top:22px;border-top:1px solid var(--border);padding-top:16px"></div>';
+    grid.innerHTML = memberGrid + teamLeaveHtml + platHtml + pcHtml + alumniHtml;
     grid.querySelectorAll('.sup-member-card').forEach(c => {
       c.addEventListener('mouseenter', () => c.style.background = 'var(--bg-soft)');
       c.addEventListener('mouseleave', () => c.style.background = 'transparent');
       c.addEventListener('click', () => openSupervisedMemberPanel(parseInt(c.dataset.supMember, 10), c.dataset.supName));
     });
+    // รหัสพนักงานของสมาชิกทีมนี้ → ปฏิทินการลาทีม
+    const _teamEmpIds = new Set();
+    members.forEach(m => { const e = String(m.hr_employee_id || '').trim(); if (e) _teamEmpIds.add(e); });
+    _teamLeaveRenderInto(grid.querySelector('#m-team-leave'), _teamEmpIds);
   }
 
   // v1.9.116 — Beacon check-in (ใช้ Wazzup token ดึงตำแหน่ง check-in ของตัวเอง)
