@@ -630,6 +630,7 @@ async function renderMemberAccountPage() {
           <button type="button" class="acc-menu-item" data-acc-tab="privacy"><span class="acc-menu-ico">🔒</span> Privacy</button>
           <button type="button" class="acc-menu-item" data-acc-tab="team" id="acc-tab-team" style="display:none"><span class="acc-menu-ico">👨‍👩‍👧</span> Team</button>
           <button type="button" class="acc-menu-item" data-acc-tab="myworkflow"><span class="acc-menu-ico">🔀</span> My Workflow</button>
+          <button type="button" class="acc-menu-item" data-acc-tab="absence"><span class="acc-menu-ico">🌴</span> Absence</button>
         </div>
 
         <!-- รายละเอียดขวา -->
@@ -749,6 +750,9 @@ async function renderMemberAccountPage() {
             <div class="hint" style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px">Workflow ที่เกี่ยวข้องกับคุณ — เป็นผู้สร้าง / collaborator / ผู้รับผิดชอบงาน</div>
             <div id="mywf-list">${skelStack(3)}</div>
           </div>
+
+          <!-- ============ Absence (v1.9.382) ============ -->
+          <div data-acc-panel="absence" style="display:none"><div id="absence-root"></div></div>
 
           <!-- ============ My Device ============ -->
           <div data-acc-panel="device" style="display:none">
@@ -1313,6 +1317,7 @@ async function renderMemberAccountPage() {
     });
     if (panel === 'beacon') loadBeacon();
     if (panel === 'myworkflow') loadMyWorkflows();
+    if (panel === 'absence') renderAbsence();   // v1.9.382
     if (panel === 'team' && !_teamSupLoaded) { _teamSupLoaded = true; loadTeamSupervise(); }
     if (panel === 'device' && !_myDeviceLoaded) { _myDeviceLoaded = true; loadMyDevice(); }
     // v1.9.122 — Extension tab: render ลง #ext-embed + จัดการ polling
