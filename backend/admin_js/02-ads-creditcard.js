@@ -1376,7 +1376,7 @@ const _CC_EXP_CATS=[
 const _ccExpCat=(v)=>_CC_EXP_CATS.find(c=>c.key===(v||'unspecified'))||_CC_EXP_CATS[2];
 let _ccPoolCatFilter='all';
 let _ccPoolView='calendar';   // v1.9.389 — 'calendar' (default) | 'list'
-let _ccPoolYear=null;
+let _ccPoolYM=null;           // v1.9.390 — เดือนที่ดูในปฏิทิน 'YYYY-MM'
 let _ccPoolScope='unmatched';   // v1.9.357 — 'unmatched' = เฉพาะยังไม่จับคู่ (default) | 'all' = ทุกใบ
 function _ccInvCardHtml(i,isMatched,isPool){
   return `<div class="cc-inv card" draggable="true" data-inv="${i.id}" style="padding:9px 11px;margin-bottom:6px;cursor:grab;border:1px solid ${isPool?'rgba(245,158,11,.5)':(isMatched?'rgba(16,185,129,.45)':'var(--border)')}">
@@ -1666,40 +1666,50 @@ async function _ccRenderPool(v){
       +_CC_EXP_CATS.map(c=>chip(c.key,c.icon+' '+c.label,list.filter(i=>catOf(i)===c.key).length,_ccPoolCatFilter===c.key)).join('');
     fe.querySelectorAll('.cc-pool-fchip').forEach(b=>b.addEventListener('click',()=>{ _ccPoolCatFilter=b.dataset.cat; renderFilter(); paint(); }));
   };
-  // v1.9.389 — มุมมองปฏิทิน: กริด 12 เดือนต่อปี · ดับเบิลคลิกเดือน = อัพโหลด
+  // v1.9.390 — มุมมองปฏิทินรายวัน: เลือกเดือน (ตามเดือนใบเสร็จ) · วางตามวันที่อัพโหลด · ดับเบิลคลิกวัน = อัพโหลด
   function paintCalendar(le,shown){
-    const years=[...new Set(shown.map(i=>i.inv_year).filter(Boolean))].sort();
-    if(!_ccPoolYear || (years.length && !years.includes(_ccPoolYear))) _ccPoolYear = years.length?years[years.length-1]:new Date().getFullYear();
-    const yi=years.indexOf(_ccPoolYear);
-    const byMonth={}; const noMonth=[];
-    shown.forEach(i=>{ if(i.inv_year===_ccPoolYear && i.inv_month){ (byMonth[i.inv_month]=byMonth[i.inv_month]||[]).push(i); } else if(!i.inv_year||!i.inv_month){ noMonth.push(i); } });
-    const invChip=(i,border)=>`<div class="cc-cal-inv" data-inv="${i.id}" title="คลิกดูใบเสร็จ" style="display:flex;justify-content:space-between;gap:6px;font-size:10.5px;padding:2px 6px;border-radius:5px;${border?'border:1px solid var(--border)':'background:var(--bg-soft)'};cursor:pointer"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i.matched?'':'📌 '}${escapeHtml(i.company||'—')}</span><span style="flex-shrink:0;font-weight:600;color:var(--green)">${_ccMoney(i.amount)}</span></div>`;
-    const monthCell=(m)=>{
-      const arr=byMonth[m]||[]; const sum=arr.reduce((s,i)=>s+(i.amount||0),0);
-      return `<div class="cc-cal-month" style="border:1px solid var(--border);border-radius:10px;padding:8px 10px;min-height:104px;display:flex;flex-direction:column;background:var(--bg-card);cursor:pointer" title="ดับเบิลคลิกเพื่ออัพโหลดใบเสร็จ">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
-          <span style="font-size:12.5px;font-weight:800">${_CC_MONTHS[m-1]}</span>
-          ${arr.length?`<span style="font-size:10px;font-weight:700;color:var(--primary)">${arr.length} ใบ · ${_ccMoney(sum)}</span>`:'<span style="font-size:10px;color:var(--text-soft)">—</span>'}
-        </div>
-        <div style="flex:1;overflow-y:auto;max-height:130px;display:flex;flex-direction:column;gap:3px">${arr.map(i=>invChip(i,false)).join('')}</div>
-      </div>`;
-    };
+    const months=[...new Set(shown.filter(i=>i.inv_year&&i.inv_month).map(i=>i.inv_year+'-'+String(i.inv_month).padStart(2,'0')))].sort();
+    const noMonth=shown.filter(i=>!i.inv_year||!i.inv_month);
+    const invChip=(i,border)=>`<div class="cc-cal-inv" data-inv="${i.id}" title="คลิกดูใบเสร็จ" style="display:flex;justify-content:space-between;gap:4px;font-size:9.5px;line-height:1.25;padding:1px 4px;border-radius:4px;margin-top:2px;${border?'border:1px solid var(--border);padding:3px 8px;font-size:11px':'background:var(--bg-soft)'};cursor:pointer"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">${i.matched?'':'📌'}${escapeHtml(i.company||'—')}</span><span style="flex-shrink:0;color:var(--green);font-weight:700">${_ccMoney(i.amount)}</span></div>`;
+    const noMonthHtml=noMonth.length?`<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px"><div style="font-size:11.5px;font-weight:700;color:var(--text-muted);margin-bottom:6px">🕓 ไม่ระบุเดือน (${noMonth.length})</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px">${noMonth.map(i=>invChip(i,true)).join('')}</div></div>`:'';
+    if(!months.length){ le.innerHTML=`<div class="empty" style="padding:18px">— ไม่มีใบเสร็จที่ระบุเดือน —</div>${noMonthHtml}`; wireCal(le); return; }
+    if(!_ccPoolYM || !months.includes(_ccPoolYM)) _ccPoolYM=months[months.length-1];
+    const idx=months.indexOf(_ccPoolYM);
+    const [Y,M]=_ccPoolYM.split('-').map(Number);
+    const daysIn=new Date(Y,M,0).getDate();
+    const firstDow=new Date(Y,M-1,1).getDay();
+    const _now=new Date();
+    const todayD=(_now.getFullYear()===Y&&_now.getMonth()+1===M)?_now.getDate():0;
+    const byDay=new Map();
+    shown.filter(i=>i.inv_year===Y&&i.inv_month===M).forEach(i=>{ let d=parseInt(String(i.created_at||'').slice(8,10),10)||1; if(d>daysIn)d=daysIn; if(d<1)d=1; if(!byDay.has(d))byDay.set(d,[]); byDay.get(d).push(i); });
+    const monthCount=[...byDay.values()].reduce((s,a)=>s+a.length,0);
+    const dow=['อา','จ','อ','พ','พฤ','ศ','ส'];
+    let cells='';
+    for(let i=0;i<firstDow;i++) cells+=`<div style="background:var(--bg-soft);border-radius:8px;min-height:74px;opacity:.35"></div>`;
+    for(let d=1;d<=daysIn;d++){ const arr=byDay.get(d)||[]; const isToday=d===todayD;
+      cells+=`<div class="cc-cal-day" style="background:${isToday?'rgba(37,99,235,.09)':'var(--bg-card)'};border:1px solid ${isToday?'var(--primary)':'var(--border)'};border-radius:8px;min-height:74px;padding:3px 4px;display:flex;flex-direction:column;overflow:hidden;cursor:pointer" title="ดับเบิลคลิกเพื่ออัพโหลดใบเสร็จ"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:11px;font-weight:700;${isToday?'background:var(--primary);color:#fff;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center':'color:var(--text-muted)'}">${d}</span>${arr.length?`<span style="font-size:8.5px;font-weight:700;color:var(--primary)">${arr.length}</span>`:''}</div><div style="flex:1;overflow-y:auto;min-height:0">${arr.map(i=>invChip(i,false)).join('')}</div></div>`;
+    }
     le.innerHTML=`
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
         <div style="display:flex;align-items:center;gap:8px">
-          <button class="btn" id="cc-poolcal-prev" ${(years.length&&yi<=0)?'disabled':''} style="font-size:13px;padding:5px 11px">◀</button>
-          <span style="font-size:16px;font-weight:800;min-width:64px;text-align:center">${_ccPoolYear}</span>
-          <button class="btn" id="cc-poolcal-next" ${(years.length&&yi>=years.length-1)?'disabled':''} style="font-size:13px;padding:5px 11px">▶</button>
+          <button class="btn" id="cc-poolcal-prev" ${idx<=0?'disabled':''} style="font-size:13px;padding:5px 11px">◀</button>
+          <span style="font-size:15px;font-weight:800;min-width:104px;text-align:center">${_CC_MONTHS[M-1]} ${Y}</span>
+          <button class="btn" id="cc-poolcal-next" ${idx>=months.length-1?'disabled':''} style="font-size:13px;padding:5px 11px">▶</button>
         </div>
-        <span style="font-size:12px;color:var(--text-muted)">💡 <b>ดับเบิลคลิก</b>เดือนใดก็ได้เพื่ออัพโหลดใบเสร็จ</span>
+        <span style="font-size:12px;color:var(--text-muted)">${monthCount} ใบในเดือนนี้ · 💡 <b>ดับเบิลคลิกวัน</b>เพื่ออัพโหลด</span>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px">${[1,2,3,4,5,6,7,8,9,10,11,12].map(monthCell).join('')}</div>
-      ${noMonth.length?`<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px"><div style="font-size:11.5px;font-weight:700;color:var(--text-muted);margin-bottom:6px">🕓 ไม่ระบุเดือน (${noMonth.length})</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px">${noMonth.map(i=>invChip(i,true)).join('')}</div></div>`:''}`;
-    const navY=(delta)=>{ if(!years.length)return; const ni=yi+delta; if(ni<0||ni>=years.length)return; _ccPoolYear=years[ni]; paint(); };
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:5px">${dow.map(x=>`<div style="text-align:center;font-size:11px;font-weight:700;color:var(--text-muted);padding:2px 0">${x}</div>`).join('')}</div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">${cells}</div>
+      <div style="font-size:11px;color:var(--text-soft);margin-top:10px">💡 วางตาม<b>วันที่อัพโหลด</b> (ใบเสร็จเก็บระดับเดือน/ปี) · 📌 = ยังไม่จับคู่</div>
+      ${noMonthHtml}`;
+    const nav=(delta)=>{ const ni=idx+delta; if(ni<0||ni>=months.length)return; _ccPoolYM=months[ni]; paint(); };
     const pv=$('cc-poolcal-prev'), nx=$('cc-poolcal-next');
-    if(pv) pv.onclick=()=>navY(-1);
-    if(nx) nx.onclick=()=>navY(1);
-    le.querySelectorAll('.cc-cal-month').forEach(c=>c.addEventListener('dblclick',()=>_ccUploadInvoice(null)));
+    if(pv) pv.onclick=()=>nav(-1);
+    if(nx) nx.onclick=()=>nav(1);
+    wireCal(le);
+  }
+  function wireCal(le){
+    le.querySelectorAll('.cc-cal-day').forEach(c=>c.addEventListener('dblclick',()=>_ccUploadInvoice(null)));
     le.querySelectorAll('.cc-cal-inv').forEach(x=>{
       x.addEventListener('click',(e)=>{ e.stopPropagation(); const inv=byId[parseInt(x.dataset.inv,10)]; if(inv) _ccPreviewInvoice(inv); });
       x.addEventListener('dblclick',(e)=>e.stopPropagation());
