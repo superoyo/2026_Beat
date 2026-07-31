@@ -971,6 +971,9 @@ def init_db() -> None:
         for _c in ("job_number", "product_name", "am_name", "note", "expense_category"):
             if _c not in _cic:
                 conn.execute(f"ALTER TABLE cc_invoices ADD COLUMN {_c} TEXT")
+        # v1.9.391 — inv_day: วันที่บนใบเสร็จ (1-31) สำหรับปักปฏิทินตามวันจริง
+        if "inv_day" not in _cic:
+            conn.execute("ALTER TABLE cc_invoices ADD COLUMN inv_day INTEGER")
         # v1.9.314 — cc_transactions: เพิ่ม user_note (รายละเอียดที่ user กรอกใต้รายการ)
         _cct = [r["name"] for r in conn.execute("PRAGMA table_info(cc_transactions)").fetchall()]
         if "user_note" not in _cct:
@@ -10785,6 +10788,7 @@ class CcInvoiceIn(BaseModel):
     kind: str = Field("invoice", pattern="^(invoice|receipt)$")
     inv_month: Optional[int] = None
     inv_year: Optional[int] = None
+    inv_day: Optional[int] = None                # v1.9.391 — วันบนใบเสร็จ (1-31)
     amount: Optional[float] = None
     description: Optional[str] = Field(None, max_length=2000)
     # v1.9.306 — เลข Job / ชื่อสินค้า / AM ที่ดูแล / หมายเหตุ
@@ -10805,6 +10809,7 @@ class CcInvoiceEdit(BaseModel):
     kind: str = Field("invoice", pattern="^(invoice|receipt)$")
     inv_month: Optional[int] = None
     inv_year: Optional[int] = None
+    inv_day: Optional[int] = None                # v1.9.391
     amount: Optional[float] = None
     description: Optional[str] = Field(None, max_length=2000)
     # v1.9.306
@@ -11147,11 +11152,12 @@ def cc_create_invoice(payload: CcInvoiceIn,
             up_id = payload.uploaded_by_id
             up_name = _cc_member_name(conn, payload.uploaded_by_id) or name
         _s = lambda v: (v.strip() if isinstance(v, str) else v) or None
+        _day = payload.inv_day if (payload.inv_day and 1 <= payload.inv_day <= 31) else None
         cur = conn.execute(
-            "INSERT INTO cc_invoices(bill_id,company,kind,inv_month,inv_year,amount,description,"
+            "INSERT INTO cc_invoices(bill_id,company,kind,inv_month,inv_year,inv_day,amount,description,"
             "job_number,product_name,am_name,note,expense_category,file_data,file_name,file_mime,ocr_text,uploaded_by_id,uploaded_by,created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (payload.bill_id, payload.company, payload.kind, payload.inv_month, payload.inv_year, payload.amount,
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (payload.bill_id, payload.company, payload.kind, payload.inv_month, payload.inv_year, _day, payload.amount,
              payload.description, _s(payload.job_number), _s(payload.product_name), _s(payload.am_name), _s(payload.note),
              _s(payload.expense_category), payload.file_data, payload.file_name, payload.file_mime, payload.ocr_text, up_id, up_name, now))
     return {"ok": True, "id": cur.lastrowid}
@@ -11163,9 +11169,10 @@ def cc_edit_invoice(iid: int, payload: CcInvoiceEdit, _sess: dict = Depends(_req
         if not conn.execute("SELECT 1 FROM cc_invoices WHERE id=?", (iid,)).fetchone():
             raise HTTPException(status_code=404, detail="ไม่พบ invoice")
         _s = lambda v: (v.strip() if isinstance(v, str) else v) or None
-        conn.execute("UPDATE cc_invoices SET company=?, kind=?, inv_month=?, inv_year=?, amount=?, description=?, "
+        _day = payload.inv_day if (payload.inv_day and 1 <= payload.inv_day <= 31) else None
+        conn.execute("UPDATE cc_invoices SET company=?, kind=?, inv_month=?, inv_year=?, inv_day=?, amount=?, description=?, "
                      "job_number=?, product_name=?, am_name=?, note=?, expense_category=? WHERE id=?",
-                     (payload.company, payload.kind, payload.inv_month, payload.inv_year, payload.amount, payload.description,
+                     (payload.company, payload.kind, payload.inv_month, payload.inv_year, _day, payload.amount, payload.description,
                       _s(payload.job_number), _s(payload.product_name), _s(payload.am_name), _s(payload.note),
                       _s(payload.expense_category), iid))
         # เปลี่ยนผู้อัพโหลด/เจ้าของเอกสาร (ถ้าเลือก member มา)
@@ -11181,7 +11188,7 @@ def cc_pool_invoices(scope: str = "unmatched",
     """รายการใบเสร็จ/invoice
     scope='unmatched' (default) → เฉพาะที่ยังไม่จับคู่ (ลอย + ผูกบิลแต่ยังไม่ match)
     scope='all' → ทุกใบ พร้อมข้อมูลว่าจับคู่กับอะไร (matched_txn / matched_bill)"""
-    cols = ("id,bill_id,company,kind,inv_month,inv_year,amount,description,"
+    cols = ("id,bill_id,company,kind,inv_month,inv_year,inv_day,amount,description,"
             "job_number,product_name,am_name,note,expense_category,file_name,file_mime,"
             "uploaded_by,uploaded_by_id,created_at")
     with db_conn() as conn:

@@ -1061,8 +1061,9 @@ function _ccInvUploadRow(idx,fname,p){
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <label style="width:120px;font-size:12px">ประเภท<select class="cc-ir-kind" style="width:100%"><option value="invoice" ${p.kind!=='receipt'?'selected':''}>Invoice</option><option value="receipt" ${p.kind==='receipt'?'selected':''}>Receipt</option></select></label>
       <label style="width:110px;font-size:12px">เดือน${_ccMonthSelectCls('cc-ir-month',p.month)}</label>
+      <label style="width:72px;font-size:12px">วัน<input class="cc-ir-day" type="number" min="1" max="31" value="${p.day||''}" placeholder="1-31" title="วันบนใบเสร็จ (ไว้ปักปฏิทิน)" style="width:100%" /></label>
       <label style="width:90px;font-size:12px">ปี<input class="cc-ir-year" type="number" value="${p.year||''}" style="width:100%" /></label>
-      <label style="flex:1;min-width:110px;font-size:12px">ยอดเงิน<input class="cc-ir-amount" type="number" step="0.01" value="${p.amount!=null?p.amount:''}" style="width:100%" /></label>
+      <label style="flex:1;min-width:100px;font-size:12px">ยอดเงิน<input class="cc-ir-amount" type="number" step="0.01" value="${p.amount!=null?p.amount:''}" style="width:100%" /></label>
     </div>
   </div>`;
 }
@@ -1096,6 +1097,7 @@ function _ccUploadInvoice(defaultBillId, preFiles){
           note:r.querySelector('.cc-ir-note').value.trim()||null,
           expense_category:r.querySelector('.cc-ir-expcat').value||null,
           kind:r.querySelector('.cc-ir-kind').value, inv_month:parseInt(r.querySelector('.cc-ir-month').value,10)||null,
+          inv_day:parseInt(r.querySelector('.cc-ir-day').value,10)||null,
           inv_year:parseInt(r.querySelector('.cc-ir-year').value,10)||null, amount:parseFloat(r.querySelector('.cc-ir-amount').value)||null,
           file_data:it.fileData, file_name:it.fileName, file_mime:it.fileMime };
         await fetchJson('/api/creditcard/invoices',{method:'POST',body:JSON.stringify(body)}); ok++;
@@ -1488,14 +1490,16 @@ function _ccEditInvoice(inv,onDone){
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <label style="width:130px;font-size:12px">ประเภท<select id="cc-ei-kind" style="width:100%"><option value="invoice" ${inv.kind!=='receipt'?'selected':''}>Invoice</option><option value="receipt" ${inv.kind==='receipt'?'selected':''}>Receipt</option></select></label>
         <label style="width:120px;font-size:12px">เดือน${_ccMonthSelect('cc-ei-month',inv.inv_month||null)}</label>
+        <label style="width:78px;font-size:12px">วัน<input id="cc-ei-day" type="number" min="1" max="31" value="${inv.inv_day||''}" placeholder="1-31" title="วันบนใบเสร็จ (ไว้ปักปฏิทิน)" style="width:100%" /></label>
         <label style="width:100px;font-size:12px">ปี<input id="cc-ei-year" type="number" value="${inv.inv_year||''}" style="width:100%" /></label>
-        <label style="flex:1;min-width:120px;font-size:12px">ยอดเงิน<input id="cc-ei-amount" type="number" step="0.01" value="${inv.amount!=null?inv.amount:''}" style="width:100%" /></label>
+        <label style="flex:1;min-width:110px;font-size:12px">ยอดเงิน<input id="cc-ei-amount" type="number" step="0.01" value="${inv.amount!=null?inv.amount:''}" style="width:100%" /></label>
       </div>
       <div style="margin-top:10px"><a href="${API}/api/creditcard/invoices/${inv.id}/file" target="_blank" rel="noopener" style="font-size:12px">📄 ดูไฟล์ต้นฉบับ</a></div>`,
     onSubmit: async ()=>{
       const uv=$('cc-ei-uploader').value;
       const body={ company:$('cc-ei-company').value.trim()||null, kind:$('cc-ei-kind').value,
         inv_month:parseInt($('cc-ei-month').value,10)||null, inv_year:parseInt($('cc-ei-year').value,10)||null,
+        inv_day:parseInt($('cc-ei-day').value,10)||null,
         amount:parseFloat($('cc-ei-amount').value)||null, description:$('cc-ei-desc').value.trim()||null,
         job_number:$('cc-ei-job').value.trim()||null, product_name:$('cc-ei-product').value.trim()||null,
         am_name:$('cc-ei-am').value.trim()||null, note:$('cc-ei-note').value.trim()||null,
@@ -1681,7 +1685,7 @@ async function _ccRenderPool(v){
     const _now=new Date();
     const todayD=(_now.getFullYear()===Y&&_now.getMonth()+1===M)?_now.getDate():0;
     const byDay=new Map();
-    shown.filter(i=>i.inv_year===Y&&i.inv_month===M).forEach(i=>{ let d=parseInt(String(i.created_at||'').slice(8,10),10)||1; if(d>daysIn)d=daysIn; if(d<1)d=1; if(!byDay.has(d))byDay.set(d,[]); byDay.get(d).push(i); });
+    shown.filter(i=>i.inv_year===Y&&i.inv_month===M).forEach(i=>{ let d=(i.inv_day&&i.inv_day>=1&&i.inv_day<=31)?i.inv_day:(parseInt(String(i.created_at||'').slice(8,10),10)||1); if(d>daysIn)d=daysIn; if(d<1)d=1; if(!byDay.has(d))byDay.set(d,[]); byDay.get(d).push(i); });
     const monthCount=[...byDay.values()].reduce((s,a)=>s+a.length,0);
     const dow=['อา','จ','อ','พ','พฤ','ศ','ส'];
     let cells='';
@@ -1700,7 +1704,7 @@ async function _ccRenderPool(v){
       </div>
       <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:5px">${dow.map(x=>`<div style="text-align:center;font-size:11px;font-weight:700;color:var(--text-muted);padding:2px 0">${x}</div>`).join('')}</div>
       <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">${cells}</div>
-      <div style="font-size:11px;color:var(--text-soft);margin-top:10px">💡 วางตาม<b>วันที่อัพโหลด</b> (ใบเสร็จเก็บระดับเดือน/ปี) · 📌 = ยังไม่จับคู่</div>
+      <div style="font-size:11px;color:var(--text-soft);margin-top:10px">💡 วางตาม<b>วันบนใบเสร็จ</b> (ถ้าไม่ระบุวัน ใช้วันอัพโหลด — แก้วันได้ที่ ✏️) · 📌 = ยังไม่จับคู่</div>
       ${noMonthHtml}`;
     const nav=(delta)=>{ const ni=idx+delta; if(ni<0||ni>=months.length)return; _ccPoolYM=months[ni]; paint(); };
     const pv=$('cc-poolcal-prev'), nx=$('cc-poolcal-next');
