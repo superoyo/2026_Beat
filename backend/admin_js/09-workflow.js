@@ -615,8 +615,9 @@ function _absParse(m) {
     const im = txt.match(/(?:รหัสพนักงาน|Employee\s*(?:Code|ID|No\.?)|Emp\s*(?:Code|ID))\s*(?:\([^)]*\))?\s*[:：]\s*([A-Za-z0-9][A-Za-z0-9\-\/]*)/i);
     if (im) empId = im[1].trim();
   }
+  // v1.9.392 — ประเภทการลา = "ความประสงค์ของการลา (Purpose of leave)" (ลาป่วย/ลาพักร้อน/ลากิจ ...)
   let lt = '';
-  const lm = txt.match(/(?:ประเภทการลา|Leave\s*Type)\s*(?:\([^)]*\))?\s*[:：]\s*([^\n]+)/i);
+  const lm = txt.match(/(?:ความประสงค์ของการลา|Purpose\s*of\s*leave|ประเภทการลา|Leave\s*Type)\s*(?:\([^)]*\))?\s*[:：]\s*([^\n]+)/i);
   if (lm) lt = lm[1].replace(/\s*\([^)]*\)\s*$/, '').trim().slice(0, 40);
   // v1.9.384 — ปักตาม "วันที่เริ่มลา (Beginning date)" เป็นหลัก (ไม่ใช้วันรับเมล)
   const nearDate = (re) => { const i = txt.search(re); if (i < 0) return null; return _absDateFrom(txt.slice(i, i + 110)); };
@@ -689,7 +690,7 @@ function _teamLeaveRenderCal(body, entries) {
   entries.filter(e => e.ym === _teamLeaveYM).forEach(e => { if (!byDay.has(e.day)) byDay.set(e.day, []); byDay.get(e.day).push(e); });
   const monthCount = [...byDay.values()].reduce((s, a) => s + a.length, 0);
   const item = (en) => {
-    const ic = en.kind === 'cancel' ? '❌' : '🌴';
+    const ic = en.kind === 'cancel' ? '❌' : _absLeaveIcon(en.leaveType);
     const rng = en.from ? (en.from === en.to ? _absThai(en.from) : _absThai(en.from) + '–' + _absThai(en.to)) : '';
     const sub = [en.leaveType, rng].filter(Boolean).join(' · ');
     return `<div class="abs-item" data-mid="${en.mid}" title="คลิกดูอีเมลเต็ม" style="padding:2px 4px;border-radius:5px;margin-top:2px;cursor:pointer;background:var(--bg-soft)"><div style="font-size:10px;font-weight:600;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ic} ${escapeHtml(en.label)}</div>${sub ? `<div style="font-size:9px;color:var(--text-soft);line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(sub)}</div>` : ''}</div>`;
@@ -720,6 +721,17 @@ function _absDays(from, to) {
   return out;
 }
 function _absThai(iso) { if (!iso) return ''; const p = iso.split('-'); return `${+p[2]} ${_ABS_MONTHS[+p[1] - 1]}`; }
+// v1.9.392 — icon ตามประเภทการลา (ความประสงค์ของการลา)
+function _absLeaveIcon(lt) {
+  const s = (lt || '').toLowerCase();
+  if (s.includes('ป่วย') || s.includes('sick')) return '🤒';
+  if (s.includes('พักร้อน') || s.includes('annual') || s.includes('vacation') || s.includes('พักผ่อน')) return '🌴';
+  if (s.includes('คลอด') || s.includes('maternity')) return '👶';
+  if (s.includes('บวช') || s.includes('ordinat')) return '🙏';
+  if (s.includes('ไม่รับเงิน') || s.includes('without pay') || s.includes('unpaid') || s.includes('leave without')) return '💸';
+  if (s.includes('กิจ') || s.includes('personal') || s.includes('business')) return '🧳';
+  return '📅';   // ประเภทอื่น ๆ / ไม่ระบุ
+}
 function _absBuildEntries() {
   const seen = new Set(); const entries = []; const unparsed = []; let skipped = 0;
   const q = (_absSearch || '').trim().toLowerCase();   // v1.9.387 — ค้นหาชื่อผู้ลา
@@ -780,7 +792,7 @@ function _absRenderCal() {
   entries.filter(e => e.ym === _absYM).forEach(e => { if (!byDay.has(e.day)) byDay.set(e.day, []); byDay.get(e.day).push(e); });
   const monthCount = [...byDay.values()].reduce((s, a) => s + a.length, 0);
   const item = (en) => {
-    const ic = en.kind === 'cancel' ? '❌' : '🌴';
+    const ic = en.kind === 'cancel' ? '❌' : _absLeaveIcon(en.leaveType);
     const rng = en.from ? (en.from === en.to ? _absThai(en.from) : _absThai(en.from) + '–' + _absThai(en.to)) : '';
     const sub = [en.leaveType, rng].filter(Boolean).join(' · ');
     return `<div class="abs-item" data-mid="${en.mid}" title="คลิกดูอีเมลเต็ม" style="padding:2px 4px;border-radius:5px;margin-top:2px;cursor:pointer;background:var(--bg-soft)">
@@ -812,7 +824,7 @@ function _absRenderCal() {
     </div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:5px">${dow.map(x => `<div style="text-align:center;font-size:11px;font-weight:700;color:var(--text-muted);padding:2px 0">${x}</div>`).join('')}</div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">${cells}</div>
-    <div style="font-size:11px;color:var(--text-soft);margin-top:12px">💡 ปักตาม<b>วันที่เริ่มลา</b> (Beginning date) · 🌴 = ลา · ❌ = ยกเลิกลา · <b>คลิกรายการเพื่อดูอีเมลเต็ม</b></div>
+    <div style="font-size:11px;color:var(--text-soft);margin-top:12px">💡 ปักตาม<b>วันที่เริ่มลา</b> · icon ตามประเภท: 🤒 ลาป่วย · 🌴 พักร้อน · 🧳 ลากิจ · 👶 ลาคลอด · 💸 ไม่รับเงิน · ❌ ยกเลิก · <b>คลิกดูอีเมลเต็ม</b></div>
     ${unparsedHtml}`;
   const nav = (delta) => { const ni = idx + delta; if (ni < 0 || ni >= months.length) return; _absYM = months[ni]; _absRenderCal(); };
   $('abs-prev').onclick = () => nav(-1);

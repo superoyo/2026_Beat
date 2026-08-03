@@ -1072,7 +1072,7 @@ function _supRenderLeaveCal(box, entries, empId) {
     const bg = arr.length ? (cancel ? 'rgba(220,38,38,.10)' : 'rgba(16,185,129,.14)') : (isToday ? 'rgba(37,99,235,.08)' : 'var(--bg-card)');
     cells += `<div title="${escapeHtml(arr.map(e => (e.kind === 'cancel' ? 'ยกเลิก: ' : '') + (e.leaveType || 'ลา')).join(', '))}" style="background:${bg};border:1px solid ${isToday ? 'var(--primary)' : 'var(--border)'};border-radius:6px;min-height:46px;padding:3px 4px;display:flex;flex-direction:column;overflow:hidden">
       <span style="font-size:10px;font-weight:700;color:${isToday ? 'var(--primary)' : 'var(--text-muted)'}">${d}</span>
-      ${arr.length ? `<span style="font-size:9px;line-height:1.2;margin-top:1px;color:${cancel ? 'var(--critical)' : 'var(--green)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${cancel ? '❌' : '🌴'} ${escapeHtml(arr[0].leaveType || 'ลา')}</span>` : ''}
+      ${arr.length ? `<span style="font-size:9px;line-height:1.2;margin-top:1px;color:${cancel ? 'var(--critical)' : 'var(--green)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${cancel ? '❌' : _absLeaveIcon(arr[0].leaveType)} ${escapeHtml(arr[0].leaveType || 'ลา')}</span>` : ''}
     </div>`;
   }
   const total = entries.filter(e => e.kind !== 'cancel').length;
