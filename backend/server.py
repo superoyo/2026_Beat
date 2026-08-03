@@ -5295,6 +5295,74 @@ def auth_wazzup_login(payload: WazzupLoginIn, response: Response) -> dict[str, A
     }
 
 
+# v1.9.393 — IAMService SSO (Fareast Fameline central identity provider) — Flow B redirect
+# Beat validate token โดยเรียก GET /api/User/Profile (server-to-server) — ไม่ต้องมี shared secret
+IAM_BASE_URL = os.environ.get("IAM_BASE_URL", "https://iam.fareastfamelineddb.com").rstrip("/")
+
+
+class IamSsoIn(BaseModel):
+    access_token: str = Field(..., min_length=1, max_length=8000)
+
+
+def _iam_fetch_profile(token: str) -> dict[str, Any]:
+    """GET /api/User/Profile ด้วย Bearer token → ถ้า 200 = token ถูกต้อง (IAM validate ให้เอง) คืน {profile, userRole}"""
+    req = urllib.request.Request(
+        f"{IAM_BASE_URL}/api/User/Profile",
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            raise HTTPException(status_code=401, detail="SSO token ไม่ถูกต้องหรือหมดอายุ — ลองเข้าสู่ระบบใหม่")
+        raise HTTPException(status_code=502, detail=f"IAM Profile error HTTP {e.code}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"เชื่อมต่อ IAM ไม่สำเร็จ: {e}")
+    try:
+        return _json.loads(raw)
+    except Exception:
+        raise HTTPException(status_code=502, detail="IAM response ไม่ใช่ JSON")
+
+
+@app.post("/api/auth/iam-sso")
+def auth_iam_sso(payload: IamSsoIn, response: Response) -> dict[str, Any]:
+    """v1.9.393 — รับ access_token จาก IAM SSO callback → validate ผ่าน Profile → เข้าเฉพาะ member ที่มีอยู่แล้ว"""
+    token = (payload.access_token or "").strip()
+    data = _iam_fetch_profile(token)
+    prof = data.get("profile") or {}
+    email = (prof.get("email") or prof.get("aspNetUsersEmail") or "").strip().lower()
+    emp_code = (prof.get("empCode") or "").strip() or None
+    display_name = (prof.get("nickName") or prof.get("empThaiName") or prof.get("empEngName") or "").strip() or None
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        row = None
+        if email:
+            row = conn.execute("SELECT id, phone, enabled FROM members WHERE LOWER(email) = ?", (email,)).fetchone()
+            if not row:
+                row = conn.execute(
+                    "SELECT m.id, m.phone, m.enabled FROM member_aliases a JOIN members m ON m.id = a.member_id "
+                    "WHERE a.kind='email' AND a.value=?", (email,)).fetchone()
+        if not row and emp_code:
+            row = conn.execute(
+                "SELECT id, phone, enabled FROM members WHERE wazzup_emp_code = ? OR hr_employee_id = ? LIMIT 1",
+                (emp_code, emp_code)).fetchone()
+        if not row:
+            raise HTTPException(status_code=403, detail="ยังไม่มีบัญชีในระบบ Beat — ติดต่อผู้ดูแลเพื่อเพิ่มบัญชีก่อน (SSO เข้าได้เฉพาะบัญชีที่มีอยู่แล้ว)")
+        if _is_member_disabled(row):
+            raise HTTPException(status_code=403, detail="บัญชีนี้ถูกระงับการใช้งาน")
+        conn.execute(
+            "UPDATE members SET last_login_at=?, display_name=COALESCE(display_name,?), "
+            "wazzup_emp_code=COALESCE(wazzup_emp_code,?), hr_employee_id=COALESCE(hr_employee_id,?) WHERE id=?",
+            (now, display_name, emp_code, emp_code, row["id"]))
+        member_id = row["id"]
+        phone = row["phone"]
+    tok = _set_member_cookie(response, member_id, phone)
+    return {"ok": True, "role": "member", "member_id": member_id, "token": tok,
+            "label": display_name or email or ("member " + str(member_id))}
+
+
 class WazzupPhotoIn(BaseModel):
     photo_url: str = Field(..., min_length=1, max_length=2000)
 

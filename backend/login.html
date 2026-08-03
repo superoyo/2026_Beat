@@ -227,13 +227,16 @@
 <body>
   <div class="split">
     <div class="split-form">
-      <div class="card">
+      <div class="card" id="login-card" style="visibility:hidden">
     <div class="brand">
       <a href="/" class="logo">FEFL<strong>Beat</strong></a>
     </div>
 
     <h1 id="page-title">เข้าสู่ระบบ</h1>
     <div class="sub" id="page-sub">ใช้อีเมล + รหัสผ่าน หรือลงทะเบียนด้วยเบอร์มือถือ</div>
+
+    <!-- v1.9.393 — SSO (Fareast Fameline central IdP) -->
+    <button type="button" id="ssoBtn" class="primary-btn" style="margin-bottom:14px;background:#0f172a;border-color:#0f172a">🔐 เข้าสู่ระบบด้วย Single Sign-On</button>
 
     <div class="tabs">
       <button class="tab active" data-tab="email">อีเมล / Username + รหัสผ่าน</button>
@@ -450,6 +453,53 @@
         $('password').setAttribute('autocomplete', 'new-password');
       }
     } catch {}
+
+    // ===== v1.9.393 — IAMService SSO (Fareast Fameline central IdP) — Flow B redirect =====
+    const IAM_BASE = 'https://iam.fareastfamelineddb.com';
+    const IAM_STATE_KEY = 'iam_sso_state';
+    const IAM_SKIP_KEY = 'iam_sso_skip';
+    const revealCard = () => { const c = $('login-card'); if (c) c.style.visibility = 'visible'; };
+    function iamAuthorize() {
+      const st = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + '-' + Math.random());
+      sessionStorage.setItem(IAM_STATE_KEY, st);
+      const cont = new URLSearchParams(location.search).get('sso_continue');
+      let ret = location.origin + '/login';
+      if (cont) ret += '?sso_continue=' + encodeURIComponent(cont);
+      location.href = IAM_BASE + '/api/sso/authorize?returnUrl=' + encodeURIComponent(ret) + '&state=' + encodeURIComponent(st);
+    }
+    async function iamHandleCallback() {
+      const params = new URLSearchParams(location.hash.replace(/^#/, ''));
+      const token = params.get('access_token');
+      const state = params.get('state');
+      const stored = sessionStorage.getItem(IAM_STATE_KEY);
+      sessionStorage.removeItem(IAM_STATE_KEY);          // one-time
+      history.replaceState(null, '', location.pathname + location.search);   // strip token from URL first
+      if (!token) { revealCard(); return; }
+      if (!state || state !== stored) { sessionStorage.setItem(IAM_SKIP_KEY, '1'); revealCard(); showErr('SSO ไม่สำเร็จ (state ไม่ตรง) — กด Single Sign-On เพื่อลองใหม่'); return; }
+      try {
+        const res = await fetch('/api/auth/iam-sso', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ access_token: token }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { sessionStorage.setItem(IAM_SKIP_KEY, '1'); revealCard(); showErr(data.detail || 'เข้าสู่ระบบด้วย SSO ไม่สำเร็จ'); return; }
+        addProfile({ token: data.token, role: data.role, label: data.label });
+        showOk('เข้าสู่ระบบสำเร็จ');
+        location.replace(_ssoDest('/admin'));
+      } catch (e) { sessionStorage.setItem(IAM_SKIP_KEY, '1'); revealCard(); showErr('เชื่อมต่อไม่สำเร็จ — กด Single Sign-On เพื่อลองใหม่'); }
+    }
+    $('ssoBtn').addEventListener('click', () => { sessionStorage.removeItem(IAM_SKIP_KEY); iamAuthorize(); });
+    // Boot decision: callback → handle · fresh + not local + not setup-admin → auto-redirect · else → show form
+    const _iamQS = new URLSearchParams(location.search);
+    const _forceLocal = _iamQS.has('local') || _iamQS.has('nosso');
+    if (location.hash.includes('access_token')) {
+      iamHandleCallback();
+    } else if (mode !== 'setup-admin' && !_forceLocal && !sessionStorage.getItem(IAM_SKIP_KEY)) {
+      iamAuthorize();   // page unloads
+    } else {
+      revealCard();
+    }
 
     // ============== Email/Username + password (unified) ==============
     $('emailForm').addEventListener('submit', async (e) => {
@@ -721,6 +771,10 @@
         $('wazLoginBtn').textContent = '🏢 Login ด้วย Wazzup';
       }
     });
+  </script>
+  <script>
+    // v1.9.393 — failsafe: ถ้า module script error/ไม่รัน ให้เผยการ์ด login (กันการ์ดถูกซ่อนถาวร)
+    setTimeout(function(){ var c=document.getElementById('login-card'); if(c && c.style.visibility==='hidden') c.style.visibility='visible'; }, 3000);
   </script>
 </body>
 </html>
