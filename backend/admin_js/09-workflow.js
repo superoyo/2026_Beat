@@ -504,24 +504,46 @@ let _absToken = '';
 let _absData = null;   // array ของ messages ที่โหลดแล้ว (ปี 2026)
 let _absYM = '';       // เดือนที่กำลังดู 'YYYY-MM'
 let _absSearch = '';   // v1.9.387 — ค้นหาชื่อผู้ลา
+let _absSnapMeta = null;   // v1.9.395 — {at, by, count, total} ของ snapshot ที่ดึงไว้ล่าสุด
 const _ABS_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+
+// v1.9.395 — ผู้ดูแล (super-admin / admin) ที่ตั้งค่าสิทธิ์เมนูได้
+function _absIsManager() {
+  return (typeof currentRole !== 'undefined' && currentRole === 'admin') ||
+         (typeof currentIsSuper !== 'undefined' && currentIsSuper);
+}
 
 function renderAbsence() {
   const root = $('absence-root'); if (!root) return;
   if (!_absToken) _absToken = sessionStorage.getItem('ms_graph_token') || '';
+  const mgr = _absIsManager();
   root.innerHTML = `
     <div class="card" style="display:block;margin-bottom:14px">
       <h3 style="margin:0 0 8px;font-size:15px;font-weight:700">🌴 สรุปการลา (ปี 2026)</h3>
+      <div id="abs-fetched" style="display:none;font-size:12.5px;background:var(--bg-soft);border:1px solid var(--border);border-radius:8px;padding:8px 11px;margin-bottom:11px;color:var(--text)"></div>
       <div style="font-size:12.5px;color:var(--text-muted);line-height:1.7;margin-bottom:12px">
         ดึงอีเมลแจ้งลาจาก <b>notify.tigersoft1998@gmail.com</b> ผ่าน Microsoft Graph<br>
         <b>วิธีเอา token:</b> เปิด <a href="https://developer.microsoft.com/en-us/graph/graph-explorer" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:600">Graph Explorer</a> → Sign in บัญชี Microsoft → คัดลอกจากแท็บ <b>"Access token"</b> มาวางด้านล่าง (token มีอายุ ~1 ชม.)
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <input id="abs-token" type="password" placeholder="วาง Microsoft Graph access token ที่นี่" value="${escapeHtml(_absToken)}" style="flex:1;min-width:240px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;font-size:12.5px;box-sizing:border-box" />
-        <button class="btn primary" id="abs-load" style="font-size:13px">โหลดข้อมูล</button>
+        <input id="abs-token" type="password" placeholder="วาง Microsoft Graph access token ที่นี่ (ดึงใหม่/อัปเดตล่าสุด)" value="${escapeHtml(_absToken)}" style="flex:1;min-width:240px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;font-size:12.5px;box-sizing:border-box" />
+        <button class="btn primary" id="abs-load" style="font-size:13px">🔄 ดึงข้อมูลใหม่</button>
       </div>
       <div id="abs-status" style="font-size:12px;color:var(--text-muted);margin-top:9px"></div>
     </div>
+    ${mgr ? `
+    <div class="card" style="display:block;margin-bottom:14px;border-left:3px solid var(--primary)">
+      <div style="font-size:13.5px;font-weight:700;margin-bottom:4px">🔐 สิทธิ์การเข้าถึงเมนูนี้ <span style="font-weight:500;color:var(--text-muted)">(เฉพาะผู้ดูแล)</span></div>
+      <div style="font-size:12px;color:var(--text-muted);line-height:1.65;margin-bottom:9px">
+        กำหนดว่า <b>role ใน IAM</b> ใดบ้างที่เห็นเมนู Absence ได้ (คั่นด้วย , ) — ผู้ดูแล (Admin) เห็นได้เสมอ · ถ้าเว้นว่าง = เฉพาะ Admin
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input id="abs-roles-input" type="text" placeholder="เช่น Beat Absence, HR Viewer" style="flex:1;min-width:220px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);font-family:inherit;font-size:12.5px;box-sizing:border-box" />
+        <button class="btn primary" id="abs-roles-save" style="font-size:13px">บันทึกสิทธิ์</button>
+      </div>
+      <div id="abs-roles-avail" style="font-size:11.5px;color:var(--text-soft);margin-top:9px;line-height:1.9"></div>
+      <div id="abs-roles-msg" style="font-size:12px;margin-top:6px"></div>
+    </div>` : ''}
     <div id="abs-search-row" style="display:${_absData ? 'flex' : 'none'};gap:8px;align-items:center;margin-bottom:12px">
       <div style="position:relative;flex:1;max-width:380px">
         <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:13px">🔍</span>
@@ -542,7 +564,93 @@ function renderAbsence() {
   });
   const clrBtn = $('abs-search-clear');
   if (clrBtn) clrBtn.addEventListener('click', () => { _absSearch = ''; renderAbsence(); });
-  if (_absData) _absRenderCal();
+  if (mgr) _absLoadAccessConfig();
+  // v1.9.395 — มีข้อมูลในเซสชันแล้ว → แสดงเลย · ไม่มี → โหลด snapshot ที่เคยดึงไว้ (ดูได้โดยไม่ต้องดึงใหม่)
+  if (_absData) {
+    if (_absSnapMeta) _absSetFetchedLabel(_absSnapMeta.at, _absSnapMeta.by, _absSnapMeta.count, _absSnapMeta.total);
+    _absRenderCal();
+  } else {
+    _absLoadSnapshot();
+  }
+}
+
+// v1.9.395 — แสดงป้าย "ดึงข้อมูลไว้ล่าสุด …"
+function _absSetFetchedLabel(iso, by, count, total) {
+  const el = $('abs-fetched'); if (!el) return;
+  if (!iso) { el.style.display = 'none'; return; }
+  let when = iso;
+  try { when = new Date(iso).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }); } catch (e) {}
+  el.style.display = '';
+  el.innerHTML = `🕒 ข้อมูลที่ดึงไว้ล่าสุด: <b>${escapeHtml(when)}</b>` +
+    (by ? ` · โดย ${escapeHtml(by)}` : '') +
+    (count != null ? ` · ${count} รายการ` : '') +
+    ` <span style="color:var(--text-soft)">— ดูได้เลยไม่ต้องดึงใหม่</span>`;
+}
+
+// v1.9.395 — โหลด snapshot ที่เก็บไว้ในเซิร์ฟเวอร์ (แสดงผลถ้าอยู่หน้า Absence)
+async function _absLoadSnapshot(render = true) {
+  try {
+    const r = await fetch('/api/absence/snapshot', { credentials: 'same-origin' });
+    if (!r.ok) return false;
+    const d = await r.json();
+    if (d && Array.isArray(d.messages)) {
+      _absData = d.messages;
+      _absData.forEach((m, i) => { m.__id = i; });
+      _absSnapMeta = { at: d.fetched_at, by: d.fetched_by, count: d.msg_count != null ? d.msg_count : _absData.length, total: d.total_fetched };
+      if (render && $('abs-body')) {
+        _absSetFetchedLabel(_absSnapMeta.at, _absSnapMeta.by, _absSnapMeta.count, _absSnapMeta.total);
+        const sr = $('abs-search-row'); if (sr) sr.style.display = 'flex';
+        const st = $('abs-status'); if (st && !_absData.length) st.textContent = 'ยังไม่มีข้อมูลที่เคยดึงไว้ — วาง token แล้วกดดึงข้อมูล';
+        _absRenderCal();
+      }
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+// v1.9.395 — โหลด/แสดงการตั้งค่าสิทธิ์ (เฉพาะผู้ดูแล)
+async function _absLoadAccessConfig() {
+  const inp = $('abs-roles-input'); if (!inp) return;
+  try {
+    const r = await fetch('/api/absence/access-config', { credentials: 'same-origin' });
+    if (!r.ok) return;
+    const d = await r.json();
+    inp.value = d.roles_text || '';
+    const av = $('abs-roles-avail');
+    if (av) {
+      if (d.available_roles && d.available_roles.length) {
+        av.innerHTML = 'role ที่พบในระบบ (คลิกเพื่อเพิ่ม): ' + d.available_roles.map(rn =>
+          `<span class="abs-role-chip" data-role="${escapeHtml(rn)}" style="cursor:pointer;display:inline-block;padding:2px 9px;margin:1px 2px;border:1px solid var(--border);border-radius:999px;background:var(--bg-card);color:var(--text)">${escapeHtml(rn)}</span>`).join(' ');
+        av.querySelectorAll('.abs-role-chip').forEach(c => c.addEventListener('click', () => {
+          const cur = (inp.value || '').split(',').map(s => s.trim()).filter(Boolean);
+          const nm = c.dataset.role;
+          if (!cur.some(x => x.toLowerCase() === nm.toLowerCase())) { cur.push(nm); inp.value = cur.join(', '); }
+        }));
+      } else {
+        av.innerHTML = 'ยังไม่พบ role จากผู้ใช้ที่ login ผ่าน SSO (role จะถูกบันทึกอัตโนมัติเมื่อมีคนเข้าด้วย Single Sign-On)';
+      }
+    }
+  } catch (e) {}
+  const saveBtn = $('abs-roles-save');
+  if (saveBtn) saveBtn.onclick = async () => {
+    const msg = $('abs-roles-msg');
+    msg.style.color = 'var(--text-muted)'; msg.textContent = 'กำลังบันทึก…';
+    saveBtn.disabled = true;
+    try {
+      const r = await fetch('/api/absence/access-config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin', body: JSON.stringify({ roles: inp.value || '' }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+      inp.value = d.roles_text || '';
+      msg.style.color = 'var(--green)';
+      msg.textContent = '✓ บันทึกแล้ว — ' + (d.roles.length ? ('เห็นเมนูได้: ' + d.roles.join(', ') + ' (และ Admin)') : 'เฉพาะ Admin เท่านั้น');
+    } catch (e) {
+      msg.style.color = 'var(--critical)'; msg.textContent = '❌ ' + (e.message || e);
+    } finally { saveBtn.disabled = false; }
+  };
 }
 
 async function _absLoad() {
@@ -561,6 +669,9 @@ async function _absLoad() {
     const sr = $('abs-search-row'); if (sr) sr.style.display = 'flex';   // v1.9.387
     st.style.color = 'var(--green)';
     st.textContent = `✓ พบ ${_absData.length} รายการ (ปี 2026) · ดึงจากกล่องเมลทั้งหมด ${data.total_fetched} ฉบับ`;
+    // v1.9.395 — เซิร์ฟเวอร์เก็บ snapshot ให้แล้ว → อัปเดตป้ายเวลา (เปิดครั้งหน้าดูได้เลย)
+    _absSnapMeta = { at: data.fetched_at || new Date().toISOString(), by: data.fetched_by, count: _absData.length, total: data.total_fetched };
+    _absSetFetchedLabel(_absSnapMeta.at, _absSnapMeta.by, _absSnapMeta.count, _absSnapMeta.total);
     _absRenderCal();
   } catch (e) {
     st.style.color = 'var(--critical)';
@@ -663,12 +774,16 @@ function _absEntriesForEmpSet(empSet) {
   return entries;
 }
 // v1.9.388 — ปฏิทินการลาของทีม (ใต้การ์ดสมาชิกในแท็บ Team)
-function _teamLeaveRenderInto(box, empIds) {
+async function _teamLeaveRenderInto(box, empIds) {
   if (!box) return;
   box.innerHTML = `<div style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">🌴 ปฏิทินการลาของทีม</div><div id="m-team-leave-body"></div>`;
   const body = box.querySelector('#m-team-leave-body');
+  // v1.9.395 — โหลด snapshot ที่เก็บไว้ ถ้าเซสชันยังไม่มีข้อมูล (แสดงได้เลยไม่ต้องเปิด Absence ก่อน)
+  if ((typeof _absData === 'undefined' || !_absData || !_absData.length) && typeof _absLoadSnapshot === 'function') {
+    await _absLoadSnapshot(false);
+  }
   if (typeof _absData === 'undefined' || !_absData || !_absData.length) {
-    box.style.display = 'none'; return;   // ยังไม่โหลด Absence → ไม่แสดงส่วนนี้
+    box.style.display = 'none'; return;   // ยังไม่มีข้อมูลการลา → ไม่แสดงส่วนนี้
   }
   box.style.display = '';
   if (!empIds || !empIds.size) { body.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">— ยังไม่ได้ตั้งรหัสพนักงาน (HR) ให้สมาชิกทีมนี้ (ตั้งได้ในโปรไฟล์แต่ละคน) —</div>'; return; }
@@ -853,7 +968,7 @@ async function renderMemberAccountPage() {
           <button type="button" class="acc-menu-item" data-acc-tab="privacy"><span class="acc-menu-ico">🔒</span> Privacy</button>
           <button type="button" class="acc-menu-item" data-acc-tab="team" id="acc-tab-team" style="display:none"><span class="acc-menu-ico">👨‍👩‍👧</span> Team</button>
           <button type="button" class="acc-menu-item" data-acc-tab="myworkflow"><span class="acc-menu-ico">🔀</span> My Workflow</button>
-          <button type="button" class="acc-menu-item" data-acc-tab="absence"><span class="acc-menu-ico">🌴</span> Absence</button>
+          <button type="button" class="acc-menu-item" data-acc-tab="absence" id="acc-tab-absence" style="display:none"><span class="acc-menu-ico">🌴</span> Absence</button>
         </div>
 
         <!-- รายละเอียดขวา -->
@@ -1359,6 +1474,9 @@ async function renderMemberAccountPage() {
     // v1.9.127 — แสดง tab Team ถ้า member ดูแลทีม ≥1
     const teamTab = $('acc-tab-team');
     if (teamTab) teamTab.style.display = (member.supervised_count || 0) > 0 ? '' : 'none';
+    // v1.9.395 — เมนู Absence: เห็นได้เมื่อเป็น admin หรือมี role ใน IAM ที่กำหนดไว้
+    const absTab = $('acc-tab-absence');
+    if (absTab) absTab.style.display = member.can_absence ? '' : 'none';
     // v1.9.88/95 — login methods cards (เหมือน Meta) + Add Account button
     renderMyLoginCards();
     // v1.9.147 — privacy toggles

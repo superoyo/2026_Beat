@@ -1030,12 +1030,17 @@ function renderSupPanel(body, data, memberId) {
   }
 }
 // v1.9.385 — แท็บประวัติการลาใน slide-out: ดึงจาก _absData (โหลดที่ Absence) จับคู่ด้วย hr_employee_id
-function loadSupLeave(body, profile) {
+async function loadSupLeave(body, profile) {
   const box = body.querySelector('[data-sup-pane-body="leave"]');
   if (!box) return;
   const empId = profile.hr_employee_id;
+  // v1.9.395 — ถ้าเซสชันยังไม่มีข้อมูล ลองโหลด snapshot ที่เก็บไว้ในเซิร์ฟเวอร์ (ดูได้เลยไม่ต้องดึงใหม่)
+  if ((typeof _absData === 'undefined' || !_absData || !_absData.length) && typeof _absLoadSnapshot === 'function') {
+    box.innerHTML = '<div class="empty" style="padding:20px;color:var(--text-muted);font-size:12.5px">⏳ กำลังโหลดข้อมูลการลาที่เก็บไว้…</div>';
+    await _absLoadSnapshot(false);
+  }
   if (typeof _absData === 'undefined' || !_absData || !_absData.length) {
-    box.innerHTML = '<div class="empty" style="padding:20px;color:var(--text-muted);font-size:12.5px">⚠️ ยังไม่มีข้อมูลการลาในเซสชันนี้ — ไปที่ <strong>My Profile → Absence</strong> แล้วกด “โหลดข้อมูล” ก่อน</div>';
+    box.innerHTML = '<div class="empty" style="padding:20px;color:var(--text-muted);font-size:12.5px">⚠️ ยังไม่มีข้อมูลการลาที่เก็บไว้ — ไปที่ <strong>My Profile → Absence</strong> แล้วกด “ดึงข้อมูลใหม่” ก่อน</div>';
     return;
   }
   if (!empId) {

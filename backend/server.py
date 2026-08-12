@@ -94,6 +94,8 @@ EXTENSION_DIR = BASE_DIR.parent / "extension"   # อยู่นอก backend/
 DEFAULT_CONFIG: dict[str, str] = {
     "monthly_quota": "10000",
     "billing_cycle_day": "1",
+    # v1.9.395 — role ใน IAM ที่เห็นเมนู Absence ได้ (คั่นด้วย ,) — ว่าง = เฉพาะ Admin
+    "absence_iam_roles": "",
 }
 
 # Public deployment? เมื่อ True → CORS เปิดกว้างขึ้น + cookie secure
@@ -152,6 +154,16 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS config (
                 key   TEXT PRIMARY KEY,
                 value TEXT NOT NULL
+            );
+
+            -- v1.9.395 — snapshot ข้อมูลวันลาที่ดึงล่าสุด (แถวเดียว id=1) เพื่อดูซ้ำได้โดยไม่ต้องดึงใหม่
+            CREATE TABLE IF NOT EXISTS absence_snapshot (
+                id            INTEGER PRIMARY KEY CHECK (id = 1),
+                data          TEXT NOT NULL,
+                msg_count     INTEGER NOT NULL DEFAULT 0,
+                total_fetched INTEGER NOT NULL DEFAULT 0,
+                fetched_by    TEXT,
+                fetched_at    TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS admin_users (
@@ -751,6 +763,8 @@ def init_db() -> None:
             # v1.9.385 — ข้อมูลตามระบบ HR (admin แก้ไขได้) — hr_employee_id ใช้จับคู่ประวัติการลา (Absence)
             ("hr_name",                "TEXT"),
             ("hr_employee_id",         "TEXT"),
+            # v1.9.395 — role จาก IAM (บันทึกตอน login SSO, JSON array) — ใช้กำหนดสิทธิ์เห็นเมนู (เช่น Absence)
+            ("iam_roles",              "TEXT"),
         ]:
             if col_name not in member_cols:
                 conn.execute(f"ALTER TABLE members ADD COLUMN {col_name} {col_def}")
@@ -5335,6 +5349,8 @@ def auth_iam_sso(payload: IamSsoIn, response: Response) -> dict[str, Any]:
     email = (prof.get("email") or prof.get("aspNetUsersEmail") or "").strip().lower()
     emp_code = (prof.get("empCode") or "").strip() or None
     display_name = (prof.get("nickName") or prof.get("empThaiName") or prof.get("empEngName") or "").strip() or None
+    iam_roles = _iam_role_names(data)  # v1.9.395 — เก็บ role จาก IAM ไว้กำหนดสิทธิ์เมนู
+    iam_roles_json = _json.dumps(iam_roles, ensure_ascii=False)
     now = utc_now().isoformat()
     with db_conn() as conn:
         row = None
@@ -5354,12 +5370,14 @@ def auth_iam_sso(payload: IamSsoIn, response: Response) -> dict[str, Any]:
             raise HTTPException(status_code=403, detail="บัญชีนี้ถูกระงับการใช้งาน")
         conn.execute(
             "UPDATE members SET last_login_at=?, display_name=COALESCE(display_name,?), "
-            "wazzup_emp_code=COALESCE(wazzup_emp_code,?), hr_employee_id=COALESCE(hr_employee_id,?) WHERE id=?",
-            (now, display_name, emp_code, emp_code, row["id"]))
+            "wazzup_emp_code=COALESCE(wazzup_emp_code,?), hr_employee_id=COALESCE(hr_employee_id,?), "
+            "iam_roles=? WHERE id=?",
+            (now, display_name, emp_code, emp_code, iam_roles_json, row["id"]))
         member_id = row["id"]
         phone = row["phone"]
     tok = _set_member_cookie(response, member_id, phone)
     return {"ok": True, "role": "member", "member_id": member_id, "token": tok,
+            "roles": iam_roles,
             "label": display_name or email or ("member " + str(member_id))}
 
 
@@ -8883,7 +8901,7 @@ def member_me(
     with db_conn() as conn:
         row = conn.execute(
             "SELECT id, phone, email, display_name, pw_hash, is_admin, avatar_data, "
-            "       shirt_size, birthdate, wazzup_profile_url, "
+            "       shirt_size, birthdate, wazzup_profile_url, iam_roles, "
             "       share_birthdate, share_shirt_size, share_phone, created_at, last_login_at "
             "FROM members WHERE id = ?",
             (sess["member_id"],),
@@ -8891,6 +8909,12 @@ def member_me(
         if not row:
             return {"logged_in": False}
         member_profile = _member_row_to_profile(row)
+        # v1.9.395 — role จาก IAM + สิทธิ์เห็นเมนู Absence (admin เห็นเสมอ)
+        my_roles = _parse_role_list(row["iam_roles"])
+        req_ci = {r.lower() for r in _absence_required_roles()}
+        member_profile["iam_roles"] = my_roles
+        member_profile["can_absence"] = bool(member_profile.get("is_admin")) or any(
+            r.lower() in req_ci for r in my_roles)
         # v1.9.88 — แนบ login_methods + aliases เพื่อแสดง chips ใน 'บัญชีของฉัน'
         member_profile.update(_fetch_member_login_meta(conn, row["id"]))
         # v1.9.126 — จำนวนทีมที่ supervise (ใช้แสดง/ซ่อนเมนู Supervise)
@@ -11077,8 +11101,86 @@ def cc_analytics_transactions(_sess: dict = Depends(_require_module("platform"))
 _ABSENCE_SENDER = "notify.tigersoft1998@gmail.com"
 
 
+# ---- v1.9.395 — Absence: สิทธิ์เข้าถึง (ผ่าน role ใน IAM) + snapshot ข้อมูลที่ดึงล่าสุด ----
+def _iam_role_names(data: dict) -> list[str]:
+    """ดึงชื่อ role จาก IAM profile response — userRole อาจเป็น list[str] หรือ list[dict]"""
+    raw = data.get("userRole")
+    if raw is None:
+        raw = data.get("userRoles") or data.get("roles") or []
+    if isinstance(raw, str):
+        raw = [raw]
+    out: list[str] = []
+    if isinstance(raw, list):
+        for it in raw:
+            if isinstance(it, str):
+                nm = it.strip()
+            elif isinstance(it, dict):
+                nm = str(it.get("roleName") or it.get("name") or it.get("role")
+                         or it.get("displayName") or it.get("value") or "").strip()
+            else:
+                nm = str(it).strip()
+            if nm:
+                out.append(nm)
+    seen, uniq = set(), []
+    for r in out:
+        k = r.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        uniq.append(r)
+    return uniq
+
+
+def _parse_role_list(val: Any) -> list[str]:
+    """แปลงค่าที่เก็บใน members.iam_roles (JSON array หรือ comma) → list[str]"""
+    if not val:
+        return []
+    try:
+        arr = _json.loads(val)
+        if isinstance(arr, list):
+            return [str(x).strip() for x in arr if str(x).strip()]
+    except Exception:
+        pass
+    return [p.strip() for p in str(val).split(",") if p.strip()]
+
+
+def _absence_required_roles() -> list[str]:
+    return [p.strip() for p in (get_config().get("absence_iam_roles") or "").split(",") if p.strip()]
+
+
+def _absence_access(conn: sqlite3.Connection, sess: dict) -> dict[str, Any]:
+    """สิทธิ์เห็นเมนู Absence: super-admin/admin เห็นเสมอ · member เห็นได้ถ้ามี role ตรงกับที่กำหนดใน IAM"""
+    required = _absence_required_roles()
+    req_ci = {r.lower() for r in required}
+    mid = sess.get("member_id")
+    if not mid:  # super-admin (admin_users) — ไม่มี member_id
+        return {"allowed": True, "is_admin": True, "is_super": True, "roles": [], "required": required}
+    row = conn.execute("SELECT is_admin, iam_roles FROM members WHERE id = ?", (mid,)).fetchone()
+    is_admin = bool(row["is_admin"]) if row else False
+    roles = _parse_role_list(row["iam_roles"]) if row else []
+    matched = any(r.lower() in req_ci for r in roles)
+    return {"allowed": bool(is_admin) or matched, "is_admin": is_admin,
+            "is_super": False, "roles": roles, "required": required}
+
+
+def _save_absence_snapshot(conn: sqlite3.Connection, msgs: list, total_fetched: int,
+                           who: str, fetched_at: str) -> None:
+    conn.execute(
+        "INSERT INTO absence_snapshot(id, data, msg_count, total_fetched, fetched_by, fetched_at) "
+        "VALUES(1, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(id) DO UPDATE SET data=excluded.data, msg_count=excluded.msg_count, "
+        "total_fetched=excluded.total_fetched, fetched_by=excluded.fetched_by, "
+        "fetched_at=excluded.fetched_at",
+        (_json.dumps(msgs, ensure_ascii=False), len(msgs), int(total_fetched or 0), who, fetched_at),
+    )
+
+
 @app.get("/api/absence/messages")
 def absence_messages(request: Request, _sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    # v1.9.395 — บังคับสิทธิ์เข้าถึงเมนู Absence (กำหนดผ่าน role ใน IAM)
+    with db_conn() as conn:
+        if not _absence_access(conn, _sess)["allowed"]:
+            raise HTTPException(status_code=403, detail="คุณไม่มีสิทธิ์เข้าถึงเมนู Absence — ติดต่อผู้ดูแลเพื่อขอสิทธิ์ (กำหนดผ่าน role ใน IAM)")
     auth = request.headers.get("Authorization", "")
     if not auth.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="ต้องมี Microsoft Graph access token (Bearer) — วาง token จาก Graph Explorer")
@@ -11138,7 +11240,77 @@ def absence_messages(request: Request, _sess: dict = Depends(require_admin_or_me
                 "from": frm.get("address") or "",
             })
     msgs.sort(key=lambda x: x["receivedDateTime"])
-    return {"messages": msgs, "total_fetched": len(out), "sender": _ABSENCE_SENDER}
+    # v1.9.395 — เก็บ snapshot ไว้ให้เปิดดูซ้ำได้โดยไม่ต้องดึงใหม่ + บันทึกว่าใคร/เมื่อไหร่
+    fetched_at = utc_now().isoformat()
+    who = "ผู้ดูแลระบบ"
+    try:
+        with db_conn() as conn:
+            mid = _sess.get("member_id")
+            if mid:
+                r = conn.execute(
+                    "SELECT display_name, email, phone FROM members WHERE id = ?", (mid,)
+                ).fetchone()
+                if r:
+                    who = r["display_name"] or r["email"] or r["phone"] or ("member " + str(mid))
+            _save_absence_snapshot(conn, msgs, len(out), who, fetched_at)
+    except Exception:
+        pass  # ดึงข้อมูลสำเร็จแล้ว — เก็บ snapshot ล้มเหลวไม่ควรทำให้ทั้ง request พัง
+    return {"messages": msgs, "total_fetched": len(out), "sender": _ABSENCE_SENDER,
+            "fetched_at": fetched_at, "fetched_by": who}
+
+
+# v1.9.395 — Absence: โหลด snapshot ที่ดึงไว้ล่าสุด (ดูได้เลยไม่ต้องมี token)
+@app.get("/api/absence/snapshot")
+def absence_snapshot(_sess: dict = Depends(require_admin_or_member)) -> dict[str, Any]:
+    with db_conn() as conn:
+        if not _absence_access(conn, _sess)["allowed"]:
+            raise HTTPException(status_code=403, detail="คุณไม่มีสิทธิ์เข้าถึงเมนู Absence")
+        row = conn.execute(
+            "SELECT data, msg_count, total_fetched, fetched_by, fetched_at "
+            "FROM absence_snapshot WHERE id = 1"
+        ).fetchone()
+    if not row:
+        return {"messages": None, "fetched_at": None}
+    try:
+        msgs = _json.loads(row["data"])
+    except Exception:
+        msgs = []
+    return {"messages": msgs, "msg_count": row["msg_count"], "total_fetched": row["total_fetched"],
+            "fetched_by": row["fetched_by"], "fetched_at": row["fetched_at"], "sender": _ABSENCE_SENDER}
+
+
+# v1.9.395 — Absence: อ่าน/ตั้งค่า role ใน IAM ที่เห็นเมนูนี้ได้ (เฉพาะ admin)
+class AbsenceAccessCfgIn(BaseModel):
+    roles: str = Field("", max_length=1000)
+
+
+@app.get("/api/absence/access-config")
+def absence_access_config_get(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    required = _absence_required_roles()
+    seen: dict[str, str] = {}
+    with db_conn() as conn:
+        for r in conn.execute(
+            "SELECT iam_roles FROM members WHERE iam_roles IS NOT NULL AND iam_roles != ''"
+        ).fetchall():
+            for nm in _parse_role_list(r["iam_roles"]):
+                seen[nm.lower()] = nm
+    return {"roles": required, "roles_text": ", ".join(required),
+            "available_roles": sorted(seen.values(), key=lambda s: s.lower())}
+
+
+@app.post("/api/absence/access-config")
+def absence_access_config_set(payload: AbsenceAccessCfgIn,
+                              _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    parts = [p.strip() for p in (payload.roles or "").replace("\n", ",").split(",") if p.strip()]
+    seen, uniq = set(), []
+    for r in parts:
+        k = r.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        uniq.append(r)
+    set_config({"absence_iam_roles": ", ".join(uniq)})
+    return {"ok": True, "roles": uniq, "roles_text": ", ".join(uniq)}
 
 
 # v1.9.352 — ค้นหารายการในบัตรทุกใบ (description + user_note) — ใช้ใน popup search
