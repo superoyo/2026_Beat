@@ -754,6 +754,7 @@ async function renderCreditCard(){
       <button class="btn cc-nav" data-cc-view="pool">📥 อัพโหลดใบเสร็จ</button>
       <button class="btn cc-nav" data-cc-view="summary">📊 Summary</button>
       <button class="btn cc-nav" data-cc-view="analytics">📈 Analytics</button>
+      <button class="btn cc-nav" data-cc-view="calendar">🗓 ปฏิทิน</button>
       <button class="btn" id="cc-global-search" title="ค้นหารายการในบัตรทุกใบ" style="margin-left:auto;font-size:13px">🔍 Search</button>
       <button class="btn primary" id="cc-new-bill-top" style="font-size:13px">＋ สร้างใบแจ้งหนี้บัตรเครดิต</button>
     </div>
@@ -773,6 +774,7 @@ function _ccRender(){
   if(_ccState.view==='pool') return _ccRenderPool(v);
   if(_ccState.view==='summary') return _ccRenderSummary(v);
   if(_ccState.view==='analytics') return _ccRenderAnalytics(v);
+  if(_ccState.view==='calendar') return _ccRenderCalendarView(v);   // v1.9.396 — ปฏิทินเป็นเมนูระดับบน
   return _ccRenderBills(v);
 }
 
@@ -1140,6 +1142,44 @@ function _ccUploadInvoice(defaultBillId, preFiles){
   },0);
 }
 
+// v1.9.396 — อัพโหลด invoice ตรง ๆ ไม่มี popup: อ่านไฟล์ → auto-detect (ค่า default) → POST ทันที
+async function _ccUploadInvoiceDirect(billId, files, statusEl){
+  files=Array.from(files||[]).filter(f=>/pdf|image\//.test(f.type)||/\.(pdf|png|jpe?g|gif|webp|bmp)$/i.test(f.name));
+  if(!files.length) return;
+  const setSt=(t,color)=>{ if(statusEl){ statusEl.textContent=t; if(color) statusEl.style.color=color; } };
+  let ok=0, fail=0;
+  for(let i=0;i<files.length;i++){
+    const f=files[i];
+    if(f.size>12*1024*1024){ setSt(`⚠️ ข้าม ${f.name} (เกิน 12MB)`, 'var(--critical)'); fail++; continue; }
+    setSt(`⬆️ กำลังอัพโหลด ${i+1}/${files.length}: ${f.name}…`, 'var(--primary)');
+    let fileData=null, text='';
+    try{ fileData=await _ccFileToDataUrl(f); }catch(e){ fail++; continue; }
+    // อ่านข้อความเพื่อ auto-fill ค่า default (บริษัท/ยอด/เดือน-ปี) — อ่านไม่ได้ก็อัพต่อได้
+    try{
+      if((f.type||'').includes('pdf')||/\.pdf$/i.test(f.name)){ text=await _ccPdfToText(await f.arrayBuffer()); }
+      else { text=await ocrImage(fileData,'eng'); }
+    }catch(e){ text=''; }
+    const p=_ccParseInvoice(text||'')||{};
+    const body={ bill_id: billId||null, uploaded_by_id:null,
+      company:p.company||null, description:null, job_number:null, product_name:null, am_name:null, note:null,
+      expense_category:null, kind:p.kind||'invoice',
+      inv_month:p.month||null, inv_day:null, inv_year:p.year||null, amount:p.amount||null,
+      file_data:fileData, file_name:f.name, file_mime:f.type||'application/octet-stream' };
+    try{ await fetchJson('/api/creditcard/invoices',{method:'POST',body:JSON.stringify(body)}); ok++; }
+    catch(e){ fail++; }
+  }
+  const doneMsg=`✓ อัพโหลดแล้ว ${ok} ใบ${fail?` · ข้าม ${fail}`:''}`;
+  setSt(doneMsg, ok?'var(--green)':'var(--critical)');
+  await _ccLoadBills();
+  if(_ccState.billId){
+    await _ccRenderDetail($('cc-view'));
+    const fresh=document.getElementById('cc-inv-status-quick');   // element ใหม่หลัง re-render
+    if(fresh){ fresh.textContent=doneMsg; fresh.style.color=ok?'var(--green)':'var(--critical)'; }
+  }
+  else if(_ccState.view==='pool') _ccRenderPool($('cc-view'));
+  else _ccRender();
+}
+
 // ---- bill detail (left=transactions, right=invoices, drag-drop / click-to-match) ----
 async function _ccRenderDetail(v){
   v.innerHTML='<div class="empty">กำลังโหลด…</div>';
@@ -1197,14 +1237,16 @@ async function _ccRenderDetail(v){
         </div>
         <div id="cc-txn-col"></div>
       </div>
-      <!-- v1.9.361 — คอลัมน์ขวา sticky สูงพอดีจอ · list เลื่อน scroll ภายใน · drop zone อยู่ล่างเสมอ -->
+      <!-- v1.9.396 — คอลัมน์ขวา: กล่องอัพโหลดอยู่บนสุด (คลิก/ลากไฟล์ = อัพเลยไม่ถาม) · list เลื่อน scroll ภายใน · โชว์ 3 ใบล่าสุด -->
       <div style="position:sticky;top:8px;display:flex;flex-direction:column;max-height:calc(100vh - 120px)">
         <div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px;flex-shrink:0">Invoice / Receipt — ยังไม่จับคู่ (${d.invoices.filter(i=>!matchedInvIds.has(i.id)).length}/${d.invoices.length})</div>
-        <div id="cc-inv-col" style="flex:1;min-height:0;overflow-y:auto;padding-right:2px"></div>
-        <!-- v1.9.347 — กล่องเส้นประ: คลิกหรือลากไฟล์มาวางเพื่ออัพโหลด invoice เข้าบิลนี้ -->
-        <div id="cc-inv-drop" style="border:2px dashed var(--border);border-radius:12px;padding:14px;text-align:center;color:var(--text-muted);font-size:12px;margin-top:10px;transition:border-color .12s,background .12s;cursor:pointer;line-height:1.6;flex-shrink:0">
-          <b>＋ เพิ่ม Invoice / Receipt</b><br><span style="font-size:11px">คลิก หรือลากไฟล์ (PDF / รูป) มาวางที่นี่</span>
+        <!-- v1.9.396 — กล่องเส้นประ: คลิกหรือลากไฟล์ → อัพโหลดทันที (ค่า default, ไม่มี popup) -->
+        <div id="cc-inv-drop" style="border:2px dashed var(--border);border-radius:12px;padding:14px;text-align:center;color:var(--text-muted);font-size:12px;margin-bottom:10px;transition:border-color .12s,background .12s;cursor:pointer;line-height:1.6;flex-shrink:0">
+          <b>⬆️ อัพโหลด Invoice / Receipt</b><br><span style="font-size:11px">คลิก หรือลากไฟล์ (PDF / รูป) มาวาง — อัพโหลดทันที ไม่ถาม</span>
+          <input id="cc-inv-file-quick" type="file" accept="application/pdf,image/*" multiple style="display:none" />
         </div>
+        <div id="cc-inv-status-quick" style="font-size:11.5px;color:var(--primary);margin-bottom:8px;flex-shrink:0;min-height:0"></div>
+        <div id="cc-inv-col" style="flex:1;min-height:0;overflow-y:auto;padding-right:2px"></div>
       </div>
     </div>`;
   // v1.9.314 — รายการในบัตรกดเพื่อ edit description (user_note) ได้ inline
@@ -1267,18 +1309,28 @@ async function _ccRenderDetail(v){
   // v1.9.346 — คอลัมน์ขวาแสดงเฉพาะ invoice ที่ยังไม่จับคู่ (จับคู่แล้วเห็นเป็น chip บนรายการซ้าย + ถอดได้จาก ✕)
   const unmatchedInv=d.invoices.filter(i=>!matchedInvIds.has(i.id));
   const matchedCount=d.invoices.length-unmatchedInv.length;
+  // v1.9.396 — รวม (ยังไม่จับคู่ในบิลนี้ + ใบลอย) แล้วโชว์เฉพาะ 3 ใบล่าสุด (id มาก = ใหม่สุด)
+  const _rightAll=[...unmatchedInv.map(i=>({i,pool:false})),...poolInv.map(i=>({i,pool:true}))]
+    .sort((a,b)=>(b.i.id||0)-(a.i.id||0));
+  const _rightShown=_rightAll.slice(0,3);
+  const _rightHidden=_rightAll.length-_rightShown.length;
   $('cc-inv-col').innerHTML=(
-    unmatchedInv.map(i=>_ccInvCardHtml(i, false, false)).join('')
-    + (poolInv.length?`<div style="font-size:11px;color:#92400e;margin:10px 0 6px;font-weight:700">ลอย (ยังไม่ผูกบิล) — ลากมาจับคู่เพื่อผูกเข้าบิลนี้</div>`+poolInv.map(i=>_ccInvCardHtml(i,false,true)).join(''):'')
-  )||(matchedCount>0
-    ?`<div class="empty" style="font-size:12px;text-align:center;padding:20px 10px">🎉 จับคู่ครบทุกใบแล้ว<br><span style="font-size:11px;color:var(--text-soft)">invoice ที่จับคู่แล้ว (${matchedCount}) อยู่บนรายการฝั่งซ้าย — กด ✕ เพื่อถอด</span></div>`
-    :'<div class="empty" style="font-size:12px">ยังไม่มี invoice — กด “เพิ่ม invoice”</div>');
+    _rightShown.length
+      ? _rightShown.map(x=>_ccInvCardHtml(x.i,false,x.pool)).join('')
+        + (_rightHidden>0?`<div style="font-size:11px;color:var(--text-soft);text-align:center;padding:8px 6px">แสดง 3 ใบล่าสุด · ซ่อนอีก ${_rightHidden} ใบ — ดูทั้งหมดที่หน้า <b>อัพโหลดใบเสร็จ</b></div>`:'')
+      : (matchedCount>0
+          ? `<div class="empty" style="font-size:12px;text-align:center;padding:20px 10px">🎉 จับคู่ครบทุกใบแล้ว<br><span style="font-size:11px;color:var(--text-soft)">invoice ที่จับคู่แล้ว (${matchedCount}) อยู่บนรายการฝั่งซ้าย — กด ✕ เพื่อถอด</span></div>`
+          : '<div class="empty" style="font-size:12px">ยังไม่มี invoice — ลากไฟล์มาที่กล่องด้านบน</div>')
+  );
   $('cc-back').onclick=()=>{ _ccState.billId=null; _ccState.selInvoice=null; _ccRender(); };
   $('cc-edit-bill').onclick=()=>_ccEditBill(d);
-  // v1.9.347 — drop zone ท้ายคอลัมน์ invoice: คลิกเลือกไฟล์ หรือลากมาวาง → อัพเข้าบิลนี้
+  // v1.9.396 — drop zone บนคอลัมน์ invoice: คลิก/ลากไฟล์ → อัพโหลดทันที (ค่า default, ไม่มี popup)
   const _invDz=$('cc-inv-drop');
+  const _quickInp=$('cc-inv-file-quick');
+  const _quickSt=$('cc-inv-status-quick');
   if(_invDz){
-    _invDz.onclick=()=>_ccUploadInvoice(_ccState.billId);
+    _invDz.onclick=()=>{ if(_quickInp) _quickInp.click(); };
+    if(_quickInp) _quickInp.onchange=()=>{ if(_quickInp.files&&_quickInp.files.length){ _ccUploadInvoiceDirect(_ccState.billId,_quickInp.files,_quickSt); _quickInp.value=''; } };
     const _on=()=>{ _invDz.style.borderColor='var(--primary)'; _invDz.style.background='rgba(37,99,235,.06)'; };
     const _off=()=>{ _invDz.style.borderColor='var(--border)'; _invDz.style.background='transparent'; };
     _invDz.addEventListener('dragover',e=>{ e.preventDefault(); _on(); });
@@ -1286,7 +1338,7 @@ async function _ccRenderDetail(v){
     _invDz.addEventListener('drop',e=>{
       e.preventDefault(); _off();
       const fs=e.dataTransfer&&e.dataTransfer.files;
-      if(fs&&fs.length) _ccUploadInvoice(_ccState.billId,fs);   // ไฟล์จากเครื่อง — ไม่ชนกับการลาก invoice ภายใน (ไม่มี files)
+      if(fs&&fs.length) _ccUploadInvoiceDirect(_ccState.billId,fs,_quickSt);   // ไฟล์จากเครื่อง — อัพเลย ไม่ถาม
     });
   }
   $('cc-del-bill').onclick=async ()=>{ if(!confirm('ลบบิลนี้ทั้งหมด? (รายการ/invoice/การจับคู่จะถูกลบด้วย)'))return; await fetchJson('/api/creditcard/bills/'+_ccState.billId,{method:'DELETE'}); _ccState.billId=null; await _ccLoadBills(); _ccRender(); };
@@ -1761,14 +1813,10 @@ async function _ccRenderAnalytics(v){
   const all=_ccAnalytics.data;
   // platform ของแต่ละรายการ (detect จาก description)
   const platOf=(t)=>_ccDetectPlatform(t.description||'')||'อื่น ๆ';
-  // v1.9.372 — เมนูย่อย: ภาพรวม (กราฟ) / ปฏิทิน
-  const sub=_ccAnalytics.sub||'overview';
-  const subTab=(k,label)=>{ const a=sub===k; return `<button type="button" class="cc-an-sub" data-sub="${k}" style="padding:8px 16px;border-radius:9px;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;border:1px solid ${a?'var(--primary)':'var(--border)'};background:${a?'var(--primary)':'var(--bg-card)'};color:${a?'#fff':'var(--text)'}">${label}</button>`; };
-  v.innerHTML=`<div style="display:flex;gap:8px;margin-bottom:16px">${subTab('overview','📈 ภาพรวม')}${subTab('calendar','🗓 ปฏิทิน')}</div><div id="cc-an-body"></div>`;
-  v.querySelectorAll('.cc-an-sub').forEach(b=>b.addEventListener('click',()=>{ _ccAnalytics.sub=b.dataset.sub; _ccRenderAnalytics(v); }));
+  // v1.9.396 — ปฏิทินย้ายไปเป็นเมนูระดับบนแล้ว → Analytics = ภาพรวม (กราฟ) อย่างเดียว
+  v.innerHTML=`<div id="cc-an-body"></div>`;
   const body=$('cc-an-body');
-  if(sub==='calendar'){ _ccRenderCalendar(body,all,platOf); return; }
-  // ---- ภาพรวม (เดิม) ----
+  // ---- ภาพรวม ----
   const years=[...new Set(all.map(t=>t.bill_year).filter(Boolean))].sort((a,b)=>b-a);
   const cards=[...new Set(all.map(t=>t.card_number).filter(Boolean))].sort();
   const plats=[...new Set(all.map(platOf))].sort((a,b)=>a==='อื่น ๆ'?1:b==='อื่น ๆ'?-1:a.localeCompare(b));
@@ -1855,7 +1903,20 @@ function _paintAnalytics(all,platOf){
   }
 }
 
-// ---- v1.9.372 — Analytics > ปฏิทิน: รายการจ่ายบัตรทุกใบ วางลงปฏิทินรายเดือน + เลือกเอา/ไม่เอารายการ ----
+// ---- v1.9.396 — ปฏิทิน (เมนูระดับบน): โหลดรายการจ่ายทุกใบแล้ววาดปฏิทิน ----
+async function _ccRenderCalendarView(v){
+  v.innerHTML='<div class="empty">กำลังโหลด…</div>';
+  if(!_ccAnalytics.data){
+    try{ _ccAnalytics.data=(await fetchJson('/api/creditcard/analytics-transactions')).transactions||[]; }
+    catch(e){ v.innerHTML=`<div class="empty">โหลดไม่สำเร็จ: ${escapeHtml(e.message)}</div>`; return; }
+  }
+  const all=_ccAnalytics.data;
+  const platOf=(t)=>_ccDetectPlatform(t.description||'')||'อื่น ๆ';
+  v.innerHTML=`<div id="cc-cal-body"></div>`;
+  _ccRenderCalendar($('cc-cal-body'),all,platOf);
+}
+
+// ---- v1.9.372 — ปฏิทิน: รายการจ่ายบัตรทุกใบ วางลงปฏิทินรายเดือน + เลือกเอา/ไม่เอารายการ ----
 let _ccCal={ ym:'', exPlats:null };   // ym='YYYY-MM', exPlats=Set(ชื่อที่กดออก/ไม่เอา)
 function _ccParseDay(s){ const m=(s||'').match(/^\s*0*(\d{1,2})/); if(!m) return null; const d=+m[1]; return (d>=1&&d<=31)?d:null; }
 function _ccRenderCalendar(body,all,platOf){
@@ -1887,8 +1948,8 @@ function _ccRenderCalendar(body,all,platOf){
   list.forEach(t=>{ const d=_ccParseDay(t.txn_date); if(d&&d<=daysIn){ if(!byDay.has(d)) byDay.set(d,[]); byDay.get(d).push(t); } else noDay.push(t); });
   const incl=list;   // v1.9.377 — ยอดรวม = รายการที่ผ่าน filter ชื่อ (เอา/ไม่เอา ทำที่ chip ด้านบน)
   const inclTotal=incl.reduce((s,t)=>s+(t.amount||0),0);
-  // คลิกรายการ → เปิด search สไลด์ด้านข้าง (query = 2 คำแรกของชื่อรายการ)
-  const _calQ=(t)=>(t.description||'').replace(/[^A-Za-z0-9ก-๙. ]+/g,' ').trim().split(/\s+/).slice(0,2).join(' ');
+  // v1.9.396 — คลิกรายการ → เปิด search สไลด์ด้านข้าง (query = คำแรก จนถึงเว้นวรรคแรก)
+  const _calQ=(t)=>(t.description||'').replace(/[^A-Za-z0-9ก-๙. ]+/g,' ').trim().split(/\s+/).slice(0,1).join(' ');
   const txnChip=(t)=>{
     const label=nameOf(t);
     const note=(t.user_note||'').trim();   // v1.9.379 — หมายเหตุ (สีเทา) ใต้รายการ
