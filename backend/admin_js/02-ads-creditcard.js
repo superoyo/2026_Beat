@@ -1934,7 +1934,7 @@ async function _ccRenderCalendarView(v){
 }
 
 // ---- v1.9.372 — ปฏิทิน: รายการจ่ายบัตรทุกใบ วางลงปฏิทินรายเดือน + เลือกเอา/ไม่เอารายการ ----
-let _ccCal={ ym:'', exPlats:null };   // ym='YYYY-MM', exPlats=Set(ชื่อที่กดออก/ไม่เอา)
+let _ccCal={ ym:'', exPlats:null, exCards:null };   // ym='YYYY-MM' · exPlats=Set(ชื่อที่ไม่เอา) · exCards=Set(เลขบัตรที่ไม่เอา)
 function _ccParseDay(s){ const m=(s||'').match(/^\s*0*(\d{1,2})/); if(!m) return null; const d=+m[1]; return (d>=1&&d<=31)?d:null; }
 function _ccRenderCalendar(body,all,platOf){
   // เดือนที่มีข้อมูล — ใช้ bill_year/bill_month (เชื่อถือได้) เป็นตัวเลื่อนเดือน
@@ -1952,10 +1952,15 @@ function _ccRenderCalendar(body,all,platOf){
   const cardList=[...new Set(all.map(t=>t.card_number).filter(Boolean))].sort();
   const cardColor=(c)=>_CC_ANALYTICS_COLORS[(Math.max(0,cardList.indexOf(c)))%_CC_ANALYTICS_COLORS.length];
   if(!_ccCal.exPlats) _ccCal.exPlats=new Set();
+  if(!_ccCal.exCards) _ccCal.exCards=new Set();   // v1.9.399 — เลขบัตรที่ "ไม่เอา"
   // filter ตามชื่อ (multi-select): กดเลือก=เอา, กดออก=ไม่เอา (เก็บชื่อที่ "ไม่เอา" ใน exPlats)
   const nameCount={}; monthTxns.forEach(t=>{ const n=nameOf(t); nameCount[n]=(nameCount[n]||0)+1; });
   const namesInMonth=Object.keys(nameCount).sort((a,b)=>nameCount[b]-nameCount[a]||a.localeCompare(b,'th'));
-  const list=monthTxns.filter(t=>!_ccCal.exPlats.has(nameOf(t)));
+  // v1.9.399 — filter ตามบัตร (multi-select): เลือกทุกใบ หรือเลือกหลายใบผสมกัน
+  const cardKeyOf=(t)=>t.card_number||'';
+  const cardCount={}; monthTxns.forEach(t=>{ const c=cardKeyOf(t); cardCount[c]=(cardCount[c]||0)+1; });
+  const cardsInMonth=Object.keys(cardCount).sort((a,b)=>cardCount[b]-cardCount[a]||a.localeCompare(b));
+  const list=monthTxns.filter(t=>!_ccCal.exPlats.has(nameOf(t)) && !_ccCal.exCards.has(cardKeyOf(t)));
   const daysIn=new Date(Y,M,0).getDate();
   const firstDow=new Date(Y,M-1,1).getDay();   // 0=อา
   // v1.9.378 — วันนี้ (ไฮไลต์ช่อง ถ้าเดือน/ปีตรงกับที่แสดง)
@@ -2000,6 +2005,14 @@ function _ccRenderCalendar(body,all,platOf){
     return `<button type="button" class="cc-cal-plat" data-plat="${escapeHtml(isAll?'__all__':name)}" style="display:inline-flex;align-items:center;max-width:210px;padding:5px 11px;border-radius:999px;font-size:11.5px;font-weight:600;font-family:inherit;cursor:pointer;white-space:nowrap;border:1px solid ${active?'var(--primary)':'var(--border)'};background:${active?'var(--primary)':'var(--bg-card)'};color:${active?'#fff':'var(--text)'};${active?'':'opacity:.5'}">${dot}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${escapeHtml(label)}</span>${n!=null?` <span style="opacity:.7;margin-left:4px;flex-shrink:0">${n}</span>`:''}</button>`;
   };
   const platChipsHtml=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px"><span style="font-size:11.5px;color:var(--text-muted);margin-right:2px">กรองตามชื่อ (กดเลือก=เอา / กดออก=ไม่เอา):</span>${_calChip(null,'ทั้งหมด',monthTxns.length,true)}${namesInMonth.map(p=>_calChip(p,p,nameCount[p],false)).join('')}</div>`;
+  // v1.9.399 — แถบเลือกบัตรเครดิต (multi-select): ทุกใบ / เลือกแต่ละใบผสมกันได้
+  const _cardChip=(card,n,isAll)=>{
+    const active=isAll?cardsInMonth.every(x=>!_ccCal.exCards.has(x)):!_ccCal.exCards.has(card);
+    const dot=isAll?'':`<span style="width:8px;height:8px;border-radius:3px;background:${cardColor(card)};display:inline-block;margin-right:5px;flex-shrink:0"></span>`;
+    const label=isAll?'ทุกใบ':(card||'— ไม่ระบุบัตร —');
+    return `<button type="button" class="cc-cal-card" data-card="${escapeHtml(isAll?'__all__':card)}" style="display:inline-flex;align-items:center;max-width:280px;padding:5px 11px;border-radius:999px;font-size:11.5px;font-weight:600;font-family:inherit;cursor:pointer;white-space:nowrap;border:1px solid ${active?'var(--primary)':'var(--border)'};background:${active?'var(--primary)':'var(--bg-card)'};color:${active?'#fff':'var(--text)'};${active?'':'opacity:.5'}">${dot}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${escapeHtml(label)}</span>${n!=null?` <span style="opacity:.7;margin-left:4px;flex-shrink:0">${n}</span>`:''}</button>`;
+  };
+  const cardFilterHtml=cardsInMonth.length>1?`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px"><span style="font-size:11.5px;color:var(--text-muted);margin-right:2px">💳 เลือกบัตร (กดเลือก=เอา / กดออก=ไม่เอา):</span>${_cardChip(null,cardsInMonth.length,true)}${cardsInMonth.map(c=>_cardChip(c,cardCount[c],false)).join('')}</div>`:'';
   // v1.9.380 — legend: เม็ดสี = เลขบัตรเครดิต (เฉพาะบัตรที่มีรายการในเดือนที่แสดง)
   const cardsShown=[...new Set(list.map(t=>t.card_number).filter(Boolean))].sort();
   const cardLegendHtml=cardsShown.length?`<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-top:12px;padding-top:10px;border-top:1px solid var(--border)"><span style="font-size:11.5px;color:var(--text-muted);font-weight:700">💳 เม็ดสี = บัตรเครดิต:</span>${cardsShown.map(c=>`<span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px"><span style="width:10px;height:10px;border-radius:3px;background:${cardColor(c)};flex-shrink:0"></span>${escapeHtml(c)}</span>`).join('')}</div>`:'';
@@ -2017,6 +2030,7 @@ function _ccRenderCalendar(body,all,platOf){
         <button type="button" id="cc-cal-none" class="btn" style="font-size:11.5px;padding:4px 9px">✕ ไม่เอาทั้งหมด</button>
       </div>
     </div>
+    ${cardFilterHtml}
     ${platChipsHtml}
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:5px">
       ${dow.map(x=>`<div style="text-align:center;font-size:11px;font-weight:700;color:var(--text-muted);padding:2px 0">${x}</div>`).join('')}
@@ -2024,13 +2038,15 @@ function _ccRenderCalendar(body,all,platOf){
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">${cells}</div>
     ${cardLegendHtml}
     ${noDay.length?`<div style="margin-top:16px"><div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:6px">🕓 ไม่ระบุวันที่ (${noDay.length})</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px">${noDay.map(txnChip).join('')}</div></div>`:''}
-    <div style="font-size:11px;color:var(--text-soft);margin-top:12px">💡 คลิกรายการเพื่อค้นหารายการนั้นในบัตรทุกใบ · กดชื่อด้านบนเพื่อเลือก/ตัดออกจากยอดรวม</div>`;
+    <div style="font-size:11px;color:var(--text-soft);margin-top:12px">💡 คลิกรายการเพื่อค้นหารายการนั้นในบัตรทุกใบ · กดชิป 💳 บัตร หรือชื่อ ด้านบนเพื่อเลือก/ตัดออกจากยอดรวม (เลือกหลายใบผสมกันได้)</div>`;
   const nav=(delta)=>{ const ni=idx+delta; if(ni<0||ni>=months.length) return; _ccCal.ym=months[ni]; _ccRenderCalendar(body,all,platOf); };
   $('cc-cal-prev').onclick=()=>nav(-1); $('cc-cal-next').onclick=()=>nav(1);
-  // v1.9.377 — ปุ่มบน = คุม filter ชื่อ: เอาทั้งหมด (เลือกทุกชื่อ) / ไม่เอาทั้งหมด (ไม่เลือกเลย)
-  $('cc-cal-all').onclick=()=>{ _ccCal.exPlats.clear(); _ccRenderCalendar(body,all,platOf); };
+  // v1.9.377/399 — ปุ่มบน: เอาทั้งหมด = ล้างทั้ง filter ชื่อ+บัตร (แสดงทุกอย่าง) / ไม่เอาทั้งหมด = ตัดทุกชื่อออก
+  $('cc-cal-all').onclick=()=>{ _ccCal.exPlats.clear(); _ccCal.exCards.clear(); _ccRenderCalendar(body,all,platOf); };
   $('cc-cal-none').onclick=()=>{ _ccCal.exPlats=new Set(nameList); _ccRenderCalendar(body,all,platOf); };
   body.querySelectorAll('.cc-cal-plat').forEach(b=>b.addEventListener('click',()=>{ const k=b.dataset.plat; if(k==='__all__'){ _ccCal.exPlats.clear(); } else if(_ccCal.exPlats.has(k)){ _ccCal.exPlats.delete(k); } else { _ccCal.exPlats.add(k); } _ccRenderCalendar(body,all,platOf); }));
+  // v1.9.399 — คลิกชิปบัตร: ทุกใบ=เลือกทั้งหมด · แต่ละใบ=สลับเอา/ไม่เอา (ผสมกันได้)
+  body.querySelectorAll('.cc-cal-card').forEach(b=>b.addEventListener('click',()=>{ const k=b.dataset.card; if(k==='__all__'){ _ccCal.exCards.clear(); } else if(_ccCal.exCards.has(k)){ _ccCal.exCards.delete(k); } else { _ccCal.exCards.add(k); } _ccRenderCalendar(body,all,platOf); }));
   // v1.9.377 — คลิกรายการในปฏิทิน → เปิด search สไลด์ด้านข้าง พร้อมค้นหาทันที
   body.querySelectorAll('.cc-cal-txn').forEach(el=>el.addEventListener('click',()=>{ _ccOpenSearchPopup(el.dataset.q||'', {slide:true}); }));
 }
