@@ -1240,7 +1240,7 @@ async function _ccRenderDetail(v){
       </div>
     </div>
     <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:10px">ลาก invoice จากขวา → วางบนรายการซ้ายเพื่อจับคู่ · หรือคลิก invoice แล้วคลิกรายการ</div>
-    <div style="display:grid;grid-template-columns:minmax(300px,460px) 320px;gap:40px;align-items:start">
+    <div style="display:grid;grid-template-columns:minmax(360px,680px) 320px;gap:28px;align-items:start">
       <div>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
           <span style="font-size:12px;font-weight:700;color:var(--text-muted)">รายการจากบัตร (${total})</span>
@@ -1270,16 +1270,16 @@ async function _ccRenderDetail(v){
   const _txnCard=(t)=>{
     const ms=matchByTxn[t.id]||[];
     // v1.9.347 — เอกสารแนบเป็นแถวของตัวเอง: ยอดชิดขวาตรงแนวเดียวกับยอดรายการ
-    const chips=ms.map(mm=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:5px;padding-top:5px;border-top:1px dashed var(--border)">
-        <span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--green);font-weight:600;flex:1;min-width:0"><span class="cc-unmatch" data-match="${mm.matchId}" title="ถอดการจับคู่" style="cursor:pointer;opacity:.6;flex-shrink:0">✕</span>${mm.inv?_ccUploaderAvatar(mm.inv,16):''}<span class="cc-txn-invprev" data-inv="${mm.inv&&mm.inv.id}" title="คลิกดูไฟล์เอกสาร" style="display:inline-flex;align-items:center;gap:3px;min-width:0;flex:1;cursor:pointer"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px">${escapeHtml((mm.inv&&mm.inv.company)||'invoice')}</span><span style="flex-shrink:0;opacity:.75">👁</span></span></span>
+    const chips=ms.map(mm=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:5px;padding-top:5px;border-top:1px dashed var(--border);min-width:0;max-width:100%;overflow:hidden">
+        <span style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--green);font-weight:600;flex:1;min-width:0;overflow:hidden"><span class="cc-unmatch" data-match="${mm.matchId}" title="ถอดการจับคู่" style="cursor:pointer;opacity:.6;flex-shrink:0">✕</span><span style="flex-shrink:0;display:inline-flex">${mm.inv?_ccUploaderAvatar(mm.inv,16):''}</span><span class="cc-txn-invprev" data-inv="${mm.inv&&mm.inv.id}" title="คลิกดูไฟล์เอกสาร" style="display:flex;align-items:center;gap:3px;min-width:0;flex:1;overflow:hidden;cursor:pointer"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px">${escapeHtml((mm.inv&&mm.inv.company)||'invoice')}</span><span style="flex-shrink:0;opacity:.75">👁</span></span></span>
         <span style="font-size:12px;font-weight:700;color:var(--green);font-variant-numeric:tabular-nums;white-space:nowrap;flex-shrink:0">${_ccMoney(mm.inv&&mm.inv.amount)}</span>
       </div>`).join('');
     const note=t.user_note||'';
     const noteLine=`<div class="cc-txn-note" style="${note?'':'display:none;'}font-size:11px;color:var(--text-muted);margin-top:3px;font-style:italic">${note?escapeHtml(note):''}</div>`;
-    return `<div class="cc-txn card" data-txn="${t.id}" style="padding:9px 12px;margin-bottom:6px;border:1px solid ${ms.length?'rgba(16,185,129,.45)':'var(--border)'};transition:background .1s;cursor:pointer" title="คลิกเพื่อเพิ่ม description">
+    return `<div class="cc-txn card" data-txn="${t.id}" style="display:block;overflow:hidden;padding:9px 12px;margin-bottom:6px;border:1px solid ${ms.length?'rgba(16,185,129,.45)':'var(--border)'};transition:background .1s;cursor:pointer" title="คลิกเพื่อเพิ่ม description">
       <div style="display:flex;justify-content:space-between;gap:8px">
         <div style="min-width:0">
-          <div style="font-size:13px;font-weight:600">${escapeHtml(t.description||'—')}</div>
+          <div style="font-size:13px;font-weight:600;overflow-wrap:anywhere">${escapeHtml(t.description||'—')}</div>
           <div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t.txn_date||'')}</div>
           ${noteLine}
         </div>
