@@ -1071,7 +1071,7 @@ function _ccInvUploadRow(idx,fname,p){
 }
 function _ccUploadInvoice(defaultBillId, preFiles){
   const items=[];   // {fileData, fileMime, fileName, parsed}
-  const billOpts=`<option value="">— ยังไม่ผูกบิล (ลอยไว้ก่อน) —</option>`+_ccState.bills.map(b=>`<option value="${b.id}" ${b.id===defaultBillId?'selected':''}>${escapeHtml(b.card_number||'บัตร')} · ${_ccMonthLabel(b.bill_month,b.bill_year)}</option>`).join('');
+  const billOpts=`<option value="">— ยังไม่ผูกบิล (ลอยไว้ก่อน) —</option>`+_ccBillsForDropdown().map(b=>`<option value="${b.id}" ${b.id===defaultBillId?'selected':''}>${escapeHtml(b.card_number||'บัตร')} · ${_ccMonthLabel(b.bill_month,b.bill_year)}</option>`).join('');
   showModal({
     title:'⬆️ อัพโหลด Invoice / Receipt (หลายไฟล์ได้)', slide:true, size:'wide',
     body:`
@@ -1180,6 +1180,23 @@ async function _ccUploadInvoiceDirect(billId, files, statusEl){
   else _ccRender();
 }
 
+// v1.9.397 — จัดลำดับบิลใน dropdown: บัตรที่ลงท้าย 4 ตัวเดียวกันอยู่ติดกัน (กลุ่มที่มีบิลใหม่สุดขึ้นก่อน · ในกลุ่มเรียงเดือนใหม่→เก่า)
+function _ccCardLast4(b){ const d=((b&&b.card_number)||'').replace(/\D/g,''); return d.slice(-4)||((b&&b.card_number)||'zzzz'); }
+function _ccBillsForDropdown(){
+  const bills=(_ccState.bills||[]).slice();
+  const dkey=(b)=>((b.bill_year||0)*100+(b.bill_month||0));
+  const groupMax={};
+  bills.forEach(b=>{ const k=_ccCardLast4(b); groupMax[k]=Math.max(groupMax[k]||0, dkey(b)); });
+  return bills.sort((a,b)=>{
+    const ka=_ccCardLast4(a), kb=_ccCardLast4(b);
+    if(ka!==kb){
+      if(groupMax[kb]!==groupMax[ka]) return groupMax[kb]-groupMax[ka];   // กลุ่มที่มีบิลใหม่สุดก่อน
+      return ka<kb?-1:1;                                                    // เสมอ → เรียงตามเลขท้าย
+    }
+    return dkey(b)-dkey(a);                                                 // ในกลุ่มเดียวกัน → เดือนใหม่ก่อน
+  });
+}
+
 // ---- bill detail (left=transactions, right=invoices, drag-drop / click-to-match) ----
 async function _ccRenderDetail(v){
   v.innerHTML='<div class="empty">กำลังโหลด…</div>';
@@ -1212,7 +1229,7 @@ async function _ccRenderDetail(v){
             <span style="color:var(--text-muted);font-size:12px;flex-shrink:0">▾</span>
           </button>
           <div id="cc-det-billpick-pnl" style="display:none;position:absolute;z-index:60;top:calc(100% + 6px);left:0;right:0;min-width:420px;max-height:60vh;overflow-y:auto;border:1px solid var(--border);border-radius:12px;background:var(--bg-card);box-shadow:0 12px 32px rgba(15,23,42,.16);padding:8px">
-            ${_ccState.bills.map(b=>`<div class="cc-det-billopt" data-bill="${b.id}" style="display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:9px;cursor:pointer;transition:background .1s;${b.id===_ccState.billId?'background:var(--primary-soft)':''}" onmouseenter="if(!this.style.background||this.style.background==='transparent')this.style.background='var(--bg-soft)'" onmouseleave="this.style.background='${b.id===_ccState.billId?'var(--primary-soft)':'transparent'}'">${_ccSumBillRowHtml(b)}</div>`).join('')}
+            ${_ccBillsForDropdown().map(b=>`<div class="cc-det-billopt" data-bill="${b.id}" style="display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:9px;cursor:pointer;transition:background .1s;${b.id===_ccState.billId?'background:var(--primary-soft)':''}" onmouseenter="if(!this.style.background||this.style.background==='transparent')this.style.background='var(--bg-soft)'" onmouseleave="this.style.background='${b.id===_ccState.billId?'var(--primary-soft)':'transparent'}'">${_ccSumBillRowHtml(b)}</div>`).join('')}
           </div>
         </div>
       </div>
@@ -2050,7 +2067,7 @@ async function _ccRenderSummary(v){
           <span style="color:var(--text-muted);font-size:12px;flex-shrink:0">▾</span>
         </button>
         <div id="cc-sum-billpick-pnl" style="display:none;position:absolute;z-index:60;top:calc(100% + 6px);left:0;right:0;max-height:60vh;overflow-y:auto;border:1px solid var(--border);border-radius:12px;background:var(--bg-card);box-shadow:0 12px 32px rgba(15,23,42,.16);padding:8px">
-          ${bills.map(b=>`<div class="cc-sum-billopt" data-bill="${b.id}" style="display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:9px;cursor:pointer;transition:background .1s;${b.id===_ccState.summaryBillId?'background:var(--primary-soft)':''}" onmouseenter="if(!this.style.background||this.style.background==='transparent')this.style.background='var(--bg-soft)'" onmouseleave="this.style.background='${b.id===_ccState.summaryBillId?'var(--primary-soft)':'transparent'}'">${_ccSumBillRowHtml(b)}</div>`).join('')}
+          ${_ccBillsForDropdown().map(b=>`<div class="cc-sum-billopt" data-bill="${b.id}" style="display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:9px;cursor:pointer;transition:background .1s;${b.id===_ccState.summaryBillId?'background:var(--primary-soft)':''}" onmouseenter="if(!this.style.background||this.style.background==='transparent')this.style.background='var(--bg-soft)'" onmouseleave="this.style.background='${b.id===_ccState.summaryBillId?'var(--primary-soft)':'transparent'}'">${_ccSumBillRowHtml(b)}</div>`).join('')}
         </div>
       </div>
     </div>
