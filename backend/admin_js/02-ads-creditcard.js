@@ -1966,14 +1966,26 @@ async function _ccRenderCalendarView(v){
 // ---- v1.9.372 — ปฏิทิน: รายการจ่ายบัตรทุกใบ วางลงปฏิทินรายเดือน + เลือกเอา/ไม่เอารายการ ----
 let _ccCal={ ym:'', exPlats:null, exCards:null };   // ym='YYYY-MM' · exPlats=Set(ชื่อที่ไม่เอา) · exCards=Set(เลขบัตรที่ไม่เอา)
 function _ccParseDay(s){ const m=(s||'').match(/^\s*0*(\d{1,2})/); if(!m) return null; const d=+m[1]; return (d>=1&&d<=31)?d:null; }
+// v1.9.401 — วันที่ "จริง" ของรายการ จาก txn_date (dd/mm/yy(yy) หรือ dd/mm ใช้ปีจากบิล) → {y,m,d}
+function _ccTxnYMD(t){
+  const s=((t&&t.txn_date)||'').trim();
+  let mm=s.match(/^\s*(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if(mm){ let d=+mm[1], mo=+mm[2], y=+mm[3]; if(y<100) y+=2000; if(y>2400) y-=543; if(mo>=1&&mo<=12&&d>=1&&d<=31) return {y,m:mo,d}; }
+  mm=s.match(/^\s*(\d{1,2})[\/\-.](\d{1,2})(?![\/\-.\d])/);   // dd/mm (ไม่มีปี) → ใช้ปีจากบิล
+  if(mm){ let d=+mm[1], mo=+mm[2]; if(mo>=1&&mo<=12&&d>=1&&d<=31){ let y=t.bill_year||(new Date()).getFullYear(); if(t.bill_month && (mo-t.bill_month)>6) y-=1; return {y,m:mo,d}; } }
+  return null;
+}
+// เดือน (YYYY-MM) ที่รายการควรอยู่ — ยึดวันที่จริง · อ่านไม่ได้ค่อย fallback เดือนบิล
+function _ccTxnMonthKey(t){ const p=_ccTxnYMD(t); if(p) return p.y+'-'+String(p.m).padStart(2,'0'); if(t&&t.bill_year&&t.bill_month) return t.bill_year+'-'+String(t.bill_month).padStart(2,'0'); return null; }
+function _ccTxnDay(t){ const p=_ccTxnYMD(t); return p?p.d:null; }
 function _ccRenderCalendar(body,all,platOf){
-  // เดือนที่มีข้อมูล — ใช้ bill_year/bill_month (เชื่อถือได้) เป็นตัวเลื่อนเดือน
-  const months=[...new Set(all.filter(t=>t.bill_year&&t.bill_month).map(t=>t.bill_year+'-'+String(t.bill_month).padStart(2,'0')))].sort();
+  // v1.9.401 — เดือนยึด "วันที่จริงของรายการ" (txn_date) ไม่ใช่เดือนบิล — กันรายการข้ามเดือนไปโผล่ผิดช่อง
+  const months=[...new Set(all.map(_ccTxnMonthKey).filter(Boolean))].sort();
   if(!months.length){ body.innerHTML='<div class="empty" style="font-size:12.5px">ยังไม่มีรายการ</div>'; return; }
   if(!_ccCal.ym||!months.includes(_ccCal.ym)) _ccCal.ym=months[months.length-1];
   const idx=months.indexOf(_ccCal.ym);
   const [Y,M]=_ccCal.ym.split('-').map(Number);   // M=1..12
-  const monthTxns=all.filter(t=>t.bill_year===Y&&t.bill_month===M);
+  const monthTxns=all.filter(t=>_ccTxnMonthKey(t)===_ccCal.ym);
   // v1.9.376 — ชื่อ = platform ที่ detect ได้ หรือชื่อร้าน (คลี่ออกทุกชื่อ ไม่รวมเป็น 'อื่น ๆ')
   const nameOf=(t)=>_ccDetectPlatform(t.description||'')||((t.description||'').trim().split(/\s+/).slice(0,2).join(' ')||'—');
   const nameList=[...new Set(all.map(nameOf))];
@@ -1997,7 +2009,7 @@ function _ccRenderCalendar(body,all,platOf){
   const _now=new Date();
   const todayD=(_now.getFullYear()===Y && _now.getMonth()+1===M)?_now.getDate():0;
   const byDay=new Map(); const noDay=[];
-  list.forEach(t=>{ const d=_ccParseDay(t.txn_date); if(d&&d<=daysIn){ if(!byDay.has(d)) byDay.set(d,[]); byDay.get(d).push(t); } else noDay.push(t); });
+  list.forEach(t=>{ const d=_ccTxnDay(t); if(d&&d<=daysIn){ if(!byDay.has(d)) byDay.set(d,[]); byDay.get(d).push(t); } else noDay.push(t); });
   const incl=list;   // v1.9.377 — ยอดรวม = รายการที่ผ่าน filter ชื่อ (เอา/ไม่เอา ทำที่ chip ด้านบน)
   const inclTotal=incl.reduce((s,t)=>s+(t.amount||0),0);
   // v1.9.396 — คลิกรายการ → เปิด search สไลด์ด้านข้าง (query = คำแรก จนถึงเว้นวรรคแรก)
