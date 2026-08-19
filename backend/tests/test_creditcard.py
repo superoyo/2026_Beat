@@ -56,6 +56,45 @@ def test_txn_user_note_404(admin_client):
     assert r.status_code == 404
 
 
+def test_txn_reimburse_team_set_toggle_clear(admin_client):
+    # v1.9.400 — เลือก "ทำเบิกโดย" Finance / IT ต่อรายการ
+    bid = _create_bill(admin_client)
+    txn = admin_client.get(f"/api/creditcard/bills/{bid}").json()["transactions"][0]
+    tid = txn["id"]
+    # ค่าเริ่มต้น = ยังไม่เลือก (None)
+    assert txn.get("reimburse_team") is None
+
+    r = admin_client.post(f"/api/creditcard/transactions/{tid}/reimburse-team",
+                          json={"team": "finance"})
+    assert r.status_code == 200 and r.json()["reimburse_team"] == "finance"
+    d = admin_client.get(f"/api/creditcard/bills/{bid}").json()
+    assert [x for x in d["transactions"] if x["id"] == tid][0]["reimburse_team"] == "finance"
+
+    # สลับเป็น IT
+    r = admin_client.post(f"/api/creditcard/transactions/{tid}/reimburse-team",
+                          json={"team": "it"})
+    assert r.json()["reimburse_team"] == "it"
+
+    # ส่งค่าว่าง = ยกเลิก (กลับเป็น None)
+    r = admin_client.post(f"/api/creditcard/transactions/{tid}/reimburse-team",
+                          json={"team": ""})
+    assert r.json()["reimburse_team"] is None
+
+
+def test_txn_reimburse_team_rejects_bad_value(admin_client):
+    bid = _create_bill(admin_client)
+    tid = admin_client.get(f"/api/creditcard/bills/{bid}").json()["transactions"][0]["id"]
+    r = admin_client.post(f"/api/creditcard/transactions/{tid}/reimburse-team",
+                          json={"team": "marketing"})
+    assert r.status_code == 400
+
+
+def test_txn_reimburse_team_404(admin_client):
+    r = admin_client.post("/api/creditcard/transactions/999999/reimburse-team",
+                          json={"team": "finance"})
+    assert r.status_code == 404
+
+
 def test_floating_invoice_match_binds_to_bill(admin_client):
     bid = _create_bill(admin_client)
     txn = admin_client.get(f"/api/creditcard/bills/{bid}").json()["transactions"][0]

@@ -1197,6 +1197,20 @@ function _ccBillsForDropdown(){
   });
 }
 
+// v1.9.400 — bubble "ทำเบิกโดย": Finance=ชมพูอ่อน · IT=ฟ้าอ่อน · ยังไม่เลือก=เทา
+function _ccTeamColors(team, active){
+  if(!active) return ['var(--bg-soft)', 'var(--text-soft)', 'var(--border)'];       // เทา = ยังไม่เลือก
+  return team === 'finance' ? ['#fce7f3', '#be185d', '#f9a8d4']                       // ชมพูอ่อน
+                            : ['#dbeafe', '#1d4ed8', '#93c5fd'];                      // ฟ้าอ่อน
+}
+function _ccTeamStyle(team, active){ const c=_ccTeamColors(team, active); return `border:1px solid ${c[2]};background:${c[0]};color:${c[1]}`; }
+function _ccPaintTeamBubble(el, active){ const c=_ccTeamColors(el.dataset.team, active); el.style.background=c[0]; el.style.color=c[1]; el.style.borderColor=c[2]; }
+function _ccTeamRowHtml(t){
+  const rt = t.reimburse_team || '';
+  const bubble = (team, label) => `<span class="cc-txn-team" data-txn="${t.id}" data-team="${team}" title="คลิกเพื่อ${rt===team?'ยกเลิก':'เลือก'} — ทำเบิกโดย ${team==='finance'?'Finance':'IT'} Team" style="display:inline-flex;align-items:center;gap:3px;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:700;cursor:pointer;user-select:none;white-space:nowrap;${_ccTeamStyle(team, rt===team)}">${label}</span>`;
+  return `<div style="display:flex;gap:5px;margin-bottom:6px;flex-wrap:wrap">${bubble('finance','💰 ทำเบิกโดย Finance Team')}${bubble('it','💻 ทำเบิกโดย IT Team')}</div>`;
+}
+
 // ---- bill detail (left=transactions, right=invoices, drag-drop / click-to-match) ----
 async function _ccRenderDetail(v){
   v.innerHTML='<div class="empty">กำลังโหลด…</div>';
@@ -1277,6 +1291,7 @@ async function _ccRenderDetail(v){
     const note=t.user_note||'';
     const noteLine=`<div class="cc-txn-note" style="${note?'':'display:none;'}font-size:11px;color:var(--text-muted);margin-top:3px;font-style:italic">${note?escapeHtml(note):''}</div>`;
     return `<div class="cc-txn card" data-txn="${t.id}" style="display:block;overflow:hidden;padding:9px 12px;margin-bottom:6px;border:1px solid ${ms.length?'rgba(16,185,129,.45)':'var(--border)'};transition:background .1s;cursor:pointer" title="คลิกเพื่อเพิ่ม description">
+      ${_ccTeamRowHtml(t)}
       <div style="display:flex;justify-content:space-between;gap:8px">
         <div style="min-width:0">
           <div style="font-size:13px;font-weight:600;overflow-wrap:anywhere">${escapeHtml(t.description||'—')}</div>
@@ -1395,8 +1410,8 @@ async function _ccRenderDetail(v){
     el.addEventListener('dragleave',()=>{ el.style.background=''; });
     el.addEventListener('drop',e=>{ e.preventDefault(); el.style.background=''; if(dragInv) doMatch(parseInt(el.dataset.txn,10),dragInv); dragInv=null; });
     el.addEventListener('click',(e)=>{
-      // ไม่ทำอะไรถ้าคลิกใน inline editor / chip ✕ / ดูไฟล์เอกสาร
-      if(e.target.closest('.cc-txn-edit')||e.target.closest('.cc-unmatch')||e.target.closest('.cc-txn-invprev')) return;
+      // ไม่ทำอะไรถ้าคลิกใน inline editor / chip ✕ / ดูไฟล์เอกสาร / bubble ทำเบิก
+      if(e.target.closest('.cc-txn-edit')||e.target.closest('.cc-unmatch')||e.target.closest('.cc-txn-invprev')||e.target.closest('.cc-txn-team')) return;
       // โหมดจับคู่ invoice — กระทำตามเดิม
       if(_ccState.selInvoice){ doMatch(parseInt(el.dataset.txn,10),_ccState.selInvoice); return; }
       // toggle inline note editor
@@ -1434,6 +1449,21 @@ async function _ccRenderDetail(v){
   v.querySelectorAll('.cc-txn-find').forEach(b=>b.addEventListener('click',(e)=>{
     e.stopPropagation();
     _ccOpenSearchPopup(b.dataset.q||'');
+  }));
+  // v1.9.400 — คลิก bubble เลือก "ทำเบิกโดย" (Finance/IT) · คลิกซ้ำ = ยกเลิก (กลับเป็นเทา)
+  v.querySelectorAll('.cc-txn-team').forEach(b=>b.addEventListener('click',async(e)=>{
+    e.stopPropagation();
+    const tid=parseInt(b.dataset.txn,10);
+    const t=d.transactions.find(x=>x.id===tid); if(!t) return;
+    const newTeam=(String(t.reimburse_team||'')===b.dataset.team)?'':b.dataset.team;   // toggle
+    const card=b.closest('.cc-txn'); const bubbles=card.querySelectorAll('.cc-txn-team');
+    bubbles.forEach(bb=>bb.style.opacity='.5');
+    try{
+      const r=await fetchJson('/api/creditcard/transactions/'+tid+'/reimburse-team',{method:'POST',body:JSON.stringify({team:newTeam})});
+      t.reimburse_team=r.reimburse_team||'';
+      bubbles.forEach(bb=>_ccPaintTeamBubble(bb, bb.dataset.team===t.reimburse_team));
+    }catch(err){ alert(err.message); }
+    finally{ bubbles.forEach(bb=>bb.style.opacity=''); }
   }));
 }
 

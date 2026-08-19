@@ -992,6 +992,9 @@ def init_db() -> None:
         _cct = [r["name"] for r in conn.execute("PRAGMA table_info(cc_transactions)").fetchall()]
         if "user_note" not in _cct:
             conn.execute("ALTER TABLE cc_transactions ADD COLUMN user_note TEXT")
+        # v1.9.400 — ทำเบิกโดยทีมไหน: 'finance' / 'it' / NULL (ยังไม่เลือก)
+        if "reimburse_team" not in _cct:
+            conn.execute("ALTER TABLE cc_transactions ADD COLUMN reimburse_team TEXT")
         # v1.9.343 — cc_bills: วันกำหนดชำระ (ISO YYYY-MM-DD)
         # v1.9.344 — is_completed: ทำเครื่องหมายเสร็จสิ้น (ปิดการเตือนเลยกำหนด)
         _ccb = [r["name"] for r in conn.execute("PRAGMA table_info(cc_bills)").fetchall()]
@@ -11506,6 +11509,26 @@ def cc_update_txn_note(tid: int, payload: CcTxnNoteIn,
         note = (payload.user_note or "").strip() or None
         conn.execute("UPDATE cc_transactions SET user_note=? WHERE id=?", (note, tid))
     return {"ok": True, "user_note": note}
+
+
+# v1.9.400 — เลือก "ทำเบิกโดย" ทีมไหน (Finance / IT) ต่อรายการในบัตร
+class CcReimburseTeamIn(BaseModel):
+    team: str = Field("", max_length=20)
+
+
+@app.post("/api/creditcard/transactions/{tid}/reimburse-team")
+def cc_set_reimburse_team(tid: int, payload: CcReimburseTeamIn,
+                          _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    team = (payload.team or "").strip().lower()
+    if team not in ("finance", "it", ""):
+        raise HTTPException(status_code=400, detail="team ต้องเป็น finance / it หรือว่าง")
+    team = team or None
+    with db_conn() as conn:
+        r = conn.execute("SELECT 1 FROM cc_transactions WHERE id=?", (tid,)).fetchone()
+        if not r:
+            raise HTTPException(status_code=404, detail="ไม่พบรายการ")
+        conn.execute("UPDATE cc_transactions SET reimburse_team=? WHERE id=?", (team, tid))
+    return {"ok": True, "reimburse_team": team}
 
 
 # v1.9.360 — แก้ชื่อเอกสาร (company) แบบ inline จากหน้า preview
