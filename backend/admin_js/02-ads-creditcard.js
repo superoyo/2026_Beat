@@ -572,7 +572,7 @@ async function renderTvScheduling() {
   if (btn) btn.onclick = () => window.open(popUrl, '_blank', 'noopener,noreferrer');
 }
 // ===== Credit Card reconciliation (Platform tab) — v1.9.218 =====
-let _ccState = { view: 'bills', billId: null, bills: [], selInvoice: null, summaryBillId: null, txnSort: 'doc' };   // txnSort: 'doc' = ตามเอกสาร | 'group' = ตามกลุ่ม platform (v1.9.345)
+let _ccState = { view: 'bills', billId: null, bills: [], selInvoice: null, summaryBillId: null, txnSort: 'doc', txnTeam: 'all', txnQ: '' };   // txnSort: 'doc' = ตามเอกสาร | 'group' = ตามกลุ่ม platform (v1.9.345) · txnTeam: filter ทำเบิกโดย 'all'|'finance'|'it'|'none' (v1.9.402)
 const _CC_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 function _ccMoney(n){ if(n==null||isNaN(n))return '—'; return Number(n).toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function _ccMonthLabel(m,y){ const mm=(m>=1&&m<=12)?_CC_MONTHS[m-1]:'—'; return `${mm} ${y||'—'}`; }
@@ -1211,6 +1211,23 @@ function _ccTeamRowHtml(t){
   return `<div style="display:flex;gap:5px;margin-bottom:6px;flex-wrap:wrap">${bubble('finance','💰 ทำเบิกโดย Finance Team')}${bubble('it','💻 ทำเบิกโดย IT Team')}</div>`;
 }
 
+// v1.9.402 — filter รายการตาม "ทำเบิกโดย": ทั้งหมด | Finance Team | IT Team | ยังไม่ระบุ
+const _CC_TEAM_FILTERS=[
+  {key:'all',     label:'📋 ทั้งหมด'},
+  {key:'finance', label:'💰 Finance Team'},
+  {key:'it',      label:'💻 IT Team'},
+  {key:'none',    label:'⚪️ ยังไม่ระบุ'},
+];
+const _ccTxnTeamOf=(t)=>{ const x=String((t&&t.reimburse_team)||''); return (x==='finance'||x==='it')?x:'none'; };
+const _ccTxnTeamPass=(t)=>_ccState.txnTeam==='all'||_ccTxnTeamOf(t)===_ccState.txnTeam;
+function _ccTeamChipStyle(key, active){
+  if(!active) return 'border:1px solid var(--border);background:var(--bg-card);color:var(--text-muted)';
+  if(key==='finance') return 'border:1px solid #f9a8d4;background:#fce7f3;color:#be185d';
+  if(key==='it')      return 'border:1px solid #93c5fd;background:#dbeafe;color:#1d4ed8';
+  if(key==='none')    return 'border:1px solid var(--text-muted);background:var(--bg-soft);color:var(--text)';
+  return 'border:1px solid var(--primary);background:var(--primary);color:#fff';
+}
+
 // ---- bill detail (left=transactions, right=invoices, drag-drop / click-to-match) ----
 async function _ccRenderDetail(v){
   v.innerHTML='<div class="empty">กำลังโหลด…</div>';
@@ -1221,6 +1238,8 @@ async function _ccRenderDetail(v){
   const matchByTxn={}; const matchedInvIds=new Set();
   d.matches.forEach(m=>{ (matchByTxn[m.transaction_id]=matchByTxn[m.transaction_id]||[]).push({matchId:m.id,inv:invById[m.invoice_id]}); matchedInvIds.add(m.invoice_id); });
   const total=d.transactions.length, matchedTxn=Object.keys(matchByTxn).filter(k=>matchByTxn[k].length).length;
+  // v1.9.402 — รายการที่ผ่าน filter "ทำเบิกโดย" (ใช้ทั้งการเรียง/จัดกลุ่ม/ยอดรวมต่อกลุ่ม)
+  const shownTxns=d.transactions.filter(_ccTxnTeamPass);
   const complete=total>0 && matchedTxn>=total;
   // v1.9.348 — หัวบิลใช้รูปแบบเดียวกับหน้ารวม: ปฏิทิน + chip กำหนดชำระ + เลขบัตร + สรุปย่อย
   let _hdrDue='';
@@ -1257,15 +1276,17 @@ async function _ccRenderDetail(v){
     <div style="display:grid;grid-template-columns:minmax(360px,680px) 320px;gap:28px;align-items:start">
       <div>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
-          <span style="font-size:12px;font-weight:700;color:var(--text-muted)">รายการจากบัตร (${total})</span>
+          <span style="font-size:12px;font-weight:700;color:var(--text-muted)">รายการจากบัตร (${_ccState.txnTeam==='all'?total:shownTxns.length+'/'+total})</span>
           <div style="display:flex;gap:6px;align-items:center">
             <select id="cc-txn-sort" title="เรียงลำดับ" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600">
               <option value="doc" ${_ccState.txnSort!=='group'?'selected':''}>เรียงตามเอกสาร</option>
               <option value="group" ${_ccState.txnSort==='group'?'selected':''}>เรียงตามกลุ่ม</option>
             </select>
-            <input id="cc-txn-search" placeholder="ค้นหารายการ…" style="font-size:12px;padding:5px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);width:140px" />
+            <input id="cc-txn-search" placeholder="ค้นหารายการ…" value="${escapeHtml(_ccState.txnQ||'')}" style="font-size:12px;padding:5px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text);width:140px" />
           </div>
         </div>
+        <!-- v1.9.402 — filter ทำเบิกโดย: ทั้งหมด | Finance Team | IT Team | ยังไม่ระบุ -->
+        <div id="cc-txn-teamfilter" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px"></div>
         <div id="cc-txn-col"></div>
       </div>
       <!-- v1.9.396 — คอลัมน์ขวา: กล่องอัพโหลดอยู่บนสุด (คลิก/ลากไฟล์ = อัพเลยไม่ถาม) · list เลื่อน scroll ภายใน · โชว์ 3 ใบล่าสุด -->
@@ -1314,7 +1335,7 @@ async function _ccRenderDetail(v){
   let txnColHtml;
   if(_ccState.txnSort==='group'){
     const groups=new Map();
-    d.transactions.forEach(t=>{
+    shownTxns.forEach(t=>{
       let g=_ccDetectPlatform(t.description||'');
       if(!g){ for(const mm of (matchByTxn[t.id]||[])){ if(mm.inv){ const q=_ccDetectPlatform(mm.inv.company||''); if(q){ g=q; break; } } } }
       g=g||'อื่น ๆ';
@@ -1332,11 +1353,23 @@ async function _ccRenderDetail(v){
       </div>`+arr.map(_txnCard).join('');
     }).join('');
   }else{
-    txnColHtml=d.transactions.map(_txnCard).join('');
+    txnColHtml=shownTxns.map(_txnCard).join('');
   }
-  $('cc-txn-col').innerHTML=txnColHtml||'<div class="empty" style="font-size:12px">ไม่มีรายการ</div>';
+  $('cc-txn-col').innerHTML=txnColHtml||`<div class="empty" style="font-size:12px">${total?'ไม่มีรายการในตัวกรองนี้':'ไม่มีรายการ'}</div>`;
   const _txnSortSel=$('cc-txn-sort');
   if(_txnSortSel) _txnSortSel.addEventListener('change',(e)=>{ _ccState.txnSort=e.target.value; _ccRenderDetail($('cc-view')); });
+  // v1.9.402 — ชิป filter "ทำเบิกโดย" พร้อมจำนวนต่อกลุ่ม
+  const _teamFe=$('cc-txn-teamfilter');
+  if(_teamFe){
+    const nOf=(k)=>k==='all'?total:d.transactions.filter(t=>_ccTxnTeamOf(t)===k).length;
+    _teamFe.innerHTML=_CC_TEAM_FILTERS.map(f=>{
+      const active=_ccState.txnTeam===f.key;
+      return `<button type="button" class="cc-txn-tchip" data-team="${f.key}" style="${_ccTeamChipStyle(f.key,active)};font-size:11.5px;font-weight:700;padding:4px 11px;border-radius:999px;cursor:pointer;font-family:inherit;white-space:nowrap">${f.label} <span style="opacity:.75">(${nOf(f.key)})</span></button>`;
+    }).join('');
+    _teamFe.querySelectorAll('.cc-txn-tchip').forEach(b=>b.addEventListener('click',()=>{
+      _ccState.txnTeam=b.dataset.team; _ccRenderDetail($('cc-view'));
+    }));
+  }
   const poolInv=d.pool_invoices||[];
   // v1.9.346 — คอลัมน์ขวาแสดงเฉพาะ invoice ที่ยังไม่จับคู่ (จับคู่แล้วเห็นเป็น chip บนรายการซ้าย + ถอดได้จาก ✕)
   const unmatchedInv=d.invoices.filter(i=>!matchedInvIds.has(i.id));
@@ -1354,7 +1387,7 @@ async function _ccRenderDetail(v){
           ? `<div class="empty" style="font-size:12px;text-align:center;padding:20px 10px">🎉 จับคู่ครบทุกใบแล้ว<br><span style="font-size:11px;color:var(--text-soft)">invoice ที่จับคู่แล้ว (${matchedCount}) อยู่บนรายการฝั่งซ้าย — กด ✕ เพื่อถอด</span></div>`
           : '<div class="empty" style="font-size:12px">ยังไม่มี invoice — ลากไฟล์มาที่กล่องด้านบน</div>')
   );
-  $('cc-back').onclick=()=>{ _ccState.billId=null; _ccState.selInvoice=null; _ccRender(); };
+  $('cc-back').onclick=()=>{ _ccState.billId=null; _ccState.selInvoice=null; _ccState.txnQ=''; _ccRender(); };
   $('cc-edit-bill').onclick=()=>_ccEditBill(d);
   // v1.9.396 — drop zone บนคอลัมน์ invoice: คลิก/ลากไฟล์ → อัพโหลดทันที (ค่า default, ไม่มี popup)
   const _invDz=$('cc-inv-drop');
@@ -1378,7 +1411,7 @@ async function _ccRenderDetail(v){
   const _dpTrg=$('cc-det-billpick-trg'), _dpPnl=$('cc-det-billpick-pnl'), _dpRoot=$('cc-det-billpick');
   if(_dpTrg&&_dpPnl){
     _dpTrg.onclick=(e)=>{ e.stopPropagation(); _dpPnl.style.display=_dpPnl.style.display==='none'?'block':'none'; };
-    v.querySelectorAll('.cc-det-billopt').forEach(o=>o.addEventListener('click',()=>{ _ccState.billId=parseInt(o.dataset.bill,10); _ccState.selInvoice=null; _ccRenderDetail($('cc-view')); }));
+    v.querySelectorAll('.cc-det-billopt').forEach(o=>o.addEventListener('click',()=>{ _ccState.billId=parseInt(o.dataset.bill,10); _ccState.selInvoice=null; _ccState.txnQ=''; _ccRenderDetail($('cc-view')); }));
     if(window._ccDetPickOutside) document.removeEventListener('mousedown',window._ccDetPickOutside,true);
     window._ccDetPickOutside=(e)=>{ if(_dpRoot&&!_dpRoot.contains(e.target)&&_dpPnl) _dpPnl.style.display='none'; };
     document.addEventListener('mousedown',window._ccDetPickOutside,true);
@@ -1398,7 +1431,8 @@ async function _ccRenderDetail(v){
     await _ccLoadBills(); _ccRenderDetail($('cc-view'));
   }));
   const _ccTxnSearch=$('cc-txn-search');
-  if(_ccTxnSearch) _ccTxnSearch.addEventListener('input',()=>{ const q=_ccTxnSearch.value.trim().toLowerCase(); v.querySelectorAll('.cc-txn').forEach(el=>{ el.style.display=(!q||(el.textContent||'').toLowerCase().includes(q))?'':'none'; }); });
+  const _ccApplyTxnSearch=()=>{ const q=(_ccState.txnQ||'').trim().toLowerCase(); v.querySelectorAll('.cc-txn').forEach(el=>{ el.style.display=(!q||(el.textContent||'').toLowerCase().includes(q))?'':'none'; }); };
+  if(_ccTxnSearch){ _ccTxnSearch.addEventListener('input',()=>{ _ccState.txnQ=_ccTxnSearch.value; _ccApplyTxnSearch(); }); _ccApplyTxnSearch(); }
   let dragInv=null;
   const doMatch=async(txnId,invId)=>{ try{ await fetchJson('/api/creditcard/matches',{method:'POST',body:JSON.stringify({transaction_id:txnId,invoice_id:invId})}); _ccState.selInvoice=null; await _ccLoadBills(); _ccRenderDetail($('cc-view')); }catch(e){ alert(e.message); } };
   v.querySelectorAll('.cc-inv').forEach(el=>{
@@ -1462,6 +1496,8 @@ async function _ccRenderDetail(v){
       const r=await fetchJson('/api/creditcard/transactions/'+tid+'/reimburse-team',{method:'POST',body:JSON.stringify({team:newTeam})});
       t.reimburse_team=r.reimburse_team||'';
       bubbles.forEach(bb=>_ccPaintTeamBubble(bb, bb.dataset.team===t.reimburse_team));
+      // v1.9.402 — ถ้ากำลัง filter อยู่ ต้อง render ใหม่ (จำนวน/รายการที่แสดงเปลี่ยน)
+      if(_ccState.txnTeam!=='all'){ _ccRenderDetail($('cc-view')); return; }
     }catch(err){ alert(err.message); }
     finally{ bubbles.forEach(bb=>bb.style.opacity=''); }
   }));
