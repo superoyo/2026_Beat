@@ -1431,7 +1431,8 @@ async function _ccRenderDetail(v){
     await _ccLoadBills(); _ccRenderDetail($('cc-view'));
   }));
   const _ccTxnSearch=$('cc-txn-search');
-  const _ccApplyTxnSearch=()=>{ const q=(_ccState.txnQ||'').trim().toLowerCase(); v.querySelectorAll('.cc-txn').forEach(el=>{ el.style.display=(!q||(el.textContent||'').toLowerCase().includes(q))?'':'none'; }); };
+  // v1.9.403 — คืนค่าเป็น 'block' ไม่ใช่ '' — เพราะ '' ลบ display:block ที่ inline ทิ้ง แล้ว .card{display:flex} จะเข้ามาแทน (การ์ดเบี้ยว: bubble/รายละเอียด/ยอด ไปเรียงบรรทัดเดียวกัน)
+  const _ccApplyTxnSearch=()=>{ const q=(_ccState.txnQ||'').trim().toLowerCase(); v.querySelectorAll('.cc-txn').forEach(el=>{ el.style.display=(!q||(el.textContent||'').toLowerCase().includes(q))?'block':'none'; }); };
   if(_ccTxnSearch){ _ccTxnSearch.addEventListener('input',()=>{ _ccState.txnQ=_ccTxnSearch.value; _ccApplyTxnSearch(); }); _ccApplyTxnSearch(); }
   let dragInv=null;
   const doMatch=async(txnId,invId)=>{ try{ await fetchJson('/api/creditcard/matches',{method:'POST',body:JSON.stringify({transaction_id:txnId,invoice_id:invId})}); _ccState.selInvoice=null; await _ccLoadBills(); _ccRenderDetail($('cc-view')); }catch(e){ alert(e.message); } };
