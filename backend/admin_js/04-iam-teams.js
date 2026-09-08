@@ -282,6 +282,7 @@ async function renderPlatformsPage(initialTab) {
         <button type="button" class="acc-menu-item" data-plat-tab="aiproject"><span class="acc-menu-ico">🤖</span> AI Project</button>
         <button type="button" class="acc-menu-item" data-plat-tab="claude-rl"><span class="acc-menu-ico">⏱️</span> Claude RateLimit</button>
         <button type="button" class="acc-menu-item" data-plat-tab="creditcard"><span class="acc-menu-ico">💳</span> Credit Card</button>
+        <button type="button" class="acc-menu-item" data-plat-tab="licensedocs"><span class="acc-menu-ico">📑</span> เอกสารควบคุม license</button>
       </div>
       <!-- เนื้อหาขวา -->
       <div class="acc-detail">
@@ -340,6 +341,11 @@ async function renderPlatformsPage(initialTab) {
         <div data-plat-panel="creditcard" style="display:none">
           <div id="creditcard-root"><div class="empty">กำลังโหลด…</div></div>
         </div>
+
+        <!-- ============ v1.9.404 — เอกสารควบคุม license ============ -->
+        <div data-plat-panel="licensedocs" style="display:none">
+          <div id="license-docs-root"><div class="empty">กำลังโหลด…</div></div>
+        </div>
       </div>
     </div>
   `;
@@ -349,6 +355,7 @@ async function renderPlatformsPage(initialTab) {
   let _aiprojLoaded = false;
   let _clrlLoaded = false;
   let _ccLoaded = false;
+  let _licLoaded = false;
   function showPlatPanel(panel) {
     document.querySelectorAll('[data-plat-panel]').forEach(p => { p.style.display = (p.dataset.platPanel === panel) ? '' : 'none'; });
     document.querySelectorAll('[data-plat-tab]').forEach(b => b.classList.toggle('active', b.dataset.platTab === panel));
@@ -358,10 +365,11 @@ async function renderPlatformsPage(initialTab) {
     if (panel === 'aiproject' && !_aiprojLoaded) { _aiprojLoaded = true; renderAiProjects(); }
     if (panel === 'claude-rl' && !_clrlLoaded) { _clrlLoaded = true; renderClaudeRL(); }
     if (panel === 'creditcard' && !_ccLoaded) { _ccLoaded = true; renderCreditCard(); }
+    if (panel === 'licensedocs' && !_licLoaded) { _licLoaded = true; renderLicenseDocs(); }
   }
   document.querySelectorAll('[data-plat-tab]').forEach(b => b.addEventListener('click', () => showPlatPanel(b.dataset.platTab)));
   // v1.9.153 — เปิด tab ตาม deep-link (เช่นจาก dashboard)
-  if (initialTab && ['platform', 'skill', 'aiproject', 'claude-rl', 'creditcard'].includes(initialTab)) showPlatPanel(initialTab);
+  if (initialTab && ['platform', 'skill', 'aiproject', 'claude-rl', 'creditcard', 'licensedocs'].includes(initialTab)) showPlatPanel(initialTab);
 
   let data;
   try {

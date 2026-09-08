@@ -914,6 +914,23 @@ def init_db() -> None:
                 UNIQUE(transaction_id, invoice_id)
             );
             CREATE INDEX IF NOT EXISTS idx_cc_match_bill ON cc_matches(bill_id);
+            -- v1.9.404 — เอกสารควบคุม license (อัพโหลดไฟล์/รูป + ปักดาวให้อยู่บนสุด)
+            CREATE TABLE IF NOT EXISTS license_docs (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                title          TEXT,                  -- ชื่อเอกสาร (default = ชื่อไฟล์)
+                note           TEXT,
+                file_data      TEXT,                  -- base64 data URL
+                file_name      TEXT,
+                file_mime      TEXT,
+                file_size      INTEGER,
+                is_starred     INTEGER DEFAULT 0,     -- 1 = ปักดาว → เรียงบนสุดเสมอ
+                starred_at     TEXT,
+                uploaded_by_id INTEGER,
+                uploaded_by    TEXT,
+                created_at     TEXT NOT NULL,
+                updated_at     TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_license_docs_order ON license_docs(is_starred DESC, id DESC);
             """
         )
         conn.execute(
@@ -11619,6 +11636,135 @@ def cc_create_match(payload: CcMatchIn,
 def cc_delete_match(mid: int, _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
     with db_conn() as conn:
         conn.execute("DELETE FROM cc_matches WHERE id=?", (mid,))
+    return {"ok": True}
+
+
+# ===========================================================================
+# v1.9.404 — เอกสารควบคุม license (อัพโหลดไฟล์ + preview + ปักดาวให้อยู่บนสุด)
+# ===========================================================================
+LICENSE_DOC_MAX_BYTES = 12 * 1024 * 1024        # 12MB ต่อไฟล์ (เท่ากับ invoice)
+_LIC_COLS = ("id,title,note,file_name,file_mime,file_size,is_starred,starred_at,"
+             "uploaded_by_id,uploaded_by,created_at,updated_at")
+# เรียง: ปักดาวก่อน (ดาวใหม่สุดขึ้นก่อน) → ที่เหลือใหม่สุดก่อน
+_LIC_ORDER = "ORDER BY is_starred DESC, COALESCE(starred_at,'') DESC, id DESC"
+
+
+def _lic_row(r: sqlite3.Row) -> dict[str, Any]:
+    d = dict(r)
+    d["is_starred"] = bool(d.get("is_starred"))
+    return d
+
+
+def _lic_data_bytes(file_data: Optional[str]) -> int:
+    """ขนาดไฟล์จริงจากความยาว base64 (ไม่ต้อง decode ทั้งก้อน) — หัก padding '=' ให้ตรงไบต์"""
+    if not file_data:
+        return 0
+    b64 = (file_data.partition(",")[2] if file_data.startswith("data:") else file_data).strip()
+    if not b64:
+        return 0
+    pad = len(b64) - len(b64.rstrip("="))
+    return max((len(b64) // 4) * 3 - pad, 0)
+
+
+class LicenseDocIn(BaseModel):
+    title: Optional[str] = None
+    note: Optional[str] = None
+    file_data: str
+    file_name: Optional[str] = None
+    file_mime: Optional[str] = None
+
+
+class LicenseDocEdit(BaseModel):
+    title: Optional[str] = None
+    note: Optional[str] = None
+
+
+class LicenseDocStarIn(BaseModel):
+    starred: bool
+
+
+@app.get("/api/license-docs")
+def license_docs_list(_sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    with db_conn() as conn:
+        rows = conn.execute(f"SELECT {_LIC_COLS} FROM license_docs {_LIC_ORDER}").fetchall()
+    return {"docs": [_lic_row(r) for r in rows]}
+
+
+@app.post("/api/license-docs")
+def license_docs_create(payload: LicenseDocIn,
+                        fct_session: Optional[str] = Cookie(default=None),
+                        fct_member_session: Optional[str] = Cookie(default=None),
+                        _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    if not (payload.file_data or "").strip():
+        raise HTTPException(status_code=400, detail="ต้องแนบไฟล์")
+    size = _lic_data_bytes(payload.file_data)
+    if size > LICENSE_DOC_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="ไฟล์ใหญ่เกิน 12MB")
+    mid, name = _cc_ident(fct_session, fct_member_session)
+    now = utc_now().isoformat()
+    _s = lambda v: (v.strip() if isinstance(v, str) else v) or None
+    title = _s(payload.title) or _s(payload.file_name) or "เอกสาร"
+    with db_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO license_docs(title,note,file_data,file_name,file_mime,file_size,"
+            "                         uploaded_by_id,uploaded_by,created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (title, _s(payload.note), payload.file_data, _s(payload.file_name),
+             _s(payload.file_mime) or "application/octet-stream", size, mid, name or None, now))
+        row = conn.execute(f"SELECT {_LIC_COLS} FROM license_docs WHERE id=?", (cur.lastrowid,)).fetchone()
+    return {"ok": True, "id": cur.lastrowid, "doc": _lic_row(row)}
+
+
+@app.get("/api/license-docs/{did}/file")
+def license_docs_file(did: int, _sess: dict = Depends(_require_module("platform"))) -> Response:
+    with db_conn() as conn:
+        r = conn.execute("SELECT file_data,file_mime FROM license_docs WHERE id=?", (did,)).fetchone()
+    if not r or not r["file_data"]:
+        raise HTTPException(status_code=404, detail="ไม่มีไฟล์")
+    raw_b64 = r["file_data"]
+    mime = r["file_mime"] or "application/octet-stream"
+    if raw_b64.startswith("data:"):
+        head, _, b64 = raw_b64.partition(",")
+        if ";base64" in head and head[5:].split(";")[0]:
+            mime = head[5:].split(";")[0]
+        raw_b64 = b64
+    try:
+        data = base64.b64decode(raw_b64)
+    except Exception:
+        raise HTTPException(status_code=500, detail="ไฟล์เสียหาย")
+    return Response(content=data, media_type=mime)
+
+
+@app.patch("/api/license-docs/{did}/star")
+def license_docs_star(did: int, payload: LicenseDocStarIn,
+                      _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        if not conn.execute("SELECT 1 FROM license_docs WHERE id=?", (did,)).fetchone():
+            raise HTTPException(status_code=404, detail="ไม่พบเอกสาร")
+        conn.execute("UPDATE license_docs SET is_starred=?, starred_at=?, updated_at=? WHERE id=?",
+                     (1 if payload.starred else 0, now if payload.starred else None, now, did))
+    return {"ok": True, "is_starred": payload.starred}
+
+
+@app.patch("/api/license-docs/{did}")
+def license_docs_edit(did: int, payload: LicenseDocEdit,
+                      _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    _s = lambda v: (v.strip() if isinstance(v, str) else v) or None
+    with db_conn() as conn:
+        row = conn.execute("SELECT title FROM license_docs WHERE id=?", (did,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="ไม่พบเอกสาร")
+        title = _s(payload.title) or row["title"]
+        conn.execute("UPDATE license_docs SET title=?, note=?, updated_at=? WHERE id=?",
+                     (title, _s(payload.note), utc_now().isoformat(), did))
+    return {"ok": True, "title": title}
+
+
+@app.delete("/api/license-docs/{did}")
+def license_docs_delete(did: int, _sess: dict = Depends(_require_module("platform"))) -> dict[str, Any]:
+    with db_conn() as conn:
+        conn.execute("DELETE FROM license_docs WHERE id=?", (did,))
     return {"ok": True}
 
 
