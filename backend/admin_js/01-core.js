@@ -152,7 +152,35 @@ const ROUTE_MODULE = { platforms: 'platform', ads: 'ads', 'ads-benchmark': 'ads'
   'financial-documents': 'hw-findoc' };
 // ลำดับเมนูย่อยของ Device & Software — ใช้หา "เมนูแรกที่มีสิทธิ์" ของ member
 const HW_NAV_ROUTES = ['hardware-pc-dashboard', 'hardware-pc', 'hardware-pc-unassigned', 'hardware-device', 'hardware-network', 'hardware-report', 'financial-documents'];
-let currentModules = new Set();   // module ที่ผู้ใช้ปัจจุบันเข้าถึงได้ (member)
+let currentModules = new Set();   // module ที่ผู้ใช้ปัจจุบันเข้าถึงได้ (member = ตามสิทธิ์, admin = ที่ยังเปิดใช้งาน)
+
+// v1.9.162/405 — ซ่อนเมนูตาม module:
+//   member → ตามสิทธิ์ที่ได้รับ (+ admin-only ที่ห้าม)
+//   ทุกบทบาท → module ที่ถูก "ปิดทั้งระบบ" ที่ IAM จะไม่มีเมนูเลย (currentModules ไม่มี key นั้น)
+function applyNavModuleVisibility() {
+  const isMember = currentRole === 'member';
+  document.querySelectorAll('.nav a[data-route]').forEach(a => {
+    const route = a.dataset.route;
+    let show;
+    if (route === 'hardware-pc-dashboard') {
+      // v1.9.339 — link Device & Software: แสดงถ้ามีเมนูย่อยที่ใช้ได้ + ชี้ href ไปเมนูแรกนั้น
+      const granted = HW_NAV_ROUTES.filter(r => currentModules.has(ROUTE_MODULE[r]));
+      show = granted.length > 0;
+      if (show) a.href = '#/' + granted[0];
+    } else {
+      const reqMod = ROUTE_MODULE[route];
+      if (reqMod) show = currentModules.has(reqMod);
+      else if (isMember && (HIDE_FROM_MEMBER_NAV.has(route) || ADMIN_ONLY_ROUTES.has(route))) show = false;
+      else show = true;                                            // dashboard / my profile / เมนู admin อื่น ๆ
+    }
+    a.style.display = show ? '' : 'none';
+  });
+  // section: แสดงเฉพาะถ้ามี item ที่เห็นได้ข้างใน
+  document.querySelectorAll('.nav-section[data-admin-section]').forEach(s => {
+    const anyVisible = Array.from(s.querySelectorAll('a[data-route]')).some(a => a.style.display !== 'none');
+    s.style.display = anyVisible ? '' : 'none';
+  });
+}
 
 // ---------- routing ----------
 const routes = {
@@ -260,15 +288,13 @@ async function navigate() {
   const parts = hash.split('/');
   const route = parts[0];
 
-  // Member: เช็คสิทธิ์ — route ที่ผูก module ต้องได้รับสิทธิ์ก่อน; route admin-only อื่น ๆ ห้ามเข้า
-  if (currentRole === 'member') {
-    const reqMod = ROUTE_MODULE[route];
-    if (reqMod) {
-      if (!currentModules.has(reqMod)) { location.hash = '#/dashboard'; return; }
-    } else if (ADMIN_ONLY_ROUTES.has(route) || HIDE_FROM_MEMBER_NAV.has(route)) {
-      location.hash = '#/dashboard';
-      return;
-    }
+  // เช็คสิทธิ์ — ทุกบทบาท: route ที่ผูก module ต้องยัง "เปิดใช้งาน" (v1.9.405) และ member ต้องได้รับสิทธิ์ด้วย
+  // member เพิ่มเติม: route admin-only ห้ามเข้า
+  const _reqMod = ROUTE_MODULE[route];
+  if (_reqMod && !currentModules.has(_reqMod)) { location.hash = '#/dashboard'; return; }
+  if (currentRole === 'member' && !_reqMod && (ADMIN_ONLY_ROUTES.has(route) || HIDE_FROM_MEMBER_NAV.has(route))) {
+    location.hash = '#/dashboard';
+    return;
   }
 
   // ออกจากหน้า extension → หยุด polling status

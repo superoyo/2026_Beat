@@ -313,6 +313,8 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS iam_module_config (
                 module_key TEXT PRIMARY KEY,            -- 'ads' | 'customer' | 'platform'
                 mode       TEXT NOT NULL DEFAULT 'restricted',  -- 'all' | 'restricted'
+                -- v1.9.405: 0 = ปิดทั้งระบบ (ไม่มีเมนูนี้เลย แม้แต่ admin)
+                is_enabled INTEGER NOT NULL DEFAULT 1,
                 updated_at TEXT
             );
             CREATE TABLE IF NOT EXISTS iam_module_members (
@@ -1046,6 +1048,11 @@ def init_db() -> None:
                 "INSERT OR IGNORE INTO skill_categories(key, icon, label, sort_order, created_at) VALUES (?,?,?,?,?)",
                 (k, ic, lb, i, _now),
             )
+
+        # v1.9.405 — iam_module_config.is_enabled (เปิด/ปิด module ทั้งระบบ) — DB เดิมยังไม่มีคอลัมน์นี้
+        _iam_cols = {row["name"] for row in conn.execute("PRAGMA table_info(iam_module_config)").fetchall()}
+        if "is_enabled" not in _iam_cols:
+            conn.execute("ALTER TABLE iam_module_config ADD COLUMN is_enabled INTEGER NOT NULL DEFAULT 1")
 
         # v1.9.162 — seed IAM module config (platform=ทุกคน, customer/ads=restricted ตามเดิม)
         # v1.9.339 — hw-* (Device & Software submenus) = restricted (admin เท่านั้น จนกว่าจะ grant)
@@ -2090,10 +2097,17 @@ def _has_admin() -> bool:
 def admin_state(fct_session: Optional[str] = Cookie(default=None)) -> dict[str, Any]:
     """ใช้โดย admin SPA เพื่อรู้ว่าต้องไปหน้า setup, login หรือเข้าได้เลย."""
     sess = get_session(fct_session)
+    modules: list[str] = []
+    if sess is not None:
+        # v1.9.405 — super admin เห็นทุก module ยกเว้นที่ปิดทั้งระบบ
+        with db_conn() as conn:
+            off = _iam_disabled_modules(conn)
+        modules = [m["key"] for m in IAM_MODULES if m["key"] not in off]
     return {
         "has_admin": _has_admin(),
         "logged_in": sess is not None,
         "username": sess["username"] if sess else None,
+        "modules": modules,
     }
 
 
@@ -9839,6 +9853,10 @@ def dashboard_stats(_auth: str = Depends(require_any_auth)) -> dict[str, Any]:
 def _require_module(module_key: str):
     def _dep(fct_session: Optional[str] = Cookie(default=None),
              fct_member_session: Optional[str] = Cookie(default=None)) -> dict[str, Any]:
+        # v1.9.405 — module ที่ปิดทั้งระบบ = ไม่มีเมนูนี้ ใครก็เข้าไม่ได้ (รวม super admin)
+        with db_conn() as conn:
+            if not _iam_module_enabled(conn, module_key):
+                raise HTTPException(status_code=403, detail="เมนูนี้ถูกปิดใช้งานอยู่ (เปิดได้ที่ Setting → IAM)")
         if get_session(fct_session):
             return {"role": "admin", "member_id": None}
         msess = get_member_session(fct_member_session)
@@ -12050,16 +12068,31 @@ SSO_CLIENT_MODULE = {TV_MONITOR_CLIENT_ID: "tv"}
 IAM_MODULE_KEYS = {m["key"] for m in IAM_MODULES}
 
 
+def _iam_disabled_modules(conn) -> set[str]:
+    """v1.9.405 — module ที่ถูกปิดทั้งระบบ (is_enabled=0) — ไม่มีใครเข้าได้ รวมถึง admin"""
+    return {r["module_key"] for r in conn.execute(
+        "SELECT module_key FROM iam_module_config WHERE is_enabled = 0").fetchall()}
+
+
+def _iam_module_enabled(conn, module_key: str) -> bool:
+    r = conn.execute("SELECT is_enabled FROM iam_module_config WHERE module_key = ?", (module_key,)).fetchone()
+    return True if r is None else bool(r["is_enabled"])
+
+
 def _member_accessible_modules(conn, member_id: int, is_admin: bool) -> list[str]:
-    """v1.9.162 — module ที่ member นี้เข้าถึงได้ (admin เห็นทุก module)"""
+    """v1.9.162 — module ที่ member นี้เข้าถึงได้ (admin เห็นทุก module)
+    v1.9.405 — module ที่ปิดทั้งระบบ ตัดออกทุกบทบาท (admin ด้วย)"""
+    off = _iam_disabled_modules(conn)
     if is_admin:
-        return [m["key"] for m in IAM_MODULES]
+        return [m["key"] for m in IAM_MODULES if m["key"] not in off]
     team_ids = [r["team_id"] for r in conn.execute(
         "SELECT team_id FROM team_members WHERE member_id = ?", (member_id,)
     ).fetchall()]
     out = []
     for m in IAM_MODULES:
         mk = m["key"]
+        if mk in off:
+            continue
         cfg = conn.execute("SELECT mode FROM iam_module_config WHERE module_key = ?", (mk,)).fetchone()
         mode = cfg["mode"] if cfg else "restricted"
         if mode == "all":
@@ -12083,8 +12116,9 @@ def iam_get_modules(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
         out = []
         for m in IAM_MODULES:
             mk = m["key"]
-            cfg = conn.execute("SELECT mode FROM iam_module_config WHERE module_key = ?", (mk,)).fetchone()
+            cfg = conn.execute("SELECT mode, is_enabled FROM iam_module_config WHERE module_key = ?", (mk,)).fetchone()
             mode = cfg["mode"] if cfg else "restricted"
+            enabled = True if cfg is None else bool(cfg["is_enabled"])
             mems = conn.execute(
                 "SELECT mm.id, mm.display_name, mm.email, mm.phone "
                 "FROM iam_module_members im JOIN members mm ON mm.id = im.member_id "
@@ -12100,6 +12134,7 @@ def iam_get_modules(_sess: dict = Depends(require_admin)) -> dict[str, Any]:
                 return r["display_name"] or r["email"] or (None if (ph and str(ph).startswith("email:")) else ph) or f"member#{r['id']}"
             out.append({
                 "key": mk, "label": m["label"], "icon": m["icon"], "desc": m["desc"], "mode": mode,
+                "enabled": enabled,
                 "members": [{"id": r["id"], "name": _nm(r)} for r in mems],
                 "teams": [dict(t) for t in teams],
             })
@@ -12118,7 +12153,9 @@ def iam_set_module(module_key: str, payload: IamModuleIn, _sess: dict = Depends(
         raise HTTPException(status_code=404, detail="ไม่พบ module")
     now = utc_now().isoformat()
     with db_conn() as conn:
-        conn.execute("INSERT OR REPLACE INTO iam_module_config(module_key, mode, updated_at) VALUES (?,?,?)",
+        # INSERT OR REPLACE จะรีเซ็ต is_enabled กลับเป็น default — ใช้ upsert เฉพาะ mode แทน
+        conn.execute("INSERT INTO iam_module_config(module_key, mode, updated_at) VALUES (?,?,?) "
+                     "ON CONFLICT(module_key) DO UPDATE SET mode=excluded.mode, updated_at=excluded.updated_at",
                      (module_key, payload.mode, now))
         conn.execute("DELETE FROM iam_module_members WHERE module_key = ?", (module_key,))
         conn.execute("DELETE FROM iam_module_teams WHERE module_key = ?", (module_key,))
@@ -12130,6 +12167,24 @@ def iam_set_module(module_key: str, payload: IamModuleIn, _sess: dict = Depends(
                 conn.execute("INSERT OR IGNORE INTO iam_module_teams(module_key, team_id) VALUES (?,?)",
                              (module_key, tid))
     return {"ok": True}
+
+
+# v1.9.405 — toggle เปิด/ปิด module ทั้งระบบ (ปิด = ไม่มีเมนูนี้เลย ทุกบทบาท)
+class IamModuleEnabledIn(BaseModel):
+    enabled: bool
+
+
+@app.patch("/api/iam/modules/{module_key}/enabled")
+def iam_set_module_enabled(module_key: str, payload: IamModuleEnabledIn,
+                           _sess: dict = Depends(require_admin)) -> dict[str, Any]:
+    if module_key not in IAM_MODULE_KEYS:
+        raise HTTPException(status_code=404, detail="ไม่พบ module")
+    now = utc_now().isoformat()
+    with db_conn() as conn:
+        conn.execute("INSERT INTO iam_module_config(module_key, mode, is_enabled, updated_at) VALUES (?,?,?,?) "
+                     "ON CONFLICT(module_key) DO UPDATE SET is_enabled=excluded.is_enabled, updated_at=excluded.updated_at",
+                     (module_key, "restricted", 1 if payload.enabled else 0, now))
+    return {"ok": True, "enabled": payload.enabled}
 
 
 # ===========================================================================

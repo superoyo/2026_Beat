@@ -8,30 +8,66 @@ async function renderIamPage() {
   const mods = data.modules || [];
   root.innerHTML = `
     <div class="card" style="display:block;margin-bottom:14px;background:var(--bg-soft)">
-      <div style="font-size:13px;color:var(--text-muted);line-height:1.7">🔐 <strong>IAM</strong> — กำหนดว่าแต่ละ Module (เมนู) เปิดให้พนักงานคนไหนเข้าได้ — เลือก <strong>ทุกคน</strong> หรือ <strong>กำหนดเอง</strong> (รายบุคคล/ทีม) · admin เห็นทุก module เสมอ</div>
+      <div style="font-size:13px;color:var(--text-muted);line-height:1.7">🔐 <strong>IAM</strong> — กำหนดว่าแต่ละ Module (เมนู) เปิดให้พนักงานคนไหนเข้าได้ — เลือก <strong>ทุกคน</strong> หรือ <strong>กำหนดเอง</strong> (รายบุคคล/ทีม) · admin เห็นทุก module เสมอ<br>🔌 <strong>สวิตช์เปิด/ปิด</strong> ด้านขวา — ปิดแล้วเมนูนั้นจะหายไปจากระบบทั้งหมด (ทุกคนรวมถึง admin) จนกว่าจะเปิดใหม่</div>
     </div>
     ${mods.map(m => {
-      const summary = m.mode === 'all'
+      const on = m.enabled !== false;
+      const summary = !on
+        ? '<span style="color:var(--critical);font-weight:600">⛔ ปิดใช้งาน — ไม่มีเมนูนี้ในระบบ</span>'
+        : m.mode === 'all'
         ? '<span style="color:var(--green);font-weight:600">👥 ทุกคน</span>'
         : `<span style="color:var(--text-muted)">🎯 กำหนดเอง — ${m.members.length} คน · ${m.teams.length} ทีม</span>`;
-      const chips = m.mode === 'all' ? '' : `
+      const chips = (!on || m.mode === 'all') ? '' : `
         <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:10px">
           ${m.teams.map(t => `<span style="font-size:11px;padding:2px 9px;border-radius:999px;background:rgba(37,99,235,.10);color:var(--primary)">👥 ${escapeHtml(t.name)}</span>`).join('')}
           ${m.members.map(mm => `<span style="font-size:11px;padding:2px 9px;border-radius:999px;background:var(--bg-soft);border:1px solid var(--border)">👤 ${escapeHtml(mm.name)}</span>`).join('')}
           ${(m.members.length === 0 && m.teams.length === 0) ? '<span style="font-size:11.5px;color:var(--text-soft);font-style:italic">— ยังไม่ได้กำหนดใคร (เห็นเฉพาะ admin) —</span>' : ''}
         </div>`;
       return `
-        <div class="card" style="display:block;margin-bottom:12px">
+        <div class="card iam-mod-card" data-mod="${m.key}" style="display:block;margin-bottom:12px;${on ? '' : 'background:var(--bg-soft);border-style:dashed'}">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-            <div style="min-width:0">
+            <div style="min-width:0;${on ? '' : 'opacity:.6'}">
               <div style="font-size:15px;font-weight:700">${m.icon} ${escapeHtml(m.label)}</div>
               <div style="font-size:12px;color:var(--text-muted);margin-top:2px">${escapeHtml(m.desc)} · ${summary}</div>
             </div>
-            <button class="btn" data-iam-cfg="${m.key}" style="font-size:13px;padding:8px 14px">⚙️ ตั้งค่า</button>
+            <div style="display:flex;align-items:center;gap:12px;flex-shrink:0">
+              ${_iamSwitchHtml(m.key, on)}
+              <button class="btn" data-iam-cfg="${m.key}" ${on ? '' : 'disabled title="เปิดใช้งาน module ก่อนจึงตั้งค่าสิทธิ์ได้"'} style="font-size:13px;padding:8px 14px;${on ? '' : 'opacity:.5;cursor:not-allowed'}">⚙️ ตั้งค่า</button>
+            </div>
           </div>${chips}
         </div>`;
     }).join('')}`;
-  root.querySelectorAll('[data-iam-cfg]').forEach(b => b.addEventListener('click', () => configIamModule(mods.find(x => x.key === b.dataset.iamCfg))));
+  root.querySelectorAll('[data-iam-cfg]').forEach(b => b.addEventListener('click', () => {
+    if (b.disabled) return;
+    configIamModule(mods.find(x => x.key === b.dataset.iamCfg));
+  }));
+  root.querySelectorAll('[data-iam-toggle]').forEach(sw => sw.addEventListener('click', () => _iamToggleModule(sw.dataset.iamToggle, mods)));
+}
+
+// v1.9.405 — สวิตช์เปิด/ปิด module ทั้งระบบ
+function _iamSwitchHtml(key, on) {
+  return `<div style="display:flex;align-items:center;gap:8px">
+    <span class="iam-sw-text" style="font-size:12px;font-weight:700;color:${on ? 'var(--green)' : 'var(--text-soft)'};min-width:62px;text-align:right">${on ? 'เปิดใช้งาน' : 'ปิดอยู่'}</span>
+    <button type="button" role="switch" aria-checked="${on}" data-iam-toggle="${key}" title="${on ? 'ปิด module นี้ทั้งระบบ' : 'เปิด module นี้'}"
+            style="position:relative;width:46px;height:26px;flex-shrink:0;border-radius:999px;border:1px solid ${on ? 'var(--green)' : 'var(--border)'};background:${on ? 'var(--green)' : 'var(--bg-soft)'};cursor:pointer;padding:0;transition:background .15s,border-color .15s">
+      <span style="position:absolute;top:2px;left:${on ? '22px' : '2px'};width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(15,23,42,.3);transition:left .15s"></span>
+    </button>
+  </div>`;
+}
+
+async function _iamToggleModule(key, mods) {
+  const mod = mods.find(x => x.key === key);
+  if (!mod) return;
+  const next = !(mod.enabled !== false);
+  if (!next && !confirm(`ปิด "${mod.label}" ?\n\nเมนูนี้จะหายไปจากระบบทั้งหมด — ทุกคนรวมถึง admin จะเข้าไม่ได้ จนกว่าจะเปิดใหม่ที่หน้านี้\n(สิทธิ์ที่ตั้งไว้ยังถูกเก็บไว้ ไม่หาย)`)) return;
+  const sw = document.querySelector(`[data-iam-toggle="${key}"]`);
+  if (sw) sw.disabled = true;
+  try { await fetchJson(`/api/iam/modules/${key}/enabled`, { method: 'PATCH', body: JSON.stringify({ enabled: next }) }); }
+  catch (e) { alert(e.message); if (sw) sw.disabled = false; return; }
+  // อัพเดตเมนูซ้ายทันที ไม่ต้อง refresh
+  if (next) currentModules.add(key); else currentModules.delete(key);
+  if (typeof applyNavModuleVisibility === 'function') applyNavModuleVisibility();
+  renderIamPage();
 }
 async function configIamModule(mod) {
   if (!mod) return;
