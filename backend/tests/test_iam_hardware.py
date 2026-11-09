@@ -1,5 +1,18 @@
 # v1.9.339 — IAM สำหรับ Device & Software: grant member เข้าเมนูย่อยผ่าน hw-* modules
+# v1.9.406 — hw-* ปิดทั้งระบบตั้งแต่ init → เทสต์ที่ grant ต้องเปิด module ก่อน
+import pytest
 from conftest import make_member, make_team, add_to_team, member_login
+
+_HW_KEYS = ("hw-dashboard", "hw-pc", "hw-central", "hw-device",
+            "hw-network", "hw-report", "hw-findoc")
+
+
+@pytest.fixture(autouse=True)
+def _enable_hw_modules(admin_client):
+    """เปิด Device & Software ชั่วคราวสำหรับชุดเทสต์นี้ (production ยังปิดอยู่)"""
+    for k in _HW_KEYS:
+        r = admin_client.patch(f"/api/iam/modules/{k}/enabled", json={"enabled": True})
+        assert r.status_code == 200, r.text
 
 
 def _grant(admin_client, module_key, member_ids=(), team_ids=()):
