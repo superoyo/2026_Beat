@@ -8,8 +8,24 @@ def _mods(client):
 
 
 def test_modules_enabled_by_default(admin_client):
+    # v1.9.406 — Device & Software (hw-*) ถูกปิดทั้งระบบตั้งแต่ init (one-shot)
+    # module อื่นยังเปิดอยู่
     mods = _mods(admin_client)
-    assert mods and all(m["enabled"] is True for m in mods.values())
+    assert mods
+    hw = {k for k in mods if k.startswith("hw-")}
+    assert hw and all(mods[k]["enabled"] is False for k in hw)
+    assert all(mods[k]["enabled"] is True for k in mods if k not in hw)
+
+
+def test_hw_modules_disabled_on_init_once(admin_client):
+    """one-shot: ปิด hw-* ตอน init แล้ว — เปิดกลับที่ IAM ได้ และ boot ซ้ำไม่บังคับปิดใหม่"""
+    import server
+    assert _mods(admin_client)["hw-pc"]["enabled"] is False
+    r = admin_client.patch("/api/iam/modules/hw-pc/enabled", json={"enabled": True})
+    assert r.status_code == 200 and r.json()["enabled"] is True
+    # จำลอง boot ซ้ำ (init_db อีกรอบ) — flag ใน config กันไม่ให้รีเซ็ต
+    server.init_db()
+    assert _mods(admin_client)["hw-pc"]["enabled"] is True
 
 
 def test_toggle_off_then_on(admin_client):

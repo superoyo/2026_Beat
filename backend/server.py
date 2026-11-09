@@ -1065,6 +1065,22 @@ def init_db() -> None:
                 (_mk, _mode, _now),
             )
 
+        # v1.9.406 — ปิด Device & Software ทั้งระบบ (one-shot)
+        # ตามที่ปิดที่ IAM เมื่อ 9 ต.ค. 2026 เพื่อไม่ให้สับสนกับระบบ monitor ของ Bank/Chomp
+        # เปิดกลับได้ที่ Setting → IAM (สวิตช์ต่อเมนู) — flag กันไม่ให้ boot รอบถัดไปรีเซ็ตการเปิดกลับ
+        _hw_off_flag = "iam_hw_modules_disabled_2026_10"
+        if conn.execute("SELECT 1 FROM config WHERE key = ?", (_hw_off_flag,)).fetchone() is None:
+            for _mk in ("hw-dashboard", "hw-pc", "hw-central", "hw-device",
+                        "hw-network", "hw-report", "hw-findoc"):
+                conn.execute(
+                    "UPDATE iam_module_config SET is_enabled=0, updated_at=? WHERE module_key=?",
+                    (_now, _mk),
+                )
+            conn.execute(
+                "INSERT INTO config(key, value) VALUES (?, ?)",
+                (_hw_off_flag, _now),
+            )
+
         # ---- emergency reset (ถ้า user ตั้ง env เอง)
         if ADMIN_RESET_ON_BOOT:
             n = conn.execute("DELETE FROM admin_users").rowcount
